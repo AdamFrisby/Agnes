@@ -59,6 +59,21 @@ public class TranscriptBuilderTests
     }
 
     [Fact]
+    public void Tool_call_records_elapsed_time_from_timestamps()
+    {
+        var t = new TranscriptBuilder();
+        var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        t.Apply(new ToolCallEvent("tc1", "a.cs", ToolKind.Edit, ToolCallStatus.InProgress, []) { Timestamp = start });
+
+        var tool = t.Items.OfType<ToolCallItem>().Single();
+        Assert.False(tool.HasDuration);
+
+        t.Apply(new ToolCallUpdateEvent("tc1", ToolCallStatus.Completed, null) { Timestamp = start.AddMilliseconds(1400) });
+        Assert.True(tool.HasDuration);
+        Assert.Equal("1.4s", tool.DurationText);
+    }
+
+    [Fact]
     public void Permission_card_derives_facts_from_the_linked_tool()
     {
         var t = new TranscriptBuilder();

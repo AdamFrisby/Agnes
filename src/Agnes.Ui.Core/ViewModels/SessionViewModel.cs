@@ -38,6 +38,7 @@ public sealed class SessionViewModel : ObservableObject
     private SessionBanner _banner;
     private string _searchQuery = string.Empty;
     private bool _isSearchOpen;
+    private bool _isInspectorOpen;
     private int _matchCursor = -1;
     private int _promptCursor = -1;
     private int _changeCursor = -1;
@@ -67,6 +68,7 @@ public sealed class SessionViewModel : ObservableObject
         RespondWithCommand = new RelayCommand<PermissionOption>(o => { if (o is not null) { _ = RespondWithAsync(o); } });
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
+        ToggleInspectorCommand = new RelayCommand(() => IsInspectorOpen = !IsInspectorOpen);
         ToggleFullScreenCommand = new RelayCommand(() => IsPreviewFullScreen = !IsPreviewFullScreen);
         RecallPreviousCommand = new RelayCommand(RecallPrevious);
         RecallNextCommand = new RelayCommand(RecallNext);
@@ -219,6 +221,15 @@ public sealed class SessionViewModel : ObservableObject
         _ => string.Empty,
     };
 
+    // Raw event / debug inspector (the underlying SessionEvent log).
+    public ObservableCollection<RawEventRow> RawEvents { get; } = [];
+
+    public bool IsInspectorOpen
+    {
+        get => _isInspectorOpen;
+        set => Set(ref _isInspectorOpen, value);
+    }
+
     // Search within the session (deep-links each hit by anchor).
     public ObservableCollection<SearchHit> Matches { get; } = [];
 
@@ -273,6 +284,7 @@ public sealed class SessionViewModel : ObservableObject
     public AsyncRelayCommand RetryCommand { get; }
     public ICommand ToggleLeftCommand { get; }
     public ICommand ToggleToolsCommand { get; }
+    public ICommand ToggleInspectorCommand { get; }
     public ICommand ToggleFullScreenCommand { get; }
     public ICommand RecallPreviousCommand { get; }
     public ICommand RecallNextCommand { get; }
@@ -304,6 +316,7 @@ public sealed class SessionViewModel : ObservableObject
     {
         _transcript.Apply(@event);
         UpdateSidebar(@event);
+        RawEvents.Add(new RawEventRow(@event));
 
         switch (@event)
         {

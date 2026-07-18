@@ -54,6 +54,7 @@ public sealed class ToolCallItem : TranscriptItem
 {
     private ToolCallStatus _status;
     private string _detail = string.Empty;
+    private DateTimeOffset? _completedAt;
 
     public ToolCallItem(string toolCallId, string title, ToolKind kind, ToolCallStatus status)
     {
@@ -66,6 +67,33 @@ public sealed class ToolCallItem : TranscriptItem
     public string ToolCallId { get; }
     public string Title { get; }
     public ToolKind Kind { get; }
+
+    /// <summary>When the tool call started (first event's timestamp).</summary>
+    public DateTimeOffset StartedAt { get; init; }
+
+    /// <summary>When the tool call finished, once it has.</summary>
+    public DateTimeOffset? CompletedAt
+    {
+        get => _completedAt;
+        set { if (Set(ref _completedAt, value)) { Raise(nameof(HasDuration)); Raise(nameof(DurationText)); } }
+    }
+
+    public bool HasDuration => CompletedAt is { } end && end > StartedAt;
+
+    /// <summary>Elapsed time, e.g. "820ms" or "1.4s".</summary>
+    public string DurationText
+    {
+        get
+        {
+            if (CompletedAt is not { } end || end <= StartedAt)
+            {
+                return string.Empty;
+            }
+
+            var ms = (end - StartedAt).TotalMilliseconds;
+            return ms < 1000 ? $"{ms:0}ms" : $"{ms / 1000:0.0}s";
+        }
+    }
 
     /// <summary>Header label for the UI, e.g. "Read — Read a.cs".</summary>
     public string Header => $"{Kind} — {Title}";

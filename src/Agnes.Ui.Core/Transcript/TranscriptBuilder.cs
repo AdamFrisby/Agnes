@@ -39,8 +39,14 @@ public sealed class TranscriptBuilder
                 CloseBubble();
                 var tool = new ToolCallItem(tc.ToolCallId, tc.Title, tc.Kind, tc.Status)
                 {
+                    StartedAt = tc.Timestamp,
                     Detail = string.Concat(tc.Content.Select(TextOf)),
                 };
+                if (tc.Status is ToolCallStatus.Completed or ToolCallStatus.Failed)
+                {
+                    tool.CompletedAt = tc.Timestamp;
+                }
+
                 _tools[tc.ToolCallId] = tool;
                 Items.Add(tool);
                 break;
@@ -49,6 +55,10 @@ public sealed class TranscriptBuilder
                 if (u.Status is { } status)
                 {
                     existing.Status = status;
+                    if (status is ToolCallStatus.Completed or ToolCallStatus.Failed)
+                    {
+                        existing.CompletedAt = u.Timestamp;
+                    }
                 }
 
                 if (u.Content is { } content)

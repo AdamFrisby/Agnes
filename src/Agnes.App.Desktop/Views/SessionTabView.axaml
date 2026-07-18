@@ -109,6 +109,10 @@
                                 Content="Panels" Background="Transparent" Foreground="{StaticResource FgDim}"
                                 BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 AutomationProperties.Name="Toggle side panels" />
+                        <Button Command="{Binding Session.ToggleInspectorCommand}" IsVisible="{Binding IsLive}"
+                                Content="Event log" Background="Transparent" Foreground="{StaticResource FgDim}"
+                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                ToolTip.Tip="Show the raw event log" AutomationProperties.Name="Toggle raw event log" />
                         <TextBlock Text="{Binding UsageSummary}" Foreground="{StaticResource FgDim}" FontSize="11"
                                    VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                    IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
@@ -401,7 +405,8 @@
                             </StackPanel>
                         </Border>
 
-                        <ScrollViewer Grid.Row="1" Padding="0,16" VerticalScrollBarVisibility="Auto">
+                        <ScrollViewer Grid.Row="1" Padding="0,16" VerticalScrollBarVisibility="Auto"
+                                      IsVisible="{Binding !IsInspectorOpen}">
                             <ItemsControl x:Name="Transcript" ItemsSource="{Binding Items}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
                                 <ItemsControl.DataTemplates>
 
@@ -433,6 +438,8 @@
                                                     <TextBlock Text="{Binding Header}" Foreground="{StaticResource Fg}"
                                                                FontWeight="SemiBold" FontFamily="{StaticResource MonoFont}" FontSize="12" />
                                                     <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                                    <TextBlock Text="{Binding DurationText}" Foreground="{StaticResource FgFaint}" FontSize="11"
+                                                               FontFamily="{StaticResource MonoFont}" IsVisible="{Binding HasDuration}" />
                                                     <TextBlock Text="— tap to preview" Foreground="{StaticResource FgFaint}" FontSize="11"
                                                                IsVisible="{Binding HasDetail}" />
                                                 </StackPanel>
@@ -499,6 +506,40 @@
                                 </ItemsControl.DataTemplates>
                             </ItemsControl>
                         </ScrollViewer>
+
+                        <!-- Raw event / debug inspector (over the transcript) -->
+                        <Border Grid.Row="1" IsVisible="{Binding IsInspectorOpen}" Background="{StaticResource Bg}">
+                            <Grid RowDefinitions="Auto,*">
+                                <Border Grid.Row="0" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                                        BorderThickness="0,0,0,1" Padding="24,8">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="Event log" Foreground="{StaticResource Fg}"
+                                                   FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Content="✕" Command="{Binding ToggleInspectorCommand}"
+                                                Background="Transparent" Foreground="{StaticResource FgDim}" BorderThickness="0"
+                                                Padding="8,2" AutomationProperties.Name="Close event log" />
+                                    </Grid>
+                                </Border>
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="16,8">
+                                    <ItemsControl ItemsSource="{Binding RawEvents}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ColumnDefinitions="44,86,120,*" Margin="0,1">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Sequence}" Foreground="{StaticResource Gutter}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" TextAlignment="Right" Padding="0,0,8,0" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Time}" Foreground="{StaticResource FgFaint}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding Kind}" Foreground="{StaticResource Good}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding Summary}" Foreground="{StaticResource FgDim}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
 
                         <Border Grid.Row="2" Margin="24,4" Padding="14,10" CornerRadius="10"
                                 Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}" BorderThickness="1"

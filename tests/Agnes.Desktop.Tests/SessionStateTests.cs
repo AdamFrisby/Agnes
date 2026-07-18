@@ -186,6 +186,27 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- raw event inspector ----
+
+    [Fact]
+    public void Raw_event_inspector_captures_the_stream_and_toggles()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.User, new TextContent("hi")), 1));
+        view.Apply(Seq(new ToolCallEvent("tc1", "a.cs", ToolKind.Edit, ToolCallStatus.Completed, []), 2));
+
+        Assert.Equal(2, vm.RawEvents.Count);
+        Assert.Equal("MessageChunk", vm.RawEvents[0].Kind);
+        Assert.Equal("ToolCall", vm.RawEvents[1].Kind);
+
+        Assert.False(vm.IsInspectorOpen);
+        vm.ToggleInspectorCommand.Execute(null);
+        Assert.True(vm.IsInspectorOpen);
+    }
+
     // ---- session activity state ----
 
     [Fact]

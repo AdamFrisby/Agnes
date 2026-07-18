@@ -125,6 +125,13 @@ public static class Program
         Capture(window, "04h-prompt-queue.png");
         running.Session!.CancelCommand.Execute(null);
 
+        // 4i) Raw event / debug inspector over the transcript.
+        vm.ActivateSessionCommand.Execute(tools);
+        tools.Session!.ToggleInspectorCommand.Execute(null);
+        Pump(() => tools.Session!.IsInspectorOpen && tools.Session!.RawEvents.Count > 0);
+        Capture(window, "04i-event-log.png");
+        tools.Session!.ToggleInspectorCommand.Execute(null);
+
         // 4b) Long assistant message → condensed in chat, full text in the preview
         var longChat = OpenSession(vm, "opencode");
         Prompt(longChat, "Explain the Agent Client Protocol in detail.");
