@@ -27,6 +27,12 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Raised when <see cref="State"/> changes.</summary>
     event Action<AgnesConnectionState>? StateChanged;
 
+    /// <summary>Free-form status the host reports (e.g. usage/quota), or null if unknown.</summary>
+    string? UsageSummary { get; }
+
+    /// <summary>Raised when <see cref="UsageSummary"/> changes.</summary>
+    event Action<string?>? UsageChanged;
+
     /// <summary>The set of available agents changed on the host.</summary>
     event Action<IReadOnlyList<AgentInfo>>? AgentsChanged;
 

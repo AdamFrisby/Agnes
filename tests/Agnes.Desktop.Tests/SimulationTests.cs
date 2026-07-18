@@ -80,8 +80,8 @@ public class SessionStateStoreTests
         var path = Path.Combine(Path.GetTempPath(), $"agnes-tabs-{Guid.NewGuid():n}.json");
         new SessionStateStore(path).Save(
         [
-            new SessionDescriptor("sim://demo", "tok", "sim-1", "opencode", "OpenCode"),
-            new SessionDescriptor("sim://demo", "tok", "sim-2", "codex", "Codex"),
+            new SessionDescriptor("Simulated host", "sim://demo", "tok", "sim-1", "opencode", "OpenCode"),
+            new SessionDescriptor("Simulated host", "sim://demo", "tok", "sim-2", "codex", "Codex"),
         ]);
 
         var loaded = new SessionStateStore(path).Load();
@@ -100,67 +100,76 @@ public class MainWindowRestoreTests
     private static IEnumerable<SessionDocument> Tabs(MainWindowViewModel vm)
         => DocumentDock(vm).VisibleDockables!.OfType<SessionDocument>();
 
+    private static MainWindowViewModel NewVm(string tabsPath, string hostsPath)
+        => new(new SimulatedConnector(), ImmediateDispatcher.Instance,
+            new SessionStateStore(tabsPath), new HostRegistryStore(hostsPath));
+
+    /// <summary>Drives a fresh tab through the host → agent flow to a live session.</summary>
+    private static async Task OpenSessionAsync(SessionDocument tab)
+    {
+        await WaitAsync(() => tab.Hosts is { Count: > 0 });
+        tab.Hosts!.First().Select.Execute(null); // simulated host
+        await WaitAsync(() => tab.Agents is { Count: > 0 });
+        tab.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
+        await WaitAsync(() => tab.Session is not null);
+    }
+
     [Fact]
     public async Task Restore_recreates_and_reconnects_saved_tabs()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"agnes-tabs-{Guid.NewGuid():n}.json");
-        var store = new SessionStateStore(path);
+        var (tabs, hosts) = TempPaths();
+        var store = new SessionStateStore(tabs);
         store.Save(
         [
-            new SessionDescriptor("sim://demo", "", "sim-a", "opencode", "OpenCode"),
-            new SessionDescriptor("sim://demo", "", "sim-b", "codex", "Codex"),
+            new SessionDescriptor("Simulated host", "sim://demo", "", "sim-a", "opencode", "OpenCode"),
+            new SessionDescriptor("Simulated host", "sim://demo", "", "sim-b", "codex", "Codex"),
         ]);
 
-        var vm = new MainWindowViewModel(new SimulatedConnector(), ImmediateDispatcher.Instance, store);
+        var vm = new MainWindowViewModel(new SimulatedConnector(), ImmediateDispatcher.Instance, store, new HostRegistryStore(hosts));
         await vm.RestoreAsync();
 
         Assert.Equal(2, Tabs(vm).Count());
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        while (Tabs(vm).Any(d => d.Session is null))
-        {
-            cts.Token.ThrowIfCancellationRequested();
-            await Task.Delay(20, cts.Token);
-        }
-
+        await WaitAsync(() => Tabs(vm).All(d => d.Session is not null));
         Assert.All(Tabs(vm), d => Assert.NotNull(d.Session));
     }
 
     [Fact]
-    public async Task Empty_state_opens_a_single_fresh_tab()
+    public async Task Empty_state_opens_a_single_fresh_tab_on_the_host_picker()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"agnes-tabs-{Guid.NewGuid():n}.json");
-        var vm = new MainWindowViewModel(new SimulatedConnector(), ImmediateDispatcher.Instance, new SessionStateStore(path));
+        var (tabs, hosts) = TempPaths();
+        var vm = NewVm(tabs, hosts);
 
         await vm.RestoreAsync();
 
-        Assert.Single(Tabs(vm));
+        var tab = Assert.Single(Tabs(vm));
+        Assert.True(tab.IsPickingHost);
+        await WaitAsync(() => tab.Hosts is { Count: > 0 }); // built-in simulated host is offered
     }
 
     [Fact]
     public async Task Relaunch_restores_session_without_clobbering_saved_state()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"agnes-tabs-{Guid.NewGuid():n}.json");
-        var store = new SessionStateStore(path);
+        var (tabs, hosts) = TempPaths();
 
-        // First launch: empty → one fresh tab; open an agent to persist a session.
-        var vm1 = new MainWindowViewModel(new SimulatedConnector(), ImmediateDispatcher.Instance, store);
+        // First launch: pick host → agent to persist a session.
+        var vm1 = NewVm(tabs, hosts);
         await vm1.RestoreAsync();
-        var tab = Tabs(vm1).Single();
-        await WaitAsync(() => tab.Agents is { Count: > 0 });
-        tab.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
-        await WaitAsync(() => tab.Session is not null);
+        await OpenSessionAsync(Tabs(vm1).Single());
 
-        Assert.Single(new SessionStateStore(path).Load()); // the session was persisted
+        Assert.Single(new SessionStateStore(tabs).Load()); // persisted
 
-        // Relaunch: a fresh VM sharing the same store must restore the tab, not wipe it
-        // (constructing the VM must not clobber the saved state before RestoreAsync reads it).
-        var vm2 = new MainWindowViewModel(new SimulatedConnector(), ImmediateDispatcher.Instance, store);
+        // Relaunch: a fresh VM sharing the same stores restores the tab, not wipes it.
+        var vm2 = NewVm(tabs, hosts);
         await vm2.RestoreAsync();
         var restored = Tabs(vm2).Single();
         Assert.NotNull(restored.Descriptor);
+        Assert.Equal("Simulated host", restored.HostName);
         await WaitAsync(() => restored.Session is not null);
     }
+
+    private static (string Tabs, string Hosts) TempPaths()
+        => (Path.Combine(Path.GetTempPath(), $"agnes-tabs-{Guid.NewGuid():n}.json"),
+            Path.Combine(Path.GetTempPath(), $"agnes-hosts-{Guid.NewGuid():n}.json"));
 
     private static async Task WaitAsync(Func<bool> condition)
     {

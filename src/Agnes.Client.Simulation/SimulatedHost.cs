@@ -20,14 +20,20 @@ public sealed class SimulatedHost : IAgnesHost
         new("codex", "Codex", "0.9", Available: true),
     ];
 
+    private const int Quota = 5000;
+
     private readonly ConcurrentDictionary<string, SimSession> _sessions = new();
     private int _counter;
+    private int _remaining = 4820;
 
     public SimulatedHost(string hostUrl = "sim://demo") => HostUrl = hostUrl;
 
     public string HostUrl { get; }
     public AgnesConnectionState State { get; private set; } = AgnesConnectionState.Disconnected;
     public event Action<AgnesConnectionState>? StateChanged;
+
+    public string? UsageSummary { get; private set; }
+    public event Action<string?>? UsageChanged;
 
     // The simulated host never changes its agent set; required by the interface.
 #pragma warning disable CS0067
@@ -39,6 +45,13 @@ public sealed class SimulatedHost : IAgnesHost
         Set(AgnesConnectionState.Connecting);
         await Task.Delay(120, cancellationToken).ConfigureAwait(false);
         Set(AgnesConnectionState.Connected);
+        UpdateUsage();
+    }
+
+    private void UpdateUsage()
+    {
+        UsageSummary = $"Free tier · {_remaining:N0} / {Quota:N0} tokens today";
+        UsageChanged?.Invoke(UsageSummary);
     }
 
     public Task<HostInfo> GetHostInfoAsync()
@@ -77,6 +90,9 @@ public sealed class SimulatedHost : IAgnesHost
         {
             session.Emit(new MessageChunkEvent(MessageRole.User, block));
         }
+
+        _remaining = Math.Max(0, _remaining - 140 - text.Length);
+        UpdateUsage();
 
         _ = Task.Run(() => RespondAsync(session, text));
         return Task.CompletedTask;

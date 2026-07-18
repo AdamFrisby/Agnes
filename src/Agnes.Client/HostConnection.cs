@@ -66,6 +66,13 @@ public sealed class HostConnection : IAgnesHost
 
     public event Action<AgnesConnectionState>? StateChanged;
 
+    // Real hosts don't report usage/quota over the wire yet; a future protocol extension
+    // would surface it here.
+    public string? UsageSummary => null;
+#pragma warning disable CS0067
+    public event Action<string?>? UsageChanged;
+#pragma warning restore CS0067
+
     public event Action<IReadOnlyList<AgentInfo>>? AgentsChanged;
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)

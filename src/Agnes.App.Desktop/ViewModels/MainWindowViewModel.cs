@@ -10,27 +10,37 @@ using Dock.Model.Core;
 namespace Agnes.App.Desktop.ViewModels;
 
 /// <summary>
-/// Owns the tabbed dock layout and the connection lifecycle: new tabs pick an agent, open a
-/// session, and are persisted so they auto-reconnect on relaunch. Uses <see cref="IAgnesConnector"/>
-/// so it runs against the simulated server or a real host unchanged.
+/// Owns the tabbed dock and acts as each tab's controller. Host is a per-tab choice: a new tab
+/// picks a host (from the known-host registry, including the built-in simulated host, or a newly
+/// added one), then an agent on that host, then opens a session. Uses <see cref="IAgnesConnector"/>
+/// so simulated and real hosts work the same way. Open tabs auto-reconnect on relaunch.
 /// </summary>
-public sealed partial class MainWindowViewModel : ObservableObject
+public sealed partial class MainWindowViewModel : ObservableObject, ITabController
 {
-    private const string HostUrl = "sim://demo";
-    private const string Token = "";
     private const string WorkingDirectory = "/tmp/agnes";
+    private static readonly KnownHost SimulatedHost = new("Simulated host", "sim://demo", string.Empty);
 
     private readonly IAgnesConnector _connector;
     private readonly IUiDispatcher _dispatcher;
-    private readonly SessionStateStore _store;
+    private readonly SessionStateStore _tabStore;
+    private readonly HostRegistryStore _hostStore;
     private readonly DockFactory _factory;
+    private readonly List<KnownHost> _knownHosts = [];
     private bool _ready;
 
-    public MainWindowViewModel(IAgnesConnector connector, IUiDispatcher dispatcher, SessionStateStore store)
+    public MainWindowViewModel(
+        IAgnesConnector connector,
+        IUiDispatcher dispatcher,
+        SessionStateStore tabStore,
+        HostRegistryStore hostStore)
     {
         _connector = connector;
         _dispatcher = dispatcher;
-        _store = store;
+        _tabStore = tabStore;
+        _hostStore = hostStore;
+
+        _knownHosts.Add(SimulatedHost);
+        _knownHosts.AddRange(hostStore.Load());
 
         _factory = new DockFactory
         {
@@ -44,17 +54,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     public IRootDock Layout { get; }
-
     public IFactory Factory => _factory;
-
     public IRelayCommand NewTabCommand { get; }
 
-    /// <summary>Restores previously open tabs (reconnecting each), or opens one fresh tab.</summary>
     public Task RestoreAsync()
     {
-        // Load BEFORE enabling persistence, so tab-add events during construction/restore
-        // can't clobber the saved state before we've read it.
-        var saved = _store.Load();
+        var saved = _tabStore.Load();
         _ready = true;
 
         if (saved.Count == 0)
@@ -65,8 +70,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         foreach (var descriptor in saved)
         {
-            // Stamp the descriptor immediately so a save during restore keeps the tab.
-            var doc = new SessionDocument { Title = descriptor.Title, CanClose = true, Descriptor = descriptor };
+            var doc = new SessionDocument(this)
+            {
+                Title = descriptor.Title,
+                CanClose = true,
+                Descriptor = descriptor,
+                HostName = descriptor.HostName,
+                AgentName = descriptor.Title,
+            };
             AddDocument(doc);
             _ = ReconnectAsync(doc, descriptor);
         }
@@ -74,11 +85,72 @@ public sealed partial class MainWindowViewModel : ObservableObject
         return Task.CompletedTask;
     }
 
-    private void AddTab()
+    // ---- ITabController ----
+
+    public async Task SelectHostAsync(SessionDocument doc, KnownHost host)
     {
-        var doc = CreateTab();
-        AddDocument(doc);
+        try
+        {
+            _dispatcher.Post(() =>
+            {
+                doc.HostName = host.Name;
+                doc.HostToken = host.Token;
+                doc.StatusText = $"Connecting to {host.Name}…";
+            });
+
+            var agnesHost = await _connector.ConnectAsync(host.Url, host.Token);
+            doc.Host = agnesHost;
+            WireStatus(doc, agnesHost);
+
+            var agents = await agnesHost.ListAgentsAsync();
+            _dispatcher.Post(() => doc.ShowAgents(agents));
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => doc.StatusText = "Error: " + ex.Message);
+        }
     }
+
+    public async Task AddHostAsync(SessionDocument doc)
+    {
+        var url = doc.NewHostUrl.Trim();
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, doc.NewHostToken);
+        _knownHosts.Add(host);
+        _hostStore.Save(_knownHosts.Where(h => h.Url != SimulatedHost.Url).ToList());
+        _dispatcher.Post(() => doc.ShowAddHost = false);
+        await SelectHostAsync(doc, host);
+    }
+
+    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName)
+    {
+        if (doc.Host is null)
+        {
+            return;
+        }
+
+        var info = await doc.Host.OpenSessionAsync(adapterId, WorkingDirectory);
+        var view = await doc.Host.SubscribeAsync(info.SessionId);
+        _dispatcher.Post(() =>
+        {
+            doc.AgentName = displayName;
+            doc.AttachSession(new SessionViewModel(doc.Host!, view, _dispatcher, displayName));
+            doc.Title = displayName;
+            doc.Descriptor = new SessionDescriptor(
+                doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, displayName);
+            SaveState();
+        });
+    }
+
+    public void BackToHosts(SessionDocument doc) => doc.ShowHosts(_knownHosts);
+
+    // ---- tab lifecycle ----
+
+    private void AddTab() => AddDocument(CreateTab());
 
     private void AddDocument(SessionDocument doc)
     {
@@ -92,38 +164,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private SessionDocument CreateTab()
     {
-        var doc = new SessionDocument { Title = "New session", CanClose = true };
-        _ = LoadAgentsAsync(doc);
+        var doc = new SessionDocument(this) { Title = "New session", CanClose = true };
+        doc.ShowHosts(_knownHosts);
         return doc;
-    }
-
-    private async Task LoadAgentsAsync(SessionDocument doc)
-    {
-        try
-        {
-            var host = await _connector.ConnectAsync(HostUrl, Token);
-            var agents = await host.ListAgentsAsync();
-            _dispatcher.Post(() => doc.ShowAgents(agents.Select(a =>
-                new AgentChoice(a.DisplayName, a.AdapterId,
-                    new AsyncRelayCommand(() => OpenAgentAsync(doc, host, a.AdapterId, a.DisplayName))))));
-        }
-        catch (Exception ex)
-        {
-            _dispatcher.Post(() => doc.StatusText = "Error: " + ex.Message);
-        }
-    }
-
-    private async Task OpenAgentAsync(SessionDocument doc, IAgnesHost host, string adapterId, string displayName)
-    {
-        var info = await host.OpenSessionAsync(adapterId, WorkingDirectory);
-        var view = await host.SubscribeAsync(info.SessionId);
-        _dispatcher.Post(() =>
-        {
-            doc.AttachSession(new SessionViewModel(host, view, _dispatcher, displayName));
-            doc.Title = displayName;
-            doc.Descriptor = new SessionDescriptor(host.HostUrl, Token, info.SessionId, adapterId, displayName);
-            SaveState();
-        });
     }
 
     private async Task ReconnectAsync(SessionDocument doc, SessionDescriptor descriptor)
@@ -132,6 +175,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             _dispatcher.Post(() => doc.StatusText = "Reconnecting…");
             var host = await _connector.ConnectAsync(descriptor.HostUrl, descriptor.Token);
+            doc.Host = host;
+            doc.HostToken = descriptor.Token;
+            WireStatus(doc, host);
+
             var view = await host.SubscribeAsync(descriptor.SessionId);
             _dispatcher.Post(() =>
             {
@@ -143,6 +190,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             _dispatcher.Post(() => doc.StatusText = "Reconnect failed: " + ex.Message);
         }
+    }
+
+    private void WireStatus(SessionDocument doc, IAgnesHost host)
+    {
+        _dispatcher.Post(() =>
+        {
+            doc.ConnectionState = host.State;
+            doc.UsageSummary = host.UsageSummary;
+        });
+        host.StateChanged += state => _dispatcher.Post(() => doc.ConnectionState = state);
+        host.UsageChanged += usage => _dispatcher.Post(() => doc.UsageSummary = usage);
     }
 
     private void SaveState()
@@ -157,6 +215,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
             .Where(d => d.Descriptor is not null)
             .Select(d => d.Descriptor!)
             .ToList() ?? [];
-        _store.Save(tabs);
+        _tabStore.Save(tabs);
     }
 }

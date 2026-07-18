@@ -4,6 +4,7 @@ namespace Agnes.App.Desktop.Persistence;
 
 /// <summary>Everything needed to restore (reconnect to) a session tab after relaunch.</summary>
 public sealed record SessionDescriptor(
+    string HostName,
     string HostUrl,
     string Token,
     string SessionId,

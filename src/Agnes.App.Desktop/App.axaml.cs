@@ -16,10 +16,10 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // Default to the simulated server for development; swap for SignalRConnector to
-            // talk to a real host.
-            IAgnesConnector connector = new SimulatedConnector();
-            var viewModel = new MainWindowViewModel(connector, new AvaloniaDispatcher(), new SessionStateStore());
+            // Routing connector: sim:// hosts use the simulated server, http(s):// use SignalR.
+            IAgnesConnector connector = new RoutingConnector();
+            var viewModel = new MainWindowViewModel(
+                connector, new AvaloniaDispatcher(), new SessionStateStore(), new HostRegistryStore());
 
             desktop.MainWindow = new MainWindow { DataContext = viewModel };
             _ = viewModel.RestoreAsync();

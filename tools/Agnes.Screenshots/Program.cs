@@ -34,47 +34,52 @@ public static class Program
     private static void CaptureAll()
     {
         var statePath = Path.Combine(_outDir, "tabs-state.json");
+        var hostsPath = Path.Combine(_outDir, "hosts.json");
         File.Delete(statePath);
+        File.Delete(hostsPath);
         var store = new SessionStateStore(statePath);
 
-        var vm = new MainWindowViewModel(new SimulatedConnector(), new AvaloniaDispatcher(), store);
+        var vm = new MainWindowViewModel(new SimulatedConnector(), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
         var window = new MainWindow { DataContext = vm };
         window.Show();
-        vm.RestoreAsync(); // empty state → one fresh picker tab; also enables persistence
+        vm.RestoreAsync(); // empty → one fresh host-picker tab; also enables persistence
         Settle(300);
 
-        // 1) New-tab agent picker
-        Pump(() => LastTab(vm)?.Agents is { Count: > 0 });
-        Capture(window, "01-picker.png");
+        // 1) New-tab host picker (host is a per-tab choice)
+        var first = LastTab(vm)!;
+        Pump(() => first.Hosts is { Count: > 0 });
+        Capture(window, "01-host-picker.png");
 
-        // 2) A live conversation
-        var chat = OpenAgent(vm, "opencode");
-        Prompt(chat, "In one sentence, what is the Agent Client Protocol?");
-        Pump(() => chat.Session!.Items.OfType<MessageBubbleItem>().Count(m => !m.IsUser && !m.IsThought) >= 2);
-        Capture(window, "02-conversation.png");
+        // 2) Agent picker on the chosen host
+        first.Hosts!.First().Select.Execute(null);
+        Pump(() => first.Agents is { Count: > 0 });
+        Capture(window, "02-agent-picker.png");
 
-        // 3) Tool call + plan
-        var tools = OpenAgent(vm, "opencode");
+        // 3) A live conversation (note the status bar: connection + usage)
+        first.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
+        Pump(() => first.Session is not null);
+        Prompt(first, "In one sentence, what is the Agent Client Protocol?");
+        Pump(() => first.Session!.Items.OfType<MessageBubbleItem>().Count(m => !m.IsUser && !m.IsThought) >= 2);
+        Capture(window, "03-conversation.png");
+
+        // 4) Tool call + plan
+        var tools = OpenSession(vm, "opencode");
         Prompt(tools, "Create a file called notes.txt with a short plan.");
         Pump(() => tools.Session!.Items.OfType<ToolCallItem>().Any()
                    && tools.Session!.Items.OfType<PlanItemView>().Any());
-        Capture(window, "03-tools-and-plan.png");
+        Capture(window, "04-tools-and-plan.png");
 
-        // 4) Permission request + resolution
-        var perm = OpenAgent(vm, "opencode");
+        // 5) Permission request
+        var perm = OpenSession(vm, "opencode");
         Prompt(perm, "Delete the build folder please.");
         Pump(() => perm.Session!.PendingPermission is not null);
-        Capture(window, "04-permission.png");
-        perm.Session!.AllowCommand.Execute(null);
-        Pump(() => perm.Session!.PendingPermission is null
-                   && perm.Session!.Items.OfType<PermissionItem>().Any(p => p.Resolved));
-        Capture(window, "05-permission-allowed.png");
+        Capture(window, "05-permission.png");
 
         // 6) The browser-style tab strip (several tabs now open)
         Capture(window, "06-tabs.png");
 
         // 7) Auto-reconnect on relaunch: a fresh instance restoring the saved tabs
-        var vm2 = new MainWindowViewModel(new SimulatedConnector(), new AvaloniaDispatcher(), store);
+        var vm2 = new MainWindowViewModel(new SimulatedConnector(), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
         var window2 = new MainWindow { DataContext = vm2 };
         window2.Show();
         vm2.RestoreAsync();
@@ -91,11 +96,13 @@ public static class Program
 
     private static SessionDocument? LastTab(MainWindowViewModel vm) => Tabs(vm).LastOrDefault();
 
-    private static SessionDocument OpenAgent(MainWindowViewModel vm, string adapterId)
+    private static SessionDocument OpenSession(MainWindowViewModel vm, string adapterId)
     {
         vm.NewTabCommand.Execute(null);
-        Pump(() => LastTab(vm)?.Agents is { Count: > 0 });
         var doc = LastTab(vm)!;
+        Pump(() => doc.Hosts is { Count: > 0 });
+        doc.Hosts!.First().Select.Execute(null); // simulated host
+        Pump(() => doc.Agents is { Count: > 0 });
         doc.Agents!.First(a => a.AdapterId == adapterId).Open.Execute(null);
         Pump(() => doc.Session is not null);
         return doc;
