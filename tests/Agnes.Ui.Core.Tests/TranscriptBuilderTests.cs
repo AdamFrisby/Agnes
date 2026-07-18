@@ -59,6 +59,25 @@ public class TranscriptBuilderTests
     }
 
     [Fact]
+    public void Permission_card_derives_facts_from_the_linked_tool()
+    {
+        var t = new TranscriptBuilder();
+        t.Apply(new ToolCallEvent("tc1", "build/", ToolKind.Delete, ToolCallStatus.Pending, []));
+        t.Apply(new PermissionRequestedEvent("r1", "tc1", "Delete files in the working directory?",
+        [
+            new PermissionOption("once", "Allow once", PermissionOptionKind.AllowOnce),
+            new PermissionOption("always", "Allow always", PermissionOptionKind.AllowAlways),
+        ]));
+
+        var perm = t.Items.OfType<PermissionItem>().Single();
+        Assert.Equal(ToolKind.Delete, perm.ToolKind);
+        Assert.Contains("build/", perm.ResourceText);
+        Assert.False(perm.Reversible);
+        Assert.Contains("Not easily reversible", perm.ReversibleText);
+        Assert.True(perm.HasNarrowestHint); // both once and always offered
+    }
+
+    [Fact]
     public void Plan_updates_the_same_item()
     {
         var t = new TranscriptBuilder();

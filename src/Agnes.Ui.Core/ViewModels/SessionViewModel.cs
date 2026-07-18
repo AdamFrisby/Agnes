@@ -21,6 +21,7 @@ public sealed class SessionViewModel : ObservableObject
     private readonly IPromptStore _prompts;
     private readonly TranscriptBuilder _transcript = new();
     private readonly Dictionary<string, ToolEntry> _tools = new();
+    private readonly Dictionary<string, string> _permissionTitles = new();
     private readonly List<string> _history;
     private int _historyIndex;
     private string _promptText;
@@ -109,6 +110,9 @@ public sealed class SessionViewModel : ObservableObject
     public ObservableCollection<ToolEntry> ModifiedFiles { get; } = [];
     public ObservableCollection<ToolEntry> ToolActivity { get; } = [];
 
+    /// <summary>Audit trail: every permission granted or denied this session.</summary>
+    public ObservableCollection<PermissionAuditEntry> Approvals { get; } = [];
+
     public PlanItemView? Plan
     {
         get => _plan;
@@ -124,7 +128,8 @@ public sealed class SessionViewModel : ObservableObject
 
     public bool HasFiles => ModifiedFiles.Count > 0;
     public bool HasTools => ToolActivity.Count > 0;
-    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools;
+    public bool HasApprovals => Approvals.Count > 0;
+    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools || HasApprovals;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
     public bool ShowRightPanel => SelectedPreview is not null;
 
@@ -271,7 +276,15 @@ public sealed class SessionViewModel : ObservableObject
         switch (@event)
         {
             case PermissionRequestedEvent pr:
+                _permissionTitles[pr.RequestId] = pr.Title;
                 NotificationRaised?.Invoke(new AppNotification("Permission needed", pr.Title, NotificationKind.Blocker, SessionId));
+                break;
+
+            case PermissionResolvedEvent rr:
+                var title = _permissionTitles.TryGetValue(rr.RequestId, out var t) ? t : "Permission";
+                Approvals.Insert(0, new PermissionAuditEntry(title, rr.Outcome, rr.OptionId, @event.Timestamp));
+                Raise(nameof(HasApprovals));
+                RaisePanels();
                 break;
 
             case TurnEndedEvent { Reason: not StopReason.Cancelled }:

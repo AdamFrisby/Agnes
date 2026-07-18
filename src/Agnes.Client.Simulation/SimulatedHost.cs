@@ -171,9 +171,12 @@ public sealed class SimulatedHost : IAgnesHost
 
             if (Mentions(prompt, "delete", "remove", "rm "))
             {
+                session.Emit(new ToolCallEvent("tc-danger", "build/", ToolKind.Delete, ToolCallStatus.Pending,
+                    [new TextContent("rm -rf build/")]));
                 session.Emit(new PermissionRequestedEvent("req-1", "tc-danger", "Delete files in the working directory?",
                 [
                     new PermissionOption("allow-once", "Allow once", PermissionOptionKind.AllowOnce),
+                    new PermissionOption("allow-always", "Always allow deletes", PermissionOptionKind.AllowAlways),
                     new PermissionOption("reject-once", "Reject", PermissionOptionKind.RejectOnce),
                 ]));
                 return; // wait for the client to answer (RespondPermissionAsync continues the turn)

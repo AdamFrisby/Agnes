@@ -186,6 +186,28 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- permission audit trail ----
+
+    [Fact]
+    public void Approvals_audit_records_resolved_permissions()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        view.Apply(Seq(new PermissionRequestedEvent("r1", "tc1", "Delete the build folder?",
+            [new PermissionOption("once", "Allow once", PermissionOptionKind.AllowOnce)]), 1));
+        Assert.False(vm.HasApprovals);
+
+        view.Apply(Seq(new PermissionResolvedEvent("r1", "once", PermissionOutcome.Allowed), 2));
+
+        var entry = Assert.Single(vm.Approvals);
+        Assert.Equal("Delete the build folder?", entry.Title);
+        Assert.True(entry.Allowed);
+        Assert.True(vm.HasApprovals);
+        Assert.True(vm.HasSidebarContent);
+    }
+
     // ---- prompt queue + steer ----
 
     [Fact]

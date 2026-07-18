@@ -73,7 +73,8 @@ public sealed class TranscriptBuilder
 
             case PermissionRequestedEvent pr:
                 CloseBubble();
-                var permission = new PermissionItem(pr.RequestId, pr.Title, pr.Options);
+                _tools.TryGetValue(pr.ToolCallId, out var linkedTool);
+                var permission = new PermissionItem(pr.RequestId, pr.Title, pr.Options, linkedTool?.Kind, linkedTool?.Title);
                 _permissions[pr.RequestId] = permission;
                 Items.Add(permission);
                 PendingPermission = permission;

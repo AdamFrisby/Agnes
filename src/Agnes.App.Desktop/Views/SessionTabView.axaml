@@ -303,6 +303,27 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
+
+                                <!-- Audit trail: capabilities granted / denied -->
+                                <StackPanel Spacing="4" IsVisible="{Binding HasApprovals}">
+                                    <TextBlock Text="APPROVALS" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <ItemsControl ItemsSource="{Binding Approvals}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
+                                                    <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                                                            Background="{StaticResource Good}" IsVisible="{Binding Allowed}" />
+                                                    <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                                                            Background="{StaticResource Accent}" IsVisible="{Binding !Allowed}" />
+                                                    <TextBlock Text="{Binding TimeText}" Foreground="{StaticResource FgFaint}" FontSize="10"
+                                                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" FontSize="12"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
                     </Border>
@@ -428,10 +449,24 @@
                                     <DataTemplate DataType="tr:PermissionItem">
                                         <Border Margin="0,6" Padding="12,9" CornerRadius="8"
                                                 Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Accent}" BorderThickness="1">
-                                            <StackPanel Spacing="3">
+                                            <StackPanel Spacing="5">
                                                 <TextBlock Text="Permission requested" Foreground="{StaticResource Accent}"
                                                            FontWeight="SemiBold" FontSize="12" />
-                                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                                                <!-- the five facts -->
+                                                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="2">
+                                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Touches" Foreground="{StaticResource FgFaint}" FontSize="11" />
+                                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ResourceText}" Foreground="{StaticResource FgDim}"
+                                                               FontSize="11" FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Reversible" Foreground="{StaticResource FgFaint}" FontSize="11" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ReversibleText}" Foreground="{StaticResource FgDim}"
+                                                               FontSize="11" TextWrapping="Wrap" />
+                                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Why" Foreground="{StaticResource FgFaint}" FontSize="11" />
+                                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Rationale}" Foreground="{StaticResource FgDim}"
+                                                               FontSize="11" TextWrapping="Wrap" />
+                                                </Grid>
+                                                <TextBlock Text="{Binding NarrowestOptionHint}" Foreground="{StaticResource Accent}" FontSize="11"
+                                                           IsVisible="{Binding HasNarrowestHint}" TextWrapping="Wrap" />
                                                 <TextBlock Text="{Binding ResolutionText}" Foreground="{StaticResource FgDim}" FontSize="11"
                                                            IsVisible="{Binding ResolutionText, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
                                             </StackPanel>
@@ -451,11 +486,22 @@
                                 Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
                                 IsVisible="{Binding PendingPermission, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                             <Grid ColumnDefinitions="*,Auto,Auto" MaxWidth="768" HorizontalAlignment="Center">
-                                <TextBlock Grid.Column="0" Text="{Binding PendingPermission.Title}" Foreground="{StaticResource Fg}"
-                                           VerticalAlignment="Center" TextWrapping="Wrap" />
+                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding PendingPermission.Title}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <TextBlock Text="{Binding PendingPermission.ResourceText}" Foreground="{StaticResource FgDim}" FontSize="11"
+                                                   FontFamily="{StaticResource MonoFont}" />
+                                        <TextBlock Text="·" Foreground="{StaticResource FgFaint}" FontSize="11" />
+                                        <TextBlock Text="{Binding PendingPermission.ReversibleText}" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding PendingPermission.NarrowestOptionHint}" Foreground="{StaticResource Accent}" FontSize="11"
+                                               IsVisible="{Binding PendingPermission.HasNarrowestHint}" />
+                                </StackPanel>
                                 <Button Grid.Column="1" Content="Allow" Command="{Binding AllowCommand}" Margin="8,0,0,0"
+                                        VerticalAlignment="Center"
                                         Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,6" />
                                 <Button Grid.Column="2" Content="Deny" Command="{Binding DenyCommand}" Margin="8,0,0,0"
+                                        VerticalAlignment="Center"
                                         Background="Transparent" Foreground="{StaticResource FgDim}"
                                         BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,6" />
                             </Grid>

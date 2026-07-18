@@ -134,11 +134,16 @@ public static class Program
         Pump(() => longChat.Session!.ShowRightPanel);
         Capture(window, "04b-long-message.png");
 
-        // 5) Permission request
+        // 5) Permission request — rich card (touches / reversible / why / narrowest option)
         var perm = OpenSession(vm, "opencode");
         Prompt(perm, "Delete the build folder please.");
         Pump(() => perm.Session!.PendingPermission is not null);
         Capture(window, "05-permission.png");
+
+        // 5b) Approve it → the audit trail (APPROVALS) records it in the left panel.
+        perm.Session!.AllowCommand.Execute(null);
+        Pump(() => perm.Session!.HasApprovals);
+        Capture(window, "05b-approvals-audit.png");
 
         // 6) Recorded session — real captured OpenCode data replayed as an agent
         vm.NewTabCommand.Execute(null);

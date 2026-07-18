@@ -117,22 +117,71 @@ public sealed class PlanItemView : TranscriptItem
     }
 }
 
-/// <summary>A permission request; becomes resolved once answered.</summary>
+/// <summary>
+/// A permission request; becomes resolved once answered. Carries the derived facts a good
+/// approval card shows: what will happen, what it touches, whether it is reversible, why it
+/// was asked, and which option grants the least.
+/// </summary>
 public sealed class PermissionItem : TranscriptItem
 {
     private bool _resolved;
     private string? _resolutionText;
 
-    public PermissionItem(string requestId, string title, IReadOnlyList<PermissionOption> options)
+    public PermissionItem(
+        string requestId,
+        string title,
+        IReadOnlyList<PermissionOption> options,
+        ToolKind? toolKind = null,
+        string? toolTarget = null)
     {
         RequestId = requestId;
         Title = title;
         Options = options;
+        ToolKind = toolKind;
+        ToolTarget = toolTarget;
     }
 
     public string RequestId { get; }
     public string Title { get; }
     public IReadOnlyList<PermissionOption> Options { get; }
+    public ToolKind? ToolKind { get; }
+    public string? ToolTarget { get; }
+
+    /// <summary>What resources this touches, e.g. "Delete · build/".</summary>
+    public string ResourceText => ToolKind is { } k
+        ? string.IsNullOrWhiteSpace(ToolTarget) ? k.ToString() : $"{k} · {ToolTarget}"
+        : "Not specified";
+
+    public bool Reversible => ToolKind is Abstractions.ToolKind.Read or Abstractions.ToolKind.Search
+        or Abstractions.ToolKind.Fetch or Abstractions.ToolKind.Think
+        or Abstractions.ToolKind.Edit or Abstractions.ToolKind.Move;
+
+    /// <summary>Plain-language reversibility note derived from the tool kind.</summary>
+    public string ReversibleText => ToolKind switch
+    {
+        Abstractions.ToolKind.Read or Abstractions.ToolKind.Search
+            or Abstractions.ToolKind.Fetch or Abstractions.ToolKind.Think => "Read-only — nothing is changed",
+        Abstractions.ToolKind.Edit or Abstractions.ToolKind.Move => "Reversible — changes can be undone",
+        Abstractions.ToolKind.Delete => "Not easily reversible — data may be lost",
+        Abstractions.ToolKind.Execute => "Runs a command — effects depend on it",
+        _ => "Effect is unknown",
+    };
+
+    /// <summary>Why the agent asked, derived from the tool step (ACP carries no explicit reason).</summary>
+    public string Rationale => ToolKind is { } k
+        ? string.IsNullOrWhiteSpace(ToolTarget)
+            ? $"Requested by the agent's {k} step."
+            : $"Requested by the agent's {k} step on {ToolTarget}."
+        : "Requested by the agent.";
+
+    /// <summary>Hint toward the narrowest option (e.g. prefer once over always).</summary>
+    public string? NarrowestOptionHint =>
+        Options.Any(o => o.Kind == PermissionOptionKind.AllowOnce)
+        && Options.Any(o => o.Kind == PermissionOptionKind.AllowAlways)
+            ? "“Allow once” grants the least — prefer it over “always”."
+            : null;
+
+    public bool HasNarrowestHint => NarrowestOptionHint is not null;
 
     public bool Resolved
     {
