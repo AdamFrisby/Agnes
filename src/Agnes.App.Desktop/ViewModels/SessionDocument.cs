@@ -208,5 +208,25 @@ public sealed partial class SessionDocument : Document
         Session = session;
         Stage = TabStage.Live;
         StatusText = "Connected";
+
+        session.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(SessionViewModel.Activity)
+                or nameof(SessionViewModel.ActivityText)
+                or nameof(SessionViewModel.NeedsAttention))
+            {
+                OnPropertyChanged(nameof(Activity));
+                OnPropertyChanged(nameof(ActivityText));
+                OnPropertyChanged(nameof(NeedsAttention));
+            }
+        };
+        OnPropertyChanged(nameof(Activity));
+        OnPropertyChanged(nameof(ActivityText));
+        OnPropertyChanged(nameof(NeedsAttention));
     }
+
+    // ---- cross-session attention (delegates to the live session) ----
+    public SessionActivity Activity => Session?.Activity ?? SessionActivity.Idle;
+    public string ActivityText => Session?.ActivityText ?? string.Empty;
+    public bool NeedsAttention => Session?.NeedsAttention ?? false;
 }

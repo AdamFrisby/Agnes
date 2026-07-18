@@ -92,7 +92,7 @@ public sealed class SessionViewModel : ObservableObject
             }
         });
 
-        _transcript.PendingPermissionChanged += () => Raise(nameof(PendingPermission));
+        _transcript.PendingPermissionChanged += () => { Raise(nameof(PendingPermission)); RaiseActivity(); };
 
         foreach (var @event in _view.Events)
         {
@@ -178,8 +178,36 @@ public sealed class SessionViewModel : ObservableObject
             if (Set(ref _turnActive, value))
             {
                 CancelCommand.RaiseCanExecuteChanged();
+                RaiseActivity();
             }
         }
+    }
+
+    /// <summary>High-level session state, derived from what's in flight.</summary>
+    public SessionActivity Activity =>
+        _interrupted ? SessionActivity.Error
+        : PendingPermission is not null ? SessionActivity.NeedsInput
+        : IsTurnActive ? SessionActivity.Running
+        : HasFiles ? SessionActivity.ReadyForReview
+        : SessionActivity.Idle;
+
+    /// <summary>Whether the session is waiting on the user (permission or error).</summary>
+    public bool NeedsAttention => Activity is SessionActivity.NeedsInput or SessionActivity.Error;
+
+    public string ActivityText => Activity switch
+    {
+        SessionActivity.Running => "Running",
+        SessionActivity.NeedsInput => "Needs input",
+        SessionActivity.ReadyForReview => "Ready for review",
+        SessionActivity.Error => "Error",
+        _ => "Idle",
+    };
+
+    private void RaiseActivity()
+    {
+        Raise(nameof(Activity));
+        Raise(nameof(NeedsAttention));
+        Raise(nameof(ActivityText));
     }
 
     public string BannerText => Banner switch
@@ -339,6 +367,8 @@ public sealed class SessionViewModel : ObservableObject
             AgnesConnectionState.Connecting => SessionBanner.Reconnecting,
             _ => _interrupted ? SessionBanner.Interrupted : SessionBanner.None,
         };
+
+        RaiseActivity();
     }
 
     private void DismissBanner()
@@ -538,6 +568,7 @@ public sealed class SessionViewModel : ObservableObject
         Raise(nameof(HasTools));
         Raise(nameof(HasSidebarContent));
         Raise(nameof(ShowLeftPanel));
+        RaiseActivity();
     }
 
     private static bool IsFileTool(ToolKind kind)

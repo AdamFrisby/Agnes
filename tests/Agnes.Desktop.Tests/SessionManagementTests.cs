@@ -235,6 +235,28 @@ public class SessionManagementTests
         public void Notify(AppNotification notification) => Received.Add(notification);
     }
 
+    [Fact]
+    public async Task Open_sessions_and_attention_count_track_sessions_needing_input()
+    {
+        var (t, h, a) = TempPaths();
+        var vm = NewVm(t, h, a);
+        await vm.RestoreAsync();
+        var tab = await OpenSessionAsync(vm);
+
+        Assert.Contains(tab, vm.OpenSessions);
+        Assert.Equal(0, vm.AttentionCount);
+
+        // A permission request puts the session into "Needs input" → attention.
+        tab.Session!.PromptText = "delete the build folder";
+        tab.Session!.SendCommand.Execute(null);
+        await WaitAsync(() => tab.Session!.PendingPermission is not null);
+
+        Assert.Equal(SessionActivity.NeedsInput, tab.Activity);
+        Assert.True(tab.NeedsAttention);
+        Assert.Equal(1, vm.AttentionCount);
+        Assert.True(vm.HasAttention);
+    }
+
     private static async Task WaitAsync(Func<bool> condition)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));

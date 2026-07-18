@@ -74,7 +74,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _factory = new DockFactory
         {
             NewDocumentFactory = CreateTab,
-            LayoutChanged = () => _dispatcher.Post(SaveState),
+            LayoutChanged = () => _dispatcher.Post(() => { SaveState(); RefreshSessions(); }),
         };
         Layout = _factory.CreateLayout();
         _factory.InitLayout(Layout);
@@ -82,12 +82,56 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         NewTabCommand = new RelayCommand(AddTab);
         ReopenArchivedCommand = new RelayCommand<SessionDescriptor>(d => { if (d is not null) { ReopenArchived(d); } });
         SelectGlobalHitCommand = new RelayCommand<GlobalHit>(SelectGlobalHit);
+        ActivateSessionCommand = new RelayCommand<SessionDocument>(d => { if (d is not null) { _factory.SetActiveDockable(d); } });
         CloseActiveTabCommand = new RelayCommand(CloseActiveTab);
         ToggleReducedMotionCommand = new RelayCommand(() => ReducedMotion = !ReducedMotion);
     }
 
     public IRelayCommand CloseActiveTabCommand { get; }
     public IRelayCommand ToggleReducedMotionCommand { get; }
+    public IRelayCommand<SessionDocument> ActivateSessionCommand { get; }
+
+    // ---- cross-session attention / switcher ----
+
+    private readonly HashSet<SessionDocument> _watched = [];
+
+    /// <summary>All open tabs, for the session switcher.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<SessionDocument> OpenSessions { get; } = [];
+
+    public int AttentionCount => OpenSessions.Count(d => d.NeedsAttention);
+    public bool HasAttention => AttentionCount > 0;
+
+    private void RefreshSessions()
+    {
+        var docs = OpenTabs().ToList();
+        foreach (var doc in docs)
+        {
+            if (_watched.Add(doc))
+            {
+                doc.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(SessionDocument.NeedsAttention))
+                    {
+                        RaiseAttention();
+                    }
+                };
+            }
+        }
+
+        OpenSessions.Clear();
+        foreach (var doc in docs)
+        {
+            OpenSessions.Add(doc);
+        }
+
+        RaiseAttention();
+    }
+
+    private void RaiseAttention()
+    {
+        OnPropertyChanged(nameof(AttentionCount));
+        OnPropertyChanged(nameof(HasAttention));
+    }
 
     /// <summary>Accessibility: disables non-essential motion/animation when on.</summary>
     public bool ReducedMotion
@@ -326,6 +370,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             _factory.SetActiveDockable(doc);
             _factory.SetFocusedDockable(dock, doc);
         }
+
+        RefreshSessions();
     }
 
     private SessionDocument CreateTab()

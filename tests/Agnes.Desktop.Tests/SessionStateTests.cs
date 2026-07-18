@@ -186,6 +186,39 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- session activity state ----
+
+    [Fact]
+    public void Activity_state_reflects_what_is_in_flight()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+        Assert.Equal(SessionActivity.Idle, vm.Activity);
+
+        vm.PromptText = "go";
+        vm.SendCommand.Execute(null);
+        Assert.Equal(SessionActivity.Running, vm.Activity);
+
+        view.Apply(Seq(new PermissionRequestedEvent("r1", "tc1", "Delete?",
+            [new PermissionOption("once", "Allow once", PermissionOptionKind.AllowOnce)]), 1));
+        Assert.Equal(SessionActivity.NeedsInput, vm.Activity);
+        Assert.True(vm.NeedsAttention);
+
+        view.Apply(Seq(new PermissionResolvedEvent("r1", "once", PermissionOutcome.Allowed), 2));
+        Assert.Equal(SessionActivity.Running, vm.Activity); // permission cleared, turn still active
+
+        view.Apply(Seq(new TurnEndedEvent(StopReason.EndTurn), 3));
+        Assert.Equal(SessionActivity.Idle, vm.Activity);
+
+        view.Apply(Seq(new ToolCallEvent("tc2", "a.cs", ToolKind.Edit, ToolCallStatus.Completed, [new TextContent("--- a\n+++ b\n+x")]), 4));
+        Assert.Equal(SessionActivity.ReadyForReview, vm.Activity);
+
+        view.Apply(Seq(new AgentErrorEvent("boom"), 5));
+        Assert.Equal(SessionActivity.Error, vm.Activity);
+        Assert.True(vm.NeedsAttention);
+    }
+
     // ---- trust / allowlists ----
 
     [Fact]

@@ -30,6 +30,20 @@
         <Style Selector="Border.dot.on">
             <Setter Property="Background" Value="{StaticResource Good}" />
         </Style>
+        <!-- activity chip -->
+        <Style Selector="Border.chip">
+            <Setter Property="Background" Value="{StaticResource PanelAlt}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+        </Style>
+        <Style Selector="Border.chip.attention">
+            <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+        </Style>
+        <Style Selector="Border.chip TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource FgDim}" />
+        </Style>
+        <Style Selector="Border.chip.attention TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Accent}" />
+        </Style>
         <!-- diff rows -->
         <Style Selector="Border.add">
             <Setter Property="Background" Value="{StaticResource DiffAddBg}" />
@@ -61,6 +75,10 @@
                         <TextBlock Text="·" Foreground="{StaticResource FgFaint}" IsVisible="{Binding IsLive}" />
                         <TextBlock Text="{Binding AgentName}" Foreground="{StaticResource FgDim}" FontSize="12" IsVisible="{Binding IsLive}" />
                         <TextBlock Text="{Binding ConnectionText}" Foreground="{StaticResource FgFaint}" FontSize="11" Margin="6,0,0,0" />
+                        <Border Classes="chip" Classes.attention="{Binding NeedsAttention}" IsVisible="{Binding IsLive}"
+                                BorderThickness="1" CornerRadius="9" Padding="8,2" VerticalAlignment="Center" Margin="2,0,0,0">
+                            <TextBlock Text="{Binding ActivityText}" FontSize="10" FontWeight="SemiBold" />
+                        </Border>
                         <!-- tag chips -->
                         <ItemsControl ItemsSource="{Binding Tags}" IsVisible="{Binding HasTags}" Margin="4,0,0,0">
                             <ItemsControl.ItemsPanel>

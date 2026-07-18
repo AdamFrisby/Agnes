@@ -72,6 +72,47 @@
                 </Button>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <!-- Sessions switcher: state of every open session + attention -->
+                    <Button Background="Transparent" Foreground="{StaticResource FgDim}"
+                            BorderBrush="{StaticResource Line}" BorderThickness="1"
+                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Sessions">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Text="Sessions" />
+                            <Border Background="{StaticResource Accent}" CornerRadius="8" Padding="5,0" MinWidth="16"
+                                    IsVisible="{Binding HasAttention}">
+                                <TextBlock Text="{Binding AttentionCount}" Foreground="#1A1200" FontSize="10"
+                                           FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                        <Button.Flyout>
+                            <Flyout Placement="Bottom">
+                                <ItemsControl ItemsSource="{Binding OpenSessions}" MinWidth="320" MaxHeight="420">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.ActivateSessionCommand}"
+                                                    CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                    Padding="8,6" CornerRadius="6" Cursor="Hand">
+                                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                    <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                                                            Background="{StaticResource Accent}" IsVisible="{Binding NeedsAttention}" />
+                                                    <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                                                            Background="{StaticResource FgFaint}" IsVisible="{Binding !NeedsAttention}" />
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" FontSize="12" />
+                                                        <TextBlock Text="{Binding HostName}" Foreground="{StaticResource FgFaint}" FontSize="10" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding ActivityText}" Foreground="{StaticResource FgDim}"
+                                                               FontSize="10" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+
                     <!-- Settings: accessibility + keyboard reference -->
                     <Button Content="⚙" Background="Transparent" Foreground="{StaticResource FgDim}"
                             BorderBrush="{StaticResource Line}" BorderThickness="1"
