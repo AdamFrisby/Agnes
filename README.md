@@ -44,14 +44,26 @@ Full design: [`docs/architecture.md`](docs/architecture.md).
 
 ## Build
 
-Requires the **.NET 10 SDK**. Core, host, and client projects build with no extra workloads:
+Requires the **.NET 10 SDK**. The backend (core, host, client, UI view models) and all tests build with no extra workloads:
 
 ```bash
-dotnet build Agnes.slnx
-dotnet test
+dotnet build Agnes.Core.slnf     # backend + tests (what CI builds)
+dotnet test  Agnes.Core.slnf
 ```
 
-The Uno UI heads (WebAssembly / Android) additionally require `dotnet workload` installs — see `docs/architecture.md`.
+The Uno UI app is a separate subtree (`src/Agnes.App`) with its own solution and build config. Its WebAssembly head needs the `wasm-tools` workload; the Android head needs the `android` workload:
+
+```bash
+dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-desktop      # Linux/macOS/Windows (Skia)
+dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-browserwasm  # web
+```
+
+## Run the walking skeleton
+
+1. **Host** — from `src/Agnes.Host`, `dotnet run`. It loads the Claude Code plugin and logs an `Agnes pairing token`. (Claude Code's ACP bridge is launched on demand via `npx @zed-industries/claude-code-acp`; configure the command in `appsettings.json`.)
+2. **Frontend** — run an `Agnes.App` head (desktop or web). Enter the host URL (`https://localhost:5081`), paste the pairing token, pick an agent, and start a session. The desktop shell is a multi-pane layout; below ~720px it switches to the single-column mobile shell.
+
+The transcript renders reflowable ACP events (messages, tool calls, plans, permission prompts); open a second client to see the same session replay via snapshot + live tail.
 
 ## Supported agents
 

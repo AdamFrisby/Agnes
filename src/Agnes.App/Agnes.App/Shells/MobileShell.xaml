@@ -1,0 +1,28 @@
+<UserControl
+    x:Class="Agnes.App.Shells.MobileShell"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Agnes.App.Controls">
+
+    <UserControl.Resources>
+        <controls:ObjectToVisibilityConverter x:Key="ObjectToVisibility" />
+    </UserControl.Resources>
+
+    <!-- Mobile: one screen at a time — agent list, then the session (with back nav). -->
+    <Grid>
+        <!-- Agent list / connect -->
+        <controls:ConnectPanel Padding="12" DataContext="{Binding}"
+            Visibility="{Binding ActiveSession, Converter={StaticResource ObjectToVisibility}, ConverterParameter=invert}" />
+
+        <!-- Session view -->
+        <Grid Padding="12" RowSpacing="8"
+              Visibility="{Binding ActiveSession, Converter={StaticResource ObjectToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Button x:Name="BackButton" Grid.Row="0" Content="‹ Agents" Click="OnBack" />
+            <controls:SessionPanel Grid.Row="1" DataContext="{Binding ActiveSession}" />
+        </Grid>
+    </Grid>
+</UserControl>

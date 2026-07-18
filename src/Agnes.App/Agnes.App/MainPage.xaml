@@ -1,0 +1,13 @@
+<Page x:Class="Agnes.App.MainPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:local="using:Agnes.App"
+      Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+      Loaded="OnLoaded"
+      SizeChanged="OnSizeChanged">
+  <Grid>
+    <ContentControl x:Name="ShellHost"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch" />
+  </Grid>
+</Page>

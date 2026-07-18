@@ -1,0 +1,33 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-browserwasm;net10.0-desktop</TargetFrameworks>
+
+    <OutputType>Exe</OutputType>
+    <UnoSingleProject>true</UnoSingleProject>
+
+    <!-- Display name -->
+    <ApplicationTitle>Agnes.App</ApplicationTitle>
+    <!-- App Identifier -->
+    <ApplicationId>com.companyname.agnes-app</ApplicationId>
+    <!-- Versions -->
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <!-- Package Publisher -->
+    <ApplicationPublisher>Agnes.App</ApplicationPublisher>
+    <!-- Package Description -->
+    <Description>Agnes.App powered by Uno Platform.</Description>
+
+    <!--
+      UnoFeatures are used to quickly add and manage features enabled for your app.
+      https://aka.platform.uno/singleproject-features
+    -->
+    <UnoFeatures>
+      SkiaRenderer;
+    </UnoFeatures>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
+  </ItemGroup>
+
+</Project>

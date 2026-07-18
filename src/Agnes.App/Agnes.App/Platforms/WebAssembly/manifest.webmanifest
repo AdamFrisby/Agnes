@@ -1,0 +1,10 @@
+{
+  "background_color": "#ffffff",
+  "description": "Agnes.App",
+  "display": "standalone",
+  "name": "Agnes.App",
+  "short_name": "Agnes.App",
+  "start_url": "/index.html",
+  "theme_color": "#ffffff",
+  "scope": "/"
+}

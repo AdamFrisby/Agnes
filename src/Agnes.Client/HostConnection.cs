@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Agnes.Abstractions;
 using Agnes.Protocol;
+using Microsoft.AspNetCore.Http.Connections.Client;
 using Microsoft.AspNetCore.SignalR.Client;
 
 namespace Agnes.Client;
@@ -15,12 +16,12 @@ public sealed class HostConnection : IAsyncDisposable
     private readonly HubConnection _hub;
     private readonly ConcurrentDictionary<string, SessionView> _views = new();
 
-    public HostConnection(string hostUrl, string token)
+    public HostConnection(string hostUrl, string token, Action<HttpConnectionOptions>? configureHttp = null)
     {
         HostUrl = hostUrl.TrimEnd('/');
         var url = $"{HostUrl}{WireProtocol.HubPath}?{WireProtocol.TokenParameter}={Uri.EscapeDataString(token)}";
         _hub = new HubConnectionBuilder()
-            .WithUrl(url)
+            .WithUrl(url, options => configureHttp?.Invoke(options))
             .WithAutomaticReconnect()
             .Build();
 

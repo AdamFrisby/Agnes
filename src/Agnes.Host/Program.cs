@@ -50,11 +50,28 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
 
 var app = builder.Build();
 
+var tokens = app.Services.GetRequiredService<DeviceTokenStore>();
+
+// Reject unauthorized clients at the negotiate level so the connection never establishes.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments(WireProtocol.HubPath))
+    {
+        var token = context.Request.Query[WireProtocol.TokenParameter].ToString();
+        if (!tokens.IsValid(token))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+    }
+
+    await next();
+});
+
 app.MapHub<AgnesHub>(WireProtocol.HubPath);
 app.MapGet("/", () => $"Agnes host — wire protocol v{WireProtocol.Version}. Hub at {WireProtocol.HubPath}.");
 
 // Surface the dev pairing token so a client can connect.
-var tokens = app.Services.GetRequiredService<DeviceTokenStore>();
 app.Logger.LogInformation("Agnes pairing token: {Token}", tokens.PairingToken);
 
 app.Run();

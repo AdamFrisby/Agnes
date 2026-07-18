@@ -6,10 +6,13 @@
     <Project Path="src/Agnes.Client/Agnes.Client.csproj" />
     <Project Path="src/Agnes.Host/Agnes.Host.csproj" />
     <Project Path="src/Agnes.Protocol/Agnes.Protocol.csproj" />
+    <Project Path="src/Agnes.Ui.Core/Agnes.Ui.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj" />
     <Project Path="tests/Agnes.Host.Tests/Agnes.Host.Tests.csproj" />
+    <Project Path="tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj" />
     <Project Path="tests/Agnes.TestKit/Agnes.TestKit.csproj" />
+    <Project Path="tests/Agnes.Ui.Core.Tests/Agnes.Ui.Core.Tests.csproj" />
   </Folder>
 </Solution>

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.AspNetCore.Http.Connections.Client;
 
 namespace Agnes.Client;
 
@@ -15,7 +16,11 @@ public sealed class AgnesClient : IAsyncDisposable
     public IReadOnlyCollection<HostConnection> Hosts => _hosts.Values.ToArray();
 
     /// <summary>Adds and connects a host. Returns the existing connection if already added.</summary>
-    public async Task<HostConnection> AddHostAsync(string hostUrl, string token, CancellationToken cancellationToken = default)
+    public async Task<HostConnection> AddHostAsync(
+        string hostUrl,
+        string token,
+        Action<HttpConnectionOptions>? configureHttp = null,
+        CancellationToken cancellationToken = default)
     {
         var key = hostUrl.TrimEnd('/');
         if (_hosts.TryGetValue(key, out var existing))
@@ -23,7 +28,7 @@ public sealed class AgnesClient : IAsyncDisposable
             return existing;
         }
 
-        var connection = new HostConnection(hostUrl, token);
+        var connection = new HostConnection(hostUrl, token, configureHttp);
         if (!_hosts.TryAdd(key, connection))
         {
             await connection.DisposeAsync();

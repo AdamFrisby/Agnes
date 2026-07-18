@@ -1,0 +1,31 @@
+<UserControl
+    x:Class="Agnes.App.Shells.DesktopShell"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Agnes.App.Controls">
+
+    <UserControl.Resources>
+        <controls:ObjectToVisibilityConverter x:Key="ObjectToVisibility" />
+    </UserControl.Resources>
+
+    <!-- Desktop: persistent sidebar + session pane side by side. -->
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="320" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Padding="12" BorderThickness="0,0,1,0"
+                BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}">
+            <controls:ConnectPanel DataContext="{Binding}" />
+        </Border>
+
+        <Grid Grid.Column="1" Padding="16">
+            <TextBlock Text="Open an agent to start a session." Opacity="0.5"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Visibility="{Binding ActiveSession, Converter={StaticResource ObjectToVisibility}, ConverterParameter=invert}" />
+            <controls:SessionPanel DataContext="{Binding ActiveSession}"
+                                   Visibility="{Binding ActiveSession, Converter={StaticResource ObjectToVisibility}}" />
+        </Grid>
+    </Grid>
+</UserControl>
