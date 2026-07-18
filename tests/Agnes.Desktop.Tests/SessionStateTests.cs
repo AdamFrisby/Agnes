@@ -157,6 +157,30 @@ public class SessionStateTests
         Assert.True(vm.ShowRightPanel);
     }
 
+    // ---- notifications ----
+
+    [Fact]
+    public void Raises_notifications_for_blockers_and_completions_but_not_cancellation()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+        var got = new List<AppNotification>();
+        vm.NotificationRaised += got.Add;
+
+        view.Apply(Seq(new PermissionRequestedEvent("r1", "tc1", "Run rm -rf",
+            [new PermissionOption("a", "Allow", PermissionOptionKind.AllowOnce)]), 1));
+        view.Apply(Seq(new TurnEndedEvent(StopReason.EndTurn), 2));
+        view.Apply(Seq(new TurnEndedEvent(StopReason.Cancelled), 3));
+        view.Apply(Seq(new AgentErrorEvent("stream died"), 4));
+
+        Assert.Equal(3, got.Count);
+        Assert.Equal(NotificationKind.Blocker, got[0].Kind);
+        Assert.Equal(NotificationKind.Completion, got[1].Kind);
+        Assert.Equal(NotificationKind.Error, got[2].Kind);
+        Assert.All(got, n => Assert.Equal("s1", n.SessionId));
+    }
+
     // ---- search within a session + deep-linking ----
 
     [Fact]

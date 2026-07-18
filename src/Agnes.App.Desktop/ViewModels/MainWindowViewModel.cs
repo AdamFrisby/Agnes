@@ -27,9 +27,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private readonly SessionStateStore _archiveStore;
     private readonly HostRegistryStore _hostStore;
     private readonly IPromptStore _prompts;
+    private readonly SettingsStore _settingsStore;
     private readonly DockFactory _factory;
     private readonly List<KnownHost> _knownHosts = [];
+    private AppSettings _settings;
     private bool _ready;
+
+    /// <summary>Surfaces session notifications (toast / OS). Set by the shell once a window exists.</summary>
+    public INotifier Notifier { get; set; } = NullNotifier.Instance;
+
+    /// <summary>Whether the window is focused — completion toasts are suppressed while it is.</summary>
+    public bool WindowActive { get; set; } = true;
 
     public MainWindowViewModel(
         IAgnesConnector connector,
@@ -37,7 +45,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SessionStateStore tabStore,
         HostRegistryStore hostStore,
         IPromptStore? prompts = null,
-        SessionStateStore? archiveStore = null)
+        SessionStateStore? archiveStore = null,
+        SettingsStore? settingsStore = null)
     {
         _connector = connector;
         _dispatcher = dispatcher;
@@ -45,6 +54,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _archiveStore = archiveStore ?? new SessionStateStore(SessionStateStore.DefaultPath().Replace("desktop-tabs.json", "desktop-archive.json"));
         _hostStore = hostStore;
         _prompts = prompts ?? new JsonPromptStore();
+        _settingsStore = settingsStore ?? new SettingsStore();
+        _settings = _settingsStore.Load();
 
         _knownHosts.Add(SimulatedHost);
         _knownHosts.Add(RecordedHost);
@@ -68,6 +79,54 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         NewTabCommand = new RelayCommand(AddTab);
         ReopenArchivedCommand = new RelayCommand<SessionDescriptor>(d => { if (d is not null) { ReopenArchived(d); } });
         SelectGlobalHitCommand = new RelayCommand<GlobalHit>(SelectGlobalHit);
+        CloseActiveTabCommand = new RelayCommand(CloseActiveTab);
+        ToggleReducedMotionCommand = new RelayCommand(() => ReducedMotion = !ReducedMotion);
+    }
+
+    public IRelayCommand CloseActiveTabCommand { get; }
+    public IRelayCommand ToggleReducedMotionCommand { get; }
+
+    /// <summary>Accessibility: disables non-essential motion/animation when on.</summary>
+    public bool ReducedMotion
+    {
+        get => _settings.ReducedMotion;
+        set
+        {
+            if (value != _settings.ReducedMotion)
+            {
+                _settings = _settings with { ReducedMotion = value };
+                _settingsStore.Save(_settings);
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    /// <summary>Creates a session view model and wires its notifications to the shell.</summary>
+    private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
+    {
+        var session = new SessionViewModel(host, view, _dispatcher, title, _prompts);
+        session.NotificationRaised += n => _dispatcher.Post(() => Surface(n));
+        return session;
+    }
+
+    private void Surface(AppNotification notification)
+    {
+        // The user is already looking — don't toast a completion. Blockers/errors always show.
+        if (notification.Kind == NotificationKind.Completion && WindowActive)
+        {
+            return;
+        }
+
+        Notifier.Notify(notification);
+    }
+
+    private void CloseActiveTab()
+    {
+        if (_factory.DocumentDock?.ActiveDockable is SessionDocument doc)
+        {
+            _factory.CloseDockable(doc);
+            SaveState();
+        }
     }
 
     public IRootDock Layout { get; }
@@ -233,7 +292,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _dispatcher.Post(() =>
         {
             doc.AgentName = displayName;
-            doc.AttachSession(new SessionViewModel(doc.Host!, view, _dispatcher, displayName, _prompts));
+            doc.AttachSession(CreateSession(doc.Host!, view, displayName));
             doc.Title = displayName;
             doc.Descriptor = new SessionDescriptor(
                 doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, displayName);
@@ -277,7 +336,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var view = await host.SubscribeAsync(descriptor.SessionId);
             _dispatcher.Post(() =>
             {
-                doc.AttachSession(new SessionViewModel(host, view, _dispatcher, descriptor.Title, _prompts));
+                doc.AttachSession(CreateSession(host, view, descriptor.Title));
                 doc.Descriptor = descriptor;
             });
         }
@@ -384,7 +443,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var view = await doc.Host.SubscribeAsync(descriptor.SessionId);
             _dispatcher.Post(() =>
             {
-                copy.AttachSession(new SessionViewModel(doc.Host!, view, _dispatcher, copy.Title!, _prompts));
+                copy.AttachSession(CreateSession(doc.Host!, view, copy.Title!));
                 copy.Descriptor = descriptor with { Title = copy.Title! };
                 SaveState();
             });
@@ -423,7 +482,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             _dispatcher.Post(() =>
             {
-                fork.AttachSession(new SessionViewModel(doc.Host!, view, _dispatcher, fork.Title!, _prompts));
+                fork.AttachSession(CreateSession(doc.Host!, view, fork.Title!));
                 fork.Descriptor = descriptor with { SessionId = info.SessionId, Title = fork.Title! };
                 SaveState();
             });

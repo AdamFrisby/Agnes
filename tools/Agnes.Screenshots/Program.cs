@@ -44,6 +44,8 @@ public static class Program
         var vm = new MainWindowViewModel(NewConnector(recordingsDir), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
         var window = new MainWindow { DataContext = vm };
         window.Show();
+        vm.Notifier = new AvaloniaNotifier(window); // in-app toasts for blockers/completions
+        vm.WindowActive = false; // simulate a background window so completion toasts also show
         vm.RestoreAsync(); // empty → one fresh host-picker tab; also enables persistence
         Settle(300);
 

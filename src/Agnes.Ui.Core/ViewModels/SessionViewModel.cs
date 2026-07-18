@@ -236,12 +236,26 @@ public sealed class SessionViewModel : ObservableObject
         _transcript.Apply(@event);
         UpdateSidebar(@event);
 
-        if (@event is AgentErrorEvent)
+        switch (@event)
         {
-            _interrupted = true;
-            UpdateBanner();
+            case PermissionRequestedEvent pr:
+                NotificationRaised?.Invoke(new AppNotification("Permission needed", pr.Title, NotificationKind.Blocker, SessionId));
+                break;
+
+            case TurnEndedEvent { Reason: not StopReason.Cancelled }:
+                NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId));
+                break;
+
+            case AgentErrorEvent ae:
+                _interrupted = true;
+                UpdateBanner();
+                NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId));
+                break;
         }
     }
+
+    /// <summary>Raised when the session wants a notification surfaced (blocker / completion / error).</summary>
+    public event Action<AppNotification>? NotificationRaised;
 
     private void OnHostStateChanged(AgnesConnectionState state) => _dispatcher.Post(UpdateBanner);
 

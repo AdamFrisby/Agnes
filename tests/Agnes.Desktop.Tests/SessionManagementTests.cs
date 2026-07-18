@@ -3,6 +3,7 @@ using Agnes.App.Desktop.ViewModels;
 using Agnes.Client;
 using Agnes.Client.Simulation;
 using Agnes.Ui.Core;
+using Agnes.Ui.Core.ViewModels;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 
@@ -179,6 +180,46 @@ public class SessionManagementTests
 
         vm.GlobalSearchQuery = string.Empty;
         Assert.False(vm.HasGlobalResults);
+    }
+
+    [Fact]
+    public async Task Completion_notifications_are_suppressed_while_the_window_is_focused()
+    {
+        var (t, h, a) = TempPaths();
+        var focused = NewVm(t, h, a);
+        var capture = new CapturingNotifier();
+        focused.Notifier = capture;
+        focused.WindowActive = true;
+        await focused.RestoreAsync();
+        var tab = await OpenSessionAsync(focused);
+
+        tab.Session!.PromptText = "explain the protocol";
+        tab.Session!.SendCommand.Execute(null);
+        await WaitAsync(() => tab.Session!.Items.OfType<Agnes.Ui.Core.Transcript.MessageBubbleItem>()
+            .Any(m => !m.IsUser && !m.IsThought));
+        await Task.Delay(200); // let the turn end
+
+        Assert.DoesNotContain(capture.Received, n => n.Kind == NotificationKind.Completion);
+
+        // A blocker still notifies even when focused.
+        var (t2, h2, a2) = TempPaths();
+        var vm2 = NewVm(t2, h2, a2);
+        var capture2 = new CapturingNotifier();
+        vm2.Notifier = capture2;
+        vm2.WindowActive = true;
+        await vm2.RestoreAsync();
+        var tab2 = await OpenSessionAsync(vm2);
+        tab2.Session!.PromptText = "delete the build folder";
+        tab2.Session!.SendCommand.Execute(null);
+        await WaitAsync(() => tab2.Session!.PendingPermission is not null);
+
+        Assert.Contains(capture2.Received, n => n.Kind == NotificationKind.Blocker);
+    }
+
+    private sealed class CapturingNotifier : INotifier
+    {
+        public List<AppNotification> Received { get; } = [];
+        public void Notify(AppNotification notification) => Received.Add(notification);
     }
 
     private static async Task WaitAsync(Func<bool> condition)

@@ -7,6 +7,11 @@
         Background="{StaticResource Bg}"
         FontFamily="{StaticResource UiFont}">
 
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+T" Command="{Binding NewTabCommand}" />
+        <KeyBinding Gesture="Ctrl+W" Command="{Binding CloseActiveTabCommand}" />
+    </Window.KeyBindings>
+
     <Grid RowDefinitions="Auto,*">
 
         <!-- Top bar: title + new-tab (browser-style) -->
@@ -67,6 +72,29 @@
                 </Button>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <!-- Settings: accessibility + keyboard reference -->
+                    <Button Content="⚙" Background="Transparent" Foreground="{StaticResource FgDim}"
+                            BorderBrush="{StaticResource Line}" BorderThickness="1"
+                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings">
+                        <Button.Flyout>
+                            <Flyout Placement="Bottom">
+                                <StackPanel Width="320" Spacing="10">
+                                    <TextBlock Text="Accessibility" Foreground="{StaticResource Fg}" FontWeight="SemiBold" FontSize="12" />
+                                    <CheckBox IsChecked="{Binding ReducedMotion, Mode=TwoWay}" Foreground="{StaticResource Fg}"
+                                              Content="Reduce motion" AutomationProperties.Name="Reduce motion"
+                                              ToolTip.Tip="Minimise non-essential animation" />
+                                    <Border Height="1" Background="{StaticResource Line}" />
+                                    <TextBlock Text="Keyboard" Foreground="{StaticResource Fg}" FontWeight="SemiBold" FontSize="12" />
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="Ctrl+T  New tab · Ctrl+W  Close tab" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="Ctrl+Enter  Send · Alt+↑/↓  Prompt history" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="Ctrl+F  Search · F3/Shift+F3  Next/prev match" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="F8/F7  Next/prev prompt · Ctrl+F8/F7  Next/prev change" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
                     <Button Background="Transparent" Foreground="{StaticResource FgDim}"
                             BorderBrush="{StaticResource Line}" BorderThickness="1"
                             CornerRadius="7" Padding="10,5" FontSize="12"

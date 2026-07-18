@@ -23,7 +23,12 @@ public partial class App : Application
             var viewModel = new MainWindowViewModel(
                 connector, new AvaloniaDispatcher(), new SessionStateStore(), new HostRegistryStore());
 
-            desktop.MainWindow = new MainWindow { DataContext = viewModel };
+            var window = new MainWindow { DataContext = viewModel };
+            viewModel.Notifier = new AvaloniaNotifier(window);
+            window.Activated += (_, _) => viewModel.WindowActive = true;
+            window.Deactivated += (_, _) => viewModel.WindowActive = false;
+
+            desktop.MainWindow = window;
             _ = viewModel.RestoreAsync();
         }
 
