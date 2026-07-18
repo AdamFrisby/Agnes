@@ -64,12 +64,16 @@ public static class Program
         Pump(() => first.Session!.Items.OfType<MessageBubbleItem>().Count(m => !m.IsUser && !m.IsThought) >= 2);
         Capture(window, "03-conversation.png");
 
-        // 4) Tool call + plan
+        // 4) Multi-column workspace: plan + files (left), chat (middle), full diff preview (right)
         var tools = OpenSession(vm, "opencode");
         Prompt(tools, "Create a file called notes.txt with a short plan.");
         Pump(() => tools.Session!.Items.OfType<ToolCallItem>().Any()
-                   && tools.Session!.Items.OfType<PlanItemView>().Any());
-        Capture(window, "04-tools-and-plan.png");
+                   && tools.Session!.Items.OfType<PlanItemView>().Any()
+                   && tools.Session!.HasFiles);
+        // Tap the tool card to open its full diff in the right preview column.
+        tools.Session!.ShowToolPreviewCommand.Execute(tools.Session!.Items.OfType<ToolCallItem>().First());
+        Pump(() => tools.Session!.ShowRightPanel);
+        Capture(window, "04-multicolumn.png");
 
         // 5) Permission request
         var perm = OpenSession(vm, "opencode");

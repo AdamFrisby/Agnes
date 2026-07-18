@@ -24,7 +24,7 @@
 
     <Grid RowDefinitions="Auto,*">
 
-        <!-- Per-tab status bar (once a host is connected) -->
+        <!-- Per-tab status bar -->
         <Border Grid.Row="0" IsVisible="{Binding ShowStatusBar}" Background="{StaticResource Panel}"
                 BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="16,7">
             <Grid ColumnDefinitions="Auto,*,Auto">
@@ -36,9 +36,14 @@
                     <TextBlock Text="{Binding AgentName}" Foreground="{StaticResource FgDim}" FontSize="12" IsVisible="{Binding IsLive}" />
                     <TextBlock Text="{Binding ConnectionText}" Foreground="{StaticResource FgFaint}" FontSize="11" Margin="6,0,0,0" />
                 </StackPanel>
-                <TextBlock Grid.Column="2" Text="{Binding UsageSummary}" Foreground="{StaticResource FgDim}"
-                           FontSize="11" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
-                           IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Button Command="{Binding Session.ToggleLeftCommand}" IsVisible="{Binding Session.HasSidebarContent}"
+                            Content="Panels" Background="Transparent" Foreground="{StaticResource FgDim}"
+                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11" />
+                    <TextBlock Text="{Binding UsageSummary}" Foreground="{StaticResource FgDim}" FontSize="11"
+                               VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
+                               IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -68,9 +73,8 @@
 
                     <Button Command="{Binding ToggleAddHostCommand}" HorizontalAlignment="Left"
                             Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="10,6" FontSize="12">
-                        <TextBlock Text="+ Add host" />
-                    </Button>
+                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="10,6" FontSize="12"
+                            Content="+ Add host" />
 
                     <StackPanel Spacing="6" IsVisible="{Binding ShowAddHost}">
                         <TextBox Text="{Binding NewHostName, Mode=TwoWay}" Watermark="Name (optional)"
@@ -91,13 +95,11 @@
                 </StackPanel>
             </Border>
 
-            <!-- Stage 2: pick an agent on the chosen host -->
+            <!-- Stage 2: pick an agent -->
             <Border Padding="24" IsVisible="{Binding IsPickingAgent}">
                 <StackPanel MaxWidth="460" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                     <Button Command="{Binding BackCommand}" HorizontalAlignment="Left" Background="Transparent"
-                            Foreground="{StaticResource FgDim}" BorderThickness="0" Padding="0" FontSize="12">
-                        <TextBlock Text="‹ Hosts" />
-                    </Button>
+                            Foreground="{StaticResource FgDim}" BorderThickness="0" Padding="0" FontSize="12" Content="‹ Hosts" />
                     <TextBlock Text="Choose an agent" FontSize="22" FontWeight="SemiBold"
                                Foreground="{StaticResource Fg}" HorizontalAlignment="Center" />
                     <ItemsControl ItemsSource="{Binding Agents}">
@@ -119,118 +121,188 @@
                 </StackPanel>
             </Border>
 
-            <!-- Stage 3: live conversation -->
+            <!-- Stage 3: live conversation — multi-column workspace -->
             <Grid IsVisible="{Binding IsLive}">
-                <Grid DataContext="{Binding Session}" RowDefinitions="*,Auto,Auto">
+                <Grid DataContext="{Binding Session}" ColumnDefinitions="Auto,*,Auto">
 
-                    <ScrollViewer Grid.Row="0" Padding="0,16" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Items}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
-                            <ItemsControl.DataTemplates>
+                    <!-- LEFT: contextual lists (plan, files modified) -->
+                    <Border Grid.Column="0" Width="272" IsVisible="{Binding ShowLeftPanel}"
+                            Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
+                        <ScrollViewer Padding="14,16" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="18">
+                                <StackPanel Spacing="6" IsVisible="{Binding Plan, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                                    <TextBlock Text="PLAN" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <ItemsControl ItemsSource="{Binding Plan.Entries}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
+                                                    <TextBlock Text="{Binding Status}" Foreground="{StaticResource FgFaint}" FontSize="10" Width="70" />
+                                                    <TextBlock Text="{Binding Content}" Foreground="{StaticResource Fg}" FontSize="12" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
 
-                                <DataTemplate DataType="tr:MessageBubbleItem">
-                                    <Border Classes.user="{Binding IsUser}" CornerRadius="12" Padding="14,10" Margin="0,6">
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Speaker}" FontSize="11"
-                                                       Foreground="{StaticResource FgFaint}" Margin="0,0,0,3" />
-                                            <TextBlock Text="{Binding Text}" Classes.thought="{Binding IsThought}"
-                                                       Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-
-                                <DataTemplate DataType="tr:ToolCallItem">
-                                    <Border Margin="0,6" Padding="12,9" CornerRadius="8"
-                                            Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1">
-                                        <StackPanel Spacing="4">
-                                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <TextBlock Text="▸" Foreground="{StaticResource Good}" FontFamily="{StaticResource MonoFont}" />
-                                                <TextBlock Text="{Binding Header}" Foreground="{StaticResource Fg}"
-                                                           FontWeight="SemiBold" FontFamily="{StaticResource MonoFont}" FontSize="12" />
-                                                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgDim}" FontSize="11" />
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding Detail}" Foreground="{StaticResource FgDim}"
-                                                       FontFamily="{StaticResource MonoFont}" FontSize="12" TextWrapping="Wrap" />
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-
-                                <DataTemplate DataType="tr:PlanItemView">
-                                    <Border Margin="0,6" Padding="12,9" CornerRadius="8"
-                                            Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1">
-                                        <StackPanel>
-                                            <TextBlock Text="Plan" Foreground="{StaticResource Fg}" FontWeight="SemiBold" Margin="0,0,0,4" />
-                                            <ItemsControl ItemsSource="{Binding Entries}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
-                                                            <TextBlock Text="{Binding Status}" Foreground="{StaticResource FgFaint}"
-                                                                       FontSize="11" Width="90" />
-                                                            <TextBlock Text="{Binding Content}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
-                                                        </StackPanel>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-
-                                <DataTemplate DataType="tr:PermissionItem">
-                                    <Border Margin="0,6" Padding="12,9" CornerRadius="8"
-                                            Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Accent}" BorderThickness="1">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Permission requested" Foreground="{StaticResource Accent}"
-                                                       FontWeight="SemiBold" FontSize="12" />
-                                            <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
-                                            <TextBlock Text="{Binding ResolutionText}" Foreground="{StaticResource FgDim}" FontSize="11"
-                                                       IsVisible="{Binding ResolutionText, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-
-                                <DataTemplate DataType="tr:NoticeItem">
-                                    <TextBlock Text="{Binding Text}" Foreground="{StaticResource FgDim}"
-                                               FontStyle="Italic" Margin="0,6" TextWrapping="Wrap" />
-                                </DataTemplate>
-
-                            </ItemsControl.DataTemplates>
-                        </ItemsControl>
-                    </ScrollViewer>
-
-                    <!-- Permission action bar -->
-                    <Border Grid.Row="1" Margin="24,4" Padding="14,10" CornerRadius="10"
-                            Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
-                            IsVisible="{Binding PendingPermission, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
-                        <Grid ColumnDefinitions="*,Auto,Auto" MaxWidth="768" HorizontalAlignment="Center">
-                            <TextBlock Grid.Column="0" Text="{Binding PendingPermission.Title}" Foreground="{StaticResource Fg}"
-                                       VerticalAlignment="Center" TextWrapping="Wrap" />
-                            <Button Grid.Column="1" Content="Allow" Command="{Binding AllowCommand}" Margin="8,0,0,0"
-                                    Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,6" />
-                            <Button Grid.Column="2" Content="Deny" Command="{Binding DenyCommand}" Margin="8,0,0,0"
-                                    Background="Transparent" Foreground="{StaticResource FgDim}"
-                                    BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,6" />
-                        </Grid>
+                                <StackPanel Spacing="4" IsVisible="{Binding HasFiles}">
+                                    <TextBlock Text="FILES MODIFIED" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <ItemsControl ItemsSource="{Binding ModifiedFiles}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Command="{Binding $parent[ItemsControl].DataContext.ShowFilePreviewCommand}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                        Padding="6,5" CornerRadius="6" Cursor="Hand">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding Name}" Foreground="{StaticResource Fg}" FontSize="12"
+                                                                   FontFamily="{StaticResource MonoFont}" />
+                                                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgFaint}" FontSize="10" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Border>
 
-                    <!-- Composer: multi-line, grows with content; Send bottom-aligned -->
-                    <Border Grid.Row="2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
-                            BorderThickness="0,1,0,0" Padding="24,12">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" MaxWidth="768" HorizontalAlignment="Center">
-                            <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"
-                                     Watermark="Message the agent…    (Ctrl+Enter to send)"
-                                     AcceptsReturn="True" TextWrapping="Wrap"
-                                     MinHeight="88" MaxHeight="280" VerticalContentAlignment="Top"
-                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                     Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                     BorderBrush="{StaticResource Line}" CornerRadius="10" Padding="12,10">
-                                <TextBox.KeyBindings>
-                                    <KeyBinding Gesture="Ctrl+Enter" Command="{Binding SendCommand}" />
-                                    <KeyBinding Gesture="Meta+Enter" Command="{Binding SendCommand}" />
-                                </TextBox.KeyBindings>
-                            </TextBox>
-                            <Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}"
-                                    VerticalAlignment="Bottom" Height="40"
-                                    Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="10"
-                                    Padding="18,0" FontWeight="SemiBold" />
+                    <!-- MIDDLE: chat -->
+                    <Grid Grid.Column="1" RowDefinitions="*,Auto,Auto">
+                        <ScrollViewer Grid.Row="0" Padding="0,16" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding Items}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
+                                <ItemsControl.DataTemplates>
+
+                                    <DataTemplate DataType="tr:MessageBubbleItem">
+                                        <Border Classes.user="{Binding IsUser}" CornerRadius="12" Padding="14,10" Margin="0,6">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Speaker}" FontSize="11"
+                                                           Foreground="{StaticResource FgFaint}" Margin="0,0,0,3" />
+                                                <TextBlock Text="{Binding Text}" Classes.thought="{Binding IsThought}"
+                                                           Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+
+                                    <DataTemplate DataType="tr:ToolCallItem">
+                                        <Button Command="{Binding $parent[ItemsControl].DataContext.ShowToolPreviewCommand}"
+                                                CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Left" Margin="0,6" Padding="12,9" CornerRadius="8"
+                                                Cursor="Hand" Background="{StaticResource Panel}"
+                                                BorderBrush="{StaticResource Line}" BorderThickness="1">
+                                            <StackPanel Spacing="4">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="▸" Foreground="{StaticResource Good}" FontFamily="{StaticResource MonoFont}" />
+                                                    <TextBlock Text="{Binding Header}" Foreground="{StaticResource Fg}"
+                                                               FontWeight="SemiBold" FontFamily="{StaticResource MonoFont}" FontSize="12" />
+                                                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                                    <TextBlock Text="— tap to preview" Foreground="{StaticResource FgFaint}" FontSize="11"
+                                                               IsVisible="{Binding HasDetail}" />
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Summary}" Foreground="{StaticResource FgDim}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+
+                                    <DataTemplate DataType="tr:PlanItemView">
+                                        <Border Margin="0,6" Padding="12,9" CornerRadius="8"
+                                                Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Text="Plan" Foreground="{StaticResource Fg}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                                <ItemsControl ItemsSource="{Binding Entries}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
+                                                                <TextBlock Text="{Binding Status}" Foreground="{StaticResource FgFaint}"
+                                                                           FontSize="11" Width="90" />
+                                                                <TextBlock Text="{Binding Content}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+
+                                    <DataTemplate DataType="tr:PermissionItem">
+                                        <Border Margin="0,6" Padding="12,9" CornerRadius="8"
+                                                Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Accent}" BorderThickness="1">
+                                            <StackPanel Spacing="3">
+                                                <TextBlock Text="Permission requested" Foreground="{StaticResource Accent}"
+                                                           FontWeight="SemiBold" FontSize="12" />
+                                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding ResolutionText}" Foreground="{StaticResource FgDim}" FontSize="11"
+                                                           IsVisible="{Binding ResolutionText, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+
+                                    <DataTemplate DataType="tr:NoticeItem">
+                                        <TextBlock Text="{Binding Text}" Foreground="{StaticResource FgDim}"
+                                                   FontStyle="Italic" Margin="0,6" TextWrapping="Wrap" />
+                                    </DataTemplate>
+
+                                </ItemsControl.DataTemplates>
+                            </ItemsControl>
+                        </ScrollViewer>
+
+                        <Border Grid.Row="1" Margin="24,4" Padding="14,10" CornerRadius="10"
+                                Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                                IsVisible="{Binding PendingPermission, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                            <Grid ColumnDefinitions="*,Auto,Auto" MaxWidth="768" HorizontalAlignment="Center">
+                                <TextBlock Grid.Column="0" Text="{Binding PendingPermission.Title}" Foreground="{StaticResource Fg}"
+                                           VerticalAlignment="Center" TextWrapping="Wrap" />
+                                <Button Grid.Column="1" Content="Allow" Command="{Binding AllowCommand}" Margin="8,0,0,0"
+                                        Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,6" />
+                                <Button Grid.Column="2" Content="Deny" Command="{Binding DenyCommand}" Margin="8,0,0,0"
+                                        Background="Transparent" Foreground="{StaticResource FgDim}"
+                                        BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,6" />
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                                BorderThickness="0,1,0,0" Padding="24,12">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" MaxWidth="768" HorizontalAlignment="Center">
+                                <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"
+                                         Watermark="Message the agent…    (Ctrl+Enter to send)"
+                                         AcceptsReturn="True" TextWrapping="Wrap"
+                                         MinHeight="88" MaxHeight="280" VerticalContentAlignment="Top"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                         BorderBrush="{StaticResource Line}" CornerRadius="10" Padding="12,10">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Gesture="Ctrl+Enter" Command="{Binding SendCommand}" />
+                                        <KeyBinding Gesture="Meta+Enter" Command="{Binding SendCommand}" />
+                                    </TextBox.KeyBindings>
+                                </TextBox>
+                                <Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}"
+                                        VerticalAlignment="Bottom" Height="40"
+                                        Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="10"
+                                        Padding="18,0" FontWeight="SemiBold" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <!-- RIGHT: full preview (opens when a condensed item is tapped) -->
+                    <Border Grid.Column="2" Width="480" IsVisible="{Binding ShowRightPanel}"
+                            Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
+                        <Grid RowDefinitions="Auto,*">
+                            <Border Grid.Row="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="14,10">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="{Binding SelectedPreview.Title}" Foreground="{StaticResource Fg}"
+                                               FontWeight="SemiBold" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <Button Grid.Column="1" Content="✕" Command="{Binding ClosePreviewCommand}"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}" BorderThickness="0"
+                                            Padding="8,2" FontSize="13" />
+                                </Grid>
+                            </Border>
+                            <ScrollViewer Grid.Row="1" Padding="14" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                                <TextBlock Text="{Binding SelectedPreview.Body}" Foreground="{StaticResource Fg}"
+                                           FontFamily="{StaticResource MonoFont}" FontSize="12" TextWrapping="NoWrap" />
+                            </ScrollViewer>
                         </Grid>
                     </Border>
                 </Grid>

@@ -141,9 +141,11 @@ public sealed class SimulatedHost : IAgnesHost
                 new PlanEntry("Confirm the result", "pending"),
             ]));
             await Task.Delay(200).ConfigureAwait(false);
-            session.Emit(new ToolCallEvent("tc-1", "Write output.txt", ToolKind.Edit, ToolCallStatus.InProgress, []));
+            const string diff =
+                "--- a/output.txt\n+++ b/output.txt\n@@ -0,0 +1,3 @@\n+alpha\n+beta\n+gamma\n";
+            session.Emit(new ToolCallEvent("tc-1", "output.txt", ToolKind.Edit, ToolCallStatus.InProgress, [new TextContent(diff)]));
             await Task.Delay(400).ConfigureAwait(false);
-            session.Emit(new ToolCallUpdateEvent("tc-1", ToolCallStatus.Completed, [new TextContent("wrote 3 lines")]));
+            session.Emit(new ToolCallUpdateEvent("tc-1", ToolCallStatus.Completed, [new TextContent(diff)]));
         }
 
         var reply = BuildReply(prompt);

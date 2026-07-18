@@ -65,8 +65,28 @@ public sealed class ToolCallItem : TranscriptItem
     public string Detail
     {
         get => _detail;
-        set => Set(ref _detail, value);
+        set
+        {
+            if (Set(ref _detail, value))
+            {
+                Raise(nameof(Summary));
+                Raise(nameof(HasDetail));
+            }
+        }
     }
+
+    /// <summary>A one-line condensed view for the chat; the full <see cref="Detail"/> opens in the preview.</summary>
+    public string Summary
+    {
+        get
+        {
+            var line = Detail.Split('\n', 2)[0].Trim();
+            return line.Length > 80 ? line[..80] + "…" : line;
+        }
+    }
+
+    /// <summary>Whether there's enough detail (multi-line) to warrant a full preview.</summary>
+    public bool HasDetail => Detail.Contains('\n') || Detail.Length > 80;
 }
 
 /// <summary>The agent's current plan.</summary>
