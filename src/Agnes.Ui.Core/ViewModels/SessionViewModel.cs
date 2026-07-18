@@ -39,6 +39,8 @@ public sealed class SessionViewModel : ObservableObject
     private string _searchQuery = string.Empty;
     private bool _isSearchOpen;
     private bool _isInspectorOpen;
+    private bool _showSlash;
+    private string _referenceInput = string.Empty;
     private int _matchCursor = -1;
     private int _promptCursor = -1;
     private int _changeCursor = -1;
@@ -69,6 +71,9 @@ public sealed class SessionViewModel : ObservableObject
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
         ToggleInspectorCommand = new RelayCommand(() => IsInspectorOpen = !IsInspectorOpen);
+        AddReferenceCommand = new RelayCommand(AddReference);
+        RemoveAttachmentCommand = new RelayCommand<PromptAttachment>(a => { if (a is not null) { Attachments.Remove(a); Raise(nameof(HasAttachments)); } });
+        ApplySlashCommand = new RelayCommand<SlashCommand>(ApplySlash);
         ToggleFullScreenCommand = new RelayCommand(() => IsPreviewFullScreen = !IsPreviewFullScreen);
         RecallPreviousCommand = new RelayCommand(RecallPrevious);
         RecallNextCommand = new RelayCommand(RecallNext);
@@ -262,6 +267,7 @@ public sealed class SessionViewModel : ObservableObject
                 SendCommand.RaiseCanExecuteChanged();
                 SendNowCommand.RaiseCanExecuteChanged();
                 _prompts.SaveDraft(SessionId, value);
+                UpdateSlash();
             }
         }
     }
@@ -279,6 +285,74 @@ public sealed class SessionViewModel : ObservableObject
     public ObservableCollection<QueuedPrompt> PendingPrompts { get; } = [];
 
     public bool HasQueue => PendingPrompts.Count > 0;
+
+    // ---- composer context: attachments + slash commands ----
+
+    /// <summary>Context attached to the next prompt (references / images), shown as chips.</summary>
+    public ObservableCollection<PromptAttachment> Attachments { get; } = [];
+
+    public bool HasAttachments => Attachments.Count > 0;
+
+    /// <summary>Slash-command suggestions matching what's typed after "/".</summary>
+    public ObservableCollection<SlashCommand> SlashSuggestions { get; } = [];
+
+    public bool ShowSlash
+    {
+        get => _showSlash;
+        private set => Set(ref _showSlash, value);
+    }
+
+    public string ReferenceInput
+    {
+        get => _referenceInput;
+        set => Set(ref _referenceInput, value);
+    }
+
+    public ICommand AddReferenceCommand { get; }
+    public ICommand RemoveAttachmentCommand { get; }
+    public ICommand ApplySlashCommand { get; }
+
+    /// <summary>Attaches an arbitrary content block (e.g. an image from the shell's file picker).</summary>
+    public void Attach(PromptAttachment attachment)
+    {
+        Attachments.Add(attachment);
+        Raise(nameof(HasAttachments));
+    }
+
+    private void AddReference()
+    {
+        var reference = ReferenceInput.Trim().TrimStart('@');
+        if (reference.Length > 0)
+        {
+            Attach(PromptAttachment.Reference(reference));
+        }
+
+        ReferenceInput = string.Empty;
+    }
+
+    private void ApplySlash(SlashCommand? command)
+    {
+        if (command is not null)
+        {
+            PromptText = command.Expansion;
+        }
+    }
+
+    private void UpdateSlash()
+    {
+        SlashSuggestions.Clear();
+        var text = PromptText;
+        if (text.StartsWith('/') && !text.Contains('\n'))
+        {
+            var query = text[1..];
+            foreach (var c in SlashCommand.BuiltIns.Where(c => c.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase)))
+            {
+                SlashSuggestions.Add(c);
+            }
+        }
+
+        ShowSlash = SlashSuggestions.Count > 0;
+    }
     public AsyncRelayCommand DenyCommand { get; }
     public ICommand RespondWithCommand { get; }
     public AsyncRelayCommand RetryCommand { get; }
@@ -650,7 +724,17 @@ public sealed class SessionViewModel : ObservableObject
         _interrupted = false;
         UpdateBanner();
         IsTurnActive = true;
-        await _host.PromptAsync(SessionId, [new TextContent(text)]);
+
+        var blocks = new List<ContentBlock>(Attachments.Count + 1);
+        blocks.AddRange(Attachments.Select(a => a.Content));
+        blocks.Add(new TextContent(text));
+        if (Attachments.Count > 0)
+        {
+            Attachments.Clear();
+            Raise(nameof(HasAttachments));
+        }
+
+        await _host.PromptAsync(SessionId, blocks);
     }
 
     // When a turn ends normally, send the next queued prompt.

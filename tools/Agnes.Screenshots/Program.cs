@@ -138,6 +138,16 @@ public static class Program
         Capture(window, "04i-event-log.png");
         tools.Session!.ToggleInspectorCommand.Execute(null);
 
+        // 4k) Composer context: slash commands + attachment chips.
+        var composer = OpenSession(vm, "opencode");
+        composer.Session!.ReferenceInput = "src/config.ts";
+        composer.Session!.AddReferenceCommand.Execute(null);
+        composer.Session!.ReferenceInput = "docs/architecture.md";
+        composer.Session!.AddReferenceCommand.Execute(null);
+        composer.Session!.PromptText = "/re";
+        Pump(() => composer.Session!.ShowSlash && composer.Session!.HasAttachments);
+        Capture(window, "04k-composer-context.png");
+
         // 4b) Long assistant message → condensed in chat, full text in the preview
         var longChat = OpenSession(vm, "opencode");
         Prompt(longChat, "Explain the Agent Client Protocol in detail.");

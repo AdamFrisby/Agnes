@@ -621,6 +621,70 @@
                                     </ItemsControl>
                                 </StackPanel>
 
+                                <!-- Slash-command suggestions -->
+                                <Border IsVisible="{Binding ShowSlash}" Background="{StaticResource PanelAlt}"
+                                        BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="4">
+                                    <ItemsControl ItemsSource="{Binding SlashSuggestions}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Command="{Binding $parent[ItemsControl].DataContext.ApplySlashCommand}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                        Padding="8,5" CornerRadius="6" Cursor="Hand">
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <TextBlock Text="{Binding Name, StringFormat='/{0}'}" Foreground="{StaticResource Accent}"
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Width="90" />
+                                                        <TextBlock Text="{Binding Description}" Foreground="{StaticResource FgDim}" FontSize="12" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
+
+                                <!-- Attached context chips -->
+                                <ItemsControl ItemsSource="{Binding Attachments}" IsVisible="{Binding HasAttachments}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Line}"
+                                                    BorderThickness="1" CornerRadius="10" Padding="8,3" Margin="0,0,6,4">
+                                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding KindText}" Foreground="{StaticResource Accent}" FontSize="10"
+                                                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding Label}" Foreground="{StaticResource Fg}" FontSize="11"
+                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="220" />
+                                                    <Button Content="✕" Command="{Binding $parent[ItemsControl].DataContext.RemoveAttachmentCommand}"
+                                                            CommandParameter="{Binding}" Background="Transparent" Foreground="{StaticResource FgFaint}"
+                                                            BorderThickness="0" Padding="0" FontSize="9" Cursor="Hand"
+                                                            AutomationProperties.Name="Remove attachment" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Context toolbar: @-reference + attach file -->
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <TextBox Text="{Binding ReferenceInput, Mode=TwoWay}" Width="220" Watermark="@ file or url…"
+                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                                             AutomationProperties.Name="Add a context reference">
+                                        <TextBox.KeyBindings>
+                                            <KeyBinding Gesture="Enter" Command="{Binding AddReferenceCommand}" />
+                                        </TextBox.KeyBindings>
+                                    </TextBox>
+                                    <Button Content="Add" Command="{Binding AddReferenceCommand}"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
+                                    <Button Content="Attach file…" Click="OnAttachFile"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12"
+                                            AutomationProperties.Name="Attach a file or image" />
+                                </StackPanel>
+
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                     <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"
                                              Watermark="Message the agent…    (Ctrl+Enter to send · Alt+↑/↓ for history)"

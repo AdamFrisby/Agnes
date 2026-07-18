@@ -106,6 +106,42 @@ public partial class SessionTabView : UserControl
         Apply(columns[4], columns[3], vm.ShowRightPanel, ref _rightWidth);
     }
 
+    private async void OnAttachFile(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_session is null || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage)
+        {
+            return;
+        }
+
+        var files = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Attach a file",
+            AllowMultiple = true,
+        });
+
+        foreach (var file in files)
+        {
+            var name = file.Name;
+            var isImage = name.EndsWith(".png", System.StringComparison.OrdinalIgnoreCase)
+                          || name.EndsWith(".jpg", System.StringComparison.OrdinalIgnoreCase)
+                          || name.EndsWith(".jpeg", System.StringComparison.OrdinalIgnoreCase)
+                          || name.EndsWith(".gif", System.StringComparison.OrdinalIgnoreCase);
+            if (isImage)
+            {
+                await using var stream = await file.OpenReadAsync();
+                using var ms = new System.IO.MemoryStream();
+                await stream.CopyToAsync(ms);
+                var mime = name.EndsWith(".png", System.StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
+                var block = new Agnes.Abstractions.ImageContent(mime, System.Convert.ToBase64String(ms.ToArray()));
+                _session.Attach(new PromptAttachment(name, "img", block));
+            }
+            else
+            {
+                _session.Attach(PromptAttachment.Reference(file.Path.LocalPath));
+            }
+        }
+    }
+
     private async void OnCopyPreview(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_workspace?.DataContext is SessionViewModel { SelectedPreview: { } preview }

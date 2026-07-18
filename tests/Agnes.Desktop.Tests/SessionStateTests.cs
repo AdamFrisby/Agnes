@@ -186,6 +186,45 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- composer: slash commands + attachments ----
+
+    [Fact]
+    public void Slash_commands_suggest_and_expand()
+    {
+        var host = new FakeHost();
+        var vm = new SessionViewModel(host, Live(), ImmediateDispatcher.Instance, "OpenCode");
+        Assert.False(vm.ShowSlash);
+
+        vm.PromptText = "/re";
+        Assert.True(vm.ShowSlash);
+        var review = Assert.Single(vm.SlashSuggestions, c => c.Name == "review");
+
+        vm.ApplySlashCommand.Execute(review);
+        Assert.Equal(review.Expansion, vm.PromptText);
+        Assert.False(vm.ShowSlash);
+    }
+
+    [Fact]
+    public void Attachments_are_added_as_chips_and_sent_with_the_prompt()
+    {
+        var host = new FakeHost();
+        var vm = new SessionViewModel(host, Live(), ImmediateDispatcher.Instance, "OpenCode");
+
+        vm.ReferenceInput = "@src/config.ts";
+        vm.AddReferenceCommand.Execute(null);
+        Assert.True(vm.HasAttachments);
+        Assert.Equal("src/config.ts", Assert.Single(vm.Attachments).Label);
+        Assert.Equal(string.Empty, vm.ReferenceInput);
+
+        vm.PromptText = "update the config";
+        vm.SendCommand.Execute(null);
+
+        Assert.NotNull(host.LastContent);
+        Assert.Contains(host.LastContent!, b => b is ResourceLinkContent { Uri: "src/config.ts" });
+        Assert.Contains(host.LastContent!, b => b is TextContent { Text: "update the config" });
+        Assert.False(vm.HasAttachments); // cleared after send
+    }
+
     // ---- raw event inspector ----
 
     [Fact]
@@ -498,8 +537,11 @@ internal sealed class FakeHost : IAgnesHost
         return Task.CompletedTask;
     }
 
+    public IReadOnlyList<ContentBlock>? LastContent { get; private set; }
+
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
     {
+        LastContent = content;
         Prompts.Add(string.Concat(content.OfType<TextContent>().Select(c => c.Text)));
         return Task.CompletedTask;
     }
