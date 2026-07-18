@@ -59,6 +59,22 @@ public class TranscriptBuilderTests
     }
 
     [Fact]
+    public void Subagent_events_are_announced_and_tag_their_items()
+    {
+        var t = new TranscriptBuilder();
+        SubagentStartedEvent? announced = null;
+        t.SubagentAdded += s => announced = s;
+
+        t.Apply(new SubagentStartedEvent("sub-1", "reviewer"));
+        Assert.NotNull(announced);
+        Assert.Equal("reviewer", announced!.Name);
+
+        t.Apply(new MessageChunkEvent(MessageRole.Assistant, new TextContent("hi")) { AgentId = "sub-1" });
+        var bubble = t.Items.OfType<MessageBubbleItem>().Single();
+        Assert.Equal("sub-1", bubble.AgentId);
+    }
+
+    [Fact]
     public void Tool_call_records_elapsed_time_from_timestamps()
     {
         var t = new TranscriptBuilder();

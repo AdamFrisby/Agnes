@@ -82,6 +82,14 @@ public static class Program
         Pump(() => tools.Session!.ShowRightPanel);
         Capture(window, "04-multicolumn.png");
 
+        // 4m) Agent/subagent tree: select the code-reviewer subagent → transcript filters to it.
+        Pump(() => tools.Session!.HasSubagents);
+        var reviewer = tools.Session!.AgentTree[0].Children[0];
+        reviewer.SelectCommand.Execute(null);
+        Pump(() => tools.Session!.SelectedAgentId is not null);
+        Capture(window, "04m-subagent-tree.png");
+        tools.Session!.AgentTree[0].SelectCommand.Execute(null); // back to the full conversation
+
         // 4j) Split (side-by-side) diff view.
         tools.Session!.SelectedPreview!.ToggleSplitCommand.Execute(null);
         Pump(() => tools.Session!.SelectedPreview!.ShowSplit);

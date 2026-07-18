@@ -24,16 +24,24 @@ public sealed class TranscriptBuilder
 
     public event Action? PendingPermissionChanged;
 
+    /// <summary>Raised when a subagent is announced (for the session's agent tree).</summary>
+    public event Action<SubagentStartedEvent>? SubagentAdded;
+
     public void Apply(SessionEvent @event)
     {
+        var agentId = @event.AgentId;
         switch (@event)
         {
             case MessageChunkEvent m:
-                AppendToBubble(m.Role, isThought: false, TextOf(m.Content));
+                AppendToBubble(m.Role, isThought: false, TextOf(m.Content), agentId);
                 break;
 
             case ThoughtChunkEvent t:
-                AppendToBubble(MessageRole.Assistant, isThought: true, TextOf(t.Content));
+                AppendToBubble(MessageRole.Assistant, isThought: true, TextOf(t.Content), agentId);
+                break;
+
+            case SubagentStartedEvent sub:
+                SubagentAdded?.Invoke(sub);
                 break;
 
             case ToolCallEvent tc:
@@ -42,6 +50,7 @@ public sealed class TranscriptBuilder
                 {
                     StartedAt = tc.Timestamp,
                     Detail = string.Concat(tc.Content.Select(TextOf)),
+                    AgentId = agentId,
                 };
                 if (tc.Status is ToolCallStatus.Completed or ToolCallStatus.Failed)
                 {
@@ -72,7 +81,7 @@ public sealed class TranscriptBuilder
             case PlanEvent p:
                 if (_plan is null)
                 {
-                    _plan = new PlanItemView { Entries = p.Entries };
+                    _plan = new PlanItemView { Entries = p.Entries, AgentId = agentId };
                     Items.Add(_plan);
                 }
                 else
@@ -85,7 +94,7 @@ public sealed class TranscriptBuilder
             case PermissionRequestedEvent pr:
                 CloseBubble();
                 _tools.TryGetValue(pr.ToolCallId, out var linkedTool);
-                var permission = new PermissionItem(pr.RequestId, pr.Title, pr.Options, linkedTool?.Kind, linkedTool?.Title);
+                var permission = new PermissionItem(pr.RequestId, pr.Title, pr.Options, linkedTool?.Kind, linkedTool?.Title) { AgentId = agentId };
                 _permissions[pr.RequestId] = permission;
                 Items.Add(permission);
                 PendingPermission = permission;
@@ -104,12 +113,12 @@ public sealed class TranscriptBuilder
                 break;
 
             case ModeChangedEvent mode:
-                Items.Add(new NoticeItem($"Mode: {mode.ModeId}"));
+                Items.Add(new NoticeItem($"Mode: {mode.ModeId}") { AgentId = agentId });
                 break;
 
             case AgentErrorEvent err:
                 CloseBubble();
-                Items.Add(new NoticeItem(err.Message, isError: true));
+                Items.Add(new NoticeItem(err.Message, isError: true) { AgentId = agentId });
                 break;
 
             case TurnEndedEvent:
@@ -118,11 +127,11 @@ public sealed class TranscriptBuilder
         }
     }
 
-    private void AppendToBubble(MessageRole role, bool isThought, string text)
+    private void AppendToBubble(MessageRole role, bool isThought, string text, string? agentId)
     {
-        if (_openBubble is null || _openBubble.Role != role || _openBubble.IsThought != isThought)
+        if (_openBubble is null || _openBubble.Role != role || _openBubble.IsThought != isThought || _openBubble.AgentId != agentId)
         {
-            _openBubble = new MessageBubbleItem(role, isThought);
+            _openBubble = new MessageBubbleItem(role, isThought) { AgentId = agentId };
             Items.Add(_openBubble);
         }
 

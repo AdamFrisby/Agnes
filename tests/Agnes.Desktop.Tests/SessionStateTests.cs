@@ -186,6 +186,39 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- agent / subagent tree ----
+
+    [Fact]
+    public void Subagent_tree_builds_and_filters_the_transcript()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+        Assert.False(vm.HasSubagents);
+
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.User, new TextContent("main msg")), 1));
+        view.Apply(Seq(new SubagentStartedEvent("sub-1", "reviewer"), 2));
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.Assistant, new TextContent("sub msg")) { AgentId = "sub-1" }, 3));
+
+        Assert.True(vm.HasSubagents);
+        var main = Assert.Single(vm.AgentTree);
+        Assert.True(main.IsMain);
+        var sub = Assert.Single(main.Children);
+        Assert.Equal("reviewer", sub.Name);
+
+        Assert.Equal(2, vm.DisplayItems.Count()); // full view: main + sub
+
+        sub.SelectCommand.Execute(null);
+        Assert.Equal("sub-1", vm.SelectedAgentId);
+        var filtered = vm.DisplayItems.ToList();
+        Assert.Single(filtered);
+        Assert.Equal("sub-1", filtered[0].AgentId);
+
+        main.SelectCommand.Execute(null);
+        Assert.Null(vm.SelectedAgentId);
+        Assert.Equal(2, vm.DisplayItems.Count());
+    }
+
     // ---- scheduled background tasks ----
 
     [Fact]

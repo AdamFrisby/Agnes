@@ -8,6 +8,9 @@ public abstract class TranscriptItem : ObservableObject
 {
     /// <summary>Stable id for deep-linking / scroll-to-anchor.</summary>
     public string AnchorId { get; } = Guid.NewGuid().ToString("n");
+
+    /// <summary>Which agent produced this item: null for the main agent, else a subagent id.</summary>
+    public string? AgentId { get; init; }
 }
 
 /// <summary>A coalesced run of message (or thought) chunks from one speaker.</summary>

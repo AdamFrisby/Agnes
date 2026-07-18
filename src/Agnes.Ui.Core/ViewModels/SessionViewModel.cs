@@ -117,6 +117,10 @@ public sealed class SessionViewModel : ObservableObject
 
         _transcript.PendingPermissionChanged += () => { Raise(nameof(PendingPermission)); RaiseActivity(); };
 
+        _mainAgentNode = new AgentNode(null, title, isMain: true, SelectAgent) { IsSelected = true };
+        AgentTree.Add(_mainAgentNode);
+        _transcript.SubagentAdded += AddSubagent;
+
         foreach (var @event in _view.Events)
         {
             Apply(@event);
@@ -132,13 +136,67 @@ public sealed class SessionViewModel : ObservableObject
     public string SessionId => _view.SessionId;
 
     private int _rewindIndex = -1;
+    private string? _selectedAgentId;
 
     /// <summary>Whether the transcript is showing an earlier point in history (read-only).</summary>
     public bool IsRewound => _rewindIndex >= 0;
 
-    /// <summary>The transcript to display — the full live list, or a snapshot up to the rewind point.</summary>
+    /// <summary>
+    /// The transcript to display — the full live list, optionally rewound to a point and/or
+    /// filtered to the selected subagent's sub-conversation.
+    /// </summary>
     public IEnumerable<TranscriptItem> DisplayItems
-        => IsRewound ? Items.Take(_rewindIndex + 1).ToList() : Items;
+    {
+        get
+        {
+            IEnumerable<TranscriptItem> basis = IsRewound ? Items.Take(_rewindIndex + 1) : Items;
+            if (_selectedAgentId is null)
+            {
+                return IsRewound ? basis.ToList() : Items;
+            }
+
+            return basis.Where(i => i.AgentId == _selectedAgentId).ToList();
+        }
+    }
+
+    // ---- agent / subagent tree ----
+
+    /// <summary>The session's agents: the main agent with any subagents nested beneath it.</summary>
+    public ObservableCollection<AgentNode> AgentTree { get; } = [];
+
+    public bool HasSubagents => _mainAgentNode.Children.Count > 0;
+
+    public string? SelectedAgentId => _selectedAgentId;
+
+    private AgentNode _mainAgentNode = null!;
+    private readonly Dictionary<string, AgentNode> _agentNodes = new();
+
+    private void AddSubagent(SubagentStartedEvent sub)
+    {
+        if (_agentNodes.ContainsKey(sub.SubagentId))
+        {
+            return;
+        }
+
+        var node = new AgentNode(sub.SubagentId, sub.Name, isMain: false, SelectAgent);
+        var parent = sub.ParentAgentId is { } pid && _agentNodes.TryGetValue(pid, out var p) ? p : _mainAgentNode;
+        parent.Children.Add(node);
+        _agentNodes[sub.SubagentId] = node;
+        Raise(nameof(HasSubagents));
+        RaisePanels();
+    }
+
+    private void SelectAgent(string? agentId)
+    {
+        _selectedAgentId = agentId;
+        _mainAgentNode.IsSelected = agentId is null;
+        foreach (var node in _agentNodes.Values)
+        {
+            node.IsSelected = node.Id == agentId;
+        }
+
+        Raise(nameof(DisplayItems));
+    }
 
     /// <summary>
     /// A shareable reference to this session for cross-device handoff. Any Agnes client can
@@ -172,7 +230,7 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasFiles => ModifiedFiles.Count > 0;
     public bool HasTools => ToolActivity.Count > 0;
     public bool HasApprovals => Approvals.Count > 0;
-    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools || HasApprovals;
+    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools || HasApprovals || HasSubagents;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
     public bool ShowRightPanel => SelectedPreview is not null;
 
@@ -595,6 +653,12 @@ public sealed class SessionViewModel : ObservableObject
             case ModeChangedEvent mode:
                 CurrentModeId = mode.ModeId;
                 break;
+        }
+
+        // While filtered to a subagent, refresh the (snapshot) view as its events arrive.
+        if (_selectedAgentId is not null)
+        {
+            Raise(nameof(DisplayItems));
         }
     }
 

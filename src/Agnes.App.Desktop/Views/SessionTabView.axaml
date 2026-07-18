@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:tr="using:Agnes.Ui.Core.Transcript"
+             xmlns:vm="using:Agnes.Ui.Core.ViewModels"
              xmlns:conv="using:Avalonia.Data.Converters"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
              Background="{StaticResource Bg}"
@@ -43,6 +44,17 @@
         </Style>
         <Style Selector="Border.chip.attention TextBlock">
             <Setter Property="Foreground" Value="{StaticResource Accent}" />
+        </Style>
+        <!-- agent-tree node selection -->
+        <Style Selector="TreeView Button TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Fg}" />
+        </Style>
+        <Style Selector="Button.sel TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Accent}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TreeViewItem">
+            <Setter Property="IsExpanded" Value="True" />
         </Style>
         <!-- diff rows -->
         <Style Selector="Border.add">
@@ -327,6 +339,29 @@
                             Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
                         <ScrollViewer Padding="14,16" VerticalScrollBarVisibility="Auto">
                             <StackPanel Spacing="18">
+                                <!-- Agent / subagent tree -->
+                                <StackPanel Spacing="6" IsVisible="{Binding HasSubagents}">
+                                    <TextBlock Text="AGENTS" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <TreeView ItemsSource="{Binding AgentTree}" Background="Transparent" BorderThickness="0">
+                                        <TreeView.ItemTemplate>
+                                            <TreeDataTemplate DataType="vm:AgentNode" ItemsSource="{Binding Children}">
+                                                <Button Command="{Binding SelectCommand}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                        Padding="2,3" Cursor="Hand" Classes.sel="{Binding IsSelected}">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <TextBlock Text="◆" FontSize="9" VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource Good}" IsVisible="{Binding IsMain}" />
+                                                        <TextBlock Text="•" FontSize="12" VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource FgFaint}" IsVisible="{Binding !IsMain}" />
+                                                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </TreeDataTemplate>
+                                        </TreeView.ItemTemplate>
+                                    </TreeView>
+                                </StackPanel>
+
                                 <StackPanel Spacing="6" IsVisible="{Binding Plan, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                                     <TextBlock Text="PLAN" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                     <ItemsControl ItemsSource="{Binding Plan.Entries}">

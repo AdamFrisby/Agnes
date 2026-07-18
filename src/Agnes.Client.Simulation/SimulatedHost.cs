@@ -288,6 +288,18 @@ public sealed class SimulatedHost : IAgnesHost
                 session.Emit(new ToolCallEvent("tc-1", "src/config.ts", ToolKind.Edit, ToolCallStatus.InProgress, [new TextContent(SampleDiff)]));
                 await Task.Delay(400, cancel).ConfigureAwait(false);
                 session.Emit(new ToolCallUpdateEvent("tc-1", ToolCallStatus.Completed, [new TextContent(SampleDiff)]));
+
+                // Spawn a subagent to review the change — its own sub-conversation.
+                await Task.Delay(150, cancel).ConfigureAwait(false);
+                session.Emit(new SubagentStartedEvent("sub-review", "code-reviewer"));
+                session.Emit(new MessageChunkEvent(MessageRole.Assistant,
+                    new TextContent("Reviewing the change for edge cases…")) { AgentId = "sub-review" });
+                await Task.Delay(150, cancel).ConfigureAwait(false);
+                session.Emit(new ToolCallEvent("tc-rev", "src/config.ts", ToolKind.Read, ToolCallStatus.Completed,
+                    [new TextContent("read 16 lines")]) { AgentId = "sub-review" });
+                await Task.Delay(150, cancel).ConfigureAwait(false);
+                session.Emit(new MessageChunkEvent(MessageRole.Assistant,
+                    new TextContent("Looks good — timeoutMs has a sensible default and retries stays bounded.")) { AgentId = "sub-review" });
             }
 
             var reply = BuildReply(prompt);

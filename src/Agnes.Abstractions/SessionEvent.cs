@@ -57,6 +57,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(TerminalOutputEvent), "terminal_output")]
 [JsonDerivedType(typeof(TurnEndedEvent), "turn_ended")]
 [JsonDerivedType(typeof(AgentErrorEvent), "agent_error")]
+[JsonDerivedType(typeof(SubagentStartedEvent), "subagent_started")]
 public abstract record SessionEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -64,6 +65,13 @@ public abstract record SessionEvent
 
     /// <summary>When the host recorded the event (UTC).</summary>
     public DateTimeOffset Timestamp { get; init; }
+
+    /// <summary>
+    /// Which agent within the session produced this event: null for the main agent, or a
+    /// subagent id (see <see cref="SubagentStartedEvent"/>). Lets the UI group a session's
+    /// main + subagent conversations without changing the flat, ordered event log.
+    /// </summary>
+    public string? AgentId { get; init; }
 }
 
 /// <summary>The agent accepted a new session.</summary>
@@ -116,3 +124,9 @@ public sealed record TurnEndedEvent(StopReason Reason) : SessionEvent;
 
 /// <summary>The agent (or adapter) reported an error.</summary>
 public sealed record AgentErrorEvent(string Message) : SessionEvent;
+
+/// <summary>
+/// The main agent spawned a subagent (e.g. via a Task/delegation tool). Subsequent events
+/// carrying this <see cref="AgentId"/> belong to the subagent's sub-conversation.
+/// </summary>
+public sealed record SubagentStartedEvent(string SubagentId, string Name, string? ParentAgentId = null) : SessionEvent;
