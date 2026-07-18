@@ -50,9 +50,14 @@
                     <TextBlock Text="{Binding ConnectionText}" Foreground="{StaticResource FgFaint}" FontSize="11" Margin="6,0,0,0" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Button Command="{Binding Session.ToggleToolsCommand}" IsVisible="{Binding Session.HasTools}"
+                            Content="Tool output" Background="Transparent" Foreground="{StaticResource FgDim}"
+                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                            ToolTip.Tip="Collapse / expand all tool output" AutomationProperties.Name="Toggle all tool output" />
                     <Button Command="{Binding Session.ToggleLeftCommand}" IsVisible="{Binding Session.HasSidebarContent}"
                             Content="Panels" Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11" />
+                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                            AutomationProperties.Name="Toggle side panels" />
                     <TextBlock Text="{Binding UsageSummary}" Foreground="{StaticResource FgDim}" FontSize="11"
                                VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
@@ -132,8 +137,29 @@
             </Border>
 
             <!-- Stage 3: live conversation — resizable multi-column workspace -->
-            <Grid IsVisible="{Binding IsLive}">
-                <Grid x:Name="Workspace" DataContext="{Binding Session}">
+            <Grid IsVisible="{Binding IsLive}" RowDefinitions="Auto,*">
+
+                <!-- Clear connection / session state banner -->
+                <Border Grid.Row="0" DataContext="{Binding Session}" IsVisible="{Binding ShowBanner}"
+                        Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}"
+                        BorderThickness="0,0,0,1" Padding="16,8">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                        <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                                Background="{StaticResource Accent}" Margin="0,0,10,0" />
+                        <TextBlock Grid.Column="1" Text="{Binding BannerText}" Foreground="{StaticResource Fg}"
+                                   VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap"
+                                   AutomationProperties.LiveSetting="Assertive" />
+                        <Button Grid.Column="2" Content="Retry" Command="{Binding RetryCommand}" IsVisible="{Binding CanRetry}"
+                                Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,4"
+                                FontSize="12" Margin="8,0,0,0" ToolTip.Tip="Retry the connection or resend the interrupted turn" />
+                        <Button Grid.Column="3" Content="Dismiss" Command="{Binding DismissBannerCommand}"
+                                Background="Transparent" Foreground="{StaticResource FgDim}"
+                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,4"
+                                FontSize="12" Margin="8,0,0,0" />
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1" x:Name="Workspace" DataContext="{Binding Session}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="0" MinWidth="0" MaxWidth="560" />
                         <ColumnDefinition Width="0" />
@@ -209,7 +235,7 @@
                                   Background="{StaticResource Line}" IsVisible="{Binding ShowLeftPanel}" />
 
                     <!-- MIDDLE: chat -->
-                    <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto">
+                    <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto" IsVisible="{Binding ShowChat}">
                         <ScrollViewer Grid.Row="0" Padding="0,16" VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding Items}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
                                 <ItemsControl.DataTemplates>
@@ -247,7 +273,8 @@
                                                 </StackPanel>
                                                 <TextBlock Text="{Binding Summary}" Foreground="{StaticResource FgDim}"
                                                            FontFamily="{StaticResource MonoFont}" FontSize="12"
-                                                           TextTrimming="CharacterEllipsis" />
+                                                           TextTrimming="CharacterEllipsis"
+                                                           IsVisible="{Binding $parent[ItemsControl].DataContext.ToolsExpanded}" />
                                             </StackPanel>
                                         </Button>
                                     </DataTemplate>
@@ -312,15 +339,18 @@
                                 BorderThickness="0,1,0,0" Padding="24,12">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" MaxWidth="768" HorizontalAlignment="Center">
                                 <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"
-                                         Watermark="Message the agent…    (Ctrl+Enter to send)"
+                                         Watermark="Message the agent…    (Ctrl+Enter to send · Alt+↑/↓ for history)"
                                          AcceptsReturn="True" TextWrapping="Wrap"
                                          MinHeight="88" MaxHeight="280" VerticalContentAlignment="Top"
                                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                                          Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                         BorderBrush="{StaticResource Line}" CornerRadius="10" Padding="12,10">
+                                         BorderBrush="{StaticResource Line}" CornerRadius="10" Padding="12,10"
+                                         AutomationProperties.Name="Message the agent">
                                     <TextBox.KeyBindings>
                                         <KeyBinding Gesture="Ctrl+Enter" Command="{Binding SendCommand}" />
                                         <KeyBinding Gesture="Meta+Enter" Command="{Binding SendCommand}" />
+                                        <KeyBinding Gesture="Alt+Up" Command="{Binding RecallPreviousCommand}" />
+                                        <KeyBinding Gesture="Alt+Down" Command="{Binding RecallNextCommand}" />
                                     </TextBox.KeyBindings>
                                 </TextBox>
                                 <Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}"
@@ -339,13 +369,23 @@
                             Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
                         <Grid RowDefinitions="Auto,*">
                             <Border Grid.Row="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="14,10">
-                                <Grid ColumnDefinitions="*,Auto">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                                     <TextBlock Grid.Column="0" Text="{Binding SelectedPreview.Title}" Foreground="{StaticResource Fg}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                                TextTrimming="CharacterEllipsis" />
-                                    <Button Grid.Column="1" Content="✕" Command="{Binding ClosePreviewCommand}"
+                                    <Button Grid.Column="1" Content="Copy" Click="OnCopyPreview"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6"
+                                            Padding="9,2" FontSize="11" Margin="0,0,8,0"
+                                            ToolTip.Tip="Copy the contents to the clipboard" AutomationProperties.Name="Copy preview contents" />
+                                    <Button Grid.Column="2" Content="Full screen" Command="{Binding ToggleFullScreenCommand}"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6"
+                                            Padding="9,2" FontSize="11" Margin="0,0,8,0"
+                                            ToolTip.Tip="Toggle full-screen review" AutomationProperties.Name="Toggle full-screen review" />
+                                    <Button Grid.Column="3" Content="✕" Command="{Binding ClosePreviewCommand}"
                                             Background="Transparent" Foreground="{StaticResource FgDim}" BorderThickness="0"
-                                            Padding="8,2" FontSize="13" />
+                                            Padding="8,2" FontSize="13" AutomationProperties.Name="Close preview" />
                                 </Grid>
                             </Border>
 

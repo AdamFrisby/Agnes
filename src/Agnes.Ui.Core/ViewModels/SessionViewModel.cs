@@ -9,33 +9,53 @@ namespace Agnes.Ui.Core.ViewModels;
 
 /// <summary>
 /// Drives one live session: the chat transcript (middle column), the contextual left-column lists
-/// (plan, files modified, tools run) aggregated from the event stream, and the right-column preview
-/// shown when the user opens a condensed item (a tool's full diff, or a long message). Side columns
-/// surface only when there's content or the user requests them.
+/// (plan, files modified, tools run), the right-column preview, plus session-level UX — draft and
+/// prompt-history persistence, tool-output collapse, full-screen review, and clear connection/
+/// session state banners (offline / reconnecting / interrupted / stale).
 /// </summary>
 public sealed class SessionViewModel : ObservableObject
 {
     private readonly IAgnesHost _host;
     private readonly SessionView _view;
     private readonly IUiDispatcher _dispatcher;
+    private readonly IPromptStore _prompts;
     private readonly TranscriptBuilder _transcript = new();
     private readonly Dictionary<string, ToolEntry> _tools = new();
-    private string _promptText = string.Empty;
+    private readonly List<string> _history;
+    private int _historyIndex;
+    private string _promptText;
+    private string _lastPrompt = string.Empty;
     private PlanItemView? _plan;
     private PreviewViewModel? _selectedPreview;
     private bool _leftHidden;
+    private bool _toolsExpanded = true;
+    private bool _previewFullScreen;
+    private bool _interrupted;
+    private bool _stale;
+    private SessionBanner _banner;
 
-    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title)
+    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null)
     {
         _host = host;
         _view = view;
         _dispatcher = dispatcher;
+        _prompts = prompts ?? NullPromptStore.Instance;
         Title = title;
+
+        _promptText = _prompts.LoadDraft(view.SessionId);
+        _history = [.. _prompts.LoadHistory(view.SessionId)];
+        _historyIndex = _history.Count;
 
         SendCommand = new AsyncRelayCommand(SendAsync, () => !string.IsNullOrWhiteSpace(PromptText));
         AllowCommand = new AsyncRelayCommand(() => RespondAsync(allow: true));
         DenyCommand = new AsyncRelayCommand(() => RespondAsync(allow: false));
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
+        ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
+        ToggleFullScreenCommand = new RelayCommand(() => IsPreviewFullScreen = !IsPreviewFullScreen);
+        RecallPreviousCommand = new RelayCommand(RecallPrevious);
+        RecallNextCommand = new RelayCommand(RecallNext);
+        DismissBannerCommand = new RelayCommand(DismissBanner);
+        RetryCommand = new AsyncRelayCommand(RetryAsync);
         ClosePreviewCommand = new RelayCommand(() => SelectedPreview = null);
         ShowToolPreviewCommand = new RelayCommand<ToolCallItem>(t => { if (t is not null) { Preview(t.Header, t.Detail); } });
         ShowFilePreviewCommand = new RelayCommand<ToolEntry>(f => { if (f is not null) { Preview(f.Name, f.Detail); } });
@@ -55,6 +75,8 @@ public sealed class SessionViewModel : ObservableObject
         }
 
         _view.EventAppended += OnEvent;
+        _host.StateChanged += OnHostStateChanged;
+        UpdateBanner();
     }
 
     public string Title { get; }
@@ -82,23 +104,85 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasFiles => ModifiedFiles.Count > 0;
     public bool HasTools => ToolActivity.Count > 0;
     public bool HasSidebarContent => Plan is not null || HasFiles || HasTools;
-    public bool ShowLeftPanel => HasSidebarContent && !_leftHidden;
+    public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
     public bool ShowRightPanel => SelectedPreview is not null;
+
+    public bool ToolsExpanded
+    {
+        get => _toolsExpanded;
+        set => Set(ref _toolsExpanded, value);
+    }
+
+    public bool IsPreviewFullScreen
+    {
+        get => _previewFullScreen;
+        set { if (Set(ref _previewFullScreen, value)) { Raise(nameof(ShowLeftPanel)); Raise(nameof(ShowChat)); } }
+    }
+
+    /// <summary>Chat (and left panel) are hidden while reviewing a preview full-screen.</summary>
+    public bool ShowChat => !(IsPreviewFullScreen && ShowRightPanel);
+
+    // Connection / session state
+    public SessionBanner Banner
+    {
+        get => _banner;
+        private set
+        {
+            if (Set(ref _banner, value))
+            {
+                Raise(nameof(ShowBanner));
+                Raise(nameof(BannerText));
+                Raise(nameof(CanRetry));
+            }
+        }
+    }
+
+    public bool ShowBanner => Banner != SessionBanner.None;
+    public bool CanRetry => Banner is SessionBanner.Offline or SessionBanner.Interrupted or SessionBanner.Stale;
+
+    public string BannerText => Banner switch
+    {
+        SessionBanner.Offline => "Offline — the host is unreachable.",
+        SessionBanner.Reconnecting => "Reconnecting…",
+        SessionBanner.Interrupted => "The last turn was interrupted.",
+        SessionBanner.Stale => "This session is stale and may be out of date.",
+        _ => string.Empty,
+    };
 
     public string PromptText
     {
         get => _promptText;
-        set { if (Set(ref _promptText, value)) { SendCommand.RaiseCanExecuteChanged(); } }
+        set
+        {
+            if (Set(ref _promptText, value))
+            {
+                SendCommand.RaiseCanExecuteChanged();
+                _prompts.SaveDraft(SessionId, value);
+            }
+        }
     }
 
     public AsyncRelayCommand SendCommand { get; }
     public AsyncRelayCommand AllowCommand { get; }
     public AsyncRelayCommand DenyCommand { get; }
+    public AsyncRelayCommand RetryCommand { get; }
     public ICommand ToggleLeftCommand { get; }
+    public ICommand ToggleToolsCommand { get; }
+    public ICommand ToggleFullScreenCommand { get; }
+    public ICommand RecallPreviousCommand { get; }
+    public ICommand RecallNextCommand { get; }
+    public ICommand DismissBannerCommand { get; }
     public ICommand ClosePreviewCommand { get; }
     public ICommand ShowToolPreviewCommand { get; }
     public ICommand ShowFilePreviewCommand { get; }
     public ICommand ShowMessagePreviewCommand { get; }
+
+    /// <summary>Marks the session stale (e.g. the host lost it after a reconnect).</summary>
+    public void MarkStale()
+    {
+        _stale = true;
+        UpdateBanner();
+    }
 
     private void OnEvent(SessionEvent @event) => _dispatcher.Post(() => Apply(@event));
 
@@ -106,6 +190,86 @@ public sealed class SessionViewModel : ObservableObject
     {
         _transcript.Apply(@event);
         UpdateSidebar(@event);
+
+        if (@event is AgentErrorEvent)
+        {
+            _interrupted = true;
+            UpdateBanner();
+        }
+    }
+
+    private void OnHostStateChanged(AgnesConnectionState state) => _dispatcher.Post(UpdateBanner);
+
+    private void UpdateBanner()
+    {
+        if (_stale)
+        {
+            Banner = SessionBanner.Stale;
+            return;
+        }
+
+        Banner = _host.State switch
+        {
+            AgnesConnectionState.Disconnected => SessionBanner.Offline,
+            AgnesConnectionState.Reconnecting => SessionBanner.Reconnecting,
+            AgnesConnectionState.Connecting => SessionBanner.Reconnecting,
+            _ => _interrupted ? SessionBanner.Interrupted : SessionBanner.None,
+        };
+    }
+
+    private void DismissBanner()
+    {
+        _interrupted = false;
+        _stale = false;
+        UpdateBanner();
+    }
+
+    private async Task RetryAsync()
+    {
+        if (Banner == SessionBanner.Interrupted && !string.IsNullOrWhiteSpace(_lastPrompt))
+        {
+            _interrupted = false;
+            UpdateBanner();
+            await _host.PromptAsync(SessionId, [new TextContent(_lastPrompt)]);
+            return;
+        }
+
+        try
+        {
+            await _host.ConnectAsync();
+            _stale = false;
+            UpdateBanner();
+        }
+        catch
+        {
+            // stay offline
+        }
+    }
+
+    // ---- prompt history ----
+
+    private void RecallPrevious()
+    {
+        if (_history.Count == 0 || _historyIndex == 0)
+        {
+            return;
+        }
+
+        _historyIndex--;
+        PromptText = _history[_historyIndex];
+    }
+
+    private void RecallNext()
+    {
+        if (_historyIndex >= _history.Count - 1)
+        {
+            _historyIndex = _history.Count;
+            PromptText = string.Empty;
+            return;
+        }
+
+        _historyIndex++;
+        PromptText = _history[_historyIndex];
     }
 
     private void UpdateSidebar(SessionEvent @event)
@@ -165,6 +329,16 @@ public sealed class SessionViewModel : ObservableObject
     private async Task SendAsync()
     {
         var text = PromptText;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            _history.Add(text);
+            _prompts.AppendHistory(SessionId, text);
+            _historyIndex = _history.Count;
+            _lastPrompt = text;
+        }
+
+        _interrupted = false;
+        UpdateBanner();
         PromptText = string.Empty;
         await _host.PromptAsync(SessionId, [new TextContent(text)]);
     }

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Agnes.Ui.Core.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Markup.Xaml;
 
 namespace Agnes.App.Desktop.Views;
@@ -45,7 +46,9 @@ public partial class SessionTabView : UserControl
 
     private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(SessionViewModel.ShowLeftPanel) or nameof(SessionViewModel.ShowRightPanel))
+        if (e.PropertyName is nameof(SessionViewModel.ShowLeftPanel)
+            or nameof(SessionViewModel.ShowRightPanel)
+            or nameof(SessionViewModel.IsPreviewFullScreen))
         {
             UpdateColumns();
         }
@@ -59,8 +62,34 @@ public partial class SessionTabView : UserControl
         }
 
         var columns = _workspace.ColumnDefinitions;
+
+        // Full-screen review: the preview fills the tab; chat, left panel and splitters collapse.
+        if (vm.IsPreviewFullScreen && vm.ShowRightPanel)
+        {
+            columns[0].Width = new GridLength(0);
+            columns[1].Width = new GridLength(0);
+            columns[2].MinWidth = 0;
+            columns[2].Width = new GridLength(0);
+            columns[3].Width = new GridLength(0);
+            columns[4].MaxWidth = double.PositiveInfinity;
+            columns[4].Width = new GridLength(1, GridUnitType.Star);
+            return;
+        }
+
+        columns[2].MinWidth = 300;
+        columns[2].Width = new GridLength(1, GridUnitType.Star);
+        columns[4].MaxWidth = 760;
         Apply(columns[0], columns[1], vm.ShowLeftPanel, ref _leftWidth);
         Apply(columns[4], columns[3], vm.ShowRightPanel, ref _rightWidth);
+    }
+
+    private async void OnCopyPreview(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_workspace?.DataContext is SessionViewModel { SelectedPreview: { } preview }
+            && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(preview.Body);
+        }
     }
 
     // Collapses a side column to 0 when hidden (remembering any dragged width) and restores it

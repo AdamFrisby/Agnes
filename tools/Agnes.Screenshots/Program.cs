@@ -74,6 +74,19 @@ public static class Program
         Pump(() => tools.Session!.ShowRightPanel);
         Capture(window, "04-multicolumn.png");
 
+        // 4c) Full-screen review: the diff fills the tab (chat + panels collapse away).
+        tools.Session!.ToggleFullScreenCommand.Execute(null);
+        Pump(() => tools.Session!.IsPreviewFullScreen && !tools.Session!.ShowChat);
+        Capture(window, "04c-fullscreen-review.png");
+        tools.Session!.ToggleFullScreenCommand.Execute(null);
+        tools.Session!.ClosePreviewCommand.Execute(null);
+
+        // 4d) Clear session-state banner (offline / reconnecting / interrupted / stale).
+        tools.Session!.MarkStale();
+        Pump(() => tools.Session!.ShowBanner);
+        Capture(window, "04d-state-banner.png");
+        tools.Session!.DismissBannerCommand.Execute(null);
+
         // 4b) Long assistant message → condensed in chat, full text in the preview
         var longChat = OpenSession(vm, "opencode");
         Prompt(longChat, "Explain the Agent Client Protocol in detail.");

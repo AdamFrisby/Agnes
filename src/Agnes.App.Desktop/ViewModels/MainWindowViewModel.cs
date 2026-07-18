@@ -25,6 +25,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private readonly IUiDispatcher _dispatcher;
     private readonly SessionStateStore _tabStore;
     private readonly HostRegistryStore _hostStore;
+    private readonly IPromptStore _prompts;
     private readonly DockFactory _factory;
     private readonly List<KnownHost> _knownHosts = [];
     private bool _ready;
@@ -33,12 +34,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         IAgnesConnector connector,
         IUiDispatcher dispatcher,
         SessionStateStore tabStore,
-        HostRegistryStore hostStore)
+        HostRegistryStore hostStore,
+        IPromptStore? prompts = null)
     {
         _connector = connector;
         _dispatcher = dispatcher;
         _tabStore = tabStore;
         _hostStore = hostStore;
+        _prompts = prompts ?? new JsonPromptStore();
 
         _knownHosts.Add(SimulatedHost);
         _knownHosts.Add(RecordedHost);
@@ -140,7 +143,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _dispatcher.Post(() =>
         {
             doc.AgentName = displayName;
-            doc.AttachSession(new SessionViewModel(doc.Host!, view, _dispatcher, displayName));
+            doc.AttachSession(new SessionViewModel(doc.Host!, view, _dispatcher, displayName, _prompts));
             doc.Title = displayName;
             doc.Descriptor = new SessionDescriptor(
                 doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, displayName);
@@ -184,7 +187,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var view = await host.SubscribeAsync(descriptor.SessionId);
             _dispatcher.Post(() =>
             {
-                doc.AttachSession(new SessionViewModel(host, view, _dispatcher, descriptor.Title));
+                doc.AttachSession(new SessionViewModel(host, view, _dispatcher, descriptor.Title, _prompts));
                 doc.Descriptor = descriptor;
             });
         }

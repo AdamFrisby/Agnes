@@ -4,7 +4,11 @@ using Agnes.Ui.Core.Mvvm;
 namespace Agnes.Ui.Core.Transcript;
 
 /// <summary>Base type for a rendered item in a session transcript.</summary>
-public abstract class TranscriptItem : ObservableObject;
+public abstract class TranscriptItem : ObservableObject
+{
+    /// <summary>Stable id for deep-linking / scroll-to-anchor.</summary>
+    public string AnchorId { get; } = Guid.NewGuid().ToString("n");
+}
 
 /// <summary>A coalesced run of message (or thought) chunks from one speaker.</summary>
 public sealed class MessageBubbleItem : TranscriptItem
