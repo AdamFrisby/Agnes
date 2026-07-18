@@ -29,3 +29,23 @@ jobs:
 
       - name: Test
         run: dotnet test Agnes.Core.slnf --configuration Release --no-build --verbosity normal
+
+  ui-build:
+    name: Build Uno UI heads (desktop + web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install wasm workload
+        run: dotnet workload install wasm-tools
+
+      - name: Build desktop head
+        run: dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-desktop -c Release
+
+      - name: Build web (WASM) head
+        run: dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-browserwasm -c Release
