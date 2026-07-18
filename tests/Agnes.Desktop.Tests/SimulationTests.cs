@@ -111,6 +111,25 @@ public class SessionStateStoreTests
         Assert.Equal("sim-2", loaded[1].SessionId);
         Assert.Equal("OpenCode", loaded[0].Title);
     }
+
+    [Fact]
+    public void Permission_policy_persists_and_matches_per_host_and_tool()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"agnes-policy-{Guid.NewGuid():n}.json");
+        var store = new PermissionPolicyStore(path);
+
+        store.Remember("sim://demo", ToolKind.Read, allow: true);
+        store.Remember("sim://demo", ToolKind.Delete, allow: false);
+
+        var reloaded = new PermissionPolicyStore(path);
+        Assert.True(reloaded.Decide("sim://demo", ToolKind.Read));
+        Assert.False(reloaded.Decide("sim://demo", ToolKind.Delete));
+        Assert.Null(reloaded.Decide("sim://demo", ToolKind.Edit));   // no rule
+        Assert.Null(reloaded.Decide("other://host", ToolKind.Read)); // different host
+
+        reloaded.Forget("sim://demo", ToolKind.Read);
+        Assert.Null(new PermissionPolicyStore(path).Decide("sim://demo", ToolKind.Read));
+    }
 }
 
 public class MainWindowRestoreTests

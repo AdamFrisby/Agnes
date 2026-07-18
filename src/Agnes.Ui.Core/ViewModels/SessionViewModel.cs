@@ -19,6 +19,7 @@ public sealed class SessionViewModel : ObservableObject
     private readonly SessionView _view;
     private readonly IUiDispatcher _dispatcher;
     private readonly IPromptStore _prompts;
+    private readonly IPermissionPolicy _policy;
     private readonly TranscriptBuilder _transcript = new();
     private readonly Dictionary<string, ToolEntry> _tools = new();
     private readonly Dictionary<string, string> _permissionTitles = new();
@@ -41,12 +42,13 @@ public sealed class SessionViewModel : ObservableObject
     private int _promptCursor = -1;
     private int _changeCursor = -1;
 
-    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null)
+    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null)
     {
         _host = host;
         _view = view;
         _dispatcher = dispatcher;
         _prompts = prompts ?? NullPromptStore.Instance;
+        _policy = policy ?? NullPermissionPolicy.Instance;
         Title = title;
 
         _promptText = _prompts.LoadDraft(view.SessionId);
@@ -62,6 +64,7 @@ public sealed class SessionViewModel : ObservableObject
         MoveQueuedDownCommand = new RelayCommand<QueuedPrompt>(p => MoveQueued(p, +1));
         AllowCommand = new AsyncRelayCommand(() => RespondAsync(allow: true));
         DenyCommand = new AsyncRelayCommand(() => RespondAsync(allow: false));
+        RespondWithCommand = new RelayCommand<PermissionOption>(o => { if (o is not null) { _ = RespondWithAsync(o); } });
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
         ToggleFullScreenCommand = new RelayCommand(() => IsPreviewFullScreen = !IsPreviewFullScreen);
@@ -238,6 +241,7 @@ public sealed class SessionViewModel : ObservableObject
 
     public bool HasQueue => PendingPrompts.Count > 0;
     public AsyncRelayCommand DenyCommand { get; }
+    public ICommand RespondWithCommand { get; }
     public AsyncRelayCommand RetryCommand { get; }
     public ICommand ToggleLeftCommand { get; }
     public ICommand ToggleToolsCommand { get; }
@@ -277,6 +281,15 @@ public sealed class SessionViewModel : ObservableObject
         {
             case PermissionRequestedEvent pr:
                 _permissionTitles[pr.RequestId] = pr.Title;
+                var toolKind = _transcript.PendingPermission?.ToolKind;
+                if (_policy.Decide(_host.HostUrl, toolKind) is bool auto
+                    && PickOption(pr.Options, auto) is { } chosen)
+                {
+                    // A standing trust rule answers this one; the resolution is still audited.
+                    _ = _host.RespondPermissionAsync(SessionId, pr.RequestId, chosen.OptionId);
+                    break;
+                }
+
                 NotificationRaised?.Invoke(new AppNotification("Permission needed", pr.Title, NotificationKind.Blocker, SessionId));
                 break;
 
@@ -658,10 +671,37 @@ public sealed class SessionViewModel : ObservableObject
             return;
         }
 
-        var option = permission.Options.FirstOrDefault(o => IsAllow(o.Kind) == allow)
-                     ?? permission.Options[0];
+        var option = PickOption(permission.Options, allow) ?? permission.Options[0];
         await _host.RespondPermissionAsync(SessionId, permission.RequestId, option.OptionId);
     }
+
+    // Respond with a specific option; "always" options also record a standing trust rule.
+    private async Task RespondWithAsync(PermissionOption option)
+    {
+        if (PendingPermission is not { } permission)
+        {
+            return;
+        }
+
+        if (option.Kind == PermissionOptionKind.AllowAlways)
+        {
+            _policy.Remember(_host.HostUrl, permission.ToolKind, allow: true);
+        }
+        else if (option.Kind == PermissionOptionKind.RejectAlways)
+        {
+            _policy.Remember(_host.HostUrl, permission.ToolKind, allow: false);
+        }
+
+        await _host.RespondPermissionAsync(SessionId, permission.RequestId, option.OptionId);
+    }
+
+    // Narrowest matching option: prefer "once" over "always".
+    private static PermissionOption? PickOption(IReadOnlyList<PermissionOption> options, bool allow)
+        => options.FirstOrDefault(o => IsAllow(o.Kind) == allow && IsOnce(o.Kind))
+           ?? options.FirstOrDefault(o => IsAllow(o.Kind) == allow);
+
+    private static bool IsOnce(PermissionOptionKind kind)
+        => kind is PermissionOptionKind.AllowOnce or PermissionOptionKind.RejectOnce;
 
     private static bool IsAllow(PermissionOptionKind kind)
         => kind is PermissionOptionKind.AllowOnce or PermissionOptionKind.AllowAlways;

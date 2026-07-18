@@ -186,6 +186,45 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- trust / allowlists ----
+
+    [Fact]
+    public void A_trusted_tool_is_auto_approved_without_asking()
+    {
+        var policy = new StubPolicy { Decision = true }; // always allow
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode", null, policy);
+
+        view.Apply(Seq(new ToolCallEvent("tc1", "build/", ToolKind.Delete, ToolCallStatus.Pending, []), 1));
+        view.Apply(Seq(new PermissionRequestedEvent("r1", "tc1", "Delete?",
+            [new PermissionOption("once", "Allow once", PermissionOptionKind.AllowOnce)]), 2));
+
+        Assert.Equal(("r1", "once"), host.Responses.Single()); // auto-answered by the policy
+    }
+
+    [Fact]
+    public void Choosing_an_always_option_records_a_standing_trust_rule()
+    {
+        var policy = new RecordingPolicy(); // Decide returns null → the card is shown
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode", null, policy);
+
+        view.Apply(Seq(new ToolCallEvent("tc1", "build/", ToolKind.Delete, ToolCallStatus.Pending, []), 1));
+        view.Apply(Seq(new PermissionRequestedEvent("r1", "tc1", "Delete?",
+        [
+            new PermissionOption("once", "Allow once", PermissionOptionKind.AllowOnce),
+            new PermissionOption("always", "Always allow", PermissionOptionKind.AllowAlways),
+        ]), 2));
+
+        var always = vm.PendingPermission!.Options.First(o => o.Kind == PermissionOptionKind.AllowAlways);
+        vm.RespondWithCommand.Execute(always);
+
+        Assert.Equal(("fake://host", ToolKind.Delete, true), policy.Remembered.Single());
+        Assert.Equal(("r1", "always"), host.Responses.Single());
+    }
+
     // ---- permission audit trail ----
 
     [Fact]
@@ -418,7 +457,13 @@ internal sealed class FakeHost : IAgnesHost
         return Task.CompletedTask;
     }
 
-    public Task RespondPermissionAsync(string sessionId, string requestId, string optionId) => Task.CompletedTask;
+    public List<(string RequestId, string OptionId)> Responses { get; } = [];
+
+    public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
+    {
+        Responses.Add((requestId, optionId));
+        return Task.CompletedTask;
+    }
 
     public Task<HostInfo> GetHostInfoAsync() => Task.FromResult(new HostInfo("fake", "fake", "1.0"));
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync() => Task.FromResult<IReadOnlyList<AgentInfo>>([]);
@@ -430,6 +475,24 @@ internal sealed class FakeHost : IAgnesHost
 
     // Suppress unused-event warnings for the parts of the surface these tests don't exercise.
     private void Touch() { UsageChanged?.Invoke(null); AgentsChanged?.Invoke([]); }
+}
+
+/// <summary>Policy that returns a fixed decision for every request.</summary>
+internal sealed class StubPolicy : IPermissionPolicy
+{
+    public bool? Decision { get; set; }
+    public bool? Decide(string hostUrl, ToolKind? toolKind) => Decision;
+    public void Remember(string hostUrl, ToolKind? toolKind, bool allow) { }
+    public void Forget(string hostUrl, ToolKind? toolKind) { }
+}
+
+/// <summary>Policy that asks every time but records what it was told to remember.</summary>
+internal sealed class RecordingPolicy : IPermissionPolicy
+{
+    public List<(string HostUrl, ToolKind? ToolKind, bool Allow)> Remembered { get; } = [];
+    public bool? Decide(string hostUrl, ToolKind? toolKind) => null;
+    public void Remember(string hostUrl, ToolKind? toolKind, bool allow) => Remembered.Add((hostUrl, toolKind, allow));
+    public void Forget(string hostUrl, ToolKind? toolKind) { }
 }
 
 /// <summary>In-memory prompt store for tests.</summary>

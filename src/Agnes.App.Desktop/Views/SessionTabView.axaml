@@ -497,13 +497,21 @@
                                     <TextBlock Text="{Binding PendingPermission.NarrowestOptionHint}" Foreground="{StaticResource Accent}" FontSize="11"
                                                IsVisible="{Binding PendingPermission.HasNarrowestHint}" />
                                 </StackPanel>
-                                <Button Grid.Column="1" Content="Allow" Command="{Binding AllowCommand}" Margin="8,0,0,0"
-                                        VerticalAlignment="Center"
-                                        Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,6" />
-                                <Button Grid.Column="2" Content="Deny" Command="{Binding DenyCommand}" Margin="8,0,0,0"
-                                        VerticalAlignment="Center"
-                                        Background="Transparent" Foreground="{StaticResource FgDim}"
-                                        BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,6" />
+                                <ItemsControl Grid.Column="1" Grid.ColumnSpan="2" ItemsSource="{Binding PendingPermission.Options}"
+                                              VerticalAlignment="Center" Margin="8,0,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Content="{Binding Name}"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.RespondWithCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Background="Transparent" Foreground="{StaticResource Fg}"
+                                                    BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="7" Padding="12,6" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </Grid>
                         </Border>
 

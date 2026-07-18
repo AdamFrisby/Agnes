@@ -27,6 +27,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private readonly SessionStateStore _archiveStore;
     private readonly HostRegistryStore _hostStore;
     private readonly IPromptStore _prompts;
+    private readonly IPermissionPolicy _policy;
     private readonly SettingsStore _settingsStore;
     private readonly DockFactory _factory;
     private readonly List<KnownHost> _knownHosts = [];
@@ -46,7 +47,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         HostRegistryStore hostStore,
         IPromptStore? prompts = null,
         SessionStateStore? archiveStore = null,
-        SettingsStore? settingsStore = null)
+        SettingsStore? settingsStore = null,
+        IPermissionPolicy? policy = null)
     {
         _connector = connector;
         _dispatcher = dispatcher;
@@ -54,6 +56,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _archiveStore = archiveStore ?? new SessionStateStore(SessionStateStore.DefaultPath().Replace("desktop-tabs.json", "desktop-archive.json"));
         _hostStore = hostStore;
         _prompts = prompts ?? new JsonPromptStore();
+        _policy = policy ?? new PermissionPolicyStore();
         _settingsStore = settingsStore ?? new SettingsStore();
         _settings = _settingsStore.Load();
 
@@ -104,7 +107,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// <summary>Creates a session view model and wires its notifications to the shell.</summary>
     private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
     {
-        var session = new SessionViewModel(host, view, _dispatcher, title, _prompts);
+        var session = new SessionViewModel(host, view, _dispatcher, title, _prompts, _policy);
         session.NotificationRaised += n => _dispatcher.Post(() => Surface(n));
         return session;
     }
