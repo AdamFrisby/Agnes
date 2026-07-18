@@ -480,10 +480,24 @@
                                     </TextBox.KeyBindings>
                                 </TextBox>
                                 <Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}"
+                                        IsVisible="{Binding !IsTurnActive}"
                                         VerticalAlignment="Top" Height="40"
                                         VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
                                         Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="10"
-                                        Padding="18,0" FontWeight="SemiBold" />
+                                        Padding="18,0" FontWeight="SemiBold" AutomationProperties.Name="Send message" />
+                                <Button Grid.Column="1" Command="{Binding CancelCommand}"
+                                        IsVisible="{Binding IsTurnActive}"
+                                        VerticalAlignment="Top" Height="40"
+                                        VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                        Background="Transparent" Foreground="{StaticResource Fg}"
+                                        BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="10"
+                                        Padding="16,0" FontWeight="SemiBold" AutomationProperties.Name="Stop the running turn"
+                                        ToolTip.Tip="Stop the running turn">
+                                    <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                        <Border Width="9" Height="9" CornerRadius="2" Background="{StaticResource Accent}" />
+                                        <TextBlock Text="Stop" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </Grid>
                         </Border>
                     </Grid>

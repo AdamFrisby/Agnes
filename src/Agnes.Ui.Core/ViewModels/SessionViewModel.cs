@@ -32,6 +32,7 @@ public sealed class SessionViewModel : ObservableObject
     private bool _previewFullScreen;
     private bool _interrupted;
     private bool _stale;
+    private bool _turnActive;
     private SessionBanner _banner;
     private string _searchQuery = string.Empty;
     private bool _isSearchOpen;
@@ -52,6 +53,7 @@ public sealed class SessionViewModel : ObservableObject
         _historyIndex = _history.Count;
 
         SendCommand = new AsyncRelayCommand(SendAsync, () => !string.IsNullOrWhiteSpace(PromptText));
+        CancelCommand = new AsyncRelayCommand(CancelAsync, () => IsTurnActive);
         AllowCommand = new AsyncRelayCommand(() => RespondAsync(allow: true));
         DenyCommand = new AsyncRelayCommand(() => RespondAsync(allow: false));
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
@@ -154,6 +156,19 @@ public sealed class SessionViewModel : ObservableObject
     public bool ShowBanner => Banner != SessionBanner.None;
     public bool CanRetry => Banner is SessionBanner.Offline or SessionBanner.Interrupted or SessionBanner.Stale;
 
+    /// <summary>Whether a turn is currently running — drives the Stop button and the "Running" state.</summary>
+    public bool IsTurnActive
+    {
+        get => _turnActive;
+        private set
+        {
+            if (Set(ref _turnActive, value))
+            {
+                CancelCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
     public string BannerText => Banner switch
     {
         SessionBanner.Offline => "Offline — the host is unreachable.",
@@ -199,6 +214,7 @@ public sealed class SessionViewModel : ObservableObject
     }
 
     public AsyncRelayCommand SendCommand { get; }
+    public AsyncRelayCommand CancelCommand { get; }
     public AsyncRelayCommand AllowCommand { get; }
     public AsyncRelayCommand DenyCommand { get; }
     public AsyncRelayCommand RetryCommand { get; }
@@ -243,10 +259,16 @@ public sealed class SessionViewModel : ObservableObject
                 break;
 
             case TurnEndedEvent { Reason: not StopReason.Cancelled }:
+                IsTurnActive = false;
                 NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId));
                 break;
 
+            case TurnEndedEvent:
+                IsTurnActive = false;
+                break;
+
             case AgentErrorEvent ae:
+                IsTurnActive = false;
                 _interrupted = true;
                 UpdateBanner();
                 NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId));
@@ -495,7 +517,14 @@ public sealed class SessionViewModel : ObservableObject
         _interrupted = false;
         UpdateBanner();
         PromptText = string.Empty;
+        IsTurnActive = true;
         await _host.PromptAsync(SessionId, [new TextContent(text)]);
+    }
+
+    private async Task CancelAsync()
+    {
+        IsTurnActive = false;
+        await _host.CancelAsync(SessionId);
     }
 
     private async Task RespondAsync(bool allow)

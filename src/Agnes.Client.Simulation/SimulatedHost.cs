@@ -129,7 +129,17 @@ public sealed class SimulatedHost : IAgnesHost
         _remaining = Math.Max(0, _remaining - 140 - text.Length);
         UpdateUsage();
 
-        _ = Task.Run(() => RespondAsync(session, text));
+        _ = Task.Run(() => RespondAsync(session, text, session.NewTurn()));
+        return Task.CompletedTask;
+    }
+
+    public Task CancelAsync(string sessionId)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session) && session.CancelTurn())
+        {
+            session.Emit(new TurnEndedEvent(StopReason.Cancelled));
+        }
+
         return Task.CompletedTask;
     }
 
@@ -152,61 +162,68 @@ public sealed class SimulatedHost : IAgnesHost
 
     // ---- scripted behavior ----
 
-    private static async Task RespondAsync(SimSession session, string prompt)
+    private static async Task RespondAsync(SimSession session, string prompt, CancellationToken cancel)
     {
-        await Task.Delay(250).ConfigureAwait(false);
-        session.Emit(new ThoughtChunkEvent(new TextContent("Reading the request and planning a response…")));
-
-        if (Mentions(prompt, "delete", "remove", "rm "))
+        try
         {
-            session.Emit(new PermissionRequestedEvent("req-1", "tc-danger", "Delete files in the working directory?",
-            [
-                new PermissionOption("allow-once", "Allow once", PermissionOptionKind.AllowOnce),
-                new PermissionOption("reject-once", "Reject", PermissionOptionKind.RejectOnce),
-            ]));
-            return; // wait for the client to answer (RespondPermissionAsync continues the turn)
-        }
+            await Task.Delay(250, cancel).ConfigureAwait(false);
+            session.Emit(new ThoughtChunkEvent(new TextContent("Reading the request and planning a response…")));
 
-        if (Mentions(prompt, "explain", "detail", "describe", "overview"))
-        {
-            foreach (var chunk in LongAnswer.Split(' '))
+            if (Mentions(prompt, "delete", "remove", "rm "))
             {
-                await Task.Delay(12).ConfigureAwait(false);
-                session.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent(chunk + " ")));
+                session.Emit(new PermissionRequestedEvent("req-1", "tc-danger", "Delete files in the working directory?",
+                [
+                    new PermissionOption("allow-once", "Allow once", PermissionOptionKind.AllowOnce),
+                    new PermissionOption("reject-once", "Reject", PermissionOptionKind.RejectOnce),
+                ]));
+                return; // wait for the client to answer (RespondPermissionAsync continues the turn)
+            }
+
+            if (Mentions(prompt, "explain", "detail", "describe", "overview"))
+            {
+                foreach (var chunk in LongAnswer.Split(' '))
+                {
+                    await Task.Delay(12, cancel).ConfigureAwait(false);
+                    session.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent(chunk + " ")));
+                }
+
+                session.Emit(new TurnEndedEvent(StopReason.EndTurn));
+                return;
+            }
+
+            if (Mentions(prompt, "file", "create", "write", "plan"))
+            {
+                session.Emit(new PlanEvent(
+                [
+                    new PlanEntry("Inspect the working directory", "completed"),
+                    new PlanEntry("Write the requested file", "in_progress"),
+                    new PlanEntry("Confirm the result", "pending"),
+                ]));
+                await Task.Delay(150, cancel).ConfigureAwait(false);
+                session.Emit(new ToolCallEvent("tc-search", "config", ToolKind.Search, ToolCallStatus.Completed,
+                    [new TextContent("3 matches in src/config.ts")]));
+                await Task.Delay(150, cancel).ConfigureAwait(false);
+                session.Emit(new ToolCallEvent("tc-read", "src/config.ts", ToolKind.Read, ToolCallStatus.Completed,
+                    [new TextContent("read 42 lines")]));
+                await Task.Delay(200, cancel).ConfigureAwait(false);
+                session.Emit(new ToolCallEvent("tc-1", "src/config.ts", ToolKind.Edit, ToolCallStatus.InProgress, [new TextContent(SampleDiff)]));
+                await Task.Delay(400, cancel).ConfigureAwait(false);
+                session.Emit(new ToolCallUpdateEvent("tc-1", ToolCallStatus.Completed, [new TextContent(SampleDiff)]));
+            }
+
+            var reply = BuildReply(prompt);
+            foreach (var word in reply.Split(' '))
+            {
+                await Task.Delay(35, cancel).ConfigureAwait(false);
+                session.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent(word + " ")));
             }
 
             session.Emit(new TurnEndedEvent(StopReason.EndTurn));
-            return;
         }
-
-        if (Mentions(prompt, "file", "create", "write", "plan"))
+        catch (OperationCanceledException)
         {
-            session.Emit(new PlanEvent(
-            [
-                new PlanEntry("Inspect the working directory", "completed"),
-                new PlanEntry("Write the requested file", "in_progress"),
-                new PlanEntry("Confirm the result", "pending"),
-            ]));
-            await Task.Delay(150).ConfigureAwait(false);
-            session.Emit(new ToolCallEvent("tc-search", "config", ToolKind.Search, ToolCallStatus.Completed,
-                [new TextContent("3 matches in src/config.ts")]));
-            await Task.Delay(150).ConfigureAwait(false);
-            session.Emit(new ToolCallEvent("tc-read", "src/config.ts", ToolKind.Read, ToolCallStatus.Completed,
-                [new TextContent("read 42 lines")]));
-            await Task.Delay(200).ConfigureAwait(false);
-            session.Emit(new ToolCallEvent("tc-1", "src/config.ts", ToolKind.Edit, ToolCallStatus.InProgress, [new TextContent(SampleDiff)]));
-            await Task.Delay(400).ConfigureAwait(false);
-            session.Emit(new ToolCallUpdateEvent("tc-1", ToolCallStatus.Completed, [new TextContent(SampleDiff)]));
+            // Cancelled mid-turn: CancelAsync emits the TurnEnded(Cancelled), so just stop.
         }
-
-        var reply = BuildReply(prompt);
-        foreach (var word in reply.Split(' '))
-        {
-            await Task.Delay(35).ConfigureAwait(false);
-            session.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent(word + " ")));
-        }
-
-        session.Emit(new TurnEndedEvent(StopReason.EndTurn));
     }
 
     private static string BuildReply(string prompt)
@@ -242,6 +259,7 @@ public sealed class SimulatedHost : IAgnesHost
         private readonly object _gate = new();
         private readonly List<SessionEvent> _log = [];
         private long _seq;
+        private CancellationTokenSource? _turn;
 
         public SimSession(string id, string adapterId, string cwd)
         {
@@ -256,6 +274,32 @@ public sealed class SimulatedHost : IAgnesHost
         public string Cwd { get; }
         public SessionView View { get; }
         public long Head { get { lock (_gate) { return _seq; } } }
+
+        /// <summary>Starts a new turn, cancelling any previous one, and returns its token.</summary>
+        public CancellationToken NewTurn()
+        {
+            lock (_gate)
+            {
+                _turn?.Cancel();
+                _turn = new CancellationTokenSource();
+                return _turn.Token;
+            }
+        }
+
+        /// <summary>Cancels the active turn; returns true if one was running.</summary>
+        public bool CancelTurn()
+        {
+            lock (_gate)
+            {
+                if (_turn is { IsCancellationRequested: false })
+                {
+                    _turn.Cancel();
+                    return true;
+                }
+
+                return false;
+            }
+        }
 
         public void Emit(SessionEvent @event)
         {

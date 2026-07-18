@@ -83,6 +83,28 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
     }
 
     [Fact]
+    public async Task Cancel_flows_over_the_wire_to_the_agent_session()
+    {
+        _factory.Adapter.Session.OnPrompt = (_, s) =>
+        {
+            s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("thinking…")));
+            return Task.FromResult(StopReason.EndTurn);
+        };
+
+        await using var client = new AgnesClient();
+        var host = await client.AddHostAsync("http://localhost", Token, UseTestServer());
+        var session = await host.OpenSessionAsync("scripted", ".");
+        await host.SubscribeAsync(session.SessionId);
+        await host.PromptAsync(session.SessionId, [new TextContent("go")]);
+
+        await host.CancelAsync(session.SessionId);
+
+        // The Stop reaches the agent session's CancelAsync over the SignalR wire.
+        await _factory.Adapter.Session.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.True(_factory.Adapter.Session.Cancelled.Task.IsCompletedSuccessfully);
+    }
+
+    [Fact]
     public async Task Rejects_connection_without_valid_token()
     {
         await using var client = new AgnesClient();
@@ -123,10 +145,16 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
         public Func<IReadOnlyList<ContentBlock>, ScriptedSession, Task<StopReason>> OnPrompt { get; set; }
             = (_, _) => Task.FromResult(StopReason.EndTurn);
 
+        public TaskCompletionSource Cancelled { get; } = new();
+
         public void Emit(SessionEvent e) => _events.Writer.TryWrite(e);
         public Task<StopReason> PromptAsync(IReadOnlyList<ContentBlock> content, CancellationToken cancellationToken = default)
             => OnPrompt(content, this);
-        public Task CancelAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task CancelAsync(CancellationToken cancellationToken = default)
+        {
+            Cancelled.TrySetResult();
+            return Task.CompletedTask;
+        }
         public Task RespondToPermissionAsync(string requestId, string optionId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
         public ValueTask DisposeAsync() { _events.Writer.TryComplete(); return ValueTask.CompletedTask; }

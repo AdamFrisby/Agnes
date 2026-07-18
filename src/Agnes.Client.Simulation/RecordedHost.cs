@@ -82,6 +82,7 @@ public sealed class RecordedHost : IAgnesHost
 
     // Recorded sessions are read-only playback.
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content) => Task.CompletedTask;
+    public Task CancelAsync(string sessionId) => Task.CompletedTask;
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId) => Task.CompletedTask;
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 

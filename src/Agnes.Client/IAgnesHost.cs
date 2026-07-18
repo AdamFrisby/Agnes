@@ -49,6 +49,9 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content);
 
+    /// <summary>Cancels the in-flight turn for a session (Stop).</summary>
+    Task CancelAsync(string sessionId);
+
     Task RespondPermissionAsync(string sessionId, string requestId, string optionId);
 }
 

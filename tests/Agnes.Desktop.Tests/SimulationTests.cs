@@ -70,6 +70,27 @@ public class SimulatedHostTests
 
         Assert.Equal(PermissionOutcome.Allowed, view.Events.OfType<PermissionResolvedEvent>().First().Outcome);
     }
+
+    [Fact]
+    public async Task Cancel_stops_a_running_turn()
+    {
+        var host = new SimulatedHost();
+        await host.ConnectAsync();
+        var info = await host.OpenSessionAsync("opencode", "/tmp/agnes");
+        var view = await host.SubscribeAsync(info.SessionId);
+
+        // A long, word-by-word streaming response we can interrupt mid-turn.
+        await host.PromptAsync(info.SessionId, [new TextContent("explain the protocol in detail")]);
+        await WaitAsync(() => view.Events.OfType<MessageChunkEvent>().Any(m => m.Role == MessageRole.Assistant));
+
+        await host.CancelAsync(info.SessionId);
+        await WaitAsync(() => view.Events.OfType<TurnEndedEvent>().Any(e => e.Reason == StopReason.Cancelled));
+
+        // Streaming must actually stop: no further events after cancellation settles.
+        var count = view.Events.Count;
+        await Task.Delay(200);
+        Assert.Equal(count, view.Events.Count);
+    }
 }
 
 public class SessionStateStoreTests

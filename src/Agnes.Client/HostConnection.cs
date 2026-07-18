@@ -105,6 +105,9 @@ public sealed class HostConnection : IAgnesHost
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
         => _hub.InvokeAsync(nameof(IAgnesServer.Prompt), new PromptRequest(sessionId, content));
 
+    public Task CancelAsync(string sessionId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.Cancel), sessionId);
+
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RespondPermission), new PermissionResponseRequest(sessionId, requestId, optionId));
 

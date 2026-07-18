@@ -109,6 +109,14 @@ public static class Program
         Capture(window, "04f-search.png");
         tools.Session!.CloseSearchCommand.Execute(null);
 
+        // 4g) Stop button: shown while a turn is streaming (Send is replaced by Stop).
+        var running = OpenSession(vm, "opencode");
+        Prompt(running, "Explain the Agent Client Protocol in detail.");
+        Pump(() => running.Session!.IsTurnActive
+                   && running.Session!.Items.OfType<MessageBubbleItem>().Any(m => !m.IsUser && !m.IsThought));
+        Capture(window, "04g-stop-button.png");
+        running.Session!.CancelCommand.Execute(null);
+
         // 4b) Long assistant message → condensed in chat, full text in the preview
         var longChat = OpenSession(vm, "opencode");
         Prompt(longChat, "Explain the Agent Client Protocol in detail.");

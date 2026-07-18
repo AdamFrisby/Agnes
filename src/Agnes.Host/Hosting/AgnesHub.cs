@@ -53,6 +53,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task Prompt(PromptRequest request)
         => _sessions.PromptAsync(request.SessionId, request.Content);
 
+    public Task Cancel(string sessionId)
+        => _sessions.CancelAsync(sessionId);
+
     public Task RespondPermission(PermissionResponseRequest response)
         => _sessions.RespondPermissionAsync(response.SessionId, response.RequestId, response.OptionId);
 }

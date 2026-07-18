@@ -157,6 +157,35 @@ public class SessionStateTests
         Assert.True(vm.ShowRightPanel);
     }
 
+    // ---- stop / cancel ----
+
+    [Fact]
+    public void Stop_cancels_the_turn_and_turn_state_tracks_the_lifecycle()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        Assert.False(vm.IsTurnActive);
+        Assert.False(vm.CancelCommand.CanExecute(null));
+
+        vm.PromptText = "do a big thing";
+        vm.SendCommand.Execute(null);
+        Assert.True(vm.IsTurnActive);
+        Assert.True(vm.CancelCommand.CanExecute(null));
+
+        vm.CancelCommand.Execute(null);
+        Assert.Equal(1, host.Cancels);
+        Assert.False(vm.IsTurnActive);
+
+        // A naturally-ending turn also clears the active state.
+        vm.PromptText = "another";
+        vm.SendCommand.Execute(null);
+        Assert.True(vm.IsTurnActive);
+        view.Apply(Seq(new TurnEndedEvent(StopReason.EndTurn), 1));
+        Assert.False(vm.IsTurnActive);
+    }
+
     // ---- notifications ----
 
     [Fact]
@@ -279,6 +308,14 @@ internal sealed class FakeHost : IAgnesHost
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
     {
         Prompts.Add(string.Concat(content.OfType<TextContent>().Select(c => c.Text)));
+        return Task.CompletedTask;
+    }
+
+    public int Cancels { get; private set; }
+
+    public Task CancelAsync(string sessionId)
+    {
+        Cancels++;
         return Task.CompletedTask;
     }
 

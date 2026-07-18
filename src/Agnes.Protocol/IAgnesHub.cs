@@ -35,6 +35,9 @@ public interface IAgnesServer
 
     Task Prompt(PromptRequest request);
 
+    /// <summary>Cancels the in-flight turn for a session (maps to ACP <c>session/cancel</c>).</summary>
+    Task Cancel(string sessionId);
+
     Task RespondPermission(PermissionResponseRequest response);
 }
 
