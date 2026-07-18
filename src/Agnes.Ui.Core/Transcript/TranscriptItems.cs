@@ -27,10 +27,22 @@ public sealed class MessageBubbleItem : TranscriptItem
     public string Text
     {
         get => _text;
-        set => Set(ref _text, value);
+        set
+        {
+            if (Set(ref _text, value))
+            {
+                Raise(nameof(IsLong));
+                Raise(nameof(CondensedText));
+            }
+        }
     }
 
     public void Append(string text) => Text += text;
+
+    /// <summary>Long assistant messages are condensed in the chat and open in full in the preview.</summary>
+    public bool IsLong => !IsUser && !IsThought && Text.Length > 360;
+
+    public string CondensedText => IsLong ? Text[..360].TrimEnd() + " …" : Text;
 }
 
 /// <summary>A tool call, updated in place as its status changes.</summary>

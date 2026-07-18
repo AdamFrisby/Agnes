@@ -20,6 +20,19 @@
         <Style Selector="Border.dot.on">
             <Setter Property="Background" Value="{StaticResource Good}" />
         </Style>
+        <!-- diff rows -->
+        <Style Selector="Border.add">
+            <Setter Property="Background" Value="{StaticResource DiffAddBg}" />
+        </Style>
+        <Style Selector="Border.del">
+            <Setter Property="Background" Value="{StaticResource DiffDelBg}" />
+        </Style>
+        <Style Selector="Border.hunk">
+            <Setter Property="Background" Value="{StaticResource HunkBg}" />
+        </Style>
+        <Style Selector="Border.hunk TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource HunkFg}" />
+        </Style>
     </UserControl.Styles>
 
     <Grid RowDefinitions="Auto,*">
@@ -70,12 +83,10 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-
                     <Button Command="{Binding ToggleAddHostCommand}" HorizontalAlignment="Left"
                             Background="Transparent" Foreground="{StaticResource FgDim}"
                             BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="10,6" FontSize="12"
                             Content="+ Add host" />
-
                     <StackPanel Spacing="6" IsVisible="{Binding ShowAddHost}">
                         <TextBox Text="{Binding NewHostName, Mode=TwoWay}" Watermark="Name (optional)"
                                  Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
@@ -89,7 +100,6 @@
                         <Button Content="Connect" Command="{Binding AddHostCommand}" HorizontalAlignment="Stretch"
                                 Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="8" Padding="12,8" FontWeight="SemiBold" />
                     </StackPanel>
-
                     <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgFaint}"
                                HorizontalAlignment="Center" TextWrapping="Wrap" />
                 </StackPanel>
@@ -121,12 +131,19 @@
                 </StackPanel>
             </Border>
 
-            <!-- Stage 3: live conversation — multi-column workspace -->
+            <!-- Stage 3: live conversation — resizable multi-column workspace -->
             <Grid IsVisible="{Binding IsLive}">
-                <Grid DataContext="{Binding Session}" ColumnDefinitions="Auto,*,Auto">
+                <Grid x:Name="Workspace" DataContext="{Binding Session}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="0" MinWidth="0" MaxWidth="560" />
+                        <ColumnDefinition Width="0" />
+                        <ColumnDefinition Width="*" MinWidth="300" />
+                        <ColumnDefinition Width="0" />
+                        <ColumnDefinition Width="0" MinWidth="0" MaxWidth="760" />
+                    </Grid.ColumnDefinitions>
 
-                    <!-- LEFT: contextual lists (plan, files modified) -->
-                    <Border Grid.Column="0" Width="272" IsVisible="{Binding ShowLeftPanel}"
+                    <!-- LEFT: plan, files modified, tools run -->
+                    <Border Grid.Column="0" IsVisible="{Binding ShowLeftPanel}"
                             Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
                         <ScrollViewer Padding="14,16" VerticalScrollBarVisibility="Auto">
                             <StackPanel Spacing="18">
@@ -163,12 +180,36 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
+
+                                <StackPanel Spacing="4" IsVisible="{Binding HasTools}">
+                                    <TextBlock Text="TOOLS RUN" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <ItemsControl ItemsSource="{Binding ToolActivity}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Command="{Binding $parent[ItemsControl].DataContext.ShowFilePreviewCommand}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                        Padding="6,5" CornerRadius="6" Cursor="Hand">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding Kind}" Foreground="{StaticResource Good}" FontSize="10"
+                                                                   FontFamily="{StaticResource MonoFont}" Width="52" />
+                                                        <TextBlock Text="{Binding Name}" Foreground="{StaticResource Fg}" FontSize="12"
+                                                                   FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
                     </Border>
 
+                    <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns"
+                                  Background="{StaticResource Line}" IsVisible="{Binding ShowLeftPanel}" />
+
                     <!-- MIDDLE: chat -->
-                    <Grid Grid.Column="1" RowDefinitions="*,Auto,Auto">
+                    <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto">
                         <ScrollViewer Grid.Row="0" Padding="0,16" VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding Items}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
                                 <ItemsControl.DataTemplates>
@@ -178,8 +219,13 @@
                                             <StackPanel>
                                                 <TextBlock Text="{Binding Speaker}" FontSize="11"
                                                            Foreground="{StaticResource FgFaint}" Margin="0,0,0,3" />
-                                                <TextBlock Text="{Binding Text}" Classes.thought="{Binding IsThought}"
+                                                <TextBlock Text="{Binding CondensedText}" Classes.thought="{Binding IsThought}"
                                                            Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
+                                                <Button Content="Read full message ›" IsVisible="{Binding IsLong}"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.ShowMessagePreviewCommand}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Left" Margin="0,6,0,0"
+                                                        Background="Transparent" Foreground="{StaticResource Accent}" BorderThickness="0"
+                                                        Padding="0" FontSize="12" Cursor="Hand" />
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
@@ -285,8 +331,11 @@
                         </Border>
                     </Grid>
 
-                    <!-- RIGHT: full preview (opens when a condensed item is tapped) -->
-                    <Border Grid.Column="2" Width="480" IsVisible="{Binding ShowRightPanel}"
+                    <GridSplitter Grid.Column="3" Width="5" ResizeDirection="Columns"
+                                  Background="{StaticResource Line}" IsVisible="{Binding ShowRightPanel}" />
+
+                    <!-- RIGHT: full preview (diff viewer or text) -->
+                    <Border Grid.Column="4" IsVisible="{Binding ShowRightPanel}"
                             Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
                         <Grid RowDefinitions="Auto,*">
                             <Border Grid.Row="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="14,10">
@@ -299,9 +348,39 @@
                                             Padding="8,2" FontSize="13" />
                                 </Grid>
                             </Border>
-                            <ScrollViewer Grid.Row="1" Padding="14" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+
+                            <!-- Diff view -->
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                          IsVisible="{Binding SelectedPreview.IsDiff}">
+                                <ItemsControl ItemsSource="{Binding SelectedPreview.Diff}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Classes.add="{Binding IsAdded}" Classes.del="{Binding IsRemoved}"
+                                                    Classes.hunk="{Binding IsHunk}">
+                                                <Grid ColumnDefinitions="40,40,14,*">
+                                                    <TextBlock Grid.Column="0" Text="{Binding OldLineText}" TextAlignment="Right"
+                                                               Foreground="{StaticResource Gutter}" FontFamily="{StaticResource MonoFont}"
+                                                               FontSize="11" Padding="0,1,6,1" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding NewLineText}" TextAlignment="Right"
+                                                               Foreground="{StaticResource Gutter}" FontFamily="{StaticResource MonoFont}"
+                                                               FontSize="11" Padding="0,1,6,1" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding Marker}" Foreground="{StaticResource FgDim}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="0,1" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding Text}" Foreground="{StaticResource Fg}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
+                                                               TextWrapping="Wrap" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- Plain text preview -->
+                            <ScrollViewer Grid.Row="1" Padding="16" VerticalScrollBarVisibility="Auto"
+                                          IsVisible="{Binding SelectedPreview.IsText}">
                                 <TextBlock Text="{Binding SelectedPreview.Body}" Foreground="{StaticResource Fg}"
-                                           FontFamily="{StaticResource MonoFont}" FontSize="12" TextWrapping="NoWrap" />
+                                           FontSize="13" TextWrapping="Wrap" />
                             </ScrollViewer>
                         </Grid>
                     </Border>

@@ -22,6 +22,41 @@ public sealed class SimulatedHost : IAgnesHost
 
     private const int Quota = 5000;
 
+    private const string SampleDiff =
+        "--- a/src/config.ts\n" +
+        "+++ b/src/config.ts\n" +
+        "@@ -5,13 +5,16 @@ import { load } from \"./io\";\n" +
+        " export interface Config {\n" +
+        "   host: string;\n" +
+        "   port: number;\n" +
+        "-  retries: number;\n" +
+        "+  retries: number;      // now configurable\n" +
+        "+  timeoutMs: number;\n" +
+        " }\n" +
+        " \n" +
+        " export const defaultConfig: Config = {\n" +
+        "   host: \"localhost\",\n" +
+        "   port: 5081,\n" +
+        "-  retries: 3,\n" +
+        "+  retries: 5,\n" +
+        "+  timeoutMs: 30_000,\n" +
+        " };\n" +
+        " \n" +
+        " export function resolve(partial: Partial<Config>): Config {\n" +
+        "   return { ...defaultConfig, ...partial };\n" +
+        " }\n";
+
+    private const string LongAnswer =
+        "The Agent Client Protocol (ACP) is an open, JSON-RPC 2.0 standard that lets any coding " +
+        "agent talk to any editor over stdio, much like the Language Server Protocol did for " +
+        "language tooling. Instead of each editor hand-rolling an integration per agent, ACP " +
+        "defines a small set of methods — initialize, session/new, session/prompt — and a stream " +
+        "of session/update notifications carrying structured events: message and thought chunks, " +
+        "tool calls with status, plans, and permission requests. Because the stream is structured " +
+        "rather than a fixed terminal grid, a client can persist unlimited scrollback, render each " +
+        "event natively at its own size, and reconnect without losing context — which is exactly " +
+        "what Agnes builds on to serve many clients from one host.";
+
     private readonly ConcurrentDictionary<string, SimSession> _sessions = new();
     private int _counter;
     private int _remaining = 4820;
@@ -132,6 +167,18 @@ public sealed class SimulatedHost : IAgnesHost
             return; // wait for the client to answer (RespondPermissionAsync continues the turn)
         }
 
+        if (Mentions(prompt, "explain", "detail", "describe", "overview"))
+        {
+            foreach (var chunk in LongAnswer.Split(' '))
+            {
+                await Task.Delay(12).ConfigureAwait(false);
+                session.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent(chunk + " ")));
+            }
+
+            session.Emit(new TurnEndedEvent(StopReason.EndTurn));
+            return;
+        }
+
         if (Mentions(prompt, "file", "create", "write", "plan"))
         {
             session.Emit(new PlanEvent(
@@ -140,12 +187,16 @@ public sealed class SimulatedHost : IAgnesHost
                 new PlanEntry("Write the requested file", "in_progress"),
                 new PlanEntry("Confirm the result", "pending"),
             ]));
+            await Task.Delay(150).ConfigureAwait(false);
+            session.Emit(new ToolCallEvent("tc-search", "config", ToolKind.Search, ToolCallStatus.Completed,
+                [new TextContent("3 matches in src/config.ts")]));
+            await Task.Delay(150).ConfigureAwait(false);
+            session.Emit(new ToolCallEvent("tc-read", "src/config.ts", ToolKind.Read, ToolCallStatus.Completed,
+                [new TextContent("read 42 lines")]));
             await Task.Delay(200).ConfigureAwait(false);
-            const string diff =
-                "--- a/output.txt\n+++ b/output.txt\n@@ -0,0 +1,3 @@\n+alpha\n+beta\n+gamma\n";
-            session.Emit(new ToolCallEvent("tc-1", "output.txt", ToolKind.Edit, ToolCallStatus.InProgress, [new TextContent(diff)]));
+            session.Emit(new ToolCallEvent("tc-1", "src/config.ts", ToolKind.Edit, ToolCallStatus.InProgress, [new TextContent(SampleDiff)]));
             await Task.Delay(400).ConfigureAwait(false);
-            session.Emit(new ToolCallUpdateEvent("tc-1", ToolCallStatus.Completed, [new TextContent(diff)]));
+            session.Emit(new ToolCallUpdateEvent("tc-1", ToolCallStatus.Completed, [new TextContent(SampleDiff)]));
         }
 
         var reply = BuildReply(prompt);

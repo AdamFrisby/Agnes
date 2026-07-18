@@ -8,9 +8,9 @@ using Agnes.Ui.Core.Transcript;
 namespace Agnes.Ui.Core.ViewModels;
 
 /// <summary>
-/// Drives one live session: the chat transcript (middle column), the contextual left-column
-/// lists (current plan, files modified) aggregated from the event stream, and the right-column
-/// preview shown when the user opens a condensed item (e.g. a tool's full diff). The side columns
+/// Drives one live session: the chat transcript (middle column), the contextual left-column lists
+/// (plan, files modified, tools run) aggregated from the event stream, and the right-column preview
+/// shown when the user opens a condensed item (a tool's full diff, or a long message). Side columns
 /// surface only when there's content or the user requests them.
 /// </summary>
 public sealed class SessionViewModel : ObservableObject
@@ -19,7 +19,7 @@ public sealed class SessionViewModel : ObservableObject
     private readonly SessionView _view;
     private readonly IUiDispatcher _dispatcher;
     private readonly TranscriptBuilder _transcript = new();
-    private readonly Dictionary<string, FileEntry> _files = new();
+    private readonly Dictionary<string, ToolEntry> _tools = new();
     private string _promptText = string.Empty;
     private PlanItemView? _plan;
     private PreviewViewModel? _selectedPreview;
@@ -37,18 +37,13 @@ public sealed class SessionViewModel : ObservableObject
         DenyCommand = new AsyncRelayCommand(() => RespondAsync(allow: false));
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
         ClosePreviewCommand = new RelayCommand(() => SelectedPreview = null);
-        ShowToolPreviewCommand = new RelayCommand<ToolCallItem>(t =>
+        ShowToolPreviewCommand = new RelayCommand<ToolCallItem>(t => { if (t is not null) { Preview(t.Header, t.Detail); } });
+        ShowFilePreviewCommand = new RelayCommand<ToolEntry>(f => { if (f is not null) { Preview(f.Name, f.Detail); } });
+        ShowMessagePreviewCommand = new RelayCommand<MessageBubbleItem>(m =>
         {
-            if (t is not null)
+            if (m is { IsLong: true })
             {
-                SelectedPreview = new PreviewViewModel(t.Header, t.Detail, "tool");
-            }
-        });
-        ShowFilePreviewCommand = new RelayCommand<FileEntry>(f =>
-        {
-            if (f is not null)
-            {
-                SelectedPreview = new PreviewViewModel(f.Name, f.Detail, "diff");
+                Preview($"{m.Speaker} message", m.Text);
             }
         });
 
@@ -68,7 +63,8 @@ public sealed class SessionViewModel : ObservableObject
     public PermissionItem? PendingPermission => _transcript.PendingPermission;
 
     // Left column
-    public ObservableCollection<FileEntry> ModifiedFiles { get; } = [];
+    public ObservableCollection<ToolEntry> ModifiedFiles { get; } = [];
+    public ObservableCollection<ToolEntry> ToolActivity { get; } = [];
 
     public PlanItemView? Plan
     {
@@ -84,7 +80,8 @@ public sealed class SessionViewModel : ObservableObject
     }
 
     public bool HasFiles => ModifiedFiles.Count > 0;
-    public bool HasSidebarContent => Plan is not null || ModifiedFiles.Count > 0;
+    public bool HasTools => ToolActivity.Count > 0;
+    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden;
     public bool ShowRightPanel => SelectedPreview is not null;
 
@@ -101,6 +98,7 @@ public sealed class SessionViewModel : ObservableObject
     public ICommand ClosePreviewCommand { get; }
     public ICommand ShowToolPreviewCommand { get; }
     public ICommand ShowFilePreviewCommand { get; }
+    public ICommand ShowMessagePreviewCommand { get; }
 
     private void OnEvent(SessionEvent @event) => _dispatcher.Post(() => Apply(@event));
 
@@ -126,44 +124,34 @@ public sealed class SessionViewModel : ObservableObject
 
                 break;
 
-            case ToolCallEvent tc when IsFileTool(tc.Kind):
-                var detail = TextOf(tc.Content);
-                if (_files.TryGetValue(tc.ToolCallId, out var existing))
-                {
-                    existing.StatusText = tc.Status.ToString();
-                    if (detail.Length > 0)
-                    {
-                        existing.Detail = detail;
-                    }
-                }
-                else
-                {
-                    var entry = new FileEntry(tc.ToolCallId, tc.Title, tc.Status.ToString(), detail);
-                    _files[tc.ToolCallId] = entry;
-                    ModifiedFiles.Add(entry);
-                    RaisePanels();
-                }
-
+            case ToolCallEvent tc:
+                var entry = new ToolEntry(tc.ToolCallId, tc.Title, tc.Kind.ToString(), tc.Status.ToString(), TextOf(tc.Content));
+                _tools[tc.ToolCallId] = entry;
+                (IsFileTool(tc.Kind) ? ModifiedFiles : ToolActivity).Add(entry);
+                RaisePanels();
                 break;
 
-            case ToolCallUpdateEvent u when _files.TryGetValue(u.ToolCallId, out var file):
+            case ToolCallUpdateEvent u when _tools.TryGetValue(u.ToolCallId, out var tracked):
                 if (u.Status is { } status)
                 {
-                    file.StatusText = status.ToString();
+                    tracked.StatusText = status.ToString();
                 }
 
                 if (u.Content is { } content && TextOf(content) is { Length: > 0 } text)
                 {
-                    file.Detail = text;
+                    tracked.Detail = text;
                 }
 
                 break;
         }
     }
 
+    private void Preview(string title, string body) => SelectedPreview = new PreviewViewModel(title, body);
+
     private void RaisePanels()
     {
         Raise(nameof(HasFiles));
+        Raise(nameof(HasTools));
         Raise(nameof(HasSidebarContent));
         Raise(nameof(ShowLeftPanel));
     }

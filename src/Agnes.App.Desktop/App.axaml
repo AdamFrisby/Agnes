@@ -20,6 +20,13 @@
         <SolidColorBrush x:Key="AccentSoft" Color="#33D97757" />
         <SolidColorBrush x:Key="Good" Color="#5FD6A0" />
         <SolidColorBrush x:Key="UserBubble" Color="#1B2431" />
+
+        <!-- Diff viewer -->
+        <SolidColorBrush x:Key="DiffAddBg" Color="#16351F" />
+        <SolidColorBrush x:Key="DiffDelBg" Color="#3A1D1D" />
+        <SolidColorBrush x:Key="HunkBg" Color="#162232" />
+        <SolidColorBrush x:Key="HunkFg" Color="#7FA7D9" />
+        <SolidColorBrush x:Key="Gutter" Color="#3B4453" />
     </Application.Resources>
 
     <Application.DataTemplates>

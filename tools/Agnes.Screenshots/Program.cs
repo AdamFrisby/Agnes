@@ -64,16 +64,24 @@ public static class Program
         Pump(() => first.Session!.Items.OfType<MessageBubbleItem>().Count(m => !m.IsUser && !m.IsThought) >= 2);
         Capture(window, "03-conversation.png");
 
-        // 4) Multi-column workspace: plan + files (left), chat (middle), full diff preview (right)
+        // 4) Multi-column workspace: plan + files + tools (left), chat (middle), full diff (right)
         var tools = OpenSession(vm, "opencode");
         Prompt(tools, "Create a file called notes.txt with a short plan.");
-        Pump(() => tools.Session!.Items.OfType<ToolCallItem>().Any()
-                   && tools.Session!.Items.OfType<PlanItemView>().Any()
-                   && tools.Session!.HasFiles);
-        // Tap the tool card to open its full diff in the right preview column.
-        tools.Session!.ShowToolPreviewCommand.Execute(tools.Session!.Items.OfType<ToolCallItem>().First());
+        Pump(() => tools.Session!.HasFiles && tools.Session!.HasTools
+                   && tools.Session!.Items.OfType<PlanItemView>().Any());
+        // Open the modified file to show its full diff in the right preview column.
+        tools.Session!.ShowFilePreviewCommand.Execute(tools.Session!.ModifiedFiles[0]);
         Pump(() => tools.Session!.ShowRightPanel);
         Capture(window, "04-multicolumn.png");
+
+        // 4b) Long assistant message → condensed in chat, full text in the preview
+        var longChat = OpenSession(vm, "opencode");
+        Prompt(longChat, "Explain the Agent Client Protocol in detail.");
+        Pump(() => longChat.Session!.Items.OfType<MessageBubbleItem>().Any(m => m.IsLong));
+        longChat.Session!.ShowMessagePreviewCommand.Execute(
+            longChat.Session!.Items.OfType<MessageBubbleItem>().First(m => m.IsLong));
+        Pump(() => longChat.Session!.ShowRightPanel);
+        Capture(window, "04b-long-message.png");
 
         // 5) Permission request
         var perm = OpenSession(vm, "opencode");
