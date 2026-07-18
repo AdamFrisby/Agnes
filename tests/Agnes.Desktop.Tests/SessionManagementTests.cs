@@ -39,6 +39,19 @@ public class SessionManagementTests
     }
 
     [Fact]
+    public async Task New_session_is_named_for_the_project_folder_not_the_agent()
+    {
+        var (t, h, a) = TempPaths();
+        var vm = NewVm(t, h, a);
+        await vm.RestoreAsync();
+        var tab = await OpenSessionAsync(vm);
+
+        // Working directory is /tmp/agnes → the tab is named "agnes"; the agent stays in the status bar.
+        Assert.Equal("agnes", tab.Title);
+        Assert.Equal("OpenCode", tab.AgentName);
+    }
+
+    [Fact]
     public async Task Rename_updates_the_title_and_persists()
     {
         var (t, h, a) = TempPaths();

@@ -289,15 +289,24 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         var info = await doc.Host.OpenSessionAsync(adapterId, WorkingDirectory);
         var view = await doc.Host.SubscribeAsync(info.SessionId);
+        var title = ProjectTitle(info.WorkingDirectory, displayName);
         _dispatcher.Post(() =>
         {
             doc.AgentName = displayName;
-            doc.AttachSession(CreateSession(doc.Host!, view, displayName));
-            doc.Title = displayName;
+            doc.AttachSession(CreateSession(doc.Host!, view, title));
+            doc.Title = title;
             doc.Descriptor = new SessionDescriptor(
-                doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, displayName);
+                doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, title);
             SaveState();
         });
+    }
+
+    // A tab is named for the project it works on (its working-directory folder), not the agent —
+    // the agent is shown in the status bar. Falls back to the agent name if there's no directory.
+    private static string ProjectTitle(string workingDirectory, string fallback)
+    {
+        var name = Path.GetFileName(workingDirectory.TrimEnd('/', '\\'));
+        return string.IsNullOrWhiteSpace(name) ? fallback : name;
     }
 
     public void BackToHosts(SessionDocument doc) => doc.ShowHosts(_knownHosts);

@@ -480,7 +480,8 @@
                                     </TextBox.KeyBindings>
                                 </TextBox>
                                 <Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}"
-                                        VerticalAlignment="Bottom" Height="40"
+                                        VerticalAlignment="Top" Height="40"
+                                        VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
                                         Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="10"
                                         Padding="18,0" FontWeight="SemiBold" />
                             </Grid>

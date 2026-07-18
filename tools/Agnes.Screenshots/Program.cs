@@ -99,7 +99,8 @@ public static class Program
         tools.RenameText = "Config refactor";
         Pump(() => tools.IsRenaming && tools.HasTags);
         Capture(window, "04e-session-management.png");
-        tools.CancelRenameCommand.Execute(null);
+        tools.CommitRenameCommand.Execute(null); // rename commits → the tab at the top updates
+        Pump(() => tools.Title == "Config refactor");
 
         // 4f) In-session search (Ctrl+F): matches list, count, deep-link to each hit.
         tools.Session!.OpenSearchCommand.Execute(null);
