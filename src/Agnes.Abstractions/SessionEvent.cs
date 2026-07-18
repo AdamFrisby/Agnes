@@ -1,0 +1,118 @@
+using System.Text.Json.Serialization;
+
+namespace Agnes.Abstractions;
+
+/// <summary>How a tool call is classified, for iconography and grouping.</summary>
+public enum ToolKind
+{
+    Read,
+    Edit,
+    Delete,
+    Move,
+    Search,
+    Execute,
+    Think,
+    Fetch,
+    Other,
+}
+
+/// <summary>Lifecycle state of a tool call.</summary>
+public enum ToolCallStatus
+{
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+}
+
+/// <summary>Why an agent turn stopped.</summary>
+public enum StopReason
+{
+    EndTurn,
+    MaxTokens,
+    MaxTurnRequests,
+    Refusal,
+    Cancelled,
+}
+
+/// <summary>A single entry in an agent's plan.</summary>
+public sealed record PlanEntry(string Content, string Status, string? Priority = null);
+
+/// <summary>
+/// The normalized, append-only unit of session history. Every ACP
+/// <c>session/update</c> (and PTY fallback output) is mapped to one of these and
+/// appended to a session's log with a monotonic <see cref="Sequence"/>. This is the
+/// single event model the host, wire protocol, and every frontend all speak.
+/// </summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "eventKind")]
+[JsonDerivedType(typeof(SessionStartedEvent), "session_started")]
+[JsonDerivedType(typeof(MessageChunkEvent), "message_chunk")]
+[JsonDerivedType(typeof(ThoughtChunkEvent), "thought_chunk")]
+[JsonDerivedType(typeof(ToolCallEvent), "tool_call")]
+[JsonDerivedType(typeof(ToolCallUpdateEvent), "tool_call_update")]
+[JsonDerivedType(typeof(PlanEvent), "plan")]
+[JsonDerivedType(typeof(ModeChangedEvent), "mode_changed")]
+[JsonDerivedType(typeof(PermissionRequestedEvent), "permission_requested")]
+[JsonDerivedType(typeof(PermissionResolvedEvent), "permission_resolved")]
+[JsonDerivedType(typeof(TerminalOutputEvent), "terminal_output")]
+[JsonDerivedType(typeof(TurnEndedEvent), "turn_ended")]
+[JsonDerivedType(typeof(AgentErrorEvent), "agent_error")]
+public abstract record SessionEvent
+{
+    /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
+    public long Sequence { get; init; }
+
+    /// <summary>When the host recorded the event (UTC).</summary>
+    public DateTimeOffset Timestamp { get; init; }
+}
+
+/// <summary>The agent accepted a new session.</summary>
+public sealed record SessionStartedEvent(string AgentSessionId) : SessionEvent;
+
+/// <summary>A streamed chunk of a user or assistant message.</summary>
+public sealed record MessageChunkEvent(MessageRole Role, ContentBlock Content) : SessionEvent;
+
+/// <summary>A streamed chunk of the agent's reasoning/thinking.</summary>
+public sealed record ThoughtChunkEvent(ContentBlock Content) : SessionEvent;
+
+/// <summary>A tool call the agent started.</summary>
+public sealed record ToolCallEvent(
+    string ToolCallId,
+    string Title,
+    ToolKind Kind,
+    ToolCallStatus Status,
+    IReadOnlyList<ContentBlock> Content) : SessionEvent;
+
+/// <summary>An update to a previously reported tool call.</summary>
+public sealed record ToolCallUpdateEvent(
+    string ToolCallId,
+    ToolCallStatus? Status,
+    IReadOnlyList<ContentBlock>? Content) : SessionEvent;
+
+/// <summary>The agent's current plan.</summary>
+public sealed record PlanEvent(IReadOnlyList<PlanEntry> Entries) : SessionEvent;
+
+/// <summary>The agent's active mode changed.</summary>
+public sealed record ModeChangedEvent(string ModeId) : SessionEvent;
+
+/// <summary>The agent is requesting the user's permission to proceed with a tool call.</summary>
+public sealed record PermissionRequestedEvent(
+    string RequestId,
+    string ToolCallId,
+    string Title,
+    IReadOnlyList<PermissionOption> Options) : SessionEvent;
+
+/// <summary>A pending permission request was resolved (by a client or by cancellation).</summary>
+public sealed record PermissionResolvedEvent(
+    string RequestId,
+    string? OptionId,
+    PermissionOutcome Outcome) : SessionEvent;
+
+/// <summary>Raw output from the CLI-fallback terminal attached to this session.</summary>
+public sealed record TerminalOutputEvent(string TerminalId, string Data) : SessionEvent;
+
+/// <summary>An agent turn finished.</summary>
+public sealed record TurnEndedEvent(StopReason Reason) : SessionEvent;
+
+/// <summary>The agent (or adapter) reported an error.</summary>
+public sealed record AgentErrorEvent(string Message) : SessionEvent;

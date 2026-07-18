@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Agnes.Abstractions/Agnes.Abstractions.csproj" />
+    <Project Path="src/Agnes.Acp/Agnes.Acp.csproj" />
+    <Project Path="src/Agnes.Agents.ClaudeCode/Agnes.Agents.ClaudeCode.csproj" />
+    <Project Path="src/Agnes.Client/Agnes.Client.csproj" />
+    <Project Path="src/Agnes.Host/Agnes.Host.csproj" />
+    <Project Path="src/Agnes.Protocol/Agnes.Protocol.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj" />
+    <Project Path="tests/Agnes.Host.Tests/Agnes.Host.Tests.csproj" />
+    <Project Path="tests/Agnes.TestKit/Agnes.TestKit.csproj" />
+  </Folder>
+</Solution>

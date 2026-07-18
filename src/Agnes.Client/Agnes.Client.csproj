@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Agnes.Abstractions\Agnes.Abstractions.csproj" />
+    <ProjectReference Include="..\Agnes.Protocol\Agnes.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

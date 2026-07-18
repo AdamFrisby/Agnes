@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Agnes.Host</RootNamespace>
+    <UserSecretsId>agnes-host</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <!-- Pin the patched native SQLite bundle; overrides the vulnerable transitive
+         SQLitePCLRaw.lib.e_sqlite3 2.1.11 (GHSA-2m69-gcr7-jv3q). -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Agnes.Abstractions\Agnes.Abstractions.csproj" />
+    <ProjectReference Include="..\Agnes.Acp\Agnes.Acp.csproj" />
+    <ProjectReference Include="..\Agnes.Protocol\Agnes.Protocol.csproj" />
+    <ProjectReference Include="..\Agnes.Agents.ClaudeCode\Agnes.Agents.ClaudeCode.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Agnes.Host.Tests" />
+  </ItemGroup>
+
+</Project>

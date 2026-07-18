@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    name: Build & test (core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Build & test the core/host/client libraries and tests.
+      # The Uno UI heads (WASM/Android) require additional workloads and are
+      # built in a separate job once those heads are added.
+      - name: Restore
+        run: dotnet restore Agnes.Core.slnf
+
+      - name: Build
+        run: dotnet build Agnes.Core.slnf --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Agnes.Core.slnf --configuration Release --no-build --verbosity normal

@@ -1,0 +1,21 @@
+<Project>
+
+  <!-- Solution-wide defaults for all Agnes projects. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <Product>Agnes</Product>
+    <Company>Adam Frisby</Company>
+    <Authors>Adam Frisby</Authors>
+    <Copyright>Copyright (c) 2026 Adam Frisby</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/AdamFrisby/Agnes</RepositoryUrl>
+    <Version>0.1.0-alpha</Version>
+  </PropertyGroup>
+
+</Project>

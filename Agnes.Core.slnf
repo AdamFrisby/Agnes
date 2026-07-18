@@ -1,0 +1,16 @@
+{
+  "solution": {
+    "path": "Agnes.slnx",
+    "projects": [
+      "src/Agnes.Abstractions/Agnes.Abstractions.csproj",
+      "src/Agnes.Acp/Agnes.Acp.csproj",
+      "src/Agnes.Agents.ClaudeCode/Agnes.Agents.ClaudeCode.csproj",
+      "src/Agnes.Protocol/Agnes.Protocol.csproj",
+      "src/Agnes.Host/Agnes.Host.csproj",
+      "src/Agnes.Client/Agnes.Client.csproj",
+      "tests/Agnes.TestKit/Agnes.TestKit.csproj",
+      "tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj",
+      "tests/Agnes.Host.Tests/Agnes.Host.Tests.csproj"
+    ]
+  }
+}
