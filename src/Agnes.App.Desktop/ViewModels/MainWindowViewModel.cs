@@ -67,14 +67,72 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         NewTabCommand = new RelayCommand(AddTab);
         ReopenArchivedCommand = new RelayCommand<SessionDescriptor>(d => { if (d is not null) { ReopenArchived(d); } });
+        SelectGlobalHitCommand = new RelayCommand<GlobalHit>(SelectGlobalHit);
     }
 
     public IRootDock Layout { get; }
     public IFactory Factory => _factory;
     public IRelayCommand NewTabCommand { get; }
     public IRelayCommand<SessionDescriptor> ReopenArchivedCommand { get; }
+    public IRelayCommand<GlobalHit> SelectGlobalHitCommand { get; }
 
     public bool HasArchived => ArchivedSessions.Count > 0;
+
+    // ---- cross-session search ----
+
+    private string _globalSearchQuery = string.Empty;
+
+    public string GlobalSearchQuery
+    {
+        get => _globalSearchQuery;
+        set { if (SetProperty(ref _globalSearchQuery, value)) { RunGlobalSearch(); } }
+    }
+
+    /// <summary>Matches found across every open session for <see cref="GlobalSearchQuery"/>.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<GlobalHit> GlobalResults { get; } = [];
+
+    public bool HasGlobalResults => GlobalResults.Count > 0;
+
+    private void RunGlobalSearch()
+    {
+        GlobalResults.Clear();
+        var query = _globalSearchQuery;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            foreach (var doc in OpenTabs())
+            {
+                if (doc.Session is not { } session)
+                {
+                    continue;
+                }
+
+                foreach (var hit in session.Find(query, doc.Title))
+                {
+                    GlobalResults.Add(new GlobalHit(doc, hit));
+                    if (GlobalResults.Count >= 100)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        OnPropertyChanged(nameof(HasGlobalResults));
+    }
+
+    private void SelectGlobalHit(GlobalHit? hit)
+    {
+        if (hit is null)
+        {
+            return;
+        }
+
+        _factory.SetActiveDockable(hit.Tab);
+        hit.Tab.Session?.ScrollTo(hit.Hit.AnchorId);
+    }
+
+    private IEnumerable<SessionDocument> OpenTabs()
+        => _factory.DocumentDock?.VisibleDockables?.OfType<SessionDocument>() ?? [];
 
     /// <summary>Archived (closed-but-kept) sessions, restorable from the tab menu.</summary>
     public System.Collections.ObjectModel.ObservableCollection<SessionDescriptor> ArchivedSessions { get; } = [];

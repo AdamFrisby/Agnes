@@ -20,6 +20,52 @@
                                VerticalAlignment="Center" />
                 </StackPanel>
 
+                <!-- Search across all open sessions -->
+                <Button Grid.Column="1" HorizontalAlignment="Center" Padding="0" Background="Transparent" BorderThickness="0"
+                        AutomationProperties.Name="Search across sessions">
+                    <Border Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Line}" BorderThickness="1"
+                            CornerRadius="8" Padding="10,5" Width="360">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="⌕" Foreground="{StaticResource FgFaint}" FontSize="13" VerticalAlignment="Center" />
+                            <TextBlock Text="Search across all sessions…" Foreground="{StaticResource FgFaint}" FontSize="12"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <Button.Flyout>
+                        <Flyout Placement="Bottom">
+                            <StackPanel Width="420" Spacing="8">
+                                <TextBox Text="{Binding GlobalSearchQuery, Mode=TwoWay}" Watermark="Search across all sessions…"
+                                         Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                         BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
+                                         AutomationProperties.Name="Search query across sessions" />
+                                <TextBlock Text="No matches" Foreground="{StaticResource FgFaint}" FontSize="11"
+                                           IsVisible="{Binding !HasGlobalResults}" />
+                                <ItemsControl ItemsSource="{Binding GlobalResults}" MaxHeight="360">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.SelectGlobalHitCommand}"
+                                                    CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                    Padding="7,5" CornerRadius="6" Cursor="Hand">
+                                                <StackPanel Spacing="2">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding SessionTitle}" Foreground="{StaticResource Fg}"
+                                                                   FontSize="11" FontWeight="SemiBold" />
+                                                        <TextBlock Text="{Binding Kind}" Foreground="{StaticResource Good}" FontSize="10"
+                                                                   FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Snippet}" Foreground="{StaticResource FgDim}" FontSize="11"
+                                                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
                     <Button Background="Transparent" Foreground="{StaticResource FgDim}"
                             BorderBrush="{StaticResource Line}" BorderThickness="1"

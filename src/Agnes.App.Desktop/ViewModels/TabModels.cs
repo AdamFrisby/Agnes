@@ -32,6 +32,23 @@ public interface ITabController
     Task ForkAsync(SessionDocument doc);
 }
 
+/// <summary>A cross-session search result: a transcript hit plus the tab it lives in.</summary>
+public sealed class GlobalHit
+{
+    public GlobalHit(SessionDocument tab, Agnes.Ui.Core.ViewModels.SearchHit hit)
+    {
+        Tab = tab;
+        Hit = hit;
+    }
+
+    public SessionDocument Tab { get; }
+    public Agnes.Ui.Core.ViewModels.SearchHit Hit { get; }
+
+    public string SessionTitle => Hit.SessionTitle ?? Tab.Title ?? "session";
+    public string Kind => Hit.Kind;
+    public string Snippet => Hit.Snippet;
+}
+
 /// <summary>A host option on the new-tab host picker.</summary>
 public sealed class HostChoice
 {

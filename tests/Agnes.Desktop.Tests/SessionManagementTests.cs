@@ -149,6 +149,38 @@ public class SessionManagementTests
         Assert.Contains("fork", fork.Title!);
     }
 
+    [Fact]
+    public async Task Global_search_finds_hits_across_open_sessions_and_jumps_to_them()
+    {
+        var (t, h, a) = TempPaths();
+        var vm = NewVm(t, h, a);
+        await vm.RestoreAsync();
+
+        var first = await OpenSessionAsync(vm);
+        await WaitAsync(() => first.Session!.Items.Count > 0);
+        vm.NewTabCommand.Execute(null);
+        var second = await OpenSessionAsync(vm);
+        await WaitAsync(() => second.Session!.Items.Count > 0);
+
+        // Both sessions open with a "Session ready on OpenCode" greeting.
+        vm.GlobalSearchQuery = "ready";
+
+        Assert.True(vm.HasGlobalResults);
+        Assert.True(vm.GlobalResults.Count >= 2);
+        Assert.Contains(vm.GlobalResults, r => ReferenceEquals(r.Tab, first));
+        Assert.Contains(vm.GlobalResults, r => ReferenceEquals(r.Tab, second));
+
+        // Jumping to a hit scrolls its session (raised as a deep-link request).
+        string? scrolled = null;
+        first.Session!.ScrollToRequested += id => scrolled = id;
+        var hit = vm.GlobalResults.First(r => ReferenceEquals(r.Tab, first));
+        vm.SelectGlobalHitCommand.Execute(hit);
+        Assert.Equal(hit.Hit.AnchorId, scrolled);
+
+        vm.GlobalSearchQuery = string.Empty;
+        Assert.False(vm.HasGlobalResults);
+    }
+
     private static async Task WaitAsync(Func<bool> condition)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));

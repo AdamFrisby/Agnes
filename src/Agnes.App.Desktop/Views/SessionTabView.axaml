@@ -6,6 +6,16 @@
              Background="{StaticResource Bg}"
              FontFamily="{StaticResource UiFont}">
 
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+F" Command="{Binding Session.OpenSearchCommand}" />
+        <KeyBinding Gesture="F3" Command="{Binding Session.NextMatchCommand}" />
+        <KeyBinding Gesture="Shift+F3" Command="{Binding Session.PrevMatchCommand}" />
+        <KeyBinding Gesture="F7" Command="{Binding Session.PrevPromptCommand}" />
+        <KeyBinding Gesture="F8" Command="{Binding Session.NextPromptCommand}" />
+        <KeyBinding Gesture="Ctrl+F8" Command="{Binding Session.NextChangeCommand}" />
+        <KeyBinding Gesture="Ctrl+F7" Command="{Binding Session.PrevChangeCommand}" />
+    </UserControl.KeyBindings>
+
     <UserControl.Styles>
         <Style Selector="Border.user">
             <Setter Property="Background" Value="{StaticResource UserBubble}" />
@@ -301,9 +311,59 @@
                                   Background="{StaticResource Line}" IsVisible="{Binding ShowLeftPanel}" />
 
                     <!-- MIDDLE: chat -->
-                    <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto" IsVisible="{Binding ShowChat}">
-                        <ScrollViewer Grid.Row="0" Padding="0,16" VerticalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding Items}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
+                    <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding ShowChat}">
+
+                        <!-- within-session search (Ctrl+F) -->
+                        <Border Grid.Row="0" IsVisible="{Binding IsSearchOpen}" Background="{StaticResource Panel}"
+                                BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="24,8">
+                            <StackPanel MaxWidth="768" HorizontalAlignment="Center" Spacing="6">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                                    <TextBox Grid.Column="0" Text="{Binding SearchQuery, Mode=TwoWay}" Watermark="Search this session…"
+                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                                             AutomationProperties.Name="Search this session">
+                                        <TextBox.KeyBindings>
+                                            <KeyBinding Gesture="Enter" Command="{Binding NextMatchCommand}" />
+                                            <KeyBinding Gesture="Shift+Enter" Command="{Binding PrevMatchCommand}" />
+                                            <KeyBinding Gesture="Escape" Command="{Binding CloseSearchCommand}" />
+                                        </TextBox.KeyBindings>
+                                    </TextBox>
+                                    <TextBlock Grid.Column="1" Text="{Binding MatchSummary}" Foreground="{StaticResource FgFaint}"
+                                               FontSize="11" VerticalAlignment="Center" MinWidth="52" />
+                                    <Button Grid.Column="2" Content="‹" Command="{Binding PrevMatchCommand}"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,2"
+                                            AutomationProperties.Name="Previous match" />
+                                    <Button Grid.Column="3" Content="›" Command="{Binding NextMatchCommand}"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,2"
+                                            AutomationProperties.Name="Next match" />
+                                    <Button Grid.Column="4" Content="✕" Command="{Binding CloseSearchCommand}"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}" BorderThickness="0"
+                                            Padding="8,2" AutomationProperties.Name="Close search" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding Matches}" MaxHeight="150">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.SelectHitCommand}"
+                                                    CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                    Padding="6,3" CornerRadius="5" Cursor="Hand">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding Kind}" Foreground="{StaticResource Good}" FontSize="10"
+                                                               Width="56" FontFamily="{StaticResource MonoFont}" />
+                                                    <TextBlock Text="{Binding Snippet}" Foreground="{StaticResource FgDim}" FontSize="11"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <ScrollViewer Grid.Row="1" Padding="0,16" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="Transcript" ItemsSource="{Binding Items}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
                                 <ItemsControl.DataTemplates>
 
                                     <DataTemplate DataType="tr:MessageBubbleItem">
@@ -387,7 +447,7 @@
                             </ItemsControl>
                         </ScrollViewer>
 
-                        <Border Grid.Row="1" Margin="24,4" Padding="14,10" CornerRadius="10"
+                        <Border Grid.Row="2" Margin="24,4" Padding="14,10" CornerRadius="10"
                                 Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
                                 IsVisible="{Binding PendingPermission, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                             <Grid ColumnDefinitions="*,Auto,Auto" MaxWidth="768" HorizontalAlignment="Center">
@@ -401,7 +461,7 @@
                             </Grid>
                         </Border>
 
-                        <Border Grid.Row="2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                        <Border Grid.Row="3" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
                                 BorderThickness="0,1,0,0" Padding="24,12">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" MaxWidth="768" HorizontalAlignment="Center">
                                 <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"

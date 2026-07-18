@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 
 namespace Agnes.App.Desktop.Views;
 
@@ -11,7 +12,8 @@ public partial class SessionTabView : UserControl
 {
     private const double SplitterWidth = 5;
     private Grid? _workspace;
-    private INotifyPropertyChanged? _session;
+    private ItemsControl? _transcript;
+    private SessionViewModel? _session;
     private double _leftWidth = 288;
     private double _rightWidth = 540;
 
@@ -19,6 +21,7 @@ public partial class SessionTabView : UserControl
     {
         InitializeComponent();
         _workspace = this.FindControl<Grid>("Workspace");
+        _transcript = this.FindControl<ItemsControl>("Transcript");
         if (_workspace is not null)
         {
             _workspace.DataContextChanged += (_, _) => HookSession();
@@ -33,15 +36,35 @@ public partial class SessionTabView : UserControl
         if (_session is not null)
         {
             _session.PropertyChanged -= OnSessionPropertyChanged;
+            _session.ScrollToRequested -= OnScrollToRequested;
         }
 
-        _session = _workspace?.DataContext as INotifyPropertyChanged;
+        _session = _workspace?.DataContext as SessionViewModel;
         if (_session is not null)
         {
             _session.PropertyChanged += OnSessionPropertyChanged;
+            _session.ScrollToRequested += OnScrollToRequested;
         }
 
         UpdateColumns();
+    }
+
+    // Deep-link: scroll the transcript to the item carrying the given anchor id.
+    private void OnScrollToRequested(string anchorId)
+    {
+        if (_session is null || _transcript is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < _session.Items.Count; i++)
+        {
+            if (_session.Items[i].AnchorId == anchorId)
+            {
+                Dispatcher.UIThread.Post(() => _transcript.ContainerFromIndex(i)?.BringIntoView());
+                return;
+            }
+        }
     }
 
     private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)

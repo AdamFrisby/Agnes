@@ -33,6 +33,11 @@ public sealed class SessionViewModel : ObservableObject
     private bool _interrupted;
     private bool _stale;
     private SessionBanner _banner;
+    private string _searchQuery = string.Empty;
+    private bool _isSearchOpen;
+    private int _matchCursor = -1;
+    private int _promptCursor = -1;
+    private int _changeCursor = -1;
 
     public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null)
     {
@@ -56,6 +61,15 @@ public sealed class SessionViewModel : ObservableObject
         RecallNextCommand = new RelayCommand(RecallNext);
         DismissBannerCommand = new RelayCommand(DismissBanner);
         RetryCommand = new AsyncRelayCommand(RetryAsync);
+        OpenSearchCommand = new RelayCommand(() => IsSearchOpen = true);
+        CloseSearchCommand = new RelayCommand(() => { IsSearchOpen = false; SearchQuery = string.Empty; });
+        NextMatchCommand = new RelayCommand(() => StepMatch(+1));
+        PrevMatchCommand = new RelayCommand(() => StepMatch(-1));
+        SelectHitCommand = new RelayCommand<SearchHit>(SelectHit);
+        NextPromptCommand = new RelayCommand(() => NavigateKind(IsPrompt, +1, ref _promptCursor));
+        PrevPromptCommand = new RelayCommand(() => NavigateKind(IsPrompt, -1, ref _promptCursor));
+        NextChangeCommand = new RelayCommand(() => NavigateKind(IsChange, +1, ref _changeCursor));
+        PrevChangeCommand = new RelayCommand(() => NavigateKind(IsChange, -1, ref _changeCursor));
         ClosePreviewCommand = new RelayCommand(() => SelectedPreview = null);
         ShowToolPreviewCommand = new RelayCommand<ToolCallItem>(t => { if (t is not null) { Preview(t.Header, t.Detail); } });
         ShowFilePreviewCommand = new RelayCommand<ToolEntry>(f => { if (f is not null) { Preview(f.Name, f.Detail); } });
@@ -149,6 +163,28 @@ public sealed class SessionViewModel : ObservableObject
         _ => string.Empty,
     };
 
+    // Search within the session (deep-links each hit by anchor).
+    public ObservableCollection<SearchHit> Matches { get; } = [];
+
+    /// <summary>Raised with a transcript item's <c>AnchorId</c> when the view should scroll to it.</summary>
+    public event Action<string>? ScrollToRequested;
+
+    public bool IsSearchOpen
+    {
+        get => _isSearchOpen;
+        set => Set(ref _isSearchOpen, value);
+    }
+
+    public string SearchQuery
+    {
+        get => _searchQuery;
+        set { if (Set(ref _searchQuery, value)) { RunSearch(); } }
+    }
+
+    public string MatchSummary => Matches.Count > 0
+        ? $"{_matchCursor + 1} / {Matches.Count}"
+        : string.IsNullOrWhiteSpace(SearchQuery) ? string.Empty : "No matches";
+
     public string PromptText
     {
         get => _promptText;
@@ -172,6 +208,15 @@ public sealed class SessionViewModel : ObservableObject
     public ICommand RecallPreviousCommand { get; }
     public ICommand RecallNextCommand { get; }
     public ICommand DismissBannerCommand { get; }
+    public ICommand OpenSearchCommand { get; }
+    public ICommand CloseSearchCommand { get; }
+    public ICommand NextMatchCommand { get; }
+    public ICommand PrevMatchCommand { get; }
+    public ICommand SelectHitCommand { get; }
+    public ICommand NextPromptCommand { get; }
+    public ICommand PrevPromptCommand { get; }
+    public ICommand NextChangeCommand { get; }
+    public ICommand PrevChangeCommand { get; }
     public ICommand ClosePreviewCommand { get; }
     public ICommand ShowToolPreviewCommand { get; }
     public ICommand ShowFilePreviewCommand { get; }
@@ -311,6 +356,102 @@ public sealed class SessionViewModel : ObservableObject
     }
 
     private void Preview(string title, string body) => SelectedPreview = new PreviewViewModel(title, body);
+
+    // ---- search + deep-linking ----
+
+    /// <summary>Finds every transcript item matching <paramref name="query"/> (case-insensitive).</summary>
+    public IEnumerable<SearchHit> Find(string query, string? sessionTitle = null)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            yield break;
+        }
+
+        foreach (var item in Items)
+        {
+            var (kind, text) = Describe(item);
+            if (!string.IsNullOrEmpty(text) && text.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return new SearchHit(item.AnchorId, kind, SearchHit.Excerpt(text, query), sessionTitle);
+            }
+        }
+    }
+
+    /// <summary>Scrolls the transcript to a given anchor (deep-link target).</summary>
+    public void ScrollTo(string anchorId) => ScrollToRequested?.Invoke(anchorId);
+
+    private void RunSearch()
+    {
+        Matches.Clear();
+        foreach (var hit in Find(SearchQuery))
+        {
+            Matches.Add(hit);
+        }
+
+        _matchCursor = Matches.Count > 0 ? 0 : -1;
+        if (_matchCursor >= 0)
+        {
+            ScrollToRequested?.Invoke(Matches[0].AnchorId);
+        }
+
+        Raise(nameof(MatchSummary));
+    }
+
+    private void StepMatch(int direction)
+    {
+        if (Matches.Count == 0)
+        {
+            return;
+        }
+
+        _matchCursor = ((_matchCursor + direction) % Matches.Count + Matches.Count) % Matches.Count;
+        ScrollToRequested?.Invoke(Matches[_matchCursor].AnchorId);
+        Raise(nameof(MatchSummary));
+    }
+
+    private void SelectHit(SearchHit? hit)
+    {
+        if (hit is null)
+        {
+            return;
+        }
+
+        var index = Matches.IndexOf(hit);
+        if (index >= 0)
+        {
+            _matchCursor = index;
+            Raise(nameof(MatchSummary));
+        }
+
+        ScrollToRequested?.Invoke(hit.AnchorId);
+    }
+
+    private void NavigateKind(Func<TranscriptItem, bool> predicate, int direction, ref int cursor)
+    {
+        var anchors = Items.Where(predicate).Select(i => i.AnchorId).ToList();
+        if (anchors.Count == 0)
+        {
+            return;
+        }
+
+        cursor = cursor < 0 && direction < 0
+            ? anchors.Count - 1
+            : ((cursor + direction) % anchors.Count + anchors.Count) % anchors.Count;
+        ScrollToRequested?.Invoke(anchors[cursor]);
+    }
+
+    private static bool IsPrompt(TranscriptItem item) => item is MessageBubbleItem { IsUser: true };
+    private static bool IsChange(TranscriptItem item) => item is ToolCallItem;
+
+    private static (string Kind, string Text) Describe(TranscriptItem item) => item switch
+    {
+        MessageBubbleItem m => (m.Speaker, m.Text),
+        ToolCallItem t => (t.Kind.ToString(), t.Header + " " + t.Detail),
+        NoticeItem n => ("Notice", n.Text),
+        PlanItemView p => ("Plan", string.Join(" ", p.Entries.Select(e => e.Content))),
+        PermissionItem pm => ("Permission", pm.Title),
+        _ => (string.Empty, string.Empty),
+    };
 
     private void RaisePanels()
     {

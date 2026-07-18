@@ -157,6 +157,60 @@ public class SessionStateTests
         Assert.True(vm.ShowRightPanel);
     }
 
+    // ---- search within a session + deep-linking ----
+
+    [Fact]
+    public void Search_finds_matches_and_deep_links_the_first_hit()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+        string? scrolled = null;
+        vm.ScrollToRequested += a => scrolled = a;
+
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.User, new TextContent("please refactor the config loader")), 1));
+        view.Apply(Seq(new ToolCallEvent("tc1", "Read config.ts", ToolKind.Read, ToolCallStatus.Completed, [new TextContent("config contents")]), 2));
+
+        vm.SearchQuery = "config";
+        Assert.Equal(2, vm.Matches.Count);
+        Assert.Equal("1 / 2", vm.MatchSummary);
+        Assert.Equal(vm.Matches[0].AnchorId, scrolled);
+
+        vm.NextMatchCommand.Execute(null);
+        Assert.Equal("2 / 2", vm.MatchSummary);
+        Assert.Equal(vm.Matches[1].AnchorId, scrolled);
+
+        vm.NextMatchCommand.Execute(null); // wraps
+        Assert.Equal("1 / 2", vm.MatchSummary);
+
+        vm.SearchQuery = "nothing-here";
+        Assert.Empty(vm.Matches);
+        Assert.Equal("No matches", vm.MatchSummary);
+    }
+
+    [Fact]
+    public void Keyboard_navigation_jumps_between_prompts_and_changes()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+        string? scrolled = null;
+        vm.ScrollToRequested += a => scrolled = a;
+
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.User, new TextContent("first")), 1));
+        view.Apply(Seq(new ToolCallEvent("tc1", "Edit a.cs", ToolKind.Edit, ToolCallStatus.Completed, [new TextContent("--- a\n+++ b\n+x")]), 2));
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.Assistant, new TextContent("done")), 3));
+
+        var prompt = vm.Items.OfType<MessageBubbleItem>().First(m => m.IsUser);
+        var change = vm.Items.OfType<ToolCallItem>().First();
+
+        vm.NextPromptCommand.Execute(null);
+        Assert.Equal(prompt.AnchorId, scrolled);
+
+        vm.NextChangeCommand.Execute(null);
+        Assert.Equal(change.AnchorId, scrolled);
+    }
+
     // ---- deep-link anchors ----
 
     [Fact]

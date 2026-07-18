@@ -99,6 +99,13 @@ public static class Program
         Capture(window, "04e-session-management.png");
         tools.CancelRenameCommand.Execute(null);
 
+        // 4f) In-session search (Ctrl+F): matches list, count, deep-link to each hit.
+        tools.Session!.OpenSearchCommand.Execute(null);
+        tools.Session!.SearchQuery = "config";
+        Pump(() => tools.Session!.Matches.Count > 0);
+        Capture(window, "04f-search.png");
+        tools.Session!.CloseSearchCommand.Execute(null);
+
         // 4b) Long assistant message → condensed in chat, full text in the preview
         var longChat = OpenSession(vm, "opencode");
         Prompt(longChat, "Explain the Agent Client Protocol in detail.");
