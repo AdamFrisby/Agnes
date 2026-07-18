@@ -14,6 +14,7 @@ public enum MessageRole
 [JsonDerivedType(typeof(TextContent), "text")]
 [JsonDerivedType(typeof(ImageContent), "image")]
 [JsonDerivedType(typeof(ResourceLinkContent), "resource_link")]
+[JsonDerivedType(typeof(DiffContent), "diff")]
 public abstract record ContentBlock;
 
 /// <summary>Plain UTF-8 text.</summary>
@@ -24,3 +25,6 @@ public sealed record ImageContent(string MimeType, string Data) : ContentBlock;
 
 /// <summary>A link to a resource (file, URL) the agent referenced.</summary>
 public sealed record ResourceLinkContent(string Uri, string? Name = null) : ContentBlock;
+
+/// <summary>A structured file diff (the ACP <c>{type:"diff"}</c> tool-content variant).</summary>
+public sealed record DiffContent(string Path, string? OldText, string NewText) : ContentBlock;

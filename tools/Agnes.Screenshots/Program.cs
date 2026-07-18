@@ -76,6 +76,12 @@ public static class Program
         Pump(() => tools.Session!.ShowRightPanel);
         Capture(window, "04-multicolumn.png");
 
+        // 4j) Split (side-by-side) diff view.
+        tools.Session!.SelectedPreview!.ToggleSplitCommand.Execute(null);
+        Pump(() => tools.Session!.SelectedPreview!.ShowSplit);
+        Capture(window, "04j-split-diff.png");
+        tools.Session!.SelectedPreview!.ToggleSplitCommand.Execute(null);
+
         // 4c) Full-screen review: the diff fills the tab (chat + panels collapse away).
         tools.Session!.ToggleFullScreenCommand.Execute(null);
         Pump(() => tools.Session!.IsPreviewFullScreen && !tools.Session!.ShowChat);

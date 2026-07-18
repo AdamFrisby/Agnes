@@ -674,29 +674,40 @@
                             Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
                         <Grid RowDefinitions="Auto,*">
                             <Border Grid.Row="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="14,10">
-                                <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
                                     <TextBlock Grid.Column="0" Text="{Binding SelectedPreview.Title}" Foreground="{StaticResource Fg}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                                TextTrimming="CharacterEllipsis" />
-                                    <Button Grid.Column="1" Content="Copy" Click="OnCopyPreview"
+                                    <Button Grid.Column="1" Command="{Binding SelectedPreview.ToggleSplitCommand}"
+                                            IsVisible="{Binding SelectedPreview.IsDiff}"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6"
+                                            Padding="9,2" FontSize="11" Margin="0,0,8,0"
+                                            ToolTip.Tip="Toggle split / unified diff" AutomationProperties.Name="Toggle split diff">
+                                        <Panel>
+                                            <TextBlock Text="Split" IsVisible="{Binding SelectedPreview.ShowUnified}" />
+                                            <TextBlock Text="Unified" IsVisible="{Binding SelectedPreview.ShowSplit}" />
+                                        </Panel>
+                                    </Button>
+                                    <Button Grid.Column="2" Content="Copy" Click="OnCopyPreview"
                                             Background="Transparent" Foreground="{StaticResource FgDim}"
                                             BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6"
                                             Padding="9,2" FontSize="11" Margin="0,0,8,0"
                                             ToolTip.Tip="Copy the contents to the clipboard" AutomationProperties.Name="Copy preview contents" />
-                                    <Button Grid.Column="2" Content="Full screen" Command="{Binding ToggleFullScreenCommand}"
+                                    <Button Grid.Column="3" Content="Full screen" Command="{Binding ToggleFullScreenCommand}"
                                             Background="Transparent" Foreground="{StaticResource FgDim}"
                                             BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6"
                                             Padding="9,2" FontSize="11" Margin="0,0,8,0"
                                             ToolTip.Tip="Toggle full-screen review" AutomationProperties.Name="Toggle full-screen review" />
-                                    <Button Grid.Column="3" Content="✕" Command="{Binding ClosePreviewCommand}"
+                                    <Button Grid.Column="4" Content="✕" Command="{Binding ClosePreviewCommand}"
                                             Background="Transparent" Foreground="{StaticResource FgDim}" BorderThickness="0"
                                             Padding="8,2" FontSize="13" AutomationProperties.Name="Close preview" />
                                 </Grid>
                             </Border>
 
-                            <!-- Diff view -->
+                            <!-- Unified diff view -->
                             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                                          IsVisible="{Binding SelectedPreview.IsDiff}">
+                                          IsVisible="{Binding SelectedPreview.ShowUnified}">
                                 <ItemsControl ItemsSource="{Binding SelectedPreview.Diff}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -716,6 +727,43 @@
                                                                TextWrapping="Wrap" />
                                                 </Grid>
                                             </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- Split (side-by-side) diff view -->
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                          IsVisible="{Binding SelectedPreview.ShowSplit}">
+                                <ItemsControl ItemsSource="{Binding SelectedPreview.SplitRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="*,*">
+                                                <!-- old (left) -->
+                                                <Border Grid.Column="0" Classes.del="{Binding LeftRemoved}" Classes.hunk="{Binding IsHunk}">
+                                                    <Grid ColumnDefinitions="40,*">
+                                                        <TextBlock Grid.Column="0" Text="{Binding LeftNo}" TextAlignment="Right"
+                                                                   Foreground="{StaticResource Gutter}" FontFamily="{StaticResource MonoFont}"
+                                                                   FontSize="11" Padding="0,1,6,1" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding LeftText}" Foreground="{StaticResource Fg}"
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
+                                                                   IsVisible="{Binding !IsHunk}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding HeaderText}" Foreground="{StaticResource HunkFg}"
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
+                                                                   IsVisible="{Binding IsHunk}" />
+                                                    </Grid>
+                                                </Border>
+                                                <!-- new (right) -->
+                                                <Border Grid.Column="1" Classes.add="{Binding RightAdded}" Classes.hunk="{Binding IsHunk}">
+                                                    <Grid ColumnDefinitions="40,*">
+                                                        <TextBlock Grid.Column="0" Text="{Binding RightNo}" TextAlignment="Right"
+                                                                   Foreground="{StaticResource Gutter}" FontFamily="{StaticResource MonoFont}"
+                                                                   FontSize="11" Padding="0,1,6,1" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding RightText}" Foreground="{StaticResource Fg}"
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1" />
+                                                    </Grid>
+                                                </Border>
+                                            </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

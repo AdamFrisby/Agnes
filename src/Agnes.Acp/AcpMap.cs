@@ -136,7 +136,15 @@ internal static class AcpMap
             foreach (var item in content.EnumerateArray())
             {
                 // ACP tool-call content items: { type: "content", content: <block> } | { type: "diff", ... }
-                if (item.TryGetProperty("content", out var inner) && inner.ValueKind == JsonValueKind.Object)
+                var type = GetString(item, "type");
+                if (type == "diff")
+                {
+                    result.Add(new DiffContent(
+                        GetString(item, "path") ?? string.Empty,
+                        GetString(item, "oldText"),
+                        GetString(item, "newText") ?? string.Empty));
+                }
+                else if (item.TryGetProperty("content", out var inner) && inner.ValueKind == JsonValueKind.Object)
                 {
                     var block = inner.Deserialize<AcpContentBlock>(AcpJson.CreateOptions());
                     if (block is not null)

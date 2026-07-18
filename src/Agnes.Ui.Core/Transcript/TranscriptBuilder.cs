@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Agnes.Abstractions;
+using Agnes.Ui.Core.Diff;
 
 namespace Agnes.Ui.Core.Transcript;
 
@@ -135,6 +136,7 @@ public sealed class TranscriptBuilder
         TextContent t => t.Text,
         ImageContent => "[image]",
         ResourceLinkContent r => r.Name ?? r.Uri,
+        DiffContent d => UnifiedDiff.Format(d.Path, d.OldText, d.NewText),
         _ => string.Empty,
     };
 }

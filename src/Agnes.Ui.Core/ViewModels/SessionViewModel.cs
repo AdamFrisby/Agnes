@@ -588,7 +588,12 @@ public sealed class SessionViewModel : ObservableObject
         => kind is ToolKind.Edit or ToolKind.Delete or ToolKind.Move;
 
     private static string TextOf(IReadOnlyList<ContentBlock> content)
-        => string.Concat(content.OfType<TextContent>().Select(c => c.Text));
+        => string.Concat(content.Select(b => b switch
+        {
+            TextContent t => t.Text,
+            DiffContent d => Diff.UnifiedDiff.Format(d.Path, d.OldText, d.NewText),
+            _ => string.Empty,
+        }));
 
     // Enter / Send: while a turn is running this QUEUES; when idle it sends immediately.
     private async Task SendAsync()

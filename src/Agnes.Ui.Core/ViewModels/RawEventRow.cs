@@ -46,6 +46,7 @@ public sealed class RawEventRow
         TextContent t => t.Text,
         ImageContent => "[image]",
         ResourceLinkContent r => r.Name ?? r.Uri,
+        DiffContent d => $"[diff] {d.Path}",
         _ => string.Empty,
     };
 
