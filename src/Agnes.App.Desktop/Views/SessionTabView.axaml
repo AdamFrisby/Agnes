@@ -462,14 +462,22 @@
 
                         <ScrollViewer Grid.Row="1" Padding="0,16" VerticalScrollBarVisibility="Auto"
                                       IsVisible="{Binding !IsInspectorOpen}">
-                            <ItemsControl x:Name="Transcript" ItemsSource="{Binding Items}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
+                            <ItemsControl x:Name="Transcript" ItemsSource="{Binding DisplayItems}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
                                 <ItemsControl.DataTemplates>
 
                                     <DataTemplate DataType="tr:MessageBubbleItem">
                                         <Border Classes.user="{Binding IsUser}" CornerRadius="12" Padding="14,10" Margin="0,6">
                                             <StackPanel>
-                                                <TextBlock Text="{Binding Speaker}" FontSize="11"
-                                                           Foreground="{StaticResource FgFaint}" Margin="0,0,0,3" />
+                                                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,3">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Speaker}" FontSize="11"
+                                                               Foreground="{StaticResource FgFaint}" />
+                                                    <Button Grid.Column="1" Content="⤾ from here"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.RewindToCommand}"
+                                                            CommandParameter="{Binding}" Background="Transparent" Foreground="{StaticResource FgFaint}"
+                                                            BorderThickness="0" Padding="0" FontSize="10" Cursor="Hand"
+                                                            ToolTip.Tip="View the conversation as of this point"
+                                                            AutomationProperties.Name="Rewind to here" />
+                                                </Grid>
                                                 <TextBlock Text="{Binding CondensedText}" Classes.thought="{Binding IsThought}"
                                                            Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
                                                 <Button Content="Read full message ›" IsVisible="{Binding IsLong}"
@@ -561,6 +569,18 @@
                                 </ItemsControl.DataTemplates>
                             </ItemsControl>
                         </ScrollViewer>
+
+                        <!-- Rewind (viewing history) banner -->
+                        <Border Grid.Row="1" VerticalAlignment="Top" IsVisible="{Binding IsRewound}"
+                                Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}"
+                                BorderThickness="0,0,0,1" Padding="24,7" ZIndex="5">
+                            <Grid ColumnDefinitions="*,Auto" MaxWidth="768" HorizontalAlignment="Center">
+                                <TextBlock Grid.Column="0" Text="Viewing earlier history (read-only)" Foreground="{StaticResource Fg}"
+                                           FontSize="12" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="Resume" Command="{Binding ResumeCommand}"
+                                        Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,4" FontSize="12" />
+                            </Grid>
+                        </Border>
 
                         <!-- Raw event / debug inspector (over the transcript) -->
                         <Border Grid.Row="1" IsVisible="{Binding IsInspectorOpen}" Background="{StaticResource Bg}">

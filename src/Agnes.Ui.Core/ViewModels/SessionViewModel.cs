@@ -77,6 +77,8 @@ public sealed class SessionViewModel : ObservableObject
         ToggleInspectorCommand = new RelayCommand(() => IsInspectorOpen = !IsInspectorOpen);
         SetModeCommand = new RelayCommand<SessionMode>(m => { if (m is not null) { _ = SetModeAsync(m); } });
         RefreshGitCommand = new AsyncRelayCommand(RefreshGitAsync);
+        RewindToCommand = new RelayCommand<TranscriptItem>(RewindTo);
+        ResumeCommand = new RelayCommand(Resume);
         CommitCommand = new AsyncRelayCommand(CommitAsync, () => !string.IsNullOrWhiteSpace(CommitMessage) && GitDirty);
         foreach (var mode in view.Info?.Modes ?? [])
         {
@@ -127,6 +129,15 @@ public sealed class SessionViewModel : ObservableObject
 
     public string Title { get; }
     public string SessionId => _view.SessionId;
+
+    private int _rewindIndex = -1;
+
+    /// <summary>Whether the transcript is showing an earlier point in history (read-only).</summary>
+    public bool IsRewound => _rewindIndex >= 0;
+
+    /// <summary>The transcript to display — the full live list, or a snapshot up to the rewind point.</summary>
+    public IEnumerable<TranscriptItem> DisplayItems
+        => IsRewound ? Items.Take(_rewindIndex + 1).ToList() : Items;
 
     /// <summary>
     /// A shareable reference to this session for cross-device handoff. Any Agnes client can
@@ -353,6 +364,34 @@ public sealed class SessionViewModel : ObservableObject
     {
         CurrentModeId = mode.Id; // optimistic; ModeChangedEvent will confirm
         await _host.SetModeAsync(SessionId, mode.Id);
+    }
+
+    // ---- conversation rewind (read-only history) ----
+
+    public ICommand RewindToCommand { get; }
+    public ICommand ResumeCommand { get; }
+
+    private void RewindTo(TranscriptItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        var index = Items.IndexOf(item);
+        if (index >= 0)
+        {
+            _rewindIndex = index;
+            Raise(nameof(IsRewound));
+            Raise(nameof(DisplayItems));
+        }
+    }
+
+    private void Resume()
+    {
+        _rewindIndex = -1;
+        Raise(nameof(IsRewound));
+        Raise(nameof(DisplayItems));
     }
 
     // ---- git (host working directory) ----

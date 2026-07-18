@@ -186,6 +186,37 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- conversation rewind ----
+
+    [Fact]
+    public void Rewind_shows_history_up_to_a_point_and_resume_restores_live()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.User, new TextContent("one")), 1));
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.Assistant, new TextContent("resp1")), 2));
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.User, new TextContent("two")), 3));
+
+        Assert.Equal(3, vm.Items.Count);
+        Assert.False(vm.IsRewound);
+        Assert.Equal(3, vm.DisplayItems.Count());
+
+        vm.RewindToCommand.Execute(vm.Items[0]); // rewind to the first message
+        Assert.True(vm.IsRewound);
+        Assert.Single(vm.DisplayItems);
+
+        // New live events still append to Items, but the rewound view stays historical.
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.Assistant, new TextContent("resp2")), 4));
+        Assert.Single(vm.DisplayItems);
+        Assert.Equal(4, vm.Items.Count);
+
+        vm.ResumeCommand.Execute(null);
+        Assert.False(vm.IsRewound);
+        Assert.Equal(4, vm.DisplayItems.Count());
+    }
+
     // ---- git ----
 
     [Fact]

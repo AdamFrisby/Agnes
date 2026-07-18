@@ -66,6 +66,12 @@ public static class Program
         Pump(() => first.Session!.Items.OfType<MessageBubbleItem>().Count(m => !m.IsUser && !m.IsThought) >= 2);
         Capture(window, "03-conversation.png");
 
+        // 3b) Conversation rewind: view history as of an earlier message (read-only).
+        first.Session!.RewindToCommand.Execute(first.Session!.Items.OfType<MessageBubbleItem>().First(m => m.IsUser));
+        Pump(() => first.Session!.IsRewound);
+        Capture(window, "03b-rewind.png");
+        first.Session!.ResumeCommand.Execute(null);
+
         // 4) Multi-column workspace: plan + files + tools (left), chat (middle), full diff (right)
         var tools = OpenSession(vm, "opencode");
         Prompt(tools, "Create a file called notes.txt with a short plan.");
