@@ -66,6 +66,9 @@ public sealed partial class SessionDocument : Document
     private string? _usageSummary;
 
     [ObservableProperty]
+    private UsageInfo? _usage;
+
+    [ObservableProperty]
     private bool _showAddHost;
 
     [ObservableProperty]

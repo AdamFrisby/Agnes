@@ -113,6 +113,17 @@
                                 Content="Event log" Background="Transparent" Foreground="{StaticResource FgDim}"
                                 BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Show the raw event log" AutomationProperties.Name="Toggle raw event log" />
+                        <!-- structured context-window meter, when the host reports it -->
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                    IsVisible="{Binding Usage.HasContext, FallbackValue=false}"
+                                    ToolTip.Tip="Context window used">
+                            <TextBlock Text="ctx" Foreground="{StaticResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
+                            <ProgressBar Minimum="0" Maximum="100" Value="{Binding Usage.ContextPercent, FallbackValue=0}"
+                                         Width="70" Height="6" VerticalAlignment="Center"
+                                         Foreground="{StaticResource Accent}" Background="{StaticResource PanelAlt}" />
+                            <TextBlock Text="{Binding Usage.ContextText}" Foreground="{StaticResource FgDim}" FontSize="10"
+                                       VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}" />
+                        </StackPanel>
                         <TextBlock Text="{Binding UsageSummary}" Foreground="{StaticResource FgDim}" FontSize="11"
                                    VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                    IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />

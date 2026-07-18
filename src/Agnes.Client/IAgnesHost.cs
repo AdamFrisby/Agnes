@@ -30,7 +30,10 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Free-form status the host reports (e.g. usage/quota), or null if unknown.</summary>
     string? UsageSummary { get; }
 
-    /// <summary>Raised when <see cref="UsageSummary"/> changes.</summary>
+    /// <summary>Structured usage (context-window / quota), or null if the host doesn't report it.</summary>
+    UsageInfo? Usage { get; }
+
+    /// <summary>Raised when <see cref="UsageSummary"/> / <see cref="Usage"/> changes.</summary>
     event Action<string?>? UsageChanged;
 
     /// <summary>The set of available agents changed on the host.</summary>

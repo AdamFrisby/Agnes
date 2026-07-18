@@ -32,6 +32,7 @@ public sealed class RecordedHost : IAgnesHost
     public event Action<AgnesConnectionState>? StateChanged;
 
     public string? UsageSummary => _byId.Count == 0 ? "No recordings" : $"{_byId.Count} recording(s)";
+    public UsageInfo? Usage => null;
 
 #pragma warning disable CS0067
     public event Action<string?>? UsageChanged;

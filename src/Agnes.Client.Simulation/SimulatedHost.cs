@@ -68,7 +68,11 @@ public sealed class SimulatedHost : IAgnesHost
     public event Action<AgnesConnectionState>? StateChanged;
 
     public string? UsageSummary { get; private set; }
+    public UsageInfo? Usage { get; private set; }
     public event Action<string?>? UsageChanged;
+
+    private const int ContextMax = 200_000;
+    private long _contextUsed = 8_400;
 
     // The simulated host never changes its agent set; required by the interface.
 #pragma warning disable CS0067
@@ -86,6 +90,12 @@ public sealed class SimulatedHost : IAgnesHost
     private void UpdateUsage()
     {
         UsageSummary = $"Free tier · {_remaining:N0} / {Quota:N0} tokens today";
+        Usage = new UsageInfo(
+            ContextUsed: _contextUsed,
+            ContextMax: ContextMax,
+            Used: Quota - _remaining,
+            Limit: Quota,
+            Label: UsageSummary);
         UsageChanged?.Invoke(UsageSummary);
     }
 
@@ -127,6 +137,7 @@ public sealed class SimulatedHost : IAgnesHost
         }
 
         _remaining = Math.Max(0, _remaining - 140 - text.Length);
+        _contextUsed = Math.Min(ContextMax, _contextUsed + 1_200 + text.Length * 3);
         UpdateUsage();
 
         _ = Task.Run(() => RespondAsync(session, text, session.NewTurn()));

@@ -1,9 +1,33 @@
+using System.Text.Json.Serialization;
 using Agnes.Abstractions;
 
 namespace Agnes.Protocol;
 
 /// <summary>Identity of a host a client can connect to.</summary>
 public sealed record HostInfo(string HostId, string DisplayName, string Version);
+
+/// <summary>
+/// Structured usage a host may report for a session: context-window consumption and/or
+/// token/credit usage against a quota. Any field may be null when unknown; <see cref="Label"/>
+/// is a free-form fallback caption. (Real hosts will populate this via a future ACP extension;
+/// today only the simulator does.)
+/// </summary>
+public sealed record UsageInfo(
+    long? ContextUsed = null,
+    long? ContextMax = null,
+    long? Used = null,
+    long? Limit = null,
+    string? Label = null)
+{
+    [JsonIgnore] public bool HasContext => ContextMax is > 0 && ContextUsed is >= 0;
+    [JsonIgnore] public bool HasQuota => Limit is > 0 && Used is >= 0;
+
+    [JsonIgnore] public double ContextPercent => HasContext ? Math.Clamp(100.0 * ContextUsed!.Value / ContextMax!.Value, 0, 100) : 0;
+    [JsonIgnore] public double QuotaPercent => HasQuota ? Math.Clamp(100.0 * Used!.Value / Limit!.Value, 0, 100) : 0;
+
+    [JsonIgnore] public string ContextText => HasContext ? $"{ContextUsed:N0} / {ContextMax:N0} ctx" : string.Empty;
+    [JsonIgnore] public string QuotaText => HasQuota ? $"{Used:N0} / {Limit:N0}" : string.Empty;
+}
 
 /// <summary>An agent kind available on a host (a loaded adapter plugin).</summary>
 public sealed record AgentInfo(

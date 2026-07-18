@@ -410,9 +410,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             doc.ConnectionState = host.State;
             doc.UsageSummary = host.UsageSummary;
+            doc.Usage = host.Usage;
         });
         host.StateChanged += state => _dispatcher.Post(() => doc.ConnectionState = state);
-        host.UsageChanged += usage => _dispatcher.Post(() => doc.UsageSummary = usage);
+        host.UsageChanged += usage => _dispatcher.Post(() => { doc.UsageSummary = usage; doc.Usage = host.Usage; });
     }
 
     private void SaveState()

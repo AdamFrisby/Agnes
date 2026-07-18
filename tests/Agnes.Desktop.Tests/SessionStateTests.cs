@@ -478,6 +478,7 @@ internal sealed class FakeHost : IAgnesHost
     public string HostUrl => "fake://host";
     public AgnesConnectionState State { get; private set; } = AgnesConnectionState.Connected;
     public string? UsageSummary => null;
+    public UsageInfo? Usage => null;
 
     public event Action<AgnesConnectionState>? StateChanged;
     public event Action<string?>? UsageChanged;

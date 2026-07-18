@@ -3,6 +3,7 @@ using Agnes.App.Desktop.Persistence;
 using Agnes.App.Desktop.ViewModels;
 using Agnes.Client;
 using Agnes.Client.Simulation;
+using Agnes.Protocol;
 using Agnes.Ui.Core;
 using Dock.Model.Controls;
 
@@ -69,6 +70,37 @@ public class SimulatedHostTests
         await WaitAsync(() => view.Events.OfType<PermissionResolvedEvent>().Any());
 
         Assert.Equal(PermissionOutcome.Allowed, view.Events.OfType<PermissionResolvedEvent>().First().Outcome);
+    }
+
+    [Fact]
+    public void Usage_info_computes_context_and_quota_percentages()
+    {
+        var u = new UsageInfo(ContextUsed: 50_000, ContextMax: 200_000, Used: 400, Limit: 5_000);
+        Assert.True(u.HasContext);
+        Assert.Equal(25, u.ContextPercent);
+        Assert.True(u.HasQuota);
+        Assert.Equal(8, u.QuotaPercent);
+
+        var empty = new UsageInfo();
+        Assert.False(empty.HasContext);
+        Assert.False(empty.HasQuota);
+    }
+
+    [Fact]
+    public async Task Simulated_host_reports_structured_usage_that_grows_with_prompts()
+    {
+        var host = new SimulatedHost();
+        await host.ConnectAsync();
+
+        Assert.NotNull(host.Usage);
+        Assert.True(host.Usage!.HasContext);
+        Assert.True(host.Usage.HasQuota);
+
+        var before = host.Usage.ContextUsed;
+        var info = await host.OpenSessionAsync("opencode", "/tmp/agnes");
+        await host.PromptAsync(info.SessionId, [new TextContent("hello world")]);
+
+        Assert.True(host.Usage!.ContextUsed > before);
     }
 
     [Fact]
