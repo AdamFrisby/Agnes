@@ -463,42 +463,93 @@
 
                         <Border Grid.Row="3" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
                                 BorderThickness="0,1,0,0" Padding="24,12">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" MaxWidth="768" HorizontalAlignment="Center">
-                                <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"
-                                         Watermark="Message the agent…    (Ctrl+Enter to send · Alt+↑/↓ for history)"
-                                         AcceptsReturn="True" TextWrapping="Wrap"
-                                         MinHeight="88" MaxHeight="280" VerticalContentAlignment="Top"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                         Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                         BorderBrush="{StaticResource Line}" CornerRadius="10" Padding="12,10"
-                                         AutomationProperties.Name="Message the agent">
-                                    <TextBox.KeyBindings>
-                                        <KeyBinding Gesture="Ctrl+Enter" Command="{Binding SendCommand}" />
-                                        <KeyBinding Gesture="Meta+Enter" Command="{Binding SendCommand}" />
-                                        <KeyBinding Gesture="Alt+Up" Command="{Binding RecallPreviousCommand}" />
-                                        <KeyBinding Gesture="Alt+Down" Command="{Binding RecallNextCommand}" />
-                                    </TextBox.KeyBindings>
-                                </TextBox>
-                                <Button Grid.Column="1" Content="Send" Command="{Binding SendCommand}"
-                                        IsVisible="{Binding !IsTurnActive}"
-                                        VerticalAlignment="Top" Height="40"
-                                        VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
-                                        Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="10"
-                                        Padding="18,0" FontWeight="SemiBold" AutomationProperties.Name="Send message" />
-                                <Button Grid.Column="1" Command="{Binding CancelCommand}"
-                                        IsVisible="{Binding IsTurnActive}"
-                                        VerticalAlignment="Top" Height="40"
-                                        VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
-                                        Background="Transparent" Foreground="{StaticResource Fg}"
-                                        BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="10"
-                                        Padding="16,0" FontWeight="SemiBold" AutomationProperties.Name="Stop the running turn"
-                                        ToolTip.Tip="Stop the running turn">
-                                    <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                        <Border Width="9" Height="9" CornerRadius="2" Background="{StaticResource Accent}" />
-                                        <TextBlock Text="Stop" VerticalAlignment="Center" />
+                            <StackPanel Spacing="8" MaxWidth="768" HorizontalAlignment="Center">
+
+                                <!-- Queued prompts (added while a turn runs; sent in order as turns end) -->
+                                <StackPanel Spacing="4" IsVisible="{Binding HasQueue}">
+                                    <TextBlock Text="QUEUED" Foreground="{StaticResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+                                    <ItemsControl ItemsSource="{Binding PendingPrompts}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Line}"
+                                                        BorderThickness="1" CornerRadius="8" Padding="10,5" Margin="0,2">
+                                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                                        <TextBlock Grid.Column="0" Text="⋮" Foreground="{StaticResource FgFaint}"
+                                                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{StaticResource Fg}"
+                                                                   FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                        <Button Grid.Column="2" Content="↑" Padding="6,1" FontSize="11" Background="Transparent"
+                                                                Foreground="{StaticResource FgDim}" BorderThickness="0" Cursor="Hand"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.MoveQueuedUpCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Move up" />
+                                                        <Button Grid.Column="3" Content="↓" Padding="6,1" FontSize="11" Background="Transparent"
+                                                                Foreground="{StaticResource FgDim}" BorderThickness="0" Cursor="Hand"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.MoveQueuedDownCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Move down" />
+                                                        <Button Grid.Column="4" Content="✕" Padding="6,1" FontSize="11" Background="Transparent"
+                                                                Foreground="{StaticResource FgFaint}" BorderThickness="0" Cursor="Hand"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.RemoveQueuedCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Remove from queue" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                    <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"
+                                             Watermark="Message the agent…    (Ctrl+Enter to send · Alt+↑/↓ for history)"
+                                             AcceptsReturn="True" TextWrapping="Wrap"
+                                             MinHeight="88" MaxHeight="280" VerticalContentAlignment="Top"
+                                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                             BorderBrush="{StaticResource Line}" CornerRadius="10" Padding="12,10"
+                                             AutomationProperties.Name="Message the agent">
+                                        <TextBox.KeyBindings>
+                                            <KeyBinding Gesture="Ctrl+Enter" Command="{Binding SendCommand}" />
+                                            <KeyBinding Gesture="Meta+Enter" Command="{Binding SendCommand}" />
+                                            <KeyBinding Gesture="Ctrl+Shift+Enter" Command="{Binding SendNowCommand}" />
+                                            <KeyBinding Gesture="Alt+Up" Command="{Binding RecallPreviousCommand}" />
+                                            <KeyBinding Gesture="Alt+Down" Command="{Binding RecallNextCommand}" />
+                                        </TextBox.KeyBindings>
+                                    </TextBox>
+
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Top" Spacing="6" Width="92">
+                                        <!-- Idle: Send -->
+                                        <Button Content="Send" Command="{Binding SendCommand}" IsVisible="{Binding !IsTurnActive}"
+                                                Height="40" HorizontalAlignment="Stretch"
+                                                VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                                Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="10"
+                                                FontWeight="SemiBold" AutomationProperties.Name="Send message" />
+                                        <!-- Running: Queue / Send now / Stop -->
+                                        <Button Content="Queue" Command="{Binding SendCommand}" IsVisible="{Binding IsTurnActive}"
+                                                Height="34" HorizontalAlignment="Stretch"
+                                                VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                                Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="10"
+                                                FontWeight="SemiBold" AutomationProperties.Name="Queue this prompt"
+                                                ToolTip.Tip="Send after the current turn finishes" />
+                                        <Button Content="Send now" Command="{Binding SendNowCommand}" IsVisible="{Binding IsTurnActive}"
+                                                Height="30" HorizontalAlignment="Stretch" FontSize="12"
+                                                VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                                Background="Transparent" Foreground="{StaticResource FgDim}"
+                                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
+                                                AutomationProperties.Name="Stop the current turn and send now"
+                                                ToolTip.Tip="Stop the current turn and send now" />
+                                        <Button Command="{Binding CancelCommand}" IsVisible="{Binding IsTurnActive}"
+                                                Height="30" HorizontalAlignment="Stretch"
+                                                VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                                Background="Transparent" Foreground="{StaticResource Fg}"
+                                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
+                                                AutomationProperties.Name="Stop the running turn" ToolTip.Tip="Stop the running turn">
+                                            <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                                <Border Width="9" Height="9" CornerRadius="2" Background="{StaticResource Accent}" />
+                                                <TextBlock Text="Stop" VerticalAlignment="Center" FontSize="12" />
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
-                                </Button>
-                            </Grid>
+                                </Grid>
+                            </StackPanel>
                         </Border>
                     </Grid>
 

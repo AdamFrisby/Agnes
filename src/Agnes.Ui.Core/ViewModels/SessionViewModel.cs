@@ -53,7 +53,12 @@ public sealed class SessionViewModel : ObservableObject
         _historyIndex = _history.Count;
 
         SendCommand = new AsyncRelayCommand(SendAsync, () => !string.IsNullOrWhiteSpace(PromptText));
+        SendNowCommand = new AsyncRelayCommand(SendNowAsync, () => !string.IsNullOrWhiteSpace(PromptText));
         CancelCommand = new AsyncRelayCommand(CancelAsync, () => IsTurnActive);
+        RemoveQueuedCommand = new RelayCommand<QueuedPrompt>(RemoveQueued);
+        EditQueuedCommand = new RelayCommand<QueuedPrompt>(EditQueued);
+        MoveQueuedUpCommand = new RelayCommand<QueuedPrompt>(p => MoveQueued(p, -1));
+        MoveQueuedDownCommand = new RelayCommand<QueuedPrompt>(p => MoveQueued(p, +1));
         AllowCommand = new AsyncRelayCommand(() => RespondAsync(allow: true));
         DenyCommand = new AsyncRelayCommand(() => RespondAsync(allow: false));
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
@@ -208,14 +213,25 @@ public sealed class SessionViewModel : ObservableObject
             if (Set(ref _promptText, value))
             {
                 SendCommand.RaiseCanExecuteChanged();
+                SendNowCommand.RaiseCanExecuteChanged();
                 _prompts.SaveDraft(SessionId, value);
             }
         }
     }
 
     public AsyncRelayCommand SendCommand { get; }
+    public AsyncRelayCommand SendNowCommand { get; }
     public AsyncRelayCommand CancelCommand { get; }
+    public ICommand RemoveQueuedCommand { get; }
+    public ICommand EditQueuedCommand { get; }
+    public ICommand MoveQueuedUpCommand { get; }
+    public ICommand MoveQueuedDownCommand { get; }
     public AsyncRelayCommand AllowCommand { get; }
+
+    /// <summary>Prompts queued while a turn is running; sent in order as turns end.</summary>
+    public ObservableCollection<QueuedPrompt> PendingPrompts { get; } = [];
+
+    public bool HasQueue => PendingPrompts.Count > 0;
     public AsyncRelayCommand DenyCommand { get; }
     public AsyncRelayCommand RetryCommand { get; }
     public ICommand ToggleLeftCommand { get; }
@@ -261,6 +277,7 @@ public sealed class SessionViewModel : ObservableObject
             case TurnEndedEvent { Reason: not StopReason.Cancelled }:
                 IsTurnActive = false;
                 NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId));
+                DrainQueue();
                 break;
 
             case TurnEndedEvent:
@@ -503,28 +520,122 @@ public sealed class SessionViewModel : ObservableObject
     private static string TextOf(IReadOnlyList<ContentBlock> content)
         => string.Concat(content.OfType<TextContent>().Select(c => c.Text));
 
+    // Enter / Send: while a turn is running this QUEUES; when idle it sends immediately.
     private async Task SendAsync()
     {
         var text = PromptText;
-        if (!string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(text))
         {
-            _history.Add(text);
-            _prompts.AppendHistory(SessionId, text);
-            _historyIndex = _history.Count;
-            _lastPrompt = text;
+            return;
         }
 
+        Record(text);
+        PromptText = string.Empty;
+
+        if (IsTurnActive)
+        {
+            PendingPrompts.Add(new QueuedPrompt(text));
+            Raise(nameof(HasQueue));
+            return;
+        }
+
+        await SubmitAsync(text);
+    }
+
+    // Steer: stop the current turn and send this prompt now (skips the queue).
+    private async Task SendNowAsync()
+    {
+        var text = PromptText;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        Record(text);
+        PromptText = string.Empty;
+
+        if (IsTurnActive)
+        {
+            await _host.CancelAsync(SessionId);
+        }
+
+        await SubmitAsync(text);
+    }
+
+    private void Record(string text)
+    {
+        _history.Add(text);
+        _prompts.AppendHistory(SessionId, text);
+        _historyIndex = _history.Count;
+        _lastPrompt = text;
+    }
+
+    private async Task SubmitAsync(string text)
+    {
         _interrupted = false;
         UpdateBanner();
-        PromptText = string.Empty;
         IsTurnActive = true;
         await _host.PromptAsync(SessionId, [new TextContent(text)]);
+    }
+
+    // When a turn ends normally, send the next queued prompt.
+    private void DrainQueue()
+    {
+        if (IsTurnActive || PendingPrompts.Count == 0)
+        {
+            return;
+        }
+
+        var next = PendingPrompts[0];
+        PendingPrompts.RemoveAt(0);
+        Raise(nameof(HasQueue));
+        _ = SubmitAsync(next.Text);
     }
 
     private async Task CancelAsync()
     {
         IsTurnActive = false;
         await _host.CancelAsync(SessionId);
+    }
+
+    private void RemoveQueued(QueuedPrompt? item)
+    {
+        if (item is not null && PendingPrompts.Remove(item))
+        {
+            Raise(nameof(HasQueue));
+        }
+    }
+
+    private void EditQueued(QueuedPrompt? item)
+    {
+        if (item is null || !PendingPrompts.Remove(item))
+        {
+            return;
+        }
+
+        // Put it back in the composer to edit; anything already typed is prepended back onto the queue.
+        if (!string.IsNullOrWhiteSpace(PromptText))
+        {
+            PendingPrompts.Insert(0, new QueuedPrompt(PromptText));
+        }
+
+        PromptText = item.Text;
+        Raise(nameof(HasQueue));
+    }
+
+    private void MoveQueued(QueuedPrompt? item, int direction)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        var i = PendingPrompts.IndexOf(item);
+        var j = i + direction;
+        if (i >= 0 && j >= 0 && j < PendingPrompts.Count)
+        {
+            PendingPrompts.Move(i, j);
+        }
     }
 
     private async Task RespondAsync(bool allow)

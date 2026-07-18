@@ -115,6 +115,14 @@ public static class Program
         Pump(() => running.Session!.IsTurnActive
                    && running.Session!.Items.OfType<MessageBubbleItem>().Any(m => !m.IsUser && !m.IsThought));
         Capture(window, "04g-stop-button.png");
+
+        // 4h) Queue prompts while the turn runs (Queue / Send now / Stop actions).
+        running.Session!.PromptText = "Then add unit tests for the parser.";
+        running.Session!.SendCommand.Execute(null);
+        running.Session!.PromptText = "Finally, update the README.";
+        running.Session!.SendCommand.Execute(null);
+        Pump(() => running.Session!.PendingPrompts.Count >= 2 && running.Session!.IsTurnActive);
+        Capture(window, "04h-prompt-queue.png");
         running.Session!.CancelCommand.Execute(null);
 
         // 4b) Long assistant message → condensed in chat, full text in the preview

@@ -186,6 +186,83 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- prompt queue + steer ----
+
+    [Fact]
+    public void Sending_while_a_turn_runs_queues_and_drains_in_order_on_turn_end()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        vm.PromptText = "first";
+        vm.SendCommand.Execute(null); // idle → sends immediately
+        Assert.Equal(["first"], host.Prompts);
+        Assert.True(vm.IsTurnActive);
+
+        vm.PromptText = "second";
+        vm.SendCommand.Execute(null); // busy → queues
+        vm.PromptText = "third";
+        vm.SendCommand.Execute(null); // busy → queues
+        Assert.Single(host.Prompts);            // nothing new sent yet
+        Assert.Equal(2, vm.PendingPrompts.Count);
+        Assert.True(vm.HasQueue);
+
+        view.Apply(Seq(new TurnEndedEvent(StopReason.EndTurn), 1)); // drains "second"
+        Assert.Equal(["first", "second"], host.Prompts);
+        Assert.True(vm.IsTurnActive);
+        Assert.Single(vm.PendingPrompts);
+
+        view.Apply(Seq(new TurnEndedEvent(StopReason.EndTurn), 2)); // drains "third"
+        Assert.Equal(["first", "second", "third"], host.Prompts);
+        Assert.False(vm.HasQueue);
+    }
+
+    [Fact]
+    public void Send_now_steers_by_cancelling_the_current_turn_then_sending()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        vm.PromptText = "long running";
+        vm.SendCommand.Execute(null);
+        Assert.True(vm.IsTurnActive);
+
+        vm.PromptText = "actually do this instead";
+        vm.SendNowCommand.Execute(null);
+
+        Assert.Equal(1, host.Cancels);
+        Assert.Equal(["long running", "actually do this instead"], host.Prompts);
+        Assert.True(vm.IsTurnActive);
+    }
+
+    [Fact]
+    public void Queue_can_be_reordered_removed_and_edited()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+        vm.PromptText = "start";
+        vm.SendCommand.Execute(null); // turn active
+        foreach (var t in new[] { "a", "b", "c" })
+        {
+            vm.PromptText = t;
+            vm.SendCommand.Execute(null);
+        }
+        Assert.Equal(["a", "b", "c"], vm.PendingPrompts.Select(p => p.Text));
+
+        vm.RemoveQueuedCommand.Execute(vm.PendingPrompts[1]); // remove "b"
+        Assert.Equal(["a", "c"], vm.PendingPrompts.Select(p => p.Text));
+
+        vm.MoveQueuedDownCommand.Execute(vm.PendingPrompts[0]); // a ↓
+        Assert.Equal(["c", "a"], vm.PendingPrompts.Select(p => p.Text));
+
+        vm.EditQueuedCommand.Execute(vm.PendingPrompts[0]); // load "c" into composer
+        Assert.Equal("c", vm.PromptText);
+        Assert.Equal(["a"], vm.PendingPrompts.Select(p => p.Text));
+    }
+
     // ---- notifications ----
 
     [Fact]
