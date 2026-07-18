@@ -41,9 +41,10 @@ jobs:
         with:
           global-json-file: global.json
 
-      # Install exactly the workloads the app declares (android + wasm-tools).
-      - name: Restore Uno workloads
-        run: dotnet workload restore src/Agnes.App/Agnes.App/Agnes.App.csproj
+      # Install the workloads the heads need (android for the mobile head,
+      # wasm-tools for the web head; desktop needs neither).
+      - name: Install Uno workloads
+        run: dotnet workload install wasm-tools android
 
       # Build all heads (android, web, desktop).
       - name: Build UI heads
