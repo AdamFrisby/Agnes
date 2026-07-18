@@ -24,6 +24,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private readonly IAgnesConnector _connector;
     private readonly IUiDispatcher _dispatcher;
     private readonly SessionStateStore _tabStore;
+    private readonly SessionStateStore _archiveStore;
     private readonly HostRegistryStore _hostStore;
     private readonly IPromptStore _prompts;
     private readonly DockFactory _factory;
@@ -35,17 +36,26 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         IUiDispatcher dispatcher,
         SessionStateStore tabStore,
         HostRegistryStore hostStore,
-        IPromptStore? prompts = null)
+        IPromptStore? prompts = null,
+        SessionStateStore? archiveStore = null)
     {
         _connector = connector;
         _dispatcher = dispatcher;
         _tabStore = tabStore;
+        _archiveStore = archiveStore ?? new SessionStateStore(SessionStateStore.DefaultPath().Replace("desktop-tabs.json", "desktop-archive.json"));
         _hostStore = hostStore;
         _prompts = prompts ?? new JsonPromptStore();
 
         _knownHosts.Add(SimulatedHost);
         _knownHosts.Add(RecordedHost);
         _knownHosts.AddRange(hostStore.Load());
+
+        foreach (var archived in _archiveStore.Load())
+        {
+            ArchivedSessions.Add(archived);
+        }
+
+        ArchivedSessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasArchived));
 
         _factory = new DockFactory
         {
@@ -56,11 +66,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _factory.InitLayout(Layout);
 
         NewTabCommand = new RelayCommand(AddTab);
+        ReopenArchivedCommand = new RelayCommand<SessionDescriptor>(d => { if (d is not null) { ReopenArchived(d); } });
     }
 
     public IRootDock Layout { get; }
     public IFactory Factory => _factory;
     public IRelayCommand NewTabCommand { get; }
+    public IRelayCommand<SessionDescriptor> ReopenArchivedCommand { get; }
+
+    public bool HasArchived => ArchivedSessions.Count > 0;
+
+    /// <summary>Archived (closed-but-kept) sessions, restorable from the tab menu.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<SessionDescriptor> ArchivedSessions { get; } = [];
 
     public Task RestoreAsync()
     {
@@ -82,12 +99,27 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 Descriptor = descriptor,
                 HostName = descriptor.HostName,
                 AgentName = descriptor.Title,
+                Pinned = descriptor.Pinned,
             };
+            ApplyTags(doc, descriptor.Tags);
             AddDocument(doc);
             _ = ReconnectAsync(doc, descriptor);
         }
 
         return Task.CompletedTask;
+    }
+
+    private static void ApplyTags(SessionDocument doc, IReadOnlyList<string>? tags)
+    {
+        if (tags is null)
+        {
+            return;
+        }
+
+        foreach (var tag in tags)
+        {
+            doc.Tags.Add(tag);
+        }
     }
 
     // ---- ITabController ----
@@ -218,8 +250,129 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var tabs = _factory.DocumentDock?.VisibleDockables?
             .OfType<SessionDocument>()
             .Where(d => d.Descriptor is not null)
-            .Select(d => d.Descriptor!)
+            .Select(Snapshot)
             .ToList() ?? [];
         _tabStore.Save(tabs);
+    }
+
+    // Rebuilds a descriptor from the tab's current metadata so rename/pin/tag persist.
+    private static SessionDescriptor Snapshot(SessionDocument doc)
+        => doc.Descriptor! with
+        {
+            Title = string.IsNullOrWhiteSpace(doc.Title) ? doc.Descriptor!.Title : doc.Title!,
+            Pinned = doc.Pinned,
+            Tags = doc.Tags.Count > 0 ? doc.Tags.ToList() : null,
+        };
+
+    // ---- session management: persist / archive / duplicate / fork ----
+
+    public void PersistTabs() => _dispatcher.Post(SaveState);
+
+    public void ArchiveTab(SessionDocument doc)
+    {
+        if (doc.Descriptor is not null)
+        {
+            ArchivedSessions.Insert(0, Snapshot(doc));
+            _archiveStore.Save(ArchivedSessions.ToList());
+        }
+
+        _factory.CloseDockable(doc);
+        SaveState();
+    }
+
+    public void ReopenArchived(SessionDescriptor descriptor)
+    {
+        ArchivedSessions.Remove(descriptor);
+        _archiveStore.Save(ArchivedSessions.ToList());
+
+        var doc = new SessionDocument(this)
+        {
+            Title = descriptor.Title,
+            CanClose = true,
+            Descriptor = descriptor,
+            HostName = descriptor.HostName,
+            AgentName = descriptor.Title,
+            Pinned = descriptor.Pinned,
+        };
+        ApplyTags(doc, descriptor.Tags);
+        AddDocument(doc);
+        _ = ReconnectAsync(doc, descriptor);
+    }
+
+    public async Task DuplicateAsync(SessionDocument doc)
+    {
+        if (doc.Host is null || doc.Descriptor is not { } descriptor)
+        {
+            return;
+        }
+
+        var copy = new SessionDocument(this)
+        {
+            Title = $"{doc.Title} (view)",
+            CanClose = true,
+            HostName = doc.HostName,
+            AgentName = doc.AgentName,
+        };
+        ApplyTags(copy, doc.Tags.ToList());
+        AddDocument(copy);
+
+        try
+        {
+            copy.Host = doc.Host;
+            copy.HostToken = doc.HostToken;
+            WireStatus(copy, doc.Host);
+
+            // Same session id → a second live client view of the same conversation.
+            var view = await doc.Host.SubscribeAsync(descriptor.SessionId);
+            _dispatcher.Post(() =>
+            {
+                copy.AttachSession(new SessionViewModel(doc.Host!, view, _dispatcher, copy.Title!, _prompts));
+                copy.Descriptor = descriptor with { Title = copy.Title! };
+                SaveState();
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => copy.StatusText = "Error: " + ex.Message);
+        }
+    }
+
+    public async Task ForkAsync(SessionDocument doc)
+    {
+        if (doc.Host is null || doc.Descriptor is not { } descriptor)
+        {
+            return;
+        }
+
+        var fork = new SessionDocument(this)
+        {
+            Title = $"{doc.Title} (fork)",
+            CanClose = true,
+            HostName = doc.HostName,
+            AgentName = doc.AgentName,
+        };
+        ApplyTags(fork, doc.Tags.ToList());
+        AddDocument(fork);
+
+        try
+        {
+            fork.Host = doc.Host;
+            fork.HostToken = doc.HostToken;
+            WireStatus(fork, doc.Host);
+
+            // New session on the same host/agent → an independent branch to explore.
+            var info = await doc.Host.OpenSessionAsync(descriptor.AdapterId, WorkingDirectory);
+            var view = await doc.Host.SubscribeAsync(info.SessionId);
+            _dispatcher.Post(() =>
+            {
+                fork.AttachSession(new SessionViewModel(doc.Host!, view, _dispatcher, fork.Title!, _prompts));
+                fork.Descriptor = descriptor with { SessionId = info.SessionId, Title = fork.Title! };
+                SaveState();
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => fork.StatusText = "Error: " + ex.Message);
+        }
     }
 }

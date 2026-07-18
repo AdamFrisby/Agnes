@@ -87,6 +87,18 @@ public static class Program
         Capture(window, "04d-state-banner.png");
         tools.Session!.DismissBannerCommand.Execute(null);
 
+        // 4e) Session management: pin, tag and the inline rename/tag editor.
+        tools.TogglePinCommand.Execute(null);
+        tools.TagInput = "backend";
+        tools.AddTagCommand.Execute(null);
+        tools.TagInput = "review";
+        tools.AddTagCommand.Execute(null);
+        tools.BeginRenameCommand.Execute(null);
+        tools.RenameText = "Config refactor";
+        Pump(() => tools.IsRenaming && tools.HasTags);
+        Capture(window, "04e-session-management.png");
+        tools.CancelRenameCommand.Execute(null);
+
         // 4b) Long assistant message → condensed in chat, full text in the preview
         var longChat = OpenSession(vm, "opencode");
         Prompt(longChat, "Explain the Agent Client Protocol in detail.");

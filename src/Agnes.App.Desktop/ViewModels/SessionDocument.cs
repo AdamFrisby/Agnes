@@ -24,6 +24,18 @@ public sealed partial class SessionDocument : Document
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this));
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
+
+        Tags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTags));
+
+        BeginRenameCommand = new RelayCommand(() => { RenameText = Title ?? string.Empty; IsRenaming = true; });
+        CommitRenameCommand = new RelayCommand(CommitRename);
+        CancelRenameCommand = new RelayCommand(() => IsRenaming = false);
+        TogglePinCommand = new RelayCommand(() => { Pinned = !Pinned; _controller.PersistTabs(); });
+        AddTagCommand = new RelayCommand(AddTag);
+        RemoveTagCommand = new RelayCommand<string>(RemoveTag);
+        ArchiveCommand = new RelayCommand(() => _controller.ArchiveTab(this));
+        DuplicateCommand = new AsyncRelayCommand(() => _controller.DuplicateAsync(this));
+        ForkCommand = new AsyncRelayCommand(() => _controller.ForkAsync(this));
     }
 
     [ObservableProperty]
@@ -57,6 +69,23 @@ public sealed partial class SessionDocument : Document
     private bool _showAddHost;
 
     [ObservableProperty]
+    private bool _pinned;
+
+    [ObservableProperty]
+    private bool _isRenaming;
+
+    [ObservableProperty]
+    private string _renameText = string.Empty;
+
+    [ObservableProperty]
+    private string _tagInput = string.Empty;
+
+    /// <summary>User labels for organising tabs; persisted with the tab.</summary>
+    public ObservableCollection<string> Tags { get; } = [];
+
+    public bool HasTags => Tags.Count > 0;
+
+    [ObservableProperty]
     private string _newHostName = string.Empty;
 
     [ObservableProperty]
@@ -76,6 +105,49 @@ public sealed partial class SessionDocument : Document
     public IAsyncRelayCommand AddHostCommand { get; }
     public IRelayCommand ToggleAddHostCommand { get; }
     public IRelayCommand BackCommand { get; }
+
+    // ---- session management: rename / pin / tag / archive / duplicate / fork ----
+    public IRelayCommand BeginRenameCommand { get; }
+    public IRelayCommand CommitRenameCommand { get; }
+    public IRelayCommand CancelRenameCommand { get; }
+    public IRelayCommand TogglePinCommand { get; }
+    public IRelayCommand AddTagCommand { get; }
+    public IRelayCommand<string> RemoveTagCommand { get; }
+    public IRelayCommand ArchiveCommand { get; }
+    public IAsyncRelayCommand DuplicateCommand { get; }
+    public IAsyncRelayCommand ForkCommand { get; }
+
+    private void CommitRename()
+    {
+        var name = RenameText.Trim();
+        if (name.Length > 0)
+        {
+            Title = name;
+            _controller.PersistTabs();
+        }
+
+        IsRenaming = false;
+    }
+
+    private void AddTag()
+    {
+        var tag = TagInput.Trim();
+        if (tag.Length > 0 && !Tags.Contains(tag))
+        {
+            Tags.Add(tag);
+            _controller.PersistTabs();
+        }
+
+        TagInput = string.Empty;
+    }
+
+    private void RemoveTag(string? tag)
+    {
+        if (tag is not null && Tags.Remove(tag))
+        {
+            _controller.PersistTabs();
+        }
+    }
 
     // ---- stage helpers ----
 

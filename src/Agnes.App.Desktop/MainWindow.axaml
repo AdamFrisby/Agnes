@@ -20,15 +20,45 @@
                                VerticalAlignment="Center" />
                 </StackPanel>
 
-                <Button Grid.Column="2" Command="{Binding NewTabCommand}"
-                        Background="Transparent" Foreground="{StaticResource FgDim}"
-                        BorderBrush="{StaticResource Line}" BorderThickness="1"
-                        CornerRadius="7" Padding="10,5" FontSize="12">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <TextBlock Text="+" FontSize="14" />
-                        <TextBlock Text="New tab" />
-                    </StackPanel>
-                </Button>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <Button Background="Transparent" Foreground="{StaticResource FgDim}"
+                            BorderBrush="{StaticResource Line}" BorderThickness="1"
+                            CornerRadius="7" Padding="10,5" FontSize="12"
+                            IsVisible="{Binding HasArchived}" AutomationProperties.Name="Reopen archived sessions">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="🗄" FontSize="12" />
+                            <TextBlock Text="Archived" />
+                        </StackPanel>
+                        <Button.Flyout>
+                            <Flyout>
+                                <ItemsControl ItemsSource="{Binding ArchivedSessions}" MaxWidth="340">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.ReopenArchivedCommand}"
+                                                    CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                    Padding="8,6" CornerRadius="6" Cursor="Hand">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" FontSize="12" />
+                                                    <TextBlock Text="{Binding HostName}" Foreground="{StaticResource FgFaint}" FontSize="10" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button Command="{Binding NewTabCommand}"
+                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                            BorderBrush="{StaticResource Line}" BorderThickness="1"
+                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="New tab">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="+" FontSize="14" />
+                            <TextBlock Text="New tab" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
             </Grid>
         </Border>
 

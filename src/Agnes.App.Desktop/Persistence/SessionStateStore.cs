@@ -9,7 +9,9 @@ public sealed record SessionDescriptor(
     string Token,
     string SessionId,
     string AdapterId,
-    string Title);
+    string Title,
+    bool Pinned = false,
+    IReadOnlyList<string>? Tags = null);
 
 /// <summary>Persists the set of open session tabs so they auto-reconnect on relaunch.</summary>
 public sealed class SessionStateStore

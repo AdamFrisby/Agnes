@@ -40,29 +40,95 @@
         <!-- Per-tab status bar -->
         <Border Grid.Row="0" IsVisible="{Binding ShowStatusBar}" Background="{StaticResource Panel}"
                 BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="16,7">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Border Classes="dot" Classes.on="{Binding IsConnected}" Width="8" Height="8"
-                            CornerRadius="4" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding HostName}" Foreground="{StaticResource Fg}" FontSize="12" FontWeight="SemiBold" />
-                    <TextBlock Text="·" Foreground="{StaticResource FgFaint}" IsVisible="{Binding IsLive}" />
-                    <TextBlock Text="{Binding AgentName}" Foreground="{StaticResource FgDim}" FontSize="12" IsVisible="{Binding IsLive}" />
-                    <TextBlock Text="{Binding ConnectionText}" Foreground="{StaticResource FgFaint}" FontSize="11" Margin="6,0,0,0" />
+            <StackPanel Spacing="0">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Border Classes="dot" Classes.on="{Binding IsConnected}" Width="8" Height="8"
+                                CornerRadius="4" VerticalAlignment="Center" />
+                        <TextBlock Text="★" Foreground="{StaticResource Accent}" FontSize="12" VerticalAlignment="Center"
+                                   IsVisible="{Binding Pinned}" ToolTip.Tip="Pinned" />
+                        <TextBlock Text="{Binding HostName}" Foreground="{StaticResource Fg}" FontSize="12" FontWeight="SemiBold" />
+                        <TextBlock Text="·" Foreground="{StaticResource FgFaint}" IsVisible="{Binding IsLive}" />
+                        <TextBlock Text="{Binding AgentName}" Foreground="{StaticResource FgDim}" FontSize="12" IsVisible="{Binding IsLive}" />
+                        <TextBlock Text="{Binding ConnectionText}" Foreground="{StaticResource FgFaint}" FontSize="11" Margin="6,0,0,0" />
+                        <!-- tag chips -->
+                        <ItemsControl ItemsSource="{Binding Tags}" IsVisible="{Binding HasTags}" Margin="4,0,0,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Line}"
+                                            BorderThickness="1" CornerRadius="10" Padding="8,1">
+                                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding}" Foreground="{StaticResource FgDim}" FontSize="10" />
+                                            <Button Content="✕" Command="{Binding $parent[ItemsControl].DataContext.RemoveTagCommand}"
+                                                    CommandParameter="{Binding}" Background="Transparent" Foreground="{StaticResource FgFaint}"
+                                                    BorderThickness="0" Padding="0" FontSize="9" Cursor="Hand"
+                                                    AutomationProperties.Name="Remove tag" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <Button Command="{Binding Session.ToggleToolsCommand}" IsVisible="{Binding Session.HasTools}"
+                                Content="Tool output" Background="Transparent" Foreground="{StaticResource FgDim}"
+                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                ToolTip.Tip="Collapse / expand all tool output" AutomationProperties.Name="Toggle all tool output" />
+                        <Button Command="{Binding Session.ToggleLeftCommand}" IsVisible="{Binding Session.HasSidebarContent}"
+                                Content="Panels" Background="Transparent" Foreground="{StaticResource FgDim}"
+                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                AutomationProperties.Name="Toggle side panels" />
+                        <TextBlock Text="{Binding UsageSummary}" Foreground="{StaticResource FgDim}" FontSize="11"
+                                   VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
+                                   IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+                        <!-- session menu -->
+                        <Button Content="⋯" Background="Transparent" Foreground="{StaticResource FgDim}"
+                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,1" FontSize="13"
+                                IsVisible="{Binding IsLive}" AutomationProperties.Name="Session menu">
+                            <Button.Flyout>
+                                <MenuFlyout>
+                                    <MenuItem Header="Rename / tag…" Command="{Binding BeginRenameCommand}" />
+                                    <MenuItem Header="Pin tab" Command="{Binding TogglePinCommand}" />
+                                    <Separator />
+                                    <MenuItem Header="Duplicate (same session)" Command="{Binding DuplicateCommand}" />
+                                    <MenuItem Header="Fork (new session)" Command="{Binding ForkCommand}" />
+                                    <Separator />
+                                    <MenuItem Header="Archive" Command="{Binding ArchiveCommand}" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- inline rename / tag editor -->
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding IsRenaming}">
+                    <TextBox Text="{Binding RenameText, Mode=TwoWay}" Width="240" Watermark="Tab name"
+                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                             AutomationProperties.Name="Rename tab">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Gesture="Enter" Command="{Binding CommitRenameCommand}" />
+                            <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                    <Button Content="Save" Command="{Binding CommitRenameCommand}"
+                            Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,4" FontSize="12" />
+                    <TextBox Text="{Binding TagInput, Mode=TwoWay}" Width="160" Watermark="Add tag + Enter"
+                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                             AutomationProperties.Name="Add tag">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Gesture="Enter" Command="{Binding AddTagCommand}" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                    <Button Content="Done" Command="{Binding CancelRenameCommand}"
+                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,4" FontSize="12" />
                 </StackPanel>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <Button Command="{Binding Session.ToggleToolsCommand}" IsVisible="{Binding Session.HasTools}"
-                            Content="Tool output" Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
-                            ToolTip.Tip="Collapse / expand all tool output" AutomationProperties.Name="Toggle all tool output" />
-                    <Button Command="{Binding Session.ToggleLeftCommand}" IsVisible="{Binding Session.HasSidebarContent}"
-                            Content="Panels" Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
-                            AutomationProperties.Name="Toggle side panels" />
-                    <TextBlock Text="{Binding UsageSummary}" Foreground="{StaticResource FgDim}" FontSize="11"
-                               VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
-                               IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
-                </StackPanel>
-            </Grid>
+            </StackPanel>
         </Border>
 
         <Grid Grid.Row="1">

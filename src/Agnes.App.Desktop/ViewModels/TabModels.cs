@@ -18,6 +18,18 @@ public interface ITabController
     Task AddHostAsync(SessionDocument doc);
     Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName);
     void BackToHosts(SessionDocument doc);
+
+    /// <summary>Persist tab metadata (rename / pin / tag) after an in-tab change.</summary>
+    void PersistTabs();
+
+    /// <summary>Archive the tab: remove it from the strip but keep it restorable.</summary>
+    void ArchiveTab(SessionDocument doc);
+
+    /// <summary>Open another tab on the same live session (a second client view).</summary>
+    Task DuplicateAsync(SessionDocument doc);
+
+    /// <summary>Open a new tab that forks a fresh session from the same host and agent.</summary>
+    Task ForkAsync(SessionDocument doc);
 }
 
 /// <summary>A host option on the new-tab host picker.</summary>
