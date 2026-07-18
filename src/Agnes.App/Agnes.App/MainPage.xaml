@@ -9,5 +9,7 @@
     <ContentControl x:Name="ShellHost"
                     HorizontalContentAlignment="Stretch"
                     VerticalContentAlignment="Stretch" />
+    <InfoBar x:Name="Toast" IsOpen="False" VerticalAlignment="Top" Margin="12"
+             HorizontalAlignment="Stretch" />
   </Grid>
 </Page>

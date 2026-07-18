@@ -186,6 +186,16 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- cross-device handoff ----
+
+    [Fact]
+    public void Handoff_reference_identifies_the_session_for_reconnect()
+    {
+        var host = new FakeHost();
+        var vm = new SessionViewModel(host, Live("s1"), ImmediateDispatcher.Instance, "OpenCode");
+        Assert.Equal("fake://host#s1", vm.HandoffReference);
+    }
+
     // ---- session modes (Ask / Code) ----
 
     [Fact]

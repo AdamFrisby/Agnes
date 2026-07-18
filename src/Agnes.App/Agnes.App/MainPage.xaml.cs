@@ -17,12 +17,31 @@ public sealed partial class MainPage : Page
         DataContext = App.Workspace;
         UpdateShell(ActualWidth);
 
+        if (App.Notifier is not null)
+        {
+            App.Notifier.Received += OnNotification;
+        }
+
         var autopilot = DemoAutopilot.GetConfig();
         if (autopilot is not null)
         {
             _ = RunAutopilotAsync(autopilot);
         }
     }
+
+    private void OnNotification(Agnes.Ui.Core.ViewModels.AppNotification n)
+        => DispatcherQueue.TryEnqueue(() =>
+        {
+            Toast.Title = n.Title;
+            Toast.Message = n.Body;
+            Toast.Severity = n.Kind switch
+            {
+                Agnes.Ui.Core.ViewModels.NotificationKind.Error => InfoBarSeverity.Error,
+                Agnes.Ui.Core.ViewModels.NotificationKind.Blocker => InfoBarSeverity.Warning,
+                _ => InfoBarSeverity.Informational,
+            };
+            Toast.IsOpen = true;
+        });
 
     /// <summary>Drives the real UI unattended for demos/screenshots (off unless configured).</summary>
     private static async Task RunAutopilotAsync(AutopilotConfig config)

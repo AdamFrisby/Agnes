@@ -121,6 +121,13 @@ public sealed class SessionViewModel : ObservableObject
 
     public string Title { get; }
     public string SessionId => _view.SessionId;
+
+    /// <summary>
+    /// A shareable reference to this session for cross-device handoff. Any Agnes client can
+    /// reconnect to the same live session by subscribing to (host, sessionId) — the event-sourced
+    /// snapshot+tail replays full history, so a phone can pick up exactly where the desktop left off.
+    /// </summary>
+    public string HandoffReference => $"{_host.HostUrl}#{SessionId}";
     public ObservableCollection<TranscriptItem> Items => _transcript.Items;
     public PermissionItem? PendingPermission => _transcript.PendingPermission;
 

@@ -24,6 +24,9 @@ public partial class App : Application
     /// <summary>The app's root view model, created once the UI thread/dispatcher exists.</summary>
     public static WorkspaceViewModel? Workspace { get; private set; }
 
+    /// <summary>The notifier the shell subscribes to for in-app banners.</summary>
+    public static UnoNotifier? Notifier { get; private set; }
+
     private static AgnesClient? _client;
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
@@ -36,12 +39,13 @@ public partial class App : Application
         if (Workspace is null)
         {
             _client = new AgnesClient();
+            Notifier = new UnoNotifier();
             Workspace = new WorkspaceViewModel(
                 _client,
                 new UnoDispatcher(MainWindow.DispatcherQueue),
                 new FilePromptStore(),
                 new FilePermissionPolicy(),
-                new UnoNotifier());
+                Notifier);
         }
 
 

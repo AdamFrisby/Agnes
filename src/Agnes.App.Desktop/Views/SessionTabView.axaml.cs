@@ -142,6 +142,14 @@ public partial class SessionTabView : UserControl
         }
     }
 
+    private async void OnCopySessionLink(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_session is not null && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(_session.HandoffReference);
+        }
+    }
+
     private async void OnCopyPreview(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_workspace?.DataContext is SessionViewModel { SelectedPreview: { } preview }

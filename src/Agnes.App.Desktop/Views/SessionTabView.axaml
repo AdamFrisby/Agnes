@@ -135,6 +135,7 @@
                                 <MenuFlyout>
                                     <MenuItem Header="Rename / tag…" Command="{Binding BeginRenameCommand}" />
                                     <MenuItem Header="Pin tab" Command="{Binding TogglePinCommand}" />
+                                    <MenuItem Header="Copy session link (hand off to another device)" Click="OnCopySessionLink" />
                                     <Separator />
                                     <MenuItem Header="Duplicate (same session)" Command="{Binding DuplicateCommand}" />
                                     <MenuItem Header="Fork (new session)" Command="{Binding ForkCommand}" />
