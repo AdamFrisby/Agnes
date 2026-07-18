@@ -4,6 +4,7 @@
     <Project Path="src/Agnes.Acp/Agnes.Acp.csproj" />
     <Project Path="src/Agnes.Agents.ClaudeCode/Agnes.Agents.ClaudeCode.csproj" />
     <Project Path="src/Agnes.Agents.OpenCode/Agnes.Agents.OpenCode.csproj" />
+    <Project Path="src/Agnes.Agents.Native/Agnes.Agents.Native.csproj" />
     <Project Path="src/Agnes.App.Desktop/Agnes.App.Desktop.csproj" />
     <Project Path="src/Agnes.Client.Simulation/Agnes.Client.Simulation.csproj" />
     <Project Path="src/Agnes.Client/Agnes.Client.csproj" />
@@ -14,6 +15,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj" />
+    <Project Path="tests/Agnes.Agents.Native.Tests/Agnes.Agents.Native.Tests.csproj" />
     <Project Path="tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj" />
     <Project Path="tests/Agnes.Host.Tests/Agnes.Host.Tests.csproj" />
     <Project Path="tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj" />

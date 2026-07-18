@@ -70,6 +70,12 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
     return OpenCodeAgent.Create(loggerFactory, options);
 });
 
+// Claude Code via its NATIVE SDK (stream-json), offered alongside the ACP adapter.
+builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Native.ClaudeCodeNative.Create(
+    sp.GetRequiredService<ILoggerFactory>(),
+    builder.Configuration["Agnes:ClaudeCodeNative:Command"],
+    builder.Configuration.GetSection("Agnes:ClaudeCodeNative:Args").Get<string[]>()));
+
 var app = builder.Build();
 
 var tokens = app.Services.GetRequiredService<DeviceTokenStore>();
