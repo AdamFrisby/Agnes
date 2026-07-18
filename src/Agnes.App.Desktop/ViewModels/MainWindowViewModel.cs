@@ -19,6 +19,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 {
     private const string WorkingDirectory = "/tmp/agnes";
     private static readonly KnownHost SimulatedHost = new("Simulated host", "sim://demo", string.Empty);
+    private static readonly KnownHost RecordedHost = new("Recorded sessions", "rec://local", string.Empty);
 
     private readonly IAgnesConnector _connector;
     private readonly IUiDispatcher _dispatcher;
@@ -40,6 +41,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _hostStore = hostStore;
 
         _knownHosts.Add(SimulatedHost);
+        _knownHosts.Add(RecordedHost);
         _knownHosts.AddRange(hostStore.Load());
 
         _factory = new DockFactory
@@ -121,7 +123,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, doc.NewHostToken);
         _knownHosts.Add(host);
-        _hostStore.Save(_knownHosts.Where(h => h.Url != SimulatedHost.Url).ToList());
+        _hostStore.Save(_knownHosts.Where(h => h.Url != SimulatedHost.Url && h.Url != RecordedHost.Url).ToList());
         _dispatcher.Post(() => doc.ShowAddHost = false);
         await SelectHostAsync(doc, host);
     }

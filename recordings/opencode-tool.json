@@ -1,0 +1,203 @@
+{
+  "name": "OpenCode \u2014 file tool",
+  "adapterId": "opencode",
+  "agentDisplayName": "OpenCode",
+  "recordedAt": "2026-07-18T09:42:08.3683588+00:00",
+  "events": [
+    {
+      "offsetMs": 0,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": "The user wants me"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:08.3683588+00:00"
+      }
+    },
+    {
+      "offsetMs": 29,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " to create a file"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:08.3978854+00:00"
+      }
+    },
+    {
+      "offsetMs": 66,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " named hello.txt with"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:08.4345931+00:00"
+      }
+    },
+    {
+      "offsetMs": 105,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " the text \u0027hello"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:08.4742173+00:00"
+      }
+    },
+    {
+      "offsetMs": 148,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " from agnes\u0027"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:08.5168142+00:00"
+      }
+    },
+    {
+      "offsetMs": 178,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " and then reply DONE"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:08.5466617+00:00"
+      }
+    },
+    {
+      "offsetMs": 214,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": "."
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:08.5825007+00:00"
+      }
+    },
+    {
+      "offsetMs": 296,
+      "event": {
+        "eventKind": "tool_call",
+        "toolCallId": "call_8cd32e1bc4be4970abbde277",
+        "title": "write",
+        "kind": 1,
+        "status": 0,
+        "content": [],
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:08.6645211+00:00"
+      }
+    },
+    {
+      "offsetMs": 684,
+      "event": {
+        "eventKind": "tool_call_update",
+        "toolCallId": "call_8cd32e1bc4be4970abbde277",
+        "status": 1,
+        "content": null,
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:09.0533114+00:00"
+      }
+    },
+    {
+      "offsetMs": 685,
+      "event": {
+        "eventKind": "tool_call_update",
+        "toolCallId": "call_8cd32e1bc4be4970abbde277",
+        "status": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "Wrote file successfully."
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:09.0534454+00:00"
+      }
+    },
+    {
+      "offsetMs": 4891,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": "The user"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:13.2598893+00:00"
+      }
+    },
+    {
+      "offsetMs": 4907,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " wants me to reply"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:13.2760584+00:00"
+      }
+    },
+    {
+      "offsetMs": 4940,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " DONE after"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:13.3083754+00:00"
+      }
+    },
+    {
+      "offsetMs": 4971,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " creating the file."
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:13.339908+00:00"
+      }
+    },
+    {
+      "offsetMs": 5015,
+      "event": {
+        "eventKind": "message_chunk",
+        "role": 1,
+        "content": {
+          "type": "text",
+          "text": "DONE"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:13.384098+00:00"
+      }
+    },
+    {
+      "offsetMs": 5122,
+      "event": {
+        "eventKind": "turn_ended",
+        "reason": 0,
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:42:13.4911549+00:00"
+      }
+    }
+  ],
+  "durationMs": 5122
+}

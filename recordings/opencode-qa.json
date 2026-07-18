@@ -1,0 +1,79 @@
+{
+  "name": "OpenCode \u2014 quick Q\u0026A",
+  "adapterId": "opencode",
+  "agentDisplayName": "OpenCode",
+  "recordedAt": "2026-07-18T09:41:47.7022304+00:00",
+  "events": [
+    {
+      "offsetMs": 0,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": "The"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:41:47.7022304+00:00"
+      }
+    },
+    {
+      "offsetMs": 35,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " user is"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:41:47.7376013+00:00"
+      }
+    },
+    {
+      "offsetMs": 35,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " asking a simple math"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:41:47.7377244+00:00"
+      }
+    },
+    {
+      "offsetMs": 134,
+      "event": {
+        "eventKind": "thought_chunk",
+        "content": {
+          "type": "text",
+          "text": " question."
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:41:47.8372277+00:00"
+      }
+    },
+    {
+      "offsetMs": 344,
+      "event": {
+        "eventKind": "message_chunk",
+        "role": 1,
+        "content": {
+          "type": "text",
+          "text": "408"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:41:48.0463842+00:00"
+      }
+    },
+    {
+      "offsetMs": 345,
+      "event": {
+        "eventKind": "turn_ended",
+        "reason": 0,
+        "sequence": 0,
+        "timestamp": "2026-07-18T09:41:48.0478059+00:00"
+      }
+    }
+  ],
+  "durationMs": 345
+}

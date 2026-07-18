@@ -9,6 +9,7 @@
     <Project Path="src/Agnes.Client/Agnes.Client.csproj" />
     <Project Path="src/Agnes.Host/Agnes.Host.csproj" />
     <Project Path="src/Agnes.Protocol/Agnes.Protocol.csproj" />
+    <Project Path="src/Agnes.Recording/Agnes.Recording.csproj" />
     <Project Path="src/Agnes.Ui.Core/Agnes.Ui.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -20,6 +21,7 @@
     <Project Path="tests/Agnes.Ui.Core.Tests/Agnes.Ui.Core.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/Agnes.Record/Agnes.Record.csproj" />
     <Project Path="tools/Agnes.Screenshots/Agnes.Screenshots.csproj" />
   </Folder>
 </Solution>

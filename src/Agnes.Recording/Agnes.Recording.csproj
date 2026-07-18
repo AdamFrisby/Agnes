@@ -6,9 +6,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Agnes.Abstractions\Agnes.Abstractions.csproj" />
-    <ProjectReference Include="..\Agnes.Protocol\Agnes.Protocol.csproj" />
-    <ProjectReference Include="..\Agnes.Client\Agnes.Client.csproj" />
-    <ProjectReference Include="..\Agnes.Recording\Agnes.Recording.csproj" />
   </ItemGroup>
 
 </Project>

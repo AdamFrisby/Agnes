@@ -1,6 +1,7 @@
 using Agnes.App.Desktop;
 using Agnes.App.Desktop.Persistence;
 using Agnes.App.Desktop.ViewModels;
+using Agnes.Client;
 using Agnes.Client.Simulation;
 using Agnes.Ui.Core.Transcript;
 using Avalonia.Controls;
@@ -38,8 +39,9 @@ public static class Program
         File.Delete(statePath);
         File.Delete(hostsPath);
         var store = new SessionStateStore(statePath);
+        var recordingsDir = Path.Combine(Directory.GetCurrentDirectory(), "recordings");
 
-        var vm = new MainWindowViewModel(new SimulatedConnector(), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
+        var vm = new MainWindowViewModel(NewConnector(recordingsDir), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
         var window = new MainWindow { DataContext = vm };
         window.Show();
         vm.RestoreAsync(); // empty → one fresh host-picker tab; also enables persistence
@@ -75,17 +77,32 @@ public static class Program
         Pump(() => perm.Session!.PendingPermission is not null);
         Capture(window, "05-permission.png");
 
-        // 6) The browser-style tab strip (several tabs now open)
-        Capture(window, "06-tabs.png");
+        // 6) Recorded session — real captured OpenCode data replayed as an agent
+        vm.NewTabCommand.Execute(null);
+        var rec = LastTab(vm)!;
+        Pump(() => rec.Hosts is { Count: > 1 });
+        rec.Hosts!.First(h => h.Url.StartsWith("rec:")).Select.Execute(null);
+        Pump(() => rec.Agents is { Count: > 0 });
+        rec.Agents!.First(a => a.DisplayName.Contains("file")).Open.Execute(null);
+        Pump(() => rec.Session is not null);
+        Pump(() => rec.Session!.Items.OfType<ToolCallItem>().Any()
+                   && rec.Session!.Items.OfType<MessageBubbleItem>().Any(m => !m.IsUser && !m.IsThought), 15000);
+        Capture(window, "06-recorded.png");
 
-        // 7) Auto-reconnect on relaunch: a fresh instance restoring the saved tabs
-        var vm2 = new MainWindowViewModel(new SimulatedConnector(), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
+        // 7) The browser-style tab strip (several tabs now open)
+        Capture(window, "07-tabs.png");
+
+        // 8) Auto-reconnect on relaunch: a fresh instance restoring the saved tabs
+        var vm2 = new MainWindowViewModel(NewConnector(recordingsDir), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
         var window2 = new MainWindow { DataContext = vm2 };
         window2.Show();
         vm2.RestoreAsync();
         Pump(() => Tabs(vm2).Any() && Tabs(vm2).All(d => d.Session is not null));
-        Capture(window2, "07-restore-on-relaunch.png");
+        Capture(window2, "08-restore-on-relaunch.png");
     }
+
+    private static IAgnesConnector NewConnector(string recordingsDir)
+        => new RoutingConnector(recordingsDir, recordingSpeed: 8.0);
 
     // ---- driving through the real public model ----
 

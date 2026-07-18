@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Agnes.Abstractions\Agnes.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Acp\Agnes.Acp.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Agents.ClaudeCode\Agnes.Agents.ClaudeCode.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Agents.OpenCode\Agnes.Agents.OpenCode.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Recording\Agnes.Recording.csproj" />
+  </ItemGroup>
+
+</Project>

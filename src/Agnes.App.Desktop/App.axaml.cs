@@ -16,8 +16,10 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // Routing connector: sim:// hosts use the simulated server, http(s):// use SignalR.
-            IAgnesConnector connector = new RoutingConnector();
+            // Routing connector: sim:// simulated, rec:// recorded playback, http(s):// SignalR.
+            var recordingsDir = Environment.GetEnvironmentVariable("AGNES_RECORDINGS")
+                ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "recordings");
+            IAgnesConnector connector = new RoutingConnector(recordingsDir);
             var viewModel = new MainWindowViewModel(
                 connector, new AvaloniaDispatcher(), new SessionStateStore(), new HostRegistryStore());
 
