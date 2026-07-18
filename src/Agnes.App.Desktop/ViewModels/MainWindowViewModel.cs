@@ -24,6 +24,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly IUiDispatcher _dispatcher;
     private readonly SessionStateStore _store;
     private readonly DockFactory _factory;
+    private bool _ready;
 
     public MainWindowViewModel(IAgnesConnector connector, IUiDispatcher dispatcher, SessionStateStore store)
     {
@@ -51,7 +52,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// <summary>Restores previously open tabs (reconnecting each), or opens one fresh tab.</summary>
     public Task RestoreAsync()
     {
+        // Load BEFORE enabling persistence, so tab-add events during construction/restore
+        // can't clobber the saved state before we've read it.
         var saved = _store.Load();
+        _ready = true;
+
         if (saved.Count == 0)
         {
             AddTab();
@@ -60,7 +65,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         foreach (var descriptor in saved)
         {
-            var doc = new SessionDocument { Title = descriptor.Title, CanClose = true };
+            // Stamp the descriptor immediately so a save during restore keeps the tab.
+            var doc = new SessionDocument { Title = descriptor.Title, CanClose = true, Descriptor = descriptor };
             AddDocument(doc);
             _ = ReconnectAsync(doc, descriptor);
         }
@@ -141,6 +147,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private void SaveState()
     {
+        if (!_ready)
+        {
+            return;
+        }
+
         var tabs = _factory.DocumentDock?.VisibleDockables?
             .OfType<SessionDocument>()
             .Where(d => d.Descriptor is not null)

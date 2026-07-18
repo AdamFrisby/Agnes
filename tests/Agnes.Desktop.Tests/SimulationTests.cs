@@ -136,4 +136,39 @@ public class MainWindowRestoreTests
 
         Assert.Single(Tabs(vm));
     }
+
+    [Fact]
+    public async Task Relaunch_restores_session_without_clobbering_saved_state()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"agnes-tabs-{Guid.NewGuid():n}.json");
+        var store = new SessionStateStore(path);
+
+        // First launch: empty → one fresh tab; open an agent to persist a session.
+        var vm1 = new MainWindowViewModel(new SimulatedConnector(), ImmediateDispatcher.Instance, store);
+        await vm1.RestoreAsync();
+        var tab = Tabs(vm1).Single();
+        await WaitAsync(() => tab.Agents is { Count: > 0 });
+        tab.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
+        await WaitAsync(() => tab.Session is not null);
+
+        Assert.Single(new SessionStateStore(path).Load()); // the session was persisted
+
+        // Relaunch: a fresh VM sharing the same store must restore the tab, not wipe it
+        // (constructing the VM must not clobber the saved state before RestoreAsync reads it).
+        var vm2 = new MainWindowViewModel(new SimulatedConnector(), ImmediateDispatcher.Instance, store);
+        await vm2.RestoreAsync();
+        var restored = Tabs(vm2).Single();
+        Assert.NotNull(restored.Descriptor);
+        await WaitAsync(() => restored.Session is not null);
+    }
+
+    private static async Task WaitAsync(Func<bool> condition)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (!condition())
+        {
+            cts.Token.ThrowIfCancellationRequested();
+            await Task.Delay(20, cts.Token);
+        }
+    }
 }

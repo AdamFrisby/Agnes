@@ -19,4 +19,7 @@
     <Project Path="tests/Agnes.TestKit/Agnes.TestKit.csproj" />
     <Project Path="tests/Agnes.Ui.Core.Tests/Agnes.Ui.Core.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Agnes.Screenshots/Agnes.Screenshots.csproj" />
+  </Folder>
 </Solution>
