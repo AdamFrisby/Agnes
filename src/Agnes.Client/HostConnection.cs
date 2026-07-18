@@ -112,6 +112,12 @@ public sealed class HostConnection : IAgnesHost
     public Task SetModeAsync(string sessionId, string modeId)
         => _hub.InvokeAsync(nameof(IAgnesServer.SetMode), sessionId, modeId);
 
+    public Task<GitStatus> GetGitStatusAsync(string sessionId)
+        => _hub.InvokeAsync<GitStatus>(nameof(IAgnesServer.GetGitStatus), sessionId);
+
+    public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
+        => _hub.InvokeAsync<GitCommitResult>(nameof(IAgnesServer.GitCommit), sessionId, message);
+
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RespondPermission), new PermissionResponseRequest(sessionId, requestId, optionId));
 

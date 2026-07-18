@@ -85,6 +85,8 @@ public sealed class RecordedHost : IAgnesHost
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content) => Task.CompletedTask;
     public Task CancelAsync(string sessionId) => Task.CompletedTask;
     public Task SetModeAsync(string sessionId, string modeId) => Task.CompletedTask;
+    public Task<GitStatus> GetGitStatusAsync(string sessionId) => Task.FromResult(new GitStatus(false, null, false, []));
+    public Task<GitCommitResult> GitCommitAsync(string sessionId, string message) => Task.FromResult(new GitCommitResult(false, "read-only"));
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId) => Task.CompletedTask;
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 

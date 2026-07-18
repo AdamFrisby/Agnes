@@ -186,6 +186,27 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- git ----
+
+    [Fact]
+    public void Git_status_surfaces_and_commit_sends_the_message()
+    {
+        var host = new FakeHost { GitState = new GitStatus(true, "main", true, [new GitFileChange("a.cs", "M")]) };
+        var vm = new SessionViewModel(host, Live(), ImmediateDispatcher.Instance, "OpenCode");
+
+        Assert.True(vm.HasGit);            // refreshed in the constructor
+        Assert.Equal("main", vm.GitBranch);
+        Assert.True(vm.GitDirty);
+        Assert.Single(vm.GitChanges);
+
+        Assert.False(vm.CommitCommand.CanExecute(null)); // no message yet
+        vm.CommitMessage = "fix the thing";
+        Assert.True(vm.CommitCommand.CanExecute(null));
+
+        vm.CommitCommand.Execute(null);
+        Assert.Equal("fix the thing", host.Commits.Single());
+    }
+
     // ---- cross-device handoff ----
 
     [Fact]
@@ -605,6 +626,17 @@ internal sealed class FakeHost : IAgnesHost
     {
         Mode = modeId;
         return Task.CompletedTask;
+    }
+
+    public GitStatus GitState { get; set; } = new(false, null, false, []);
+    public List<string> Commits { get; } = [];
+
+    public Task<GitStatus> GetGitStatusAsync(string sessionId) => Task.FromResult(GitState);
+
+    public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
+    {
+        Commits.Add(message);
+        return Task.FromResult(new GitCommitResult(true, "ok"));
     }
 
     public Task<HostInfo> GetHostInfoAsync() => Task.FromResult(new HostInfo("fake", "fake", "1.0"));

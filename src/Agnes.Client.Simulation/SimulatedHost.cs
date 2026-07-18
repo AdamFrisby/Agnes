@@ -171,6 +171,22 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.CompletedTask;
     }
 
+    private bool _committed;
+
+    public Task<GitStatus> GetGitStatusAsync(string sessionId)
+    {
+        var changes = _committed
+            ? Array.Empty<GitFileChange>()
+            : new[] { new GitFileChange("src/config.ts", "M"), new GitFileChange("notes.txt", "??") };
+        return Task.FromResult(new GitStatus(true, "main", changes.Length > 0, changes));
+    }
+
+    public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
+    {
+        _committed = true;
+        return Task.FromResult(new GitCommitResult(true, $"[main 1a2b3c4] {message}"));
+    }
+
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
     {
         if (_sessions.TryGetValue(sessionId, out var session))

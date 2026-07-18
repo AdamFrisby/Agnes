@@ -42,6 +42,12 @@ public interface IAgnesServer
     Task SetMode(string sessionId, string modeId);
 
     Task RespondPermission(PermissionResponseRequest response);
+
+    /// <summary>Git state of the session's working directory.</summary>
+    Task<GitStatus> GetGitStatus(string sessionId);
+
+    /// <summary>Stages all changes and commits them in the session's working directory.</summary>
+    Task<GitCommitResult> GitCommit(string sessionId, string message);
 }
 
 /// <summary>

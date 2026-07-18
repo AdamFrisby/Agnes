@@ -14,6 +14,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly ISessionBroadcaster _broadcaster;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<SessionManager> _logger;
+    private readonly Git.GitService _git = new();
     private readonly ConcurrentDictionary<string, HostSession> _sessions = new();
 
     public SessionManager(
@@ -62,6 +63,12 @@ public sealed class SessionManager : IAsyncDisposable
     public Task CancelAsync(string sessionId) => Require(sessionId).CancelAsync();
 
     public Task SetModeAsync(string sessionId, string modeId) => Require(sessionId).SetModeAsync(modeId);
+
+    public Task<Agnes.Protocol.GitStatus> GetGitStatusAsync(string sessionId)
+        => _git.GetStatusAsync(Require(sessionId).WorkingDirectory);
+
+    public Task<Agnes.Protocol.GitCommitResult> GitCommitAsync(string sessionId, string message)
+        => _git.CommitAsync(Require(sessionId).WorkingDirectory, message);
 
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => Require(sessionId).RespondToPermissionAsync(requestId, optionId);

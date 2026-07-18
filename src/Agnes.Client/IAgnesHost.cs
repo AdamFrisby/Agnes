@@ -59,6 +59,12 @@ public interface IAgnesHost : IAsyncDisposable
     Task SetModeAsync(string sessionId, string modeId);
 
     Task RespondPermissionAsync(string sessionId, string requestId, string optionId);
+
+    /// <summary>Git state of the session's working directory.</summary>
+    Task<GitStatus> GetGitStatusAsync(string sessionId);
+
+    /// <summary>Stages all changes and commits them.</summary>
+    Task<GitCommitResult> GitCommitAsync(string sessionId, string message);
 }
 
 /// <summary>Creates/looks up host connections. Swap the implementation to simulate a server.</summary>

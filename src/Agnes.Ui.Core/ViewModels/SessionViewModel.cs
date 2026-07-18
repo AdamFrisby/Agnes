@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Agnes.Abstractions;
 using Agnes.Client;
+using Agnes.Protocol;
 using Agnes.Ui.Core.Mvvm;
 using Agnes.Ui.Core.Transcript;
 
@@ -42,6 +43,8 @@ public sealed class SessionViewModel : ObservableObject
     private bool _showSlash;
     private string _referenceInput = string.Empty;
     private string? _currentModeId;
+    private GitStatus? _git;
+    private string _commitMessage = string.Empty;
     private int _matchCursor = -1;
     private int _promptCursor = -1;
     private int _changeCursor = -1;
@@ -73,6 +76,8 @@ public sealed class SessionViewModel : ObservableObject
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
         ToggleInspectorCommand = new RelayCommand(() => IsInspectorOpen = !IsInspectorOpen);
         SetModeCommand = new RelayCommand<SessionMode>(m => { if (m is not null) { _ = SetModeAsync(m); } });
+        RefreshGitCommand = new AsyncRelayCommand(RefreshGitAsync);
+        CommitCommand = new AsyncRelayCommand(CommitAsync, () => !string.IsNullOrWhiteSpace(CommitMessage) && GitDirty);
         foreach (var mode in view.Info?.Modes ?? [])
         {
             Modes.Add(mode);
@@ -117,6 +122,7 @@ public sealed class SessionViewModel : ObservableObject
         _view.EventAppended += OnEvent;
         _host.StateChanged += OnHostStateChanged;
         UpdateBanner();
+        _ = RefreshGitAsync();
     }
 
     public string Title { get; }
@@ -349,6 +355,67 @@ public sealed class SessionViewModel : ObservableObject
         await _host.SetModeAsync(SessionId, mode.Id);
     }
 
+    // ---- git (host working directory) ----
+
+    public ObservableCollection<GitFileChange> GitChanges { get; } = [];
+    public ICommand RefreshGitCommand { get; }
+    public AsyncRelayCommand CommitCommand { get; }
+
+    public GitStatus? Git
+    {
+        get => _git;
+        private set
+        {
+            if (Set(ref _git, value))
+            {
+                Raise(nameof(HasGit));
+                Raise(nameof(GitBranch));
+                Raise(nameof(GitDirty));
+                Raise(nameof(GitSummary));
+                CommitCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasGit => _git?.IsRepository == true;
+    public string GitBranch => _git?.Branch ?? string.Empty;
+    public bool GitDirty => _git?.IsDirty == true;
+    public string GitSummary => HasGit ? (GitDirty ? $"{GitChanges.Count} change(s)" : "clean") : string.Empty;
+
+    public string CommitMessage
+    {
+        get => _commitMessage;
+        set { if (Set(ref _commitMessage, value)) { CommitCommand.RaiseCanExecuteChanged(); } }
+    }
+
+    private async Task RefreshGitAsync()
+    {
+        var status = await _host.GetGitStatusAsync(SessionId);
+        _dispatcher.Post(() =>
+        {
+            GitChanges.Clear();
+            foreach (var change in status.Changes)
+            {
+                GitChanges.Add(change);
+            }
+
+            Git = status;
+        });
+    }
+
+    private async Task CommitAsync()
+    {
+        var message = CommitMessage;
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        await _host.GitCommitAsync(SessionId, message);
+        _dispatcher.Post(() => CommitMessage = string.Empty);
+        await RefreshGitAsync();
+    }
+
     /// <summary>Attaches an arbitrary content block (e.g. an image from the shell's file picker).</summary>
     public void Attach(PromptAttachment attachment)
     {
@@ -456,6 +523,7 @@ public sealed class SessionViewModel : ObservableObject
                 IsTurnActive = false;
                 NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId));
                 DrainQueue();
+                _ = RefreshGitAsync(); // changes likely landed this turn
                 break;
 
             case TurnEndedEvent:

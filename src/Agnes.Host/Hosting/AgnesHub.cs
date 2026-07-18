@@ -59,6 +59,12 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task SetMode(string sessionId, string modeId)
         => _sessions.SetModeAsync(sessionId, modeId);
 
+    public Task<GitStatus> GetGitStatus(string sessionId)
+        => _sessions.GetGitStatusAsync(sessionId);
+
+    public Task<GitCommitResult> GitCommit(string sessionId, string message)
+        => _sessions.GitCommitAsync(sessionId, message);
+
     public Task RespondPermission(PermissionResponseRequest response)
         => _sessions.RespondPermissionAsync(response.SessionId, response.RequestId, response.OptionId);
 }

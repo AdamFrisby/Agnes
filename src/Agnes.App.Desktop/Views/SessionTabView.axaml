@@ -128,6 +128,49 @@
                                    VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                    IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
                         <!-- session menu -->
+                        <!-- Git: branch + commit -->
+                        <Button IsVisible="{Binding Session.HasGit}" Background="Transparent" Foreground="{StaticResource FgDim}"
+                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                AutomationProperties.Name="Git">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <TextBlock Text="⎇" FontSize="12" />
+                                <TextBlock Text="{Binding Session.GitBranch}" />
+                                <Border Width="6" Height="6" CornerRadius="3" Background="{StaticResource Accent}"
+                                        VerticalAlignment="Center" IsVisible="{Binding Session.GitDirty}" />
+                            </StackPanel>
+                            <Button.Flyout>
+                                <Flyout Placement="Bottom">
+                                    <StackPanel Width="340" Spacing="8">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Grid.Column="0" Text="{Binding Session.GitBranch, StringFormat='Branch: {0}'}"
+                                                       Foreground="{StaticResource Fg}" FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Session.GitSummary}" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding Session.GitChanges}" MaxHeight="200">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
+                                                        <TextBlock Text="{Binding Status}" Foreground="{StaticResource Accent}" FontSize="11"
+                                                                   Width="26" FontFamily="{StaticResource MonoFont}" />
+                                                        <TextBlock Text="{Binding Path}" Foreground="{StaticResource Fg}" FontSize="12"
+                                                                   FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBox Text="{Binding Session.CommitMessage, Mode=TwoWay}" Watermark="Commit message"
+                                                 Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                                 BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
+                                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52"
+                                                 AutomationProperties.Name="Commit message" />
+                                        <Button Content="Commit all changes" Command="{Binding Session.CommitCommand}"
+                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="10,6" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
+
                         <Button Content="⋯" Background="Transparent" Foreground="{StaticResource FgDim}"
                                 BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,1" FontSize="13"
                                 IsVisible="{Binding IsLive}" AutomationProperties.Name="Session menu">

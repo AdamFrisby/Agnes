@@ -59,3 +59,16 @@ public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock>
 
 /// <summary>A client's answer to a permission request.</summary>
 public sealed record PermissionResponseRequest(string SessionId, string RequestId, string OptionId);
+
+/// <summary>Git state of a session's working directory.</summary>
+public sealed record GitStatus(
+    bool IsRepository,
+    string? Branch,
+    bool IsDirty,
+    IReadOnlyList<GitFileChange> Changes);
+
+/// <summary>One changed file in a git working tree (Status = "M"/"A"/"D"/"??"/…).</summary>
+public sealed record GitFileChange(string Path, string Status);
+
+/// <summary>Result of a commit attempt.</summary>
+public sealed record GitCommitResult(bool Success, string Message);
