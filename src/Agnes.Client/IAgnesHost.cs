@@ -45,7 +45,7 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task<IReadOnlyList<AgentInfo>> ListAgentsAsync();
 
-    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory);
+    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false);
 
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>
     Task<SessionView> SubscribeAsync(string sessionId, long since = 0);

@@ -536,8 +536,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             fork.HostToken = doc.HostToken;
             WireStatus(fork, doc.Host);
 
-            // New session on the same host/agent → an independent branch to explore.
-            var info = await doc.Host.OpenSessionAsync(descriptor.AdapterId, WorkingDirectory);
+            // New session on the same host/agent, isolated in its own git worktree so the two
+            // sessions can run in parallel without colliding.
+            var info = await doc.Host.OpenSessionAsync(descriptor.AdapterId, WorkingDirectory, useWorktree: true);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             _dispatcher.Post(() =>
             {

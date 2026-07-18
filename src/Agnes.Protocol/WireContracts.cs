@@ -52,7 +52,7 @@ public sealed record SessionSnapshot(
     long HeadSequence);
 
 /// <summary>Request to open a new session against an adapter.</summary>
-public sealed record OpenSessionRequest(string AdapterId, string WorkingDirectory);
+public sealed record OpenSessionRequest(string AdapterId, string WorkingDirectory, bool UseWorktree = false);
 
 /// <summary>Request to send a prompt to a session.</summary>
 public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock> Content);

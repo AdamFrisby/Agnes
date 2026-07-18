@@ -16,6 +16,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly ILogger<SessionManager> _logger;
     private readonly Git.GitService _git = new();
     private readonly ConcurrentDictionary<string, HostSession> _sessions = new();
+    private readonly ConcurrentDictionary<string, (string Repo, string Worktree)> _worktrees = new();
 
     public SessionManager(
         IEnumerable<IAgentAdapter> adapters,
@@ -35,26 +36,38 @@ public sealed class SessionManager : IAsyncDisposable
             .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version, Available: true))
             .ToArray();
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, CancellationToken cancellationToken = default)
     {
         if (!_adapters.TryGetValue(adapterId, out var adapter))
         {
             throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
         }
 
+        var sessionId = Guid.NewGuid().ToString("n");
+        var effectiveDirectory = workingDirectory;
+        if (useWorktree)
+        {
+            var worktree = await _git.CreateWorktreeAsync(workingDirectory, sessionId, cancellationToken).ConfigureAwait(false);
+            if (worktree is not null)
+            {
+                effectiveDirectory = worktree;
+                _worktrees[sessionId] = (workingDirectory, worktree);
+                _logger.LogInformation("Session {SessionId} isolated in worktree {Worktree}", sessionId, worktree);
+            }
+        }
+
         var agent = await adapter.StartSessionAsync(
-            new AgentSessionOptions { WorkingDirectory = workingDirectory },
+            new AgentSessionOptions { WorkingDirectory = effectiveDirectory },
             cancellationToken).ConfigureAwait(false);
 
-        var sessionId = Guid.NewGuid().ToString("n");
         var session = new HostSession(
-            sessionId, adapterId, workingDirectory, agent, _store, _broadcaster,
+            sessionId, adapterId, effectiveDirectory, agent, _store, _broadcaster,
             _loggerFactory.CreateLogger<HostSession>());
         _sessions[sessionId] = session;
         _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return new SessionInfo(sessionId, adapterId, workingDirectory, head, agent.Modes, agent.CurrentModeId);
+        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId);
     }
 
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
@@ -92,6 +105,11 @@ public sealed class SessionManager : IAsyncDisposable
         foreach (var session in _sessions.Values)
         {
             await session.DisposeAsync().ConfigureAwait(false);
+        }
+
+        foreach (var (repo, worktree) in _worktrees.Values)
+        {
+            await _git.RemoveWorktreeAsync(repo, worktree).ConfigureAwait(false);
         }
     }
 }

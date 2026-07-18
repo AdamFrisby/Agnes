@@ -91,8 +91,8 @@ public sealed class HostConnection : IAgnesHost
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync()
         => _hub.InvokeAsync<IReadOnlyList<AgentInfo>>(nameof(IAgnesServer.ListAgents));
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory)
-        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory));
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false)
+        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree));
 
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>
     public async Task<SessionView> SubscribeAsync(string sessionId, long since = 0)

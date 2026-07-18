@@ -62,6 +62,28 @@ public sealed class GitService
         return new GitCommitResult(commit.ExitCode == 0, output.Length > 0 ? output : (commit.ExitCode == 0 ? "Committed." : "Commit failed."));
     }
 
+    /// <summary>
+    /// Creates an isolated git worktree (on a new <c>agnes/&lt;name&gt;</c> branch) so a session can
+    /// run in parallel without colliding with others. Returns the worktree path, or null if the
+    /// directory isn't a git repo or the worktree couldn't be created.
+    /// </summary>
+    public async Task<string?> CreateWorktreeAsync(string repoDirectory, string name, CancellationToken cancellationToken = default)
+    {
+        var root = (await RunAsync(repoDirectory, cancellationToken, "rev-parse", "--show-toplevel")).StdOut.Trim();
+        if (string.IsNullOrEmpty(root))
+        {
+            return null;
+        }
+
+        var parent = Path.GetDirectoryName(root) ?? root;
+        var worktreePath = Path.Combine(parent, ".agnes-worktrees", name);
+        var result = await RunAsync(repoDirectory, cancellationToken, "worktree", "add", "-b", $"agnes/{name}", worktreePath);
+        return result.ExitCode == 0 ? worktreePath : null;
+    }
+
+    public Task RemoveWorktreeAsync(string repoDirectory, string worktreePath, CancellationToken cancellationToken = default)
+        => RunAsync(repoDirectory, cancellationToken, "worktree", "remove", "--force", worktreePath);
+
     private static async Task<(int ExitCode, string StdOut, string StdErr)> RunAsync(
         string workingDirectory, CancellationToken cancellationToken, params string[] args)
     {

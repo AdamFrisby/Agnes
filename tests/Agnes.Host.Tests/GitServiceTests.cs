@@ -63,4 +63,35 @@ public class GitServiceTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task Creates_and_removes_an_isolated_worktree()
+    {
+        var parent = Path.Combine(Path.GetTempPath(), $"agnes-wt-{Guid.NewGuid():n}");
+        var repo = Path.Combine(parent, "repo");
+        Directory.CreateDirectory(repo);
+        try
+        {
+            await RunGitAsync(repo, "init");
+            await RunGitAsync(repo, "config", "user.email", "t@example.com");
+            await RunGitAsync(repo, "config", "user.name", "Test");
+            await File.WriteAllTextAsync(Path.Combine(repo, "a.txt"), "hello");
+            await RunGitAsync(repo, "add", "-A");
+            await RunGitAsync(repo, "commit", "-m", "init"); // worktree add needs a HEAD
+
+            var git = new GitService();
+            var worktree = await git.CreateWorktreeAsync(repo, "sess1");
+
+            Assert.NotNull(worktree);
+            Assert.True(Directory.Exists(worktree));
+            Assert.True(File.Exists(Path.Combine(worktree!, "a.txt"))); // it's a real checkout
+
+            await git.RemoveWorktreeAsync(repo, worktree!);
+            Assert.False(Directory.Exists(worktree));
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
 }
