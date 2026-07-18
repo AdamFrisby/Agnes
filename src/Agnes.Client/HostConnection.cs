@@ -11,7 +11,7 @@ namespace Agnes.Client;
 /// and maintains a <see cref="SessionView"/> per subscribed session (with snapshot+tail and
 /// automatic reconnect). Multiple of these are pooled by <see cref="AgnesClient"/>.
 /// </summary>
-public sealed class HostConnection : IAsyncDisposable
+public sealed class HostConnection : IAgnesHost
 {
     private readonly HubConnection _hub;
     private readonly ConcurrentDictionary<string, SessionView> _views = new();
@@ -38,9 +38,13 @@ public sealed class HostConnection : IAsyncDisposable
             AgentsChanged?.Invoke(agents);
         });
 
+        _hub.Reconnecting += _ => { RaiseState(AgnesConnectionState.Reconnecting); return Task.CompletedTask; };
+        _hub.Closed += _ => { RaiseState(AgnesConnectionState.Disconnected); return Task.CompletedTask; };
+
         // On reconnect, re-subscribe each view from its last applied sequence.
         _hub.Reconnected += async _ =>
         {
+            RaiseState(AgnesConnectionState.Connected);
             foreach (var view in _views.Values)
             {
                 var snapshot = await _hub.InvokeAsync<SessionSnapshot>(
@@ -52,11 +56,26 @@ public sealed class HostConnection : IAsyncDisposable
 
     public string HostUrl { get; }
 
-    public HubConnectionState State => _hub.State;
+    public AgnesConnectionState State => _hub.State switch
+    {
+        HubConnectionState.Connected => AgnesConnectionState.Connected,
+        HubConnectionState.Connecting => AgnesConnectionState.Connecting,
+        HubConnectionState.Reconnecting => AgnesConnectionState.Reconnecting,
+        _ => AgnesConnectionState.Disconnected,
+    };
+
+    public event Action<AgnesConnectionState>? StateChanged;
 
     public event Action<IReadOnlyList<AgentInfo>>? AgentsChanged;
 
-    public Task ConnectAsync(CancellationToken cancellationToken = default) => _hub.StartAsync(cancellationToken);
+    public async Task ConnectAsync(CancellationToken cancellationToken = default)
+    {
+        RaiseState(AgnesConnectionState.Connecting);
+        await _hub.StartAsync(cancellationToken).ConfigureAwait(false);
+        RaiseState(AgnesConnectionState.Connected);
+    }
+
+    private void RaiseState(AgnesConnectionState state) => StateChanged?.Invoke(state);
 
     public Task<HostInfo> GetHostInfoAsync()
         => _hub.InvokeAsync<HostInfo>(nameof(IAgnesServer.GetHostInfo));

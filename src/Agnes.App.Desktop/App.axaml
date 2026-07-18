@@ -1,0 +1,36 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Agnes.App.Desktop.ViewModels"
+             xmlns:views="using:Agnes.App.Desktop.Views"
+             x:Class="Agnes.App.Desktop.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.Resources>
+        <FontFamily x:Key="UiFont">Inter, Segoe UI, San Francisco, Ubuntu, sans-serif</FontFamily>
+        <FontFamily x:Key="MonoFont">Cascadia Code, Cascadia Mono, JetBrains Mono, Consolas, Menlo, monospace</FontFamily>
+
+        <SolidColorBrush x:Key="Bg" Color="#0C0E13" />
+        <SolidColorBrush x:Key="Panel" Color="#141821" />
+        <SolidColorBrush x:Key="PanelAlt" Color="#1A1F2A" />
+        <SolidColorBrush x:Key="Line" Color="#262D3B" />
+        <SolidColorBrush x:Key="Fg" Color="#E7E9EE" />
+        <SolidColorBrush x:Key="FgDim" Color="#98A2B3" />
+        <SolidColorBrush x:Key="FgFaint" Color="#5C6675" />
+        <SolidColorBrush x:Key="Accent" Color="#D97757" />
+        <SolidColorBrush x:Key="AccentSoft" Color="#33D97757" />
+        <SolidColorBrush x:Key="Good" Color="#5FD6A0" />
+        <SolidColorBrush x:Key="UserBubble" Color="#1B2431" />
+    </Application.Resources>
+
+    <Application.DataTemplates>
+        <DataTemplate DataType="vm:SessionDocument">
+            <views:SessionTabView />
+        </DataTemplate>
+    </Application.DataTemplates>
+
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml" />
+    </Application.Styles>
+
+</Application>

@@ -1,0 +1,37 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dc="using:Dock.Avalonia.Controls"
+        x:Class="Agnes.App.Desktop.MainWindow"
+        Title="Agnes" Width="1180" Height="760"
+        MinWidth="720" MinHeight="480"
+        Background="{StaticResource Bg}"
+        FontFamily="{StaticResource UiFont}">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Top bar: title + new-tab (browser-style) -->
+        <Border Grid.Row="0" Background="{StaticResource Panel}"
+                BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="14,9">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Border Width="10" Height="10" CornerRadius="5" Background="{StaticResource Accent}" />
+                    <TextBlock Text="Agnes" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Fg}" />
+                    <TextBlock Text="simulated host" FontSize="11" Foreground="{StaticResource FgFaint}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+
+                <Button Grid.Column="2" Command="{Binding NewTabCommand}"
+                        Background="Transparent" Foreground="{StaticResource FgDim}"
+                        BorderBrush="{StaticResource Line}" BorderThickness="1"
+                        CornerRadius="7" Padding="10,5" FontSize="12">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="+" FontSize="14" />
+                        <TextBlock Text="New tab" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+
+        <dc:DockControl Grid.Row="1" Layout="{Binding Layout}" />
+    </Grid>
+</Window>

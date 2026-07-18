@@ -9,13 +9,13 @@ namespace Agnes.Ui.Core.ViewModels;
 /// <summary>Drives one live session: renders its transcript, sends prompts, answers permissions.</summary>
 public sealed class SessionViewModel : ObservableObject
 {
-    private readonly HostConnection _host;
+    private readonly IAgnesHost _host;
     private readonly SessionView _view;
     private readonly IUiDispatcher _dispatcher;
     private readonly TranscriptBuilder _transcript = new();
     private string _promptText = string.Empty;
 
-    public SessionViewModel(HostConnection host, SessionView view, IUiDispatcher dispatcher, string title)
+    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title)
     {
         _host = host;
         _view = view;

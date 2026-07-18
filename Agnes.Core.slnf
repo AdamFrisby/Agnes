@@ -8,12 +8,15 @@
       "src/Agnes.Protocol/Agnes.Protocol.csproj",
       "src/Agnes.Host/Agnes.Host.csproj",
       "src/Agnes.Client/Agnes.Client.csproj",
+      "src/Agnes.Client.Simulation/Agnes.Client.Simulation.csproj",
       "src/Agnes.Ui.Core/Agnes.Ui.Core.csproj",
+      "src/Agnes.App.Desktop/Agnes.App.Desktop.csproj",
       "tests/Agnes.TestKit/Agnes.TestKit.csproj",
       "tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj",
       "tests/Agnes.Host.Tests/Agnes.Host.Tests.csproj",
       "tests/Agnes.Ui.Core.Tests/Agnes.Ui.Core.Tests.csproj",
-      "tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj"
+      "tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj",
+      "tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj"
     ]
   }
 }

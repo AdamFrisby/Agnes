@@ -491,3 +491,6 @@ certs/
 # Host runtime DB
 agnes.db
 agnes.db-*
+
+# Playwright MCP scratch
+.playwright-mcp/

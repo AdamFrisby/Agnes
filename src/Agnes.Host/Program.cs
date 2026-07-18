@@ -11,6 +11,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSignalR();
 
+// CORS so a browser-hosted frontend (Uno WASM) can reach the hub cross-origin.
+// Auth is a query-string token (not cookies); reflect any origin for dev.
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
+    policy.SetIsOriginAllowed(_ => true).AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+
 // ---- host identity ----
 var displayName = builder.Configuration["Agnes:DisplayName"] ?? Environment.MachineName;
 builder.Services.AddSingleton(new HostIdentity(
@@ -65,6 +70,20 @@ var app = builder.Build();
 
 var tokens = app.Services.GetRequiredService<DeviceTokenStore>();
 
+// Optionally serve a web frontend (e.g. the Uno WASM build) from the same origin as
+// the hub — avoids cross-origin setup and lets a browser reach both on one port.
+var webRoot = builder.Configuration["Agnes:WebRoot"];
+Microsoft.Extensions.FileProviders.IFileProvider? webFiles =
+    string.IsNullOrEmpty(webRoot) ? null : new Microsoft.Extensions.FileProviders.PhysicalFileProvider(Path.GetFullPath(webRoot));
+
+app.UseCors();
+
+if (webFiles is not null)
+{
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = webFiles });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = webFiles });
+}
+
 // Reject unauthorized clients at the negotiate level so the connection never establishes.
 app.Use(async (context, next) =>
 {
@@ -82,7 +101,15 @@ app.Use(async (context, next) =>
 });
 
 app.MapHub<AgnesHub>(WireProtocol.HubPath);
-app.MapGet("/", () => $"Agnes host — wire protocol v{WireProtocol.Version}. Hub at {WireProtocol.HubPath}.");
+
+if (webFiles is not null)
+{
+    app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = webFiles });
+}
+else
+{
+    app.MapGet("/", () => $"Agnes host — wire protocol v{WireProtocol.Version}. Hub at {WireProtocol.HubPath}.");
+}
 
 // Surface the dev pairing token so a client can connect.
 app.Logger.LogInformation("Agnes pairing token: {Token}", tokens.PairingToken);
