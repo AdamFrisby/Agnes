@@ -1,6 +1,7 @@
 using Agnes.Abstractions;
 using Agnes.Acp;
 using Agnes.Agents.ClaudeCode;
+using Agnes.Agents.OpenCode;
 using Agnes.Host.Events;
 using Agnes.Host.Hosting;
 using Agnes.Host.Sessions;
@@ -46,6 +47,18 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
                     ?? ["-y", "@zed-industries/claude-code-acp"],
     };
     return ClaudeCodeAgent.Create(loggerFactory, options);
+});
+
+// OpenCode ships native ACP (`opencode acp`) — no bridge needed.
+builder.Services.AddSingleton<IAgentAdapter>(sp =>
+{
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    var options = new OpenCodeOptions
+    {
+        Command = builder.Configuration["Agnes:OpenCode:Command"] ?? "opencode",
+        Arguments = builder.Configuration.GetSection("Agnes:OpenCode:Args").Get<string[]>() ?? ["acp"],
+    };
+    return OpenCodeAgent.Create(loggerFactory, options);
 });
 
 var app = builder.Build();

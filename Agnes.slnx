@@ -3,6 +3,7 @@
     <Project Path="src/Agnes.Abstractions/Agnes.Abstractions.csproj" />
     <Project Path="src/Agnes.Acp/Agnes.Acp.csproj" />
     <Project Path="src/Agnes.Agents.ClaudeCode/Agnes.Agents.ClaudeCode.csproj" />
+    <Project Path="src/Agnes.Agents.OpenCode/Agnes.Agents.OpenCode.csproj" />
     <Project Path="src/Agnes.Client/Agnes.Client.csproj" />
     <Project Path="src/Agnes.Host/Agnes.Host.csproj" />
     <Project Path="src/Agnes.Protocol/Agnes.Protocol.csproj" />
