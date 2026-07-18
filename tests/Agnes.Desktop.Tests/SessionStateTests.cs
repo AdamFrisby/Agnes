@@ -186,6 +186,25 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- scheduled background tasks ----
+
+    [Fact]
+    public void Schedule_command_schedules_the_current_prompt()
+    {
+        var host = new FakeHost();
+        var vm = new SessionViewModel(host, Live(), ImmediateDispatcher.Instance, "OpenCode");
+
+        Assert.False(vm.ScheduleCommand.CanExecute(null)); // no prompt yet
+        vm.PromptText = "audit dependencies nightly";
+        Assert.True(vm.ScheduleCommand.CanExecute(null));
+
+        vm.ScheduleCommand.Execute(null);
+        var request = Assert.Single(host.Scheduled);
+        Assert.Equal("audit dependencies nightly", request.Prompt);
+        Assert.Equal("opencode", request.AdapterId);
+        Assert.Equal(string.Empty, vm.PromptText);
+    }
+
     // ---- conversation rewind ----
 
     [Fact]
@@ -669,6 +688,21 @@ internal sealed class FakeHost : IAgnesHost
         Commits.Add(message);
         return Task.FromResult(new GitCommitResult(true, "ok"));
     }
+
+    public List<ScheduleTaskRequest> Scheduled { get; } = [];
+
+    public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request)
+    {
+        Scheduled.Add(request);
+        return Task.FromResult(new ScheduledTask("t1", request.AdapterId, request.WorkingDirectory, request.Prompt, request.IntervalSeconds, true));
+    }
+
+    public Task<IReadOnlyList<ScheduledTask>> ListScheduledTasksAsync() => Task.FromResult<IReadOnlyList<ScheduledTask>>([]);
+    public Task RemoveScheduledTaskAsync(string taskId) => Task.CompletedTask;
+    public Task<IReadOnlyList<InboxRun>> GetInboxAsync() => Task.FromResult<IReadOnlyList<InboxRun>>([]);
+#pragma warning disable CS0067
+    public event Action<InboxRun>? InboxRunReceived;
+#pragma warning restore CS0067
 
     public Task<HostInfo> GetHostInfoAsync() => Task.FromResult(new HostInfo("fake", "fake", "1.0"));
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync() => Task.FromResult<IReadOnlyList<AgentInfo>>([]);

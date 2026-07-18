@@ -48,6 +48,18 @@ public interface IAgnesServer
 
     /// <summary>Stages all changes and commits them in the session's working directory.</summary>
     Task<GitCommitResult> GitCommit(string sessionId, string message);
+
+    /// <summary>Schedules a recurring background task; returns it with its assigned id.</summary>
+    Task<ScheduledTask> ScheduleTask(ScheduleTaskRequest request);
+
+    /// <summary>Currently scheduled background tasks.</summary>
+    Task<IReadOnlyList<ScheduledTask>> ListScheduledTasks();
+
+    /// <summary>Removes a scheduled task.</summary>
+    Task RemoveScheduledTask(string taskId);
+
+    /// <summary>Completed background runs (newest first).</summary>
+    Task<IReadOnlyList<InboxRun>> GetInbox();
 }
 
 /// <summary>
@@ -60,4 +72,7 @@ public interface IAgnesClient
 
     /// <summary>The set of available agents on the host changed.</summary>
     Task OnAgentsChanged(IReadOnlyList<AgentInfo> agents);
+
+    /// <summary>A background run completed and landed in the inbox.</summary>
+    Task OnInboxRun(InboxRun run);
 }

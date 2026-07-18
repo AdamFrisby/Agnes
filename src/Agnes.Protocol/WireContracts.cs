@@ -72,3 +72,27 @@ public sealed record GitFileChange(string Path, string Status);
 
 /// <summary>Result of a commit attempt.</summary>
 public sealed record GitCommitResult(bool Success, string Message);
+
+/// <summary>A recurring background task: run <see cref="Prompt"/> on an interval.</summary>
+public sealed record ScheduledTask(
+    string Id,
+    string AdapterId,
+    string WorkingDirectory,
+    string Prompt,
+    int IntervalSeconds,
+    bool Enabled);
+
+/// <summary>A request to schedule a recurring task.</summary>
+public sealed record ScheduleTaskRequest(
+    string AdapterId,
+    string WorkingDirectory,
+    string Prompt,
+    int IntervalSeconds);
+
+/// <summary>A completed background run, collected in the inbox.</summary>
+public sealed record InboxRun(
+    string Id,
+    string TaskId,
+    string Title,
+    string Summary,
+    DateTimeOffset CompletedAt);

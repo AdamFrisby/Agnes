@@ -41,6 +41,10 @@ else
 builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
 builder.Services.AddSingleton<SessionManager>();
 
+// ---- scheduled / background tasks + inbox ----
+builder.Services.AddSingleton<ScheduledTaskManager>();
+builder.Services.AddHostedService<ScheduledRunner>();
+
 // ---- agent adapters (plugins) ----
 builder.Services.AddSingleton<IAgentAdapter>(sp =>
 {

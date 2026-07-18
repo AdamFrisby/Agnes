@@ -65,6 +65,21 @@ public interface IAgnesHost : IAsyncDisposable
 
     /// <summary>Stages all changes and commits them.</summary>
     Task<GitCommitResult> GitCommitAsync(string sessionId, string message);
+
+    /// <summary>Schedules a recurring background task.</summary>
+    Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request);
+
+    /// <summary>Lists scheduled background tasks.</summary>
+    Task<IReadOnlyList<ScheduledTask>> ListScheduledTasksAsync();
+
+    /// <summary>Removes a scheduled task.</summary>
+    Task RemoveScheduledTaskAsync(string taskId);
+
+    /// <summary>Completed background runs (newest first).</summary>
+    Task<IReadOnlyList<InboxRun>> GetInboxAsync();
+
+    /// <summary>Raised when a background run lands in the inbox.</summary>
+    event Action<InboxRun>? InboxRunReceived;
 }
 
 /// <summary>Creates/looks up host connections. Swap the implementation to simulate a server.</summary>

@@ -79,6 +79,7 @@ public sealed class SessionViewModel : ObservableObject
         RefreshGitCommand = new AsyncRelayCommand(RefreshGitAsync);
         RewindToCommand = new RelayCommand<TranscriptItem>(RewindTo);
         ResumeCommand = new RelayCommand(Resume);
+        ScheduleCommand = new AsyncRelayCommand(ScheduleAsync, () => !string.IsNullOrWhiteSpace(PromptText) && _view.Info is not null);
         CommitCommand = new AsyncRelayCommand(CommitAsync, () => !string.IsNullOrWhiteSpace(CommitMessage) && GitDirty);
         foreach (var mode in view.Info?.Modes ?? [])
         {
@@ -298,6 +299,7 @@ public sealed class SessionViewModel : ObservableObject
             {
                 SendCommand.RaiseCanExecuteChanged();
                 SendNowCommand.RaiseCanExecuteChanged();
+                ScheduleCommand.RaiseCanExecuteChanged();
                 _prompts.SaveDraft(SessionId, value);
                 UpdateSlash();
             }
@@ -370,6 +372,20 @@ public sealed class SessionViewModel : ObservableObject
 
     public ICommand RewindToCommand { get; }
     public ICommand ResumeCommand { get; }
+    public AsyncRelayCommand ScheduleCommand { get; }
+
+    /// <summary>Schedules the composer's current prompt to run in the background every 5 minutes.</summary>
+    private async Task ScheduleAsync()
+    {
+        var prompt = PromptText;
+        if (string.IsNullOrWhiteSpace(prompt) || _view.Info is not { } info)
+        {
+            return;
+        }
+
+        PromptText = string.Empty;
+        await _host.ScheduleTaskAsync(new ScheduleTaskRequest(info.AdapterId, info.WorkingDirectory, prompt, 300));
+    }
 
     private void RewindTo(TranscriptItem? item)
     {

@@ -38,6 +38,11 @@ public sealed class HostConnection : IAgnesHost
             AgentsChanged?.Invoke(agents);
         });
 
+        _hub.On<InboxRun>(nameof(IAgnesClient.OnInboxRun), run =>
+        {
+            InboxRunReceived?.Invoke(run);
+        });
+
         _hub.Reconnecting += _ => { RaiseState(AgnesConnectionState.Reconnecting); return Task.CompletedTask; };
         _hub.Closed += _ => { RaiseState(AgnesConnectionState.Disconnected); return Task.CompletedTask; };
 
@@ -117,6 +122,20 @@ public sealed class HostConnection : IAgnesHost
 
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
         => _hub.InvokeAsync<GitCommitResult>(nameof(IAgnesServer.GitCommit), sessionId, message);
+
+    public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request)
+        => _hub.InvokeAsync<ScheduledTask>(nameof(IAgnesServer.ScheduleTask), request);
+
+    public Task<IReadOnlyList<ScheduledTask>> ListScheduledTasksAsync()
+        => _hub.InvokeAsync<IReadOnlyList<ScheduledTask>>(nameof(IAgnesServer.ListScheduledTasks));
+
+    public Task RemoveScheduledTaskAsync(string taskId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RemoveScheduledTask), taskId);
+
+    public Task<IReadOnlyList<InboxRun>> GetInboxAsync()
+        => _hub.InvokeAsync<IReadOnlyList<InboxRun>>(nameof(IAgnesServer.GetInbox));
+
+    public event Action<InboxRun>? InboxRunReceived;
 
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RespondPermission), new PermissionResponseRequest(sessionId, requestId, optionId));

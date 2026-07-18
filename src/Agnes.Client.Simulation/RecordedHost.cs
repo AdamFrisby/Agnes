@@ -87,6 +87,13 @@ public sealed class RecordedHost : IAgnesHost
     public Task SetModeAsync(string sessionId, string modeId) => Task.CompletedTask;
     public Task<GitStatus> GetGitStatusAsync(string sessionId) => Task.FromResult(new GitStatus(false, null, false, []));
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message) => Task.FromResult(new GitCommitResult(false, "read-only"));
+    public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request) => Task.FromResult(new ScheduledTask("", request.AdapterId, request.WorkingDirectory, request.Prompt, request.IntervalSeconds, false));
+    public Task<IReadOnlyList<ScheduledTask>> ListScheduledTasksAsync() => Task.FromResult<IReadOnlyList<ScheduledTask>>([]);
+    public Task RemoveScheduledTaskAsync(string taskId) => Task.CompletedTask;
+    public Task<IReadOnlyList<InboxRun>> GetInboxAsync() => Task.FromResult<IReadOnlyList<InboxRun>>([]);
+#pragma warning disable CS0067
+    public event Action<InboxRun>? InboxRunReceived;
+#pragma warning restore CS0067
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId) => Task.CompletedTask;
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 

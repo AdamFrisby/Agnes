@@ -187,6 +187,38 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(new GitCommitResult(true, $"[main 1a2b3c4] {message}"));
     }
 
+    private readonly List<ScheduledTask> _scheduled = [];
+    private readonly List<InboxRun> _inbox =
+    [
+        new("run-seed", "task-seed", "Nightly dependency audit", "No vulnerable packages found.", DateTimeOffset.UtcNow.AddHours(-2)),
+    ];
+
+    public event Action<InboxRun>? InboxRunReceived;
+
+    public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request)
+    {
+        var task = new ScheduledTask($"task-{_scheduled.Count + 1}", request.AdapterId, request.WorkingDirectory,
+            request.Prompt, Math.Max(5, request.IntervalSeconds), Enabled: true);
+        _scheduled.Add(task);
+        // Simulate a first run completing immediately so the inbox shows something.
+        var run = new InboxRun($"run-{_inbox.Count + 1}", task.Id, request.Prompt, "Completed (simulated).", DateTimeOffset.UtcNow);
+        _inbox.Insert(0, run);
+        InboxRunReceived?.Invoke(run);
+        return Task.FromResult(task);
+    }
+
+    public Task<IReadOnlyList<ScheduledTask>> ListScheduledTasksAsync()
+        => Task.FromResult<IReadOnlyList<ScheduledTask>>(_scheduled.ToArray());
+
+    public Task RemoveScheduledTaskAsync(string taskId)
+    {
+        _scheduled.RemoveAll(t => t.Id == taskId);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<InboxRun>> GetInboxAsync()
+        => Task.FromResult<IReadOnlyList<InboxRun>>(_inbox.ToArray());
+
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
     {
         if (_sessions.TryGetValue(sessionId, out var session))

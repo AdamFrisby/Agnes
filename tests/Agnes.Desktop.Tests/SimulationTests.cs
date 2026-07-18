@@ -104,6 +104,23 @@ public class SimulatedHostTests
     }
 
     [Fact]
+    public async Task Simulated_host_schedules_tasks_and_reports_an_inbox()
+    {
+        var host = new SimulatedHost();
+        var seeded = await host.GetInboxAsync();
+        Assert.NotEmpty(seeded);
+
+        InboxRun? received = null;
+        host.InboxRunReceived += r => received = r;
+
+        var task = await host.ScheduleTaskAsync(new ScheduleTaskRequest("opencode", "/tmp/agnes", "nightly audit", 300));
+        Assert.True(task.Enabled);
+        Assert.Contains(await host.ListScheduledTasksAsync(), t => t.Id == task.Id);
+        Assert.NotNull(received);
+        Assert.True((await host.GetInboxAsync()).Count > seeded.Count);
+    }
+
+    [Fact]
     public async Task Cancel_stops_a_running_turn()
     {
         var host = new SimulatedHost();

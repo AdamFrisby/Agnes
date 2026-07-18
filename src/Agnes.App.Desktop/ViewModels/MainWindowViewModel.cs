@@ -1,5 +1,6 @@
 using Agnes.App.Desktop.Persistence;
 using Agnes.Client;
+using Agnes.Protocol;
 using Agnes.Ui.Core;
 using Agnes.Ui.Core.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -414,6 +415,50 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         });
         host.StateChanged += state => _dispatcher.Post(() => doc.ConnectionState = state);
         host.UsageChanged += usage => _dispatcher.Post(() => { doc.UsageSummary = usage; doc.Usage = host.Usage; });
+
+        if (_inboxHosts.Add(host))
+        {
+            host.InboxRunReceived += run => _dispatcher.Post(() => AddInboxRun(run));
+            _ = LoadInboxAsync(host);
+        }
+    }
+
+    // ---- background-run inbox (across hosts) ----
+
+    private readonly HashSet<IAgnesHost> _inboxHosts = [];
+    private readonly HashSet<string> _inboxIds = [];
+
+    public System.Collections.ObjectModel.ObservableCollection<InboxRun> Inbox { get; } = [];
+    public int InboxCount => Inbox.Count;
+    public bool HasInbox => Inbox.Count > 0;
+
+    private void AddInboxRun(InboxRun run)
+    {
+        if (_inboxIds.Add(run.Id))
+        {
+            Inbox.Insert(0, run);
+            OnPropertyChanged(nameof(InboxCount));
+            OnPropertyChanged(nameof(HasInbox));
+        }
+    }
+
+    private async Task LoadInboxAsync(IAgnesHost host)
+    {
+        try
+        {
+            var runs = await host.GetInboxAsync();
+            _dispatcher.Post(() =>
+            {
+                foreach (var run in runs)
+                {
+                    AddInboxRun(run);
+                }
+            });
+        }
+        catch
+        {
+            // best-effort
+        }
     }
 
     private void SaveState()
