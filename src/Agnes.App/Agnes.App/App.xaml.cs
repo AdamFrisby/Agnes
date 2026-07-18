@@ -1,6 +1,7 @@
 using System;
 using Agnes.App.Services;
 using Agnes.Client;
+using Agnes.Ui.Core;
 using Agnes.Ui.Core.ViewModels;
 using Microsoft.Extensions.Logging;
 using Uno.Resizetizer;
@@ -35,7 +36,12 @@ public partial class App : Application
         if (Workspace is null)
         {
             _client = new AgnesClient();
-            Workspace = new WorkspaceViewModel(_client, new UnoDispatcher(MainWindow.DispatcherQueue));
+            Workspace = new WorkspaceViewModel(
+                _client,
+                new UnoDispatcher(MainWindow.DispatcherQueue),
+                new FilePromptStore(),
+                new FilePermissionPolicy(),
+                new UnoNotifier());
         }
 
 

@@ -22,6 +22,24 @@ public sealed class ObjectToVisibilityConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>true → Visible, false → Collapsed (invert with parameter "invert").</summary>
+public sealed class BoolToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+    {
+        var flag = value is true;
+        if (parameter is string s && s.Equals("invert", StringComparison.OrdinalIgnoreCase))
+        {
+            flag = !flag;
+        }
+
+        return flag ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language)
+        => throw new NotSupportedException();
+}
+
 /// <summary>true → the app accent brush, false → a neutral card brush (for message bubbles).</summary>
 public sealed class BoolToBubbleBrushConverter : IValueConverter
 {

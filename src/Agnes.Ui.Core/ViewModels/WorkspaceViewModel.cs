@@ -3,6 +3,7 @@ using Agnes.Client;
 using Agnes.Ui.Core.Mvvm;
 
 namespace Agnes.Ui.Core.ViewModels;
+#pragma warning disable CA1001 // stores/notifier are not owned/disposable here
 
 /// <summary>
 /// Root view model: connects to hosts, lists their agents, and opens sessions. Designed to
@@ -12,16 +13,27 @@ public sealed class WorkspaceViewModel : ObservableObject
 {
     private readonly AgnesClient _client;
     private readonly IUiDispatcher _dispatcher;
+    private readonly IPromptStore _prompts;
+    private readonly IPermissionPolicy _policy;
+    private readonly INotifier _notifier;
     private string _hostUrl = "https://localhost:5081";
     private string _token = string.Empty;
     private string _workingDirectory = ".";
     private string _status = "Not connected";
     private SessionViewModel? _activeSession;
 
-    public WorkspaceViewModel(AgnesClient client, IUiDispatcher dispatcher)
+    public WorkspaceViewModel(
+        AgnesClient client,
+        IUiDispatcher dispatcher,
+        IPromptStore? prompts = null,
+        IPermissionPolicy? policy = null,
+        INotifier? notifier = null)
     {
         _client = client;
         _dispatcher = dispatcher;
+        _prompts = prompts ?? NullPromptStore.Instance;
+        _policy = policy ?? NullPermissionPolicy.Instance;
+        _notifier = notifier ?? NullNotifier.Instance;
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !string.IsNullOrWhiteSpace(HostUrl));
     }
 
@@ -95,6 +107,11 @@ public sealed class WorkspaceViewModel : ObservableObject
     {
         var info = await entry.Host.OpenSessionAsync(entry.AdapterId, WorkingDirectory);
         var view = await entry.Host.SubscribeAsync(info.SessionId);
-        _dispatcher.Post(() => ActiveSession = new SessionViewModel(entry.Host, view, _dispatcher, entry.DisplayName));
+        _dispatcher.Post(() =>
+        {
+            var session = new SessionViewModel(entry.Host, view, _dispatcher, entry.DisplayName, _prompts, _policy);
+            session.NotificationRaised += n => _dispatcher.Post(() => _notifier.Notify(n));
+            ActiveSession = session;
+        });
     }
 }

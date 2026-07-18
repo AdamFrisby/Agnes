@@ -1,14 +1,13 @@
 using System.Text.Json;
-using Agnes.Ui.Core;
 
-namespace Agnes.App.Desktop.Persistence;
+namespace Agnes.Ui.Core;
 
 /// <summary>
 /// Persists per-session prompt drafts and a bounded prompt history to a JSON file, so an
 /// unsent draft survives closing the app and Up/Down recalls past prompts after relaunch.
 /// Writes are best-effort and debounced through an in-memory model that is flushed on change.
 /// </summary>
-public sealed class JsonPromptStore : IPromptStore
+public sealed class FilePromptStore : IPromptStore
 {
     private const int MaxHistory = 200;
 
@@ -17,7 +16,7 @@ public sealed class JsonPromptStore : IPromptStore
     private readonly object _gate = new();
     private readonly Model _model;
 
-    public JsonPromptStore(string? path = null)
+    public FilePromptStore(string? path = null)
     {
         _path = path ?? DefaultPath();
         _model = Load();

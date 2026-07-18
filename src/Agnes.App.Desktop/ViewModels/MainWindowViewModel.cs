@@ -55,8 +55,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _tabStore = tabStore;
         _archiveStore = archiveStore ?? new SessionStateStore(SessionStateStore.DefaultPath().Replace("desktop-tabs.json", "desktop-archive.json"));
         _hostStore = hostStore;
-        _prompts = prompts ?? new JsonPromptStore();
-        _policy = policy ?? new PermissionPolicyStore();
+        _prompts = prompts ?? new FilePromptStore();
+        _policy = policy ?? new FilePermissionPolicy();
         _settingsStore = settingsStore ?? new SettingsStore();
         _settings = _settingsStore.Load();
 

@@ -148,19 +148,19 @@ public class SessionStateStoreTests
     public void Permission_policy_persists_and_matches_per_host_and_tool()
     {
         var path = Path.Combine(Path.GetTempPath(), $"agnes-policy-{Guid.NewGuid():n}.json");
-        var store = new PermissionPolicyStore(path);
+        var store = new FilePermissionPolicy(path);
 
         store.Remember("sim://demo", ToolKind.Read, allow: true);
         store.Remember("sim://demo", ToolKind.Delete, allow: false);
 
-        var reloaded = new PermissionPolicyStore(path);
+        var reloaded = new FilePermissionPolicy(path);
         Assert.True(reloaded.Decide("sim://demo", ToolKind.Read));
         Assert.False(reloaded.Decide("sim://demo", ToolKind.Delete));
         Assert.Null(reloaded.Decide("sim://demo", ToolKind.Edit));   // no rule
         Assert.Null(reloaded.Decide("other://host", ToolKind.Read)); // different host
 
         reloaded.Forget("sim://demo", ToolKind.Read);
-        Assert.Null(new PermissionPolicyStore(path).Decide("sim://demo", ToolKind.Read));
+        Assert.Null(new FilePermissionPolicy(path).Decide("sim://demo", ToolKind.Read));
     }
 }
 

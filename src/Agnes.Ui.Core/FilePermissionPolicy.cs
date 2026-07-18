@@ -1,22 +1,22 @@
 using System.Text.Json;
 using Agnes.Abstractions;
-using Agnes.Ui.Core;
 
-namespace Agnes.App.Desktop.Persistence;
+
+namespace Agnes.Ui.Core;
 
 /// <summary>
 /// Persists "always allow / always reject" permission decisions per host + tool kind, so the
 /// client can auto-answer matching requests across sessions and relaunches. Enforced client-side;
 /// every auto-decision still produces a normal (audited) response to the agent.
 /// </summary>
-public sealed class PermissionPolicyStore : IPermissionPolicy
+public sealed class FilePermissionPolicy : IPermissionPolicy
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly string _path;
     private readonly object _gate = new();
     private readonly Dictionary<string, bool> _rules;
 
-    public PermissionPolicyStore(string? path = null)
+    public FilePermissionPolicy(string? path = null)
     {
         _path = path ?? DefaultPath();
         _rules = Load();
