@@ -55,6 +55,9 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Cancels the in-flight turn for a session (Stop).</summary>
     Task CancelAsync(string sessionId);
 
+    /// <summary>Switches the session's mode (Ask / Code / …).</summary>
+    Task SetModeAsync(string sessionId, string modeId);
+
     Task RespondPermissionAsync(string sessionId, string requestId, string optionId);
 }
 

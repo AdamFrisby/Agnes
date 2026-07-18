@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Agnes.Abstractions;
 using Agnes.Acp.Wire;
 using Microsoft.Extensions.Logging;
 using StreamJsonRpc;
@@ -53,7 +54,10 @@ internal sealed class AcpConnection : IAcpRpc, IAsyncDisposable
             new AcpNewSessionParams { Cwd = workingDirectory },
             cancellationToken).ConfigureAwait(false);
 
-        var session = new AcpAgentSession(result.SessionId, this, _dispatch, _logger);
+        var modes = result.Modes?.AvailableModes
+            .Select(m => new SessionMode(m.Id, string.IsNullOrEmpty(m.Name) ? m.Id : m.Name))
+            .ToArray();
+        var session = new AcpAgentSession(result.SessionId, this, _dispatch, _logger, modes, result.Modes?.CurrentModeId);
         _sessions[result.SessionId] = session;
         return session;
     }
@@ -65,6 +69,9 @@ internal sealed class AcpConnection : IAcpRpc, IAsyncDisposable
 
     public Task CancelAsync(AcpCancelParams parameters)
         => _rpc.NotifyWithParameterObjectAsync("session/cancel", parameters);
+
+    public Task SetModeAsync(AcpSetModeParams parameters)
+        => _rpc.NotifyWithParameterObjectAsync("session/set_mode", parameters);
 
     // ---- inbound routing ----
 

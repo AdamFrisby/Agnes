@@ -41,7 +41,9 @@ public sealed record SessionInfo(
     string SessionId,
     string AdapterId,
     string WorkingDirectory,
-    long HeadSequence);
+    long HeadSequence,
+    IReadOnlyList<SessionMode>? Modes = null,
+    string? CurrentModeId = null);
 
 /// <summary>A point-in-time replay: all events up to <see cref="HeadSequence"/>.</summary>
 public sealed record SessionSnapshot(

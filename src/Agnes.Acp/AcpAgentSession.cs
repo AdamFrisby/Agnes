@@ -12,6 +12,7 @@ internal interface IAcpRpc
 {
     Task<AcpPromptResult> PromptAsync(AcpPromptParams parameters, CancellationToken cancellationToken);
     Task CancelAsync(AcpCancelParams parameters);
+    Task SetModeAsync(AcpSetModeParams parameters);
 }
 
 /// <summary>An <see cref="IAgentSession"/> backed by one ACP session on a connected agent process.</summary>
@@ -24,15 +25,27 @@ internal sealed class AcpAgentSession : IAgentSession
         Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = true });
     private readonly ConcurrentDictionary<string, PendingPermission> _pending = new();
 
-    public AcpAgentSession(string agentSessionId, IAcpRpc rpc, SynchronizationContext dispatch, ILogger logger)
+    public AcpAgentSession(string agentSessionId, IAcpRpc rpc, SynchronizationContext dispatch, ILogger logger,
+        IReadOnlyList<SessionMode>? modes = null, string? currentModeId = null)
     {
         AgentSessionId = agentSessionId;
         _rpc = rpc;
         _dispatch = dispatch;
         _logger = logger;
+        Modes = modes ?? [];
+        CurrentModeId = currentModeId;
     }
 
     public string AgentSessionId { get; }
+
+    public IReadOnlyList<SessionMode> Modes { get; }
+    public string? CurrentModeId { get; private set; }
+
+    public Task SetModeAsync(string modeId, CancellationToken cancellationToken = default)
+    {
+        CurrentModeId = modeId;
+        return _rpc.SetModeAsync(new AcpSetModeParams { SessionId = AgentSessionId, ModeId = modeId });
+    }
 
     public ChannelReader<SessionEvent> Events => _events.Reader;
 

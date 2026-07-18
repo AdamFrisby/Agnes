@@ -112,7 +112,7 @@ public sealed class SimulatedHost : IAgnesHost
         session.Emit(new MessageChunkEvent(MessageRole.Assistant,
             new TextContent($"Session ready on {DisplayName(adapterId)}. Ask me anything.")));
         session.Emit(new TurnEndedEvent(StopReason.EndTurn));
-        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head));
+        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId));
     }
 
     public Task<SessionView> SubscribeAsync(string sessionId, long since = 0)
@@ -149,6 +149,23 @@ public sealed class SimulatedHost : IAgnesHost
         if (_sessions.TryGetValue(sessionId, out var session) && session.CancelTurn())
         {
             session.Emit(new TurnEndedEvent(StopReason.Cancelled));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static readonly SessionMode[] Modes =
+    [
+        new("ask", "Ask"),
+        new("code", "Code"),
+    ];
+
+    public Task SetModeAsync(string sessionId, string modeId)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.CurrentModeId = modeId;
+            session.Emit(new ModeChangedEvent(modeId));
         }
 
         return Task.CompletedTask;
@@ -286,6 +303,7 @@ public sealed class SimulatedHost : IAgnesHost
         public string Id { get; }
         public string AdapterId { get; }
         public string Cwd { get; }
+        public string CurrentModeId { get; set; } = "ask";
         public SessionView View { get; }
         public long Head { get { lock (_gate) { return _seq; } } }
 
@@ -329,7 +347,7 @@ public sealed class SimulatedHost : IAgnesHost
         {
             lock (_gate)
             {
-                return new SessionSnapshot(new SessionInfo(Id, AdapterId, Cwd, _seq), _log.ToArray(), _seq);
+                return new SessionSnapshot(new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId), _log.ToArray(), _seq);
             }
         }
     }

@@ -105,6 +105,21 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
     }
 
     [Fact]
+    public async Task SetMode_flows_over_the_wire_to_the_agent_session()
+    {
+        _factory.Adapter.Session.OnPrompt = (_, _) => Task.FromResult(StopReason.EndTurn);
+
+        await using var client = new AgnesClient();
+        var host = await client.AddHostAsync("http://localhost", Token, UseTestServer());
+        var session = await host.OpenSessionAsync("scripted", ".");
+
+        await host.SetModeAsync(session.SessionId, "plan");
+
+        var mode = await _factory.Adapter.Session.ModeSet.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.Equal("plan", mode);
+    }
+
+    [Fact]
     public async Task Rejects_connection_without_valid_token()
     {
         await using var client = new AgnesClient();
@@ -146,6 +161,13 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
             = (_, _) => Task.FromResult(StopReason.EndTurn);
 
         public TaskCompletionSource Cancelled { get; } = new();
+        public TaskCompletionSource<string> ModeSet { get; } = new();
+
+        public Task SetModeAsync(string modeId, CancellationToken cancellationToken = default)
+        {
+            ModeSet.TrySetResult(modeId);
+            return Task.CompletedTask;
+        }
 
         public void Emit(SessionEvent e) => _events.Writer.TryWrite(e);
         public Task<StopReason> PromptAsync(IReadOnlyList<ContentBlock> content, CancellationToken cancellationToken = default)

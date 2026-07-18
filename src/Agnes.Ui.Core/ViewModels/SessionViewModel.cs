@@ -41,6 +41,7 @@ public sealed class SessionViewModel : ObservableObject
     private bool _isInspectorOpen;
     private bool _showSlash;
     private string _referenceInput = string.Empty;
+    private string? _currentModeId;
     private int _matchCursor = -1;
     private int _promptCursor = -1;
     private int _changeCursor = -1;
@@ -71,6 +72,13 @@ public sealed class SessionViewModel : ObservableObject
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
         ToggleInspectorCommand = new RelayCommand(() => IsInspectorOpen = !IsInspectorOpen);
+        SetModeCommand = new RelayCommand<SessionMode>(m => { if (m is not null) { _ = SetModeAsync(m); } });
+        foreach (var mode in view.Info?.Modes ?? [])
+        {
+            Modes.Add(mode);
+        }
+
+        _currentModeId = view.Info?.CurrentModeId;
         AddReferenceCommand = new RelayCommand(AddReference);
         RemoveAttachmentCommand = new RelayCommand<PromptAttachment>(a => { if (a is not null) { Attachments.Remove(a); Raise(nameof(HasAttachments)); } });
         ApplySlashCommand = new RelayCommand<SlashCommand>(ApplySlash);
@@ -311,6 +319,28 @@ public sealed class SessionViewModel : ObservableObject
     public ICommand AddReferenceCommand { get; }
     public ICommand RemoveAttachmentCommand { get; }
     public ICommand ApplySlashCommand { get; }
+    public ICommand SetModeCommand { get; }
+
+    // ---- session modes (Ask / Code / …) ----
+
+    /// <summary>Modes the agent offers for this session; empty if none.</summary>
+    public ObservableCollection<SessionMode> Modes { get; } = [];
+
+    public bool HasModes => Modes.Count > 0;
+
+    public string? CurrentModeId
+    {
+        get => _currentModeId;
+        private set { if (Set(ref _currentModeId, value)) { Raise(nameof(CurrentModeName)); } }
+    }
+
+    public string CurrentModeName => Modes.FirstOrDefault(m => m.Id == _currentModeId)?.Name ?? _currentModeId ?? string.Empty;
+
+    private async Task SetModeAsync(SessionMode mode)
+    {
+        CurrentModeId = mode.Id; // optimistic; ModeChangedEvent will confirm
+        await _host.SetModeAsync(SessionId, mode.Id);
+    }
 
     /// <summary>Attaches an arbitrary content block (e.g. an image from the shell's file picker).</summary>
     public void Attach(PromptAttachment attachment)
@@ -430,6 +460,10 @@ public sealed class SessionViewModel : ObservableObject
                 _interrupted = true;
                 UpdateBanner();
                 NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId));
+                break;
+
+            case ModeChangedEvent mode:
+                CurrentModeId = mode.ModeId;
                 break;
         }
     }

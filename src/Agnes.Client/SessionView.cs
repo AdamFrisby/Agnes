@@ -32,8 +32,12 @@ public sealed class SessionView
     /// <summary>Raised (outside the lock) for each newly applied event.</summary>
     public event Action<SessionEvent>? EventAppended;
 
+    /// <summary>Session metadata from the snapshot (modes, adapter, …), once applied.</summary>
+    public SessionInfo? Info { get; private set; }
+
     public void ApplySnapshot(SessionSnapshot snapshot)
     {
+        Info = snapshot.Session;
         List<SessionEvent> toRaise = [];
         lock (_gate)
         {

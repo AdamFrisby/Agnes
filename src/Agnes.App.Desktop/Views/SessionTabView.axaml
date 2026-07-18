@@ -666,24 +666,49 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
-                                <!-- Context toolbar: @-reference + attach file -->
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <TextBox Text="{Binding ReferenceInput, Mode=TwoWay}" Width="220" Watermark="@ file or url…"
-                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                                             AutomationProperties.Name="Add a context reference">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Enter" Command="{Binding AddReferenceCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
-                                    <Button Content="Add" Command="{Binding AddReferenceCommand}"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
-                                    <Button Content="Attach file…" Click="OnAttachFile"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12"
-                                            AutomationProperties.Name="Attach a file or image" />
-                                </StackPanel>
+                                <!-- Context toolbar: @-reference + attach file · mode selector -->
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBox Text="{Binding ReferenceInput, Mode=TwoWay}" Width="200" Watermark="@ file or url…"
+                                                 Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                                 BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                                                 AutomationProperties.Name="Add a context reference">
+                                            <TextBox.KeyBindings>
+                                                <KeyBinding Gesture="Enter" Command="{Binding AddReferenceCommand}" />
+                                            </TextBox.KeyBindings>
+                                        </TextBox>
+                                        <Button Content="Add" Command="{Binding AddReferenceCommand}"
+                                                Background="Transparent" Foreground="{StaticResource FgDim}"
+                                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
+                                        <Button Content="Attach file…" Click="OnAttachFile"
+                                                Background="Transparent" Foreground="{StaticResource FgDim}"
+                                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12"
+                                                AutomationProperties.Name="Attach a file or image" />
+                                    </StackPanel>
+
+                                    <!-- mode selector (Ask / Code / …) -->
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                                IsVisible="{Binding HasModes}">
+                                        <TextBlock Text="Mode" Foreground="{StaticResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
+                                        <ItemsControl ItemsSource="{Binding Modes}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="{Binding Name}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.SetModeCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7"
+                                                            Padding="10,4" FontSize="12" AutomationProperties.Name="Switch mode" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Text="{Binding CurrentModeName}" Foreground="{StaticResource Accent}" FontSize="11"
+                                                   FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0" />
+                                    </StackPanel>
+                                </Grid>
 
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                     <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"

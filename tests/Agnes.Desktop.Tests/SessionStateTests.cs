@@ -186,6 +186,33 @@ public class SessionStateTests
         Assert.False(vm.IsTurnActive);
     }
 
+    // ---- session modes (Ask / Code) ----
+
+    [Fact]
+    public void Mode_selector_switches_mode_and_tracks_mode_changed_events()
+    {
+        var host = new FakeHost();
+        var view = new SessionView("s1");
+        view.ApplySnapshot(new SessionSnapshot(
+            new SessionInfo("s1", "opencode", string.Empty, 0,
+                [new SessionMode("ask", "Ask"), new SessionMode("code", "Code")], "ask"),
+            [], 0));
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        Assert.True(vm.HasModes);
+        Assert.Equal(2, vm.Modes.Count);
+        Assert.Equal("ask", vm.CurrentModeId);
+        Assert.Equal("Ask", vm.CurrentModeName);
+
+        vm.SetModeCommand.Execute(vm.Modes.First(m => m.Id == "code"));
+        Assert.Equal("code", host.Mode);          // sent to the host
+        Assert.Equal("code", vm.CurrentModeId);    // optimistic
+
+        // An inbound mode change (from the agent) updates the current mode.
+        view.Apply(Seq(new ModeChangedEvent("ask"), 1));
+        Assert.Equal("ask", vm.CurrentModeId);
+    }
+
     // ---- composer: slash commands + attachments ----
 
     [Fact]
@@ -559,6 +586,14 @@ internal sealed class FakeHost : IAgnesHost
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
     {
         Responses.Add((requestId, optionId));
+        return Task.CompletedTask;
+    }
+
+    public string? Mode { get; private set; }
+
+    public Task SetModeAsync(string sessionId, string modeId)
+    {
+        Mode = modeId;
         return Task.CompletedTask;
     }
 

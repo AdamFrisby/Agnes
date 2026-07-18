@@ -53,13 +53,15 @@ public sealed class SessionManager : IAsyncDisposable
         _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return new SessionInfo(sessionId, adapterId, workingDirectory, head);
+        return new SessionInfo(sessionId, adapterId, workingDirectory, head, agent.Modes, agent.CurrentModeId);
     }
 
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
         => Require(sessionId).PromptAsync(content);
 
     public Task CancelAsync(string sessionId) => Require(sessionId).CancelAsync();
+
+    public Task SetModeAsync(string sessionId, string modeId) => Require(sessionId).SetModeAsync(modeId);
 
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => Require(sessionId).RespondToPermissionAsync(requestId, optionId);
@@ -69,7 +71,7 @@ public sealed class SessionManager : IAsyncDisposable
         var session = Require(sessionId);
         var events = await _store.ReadSinceAsync(sessionId, sinceSequence, cancellationToken).ConfigureAwait(false);
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        var info = new SessionInfo(sessionId, session.AdapterId, session.WorkingDirectory, head);
+        var info = new SessionInfo(sessionId, session.AdapterId, session.WorkingDirectory, head, session.Modes, session.CurrentModeId);
         return new SessionSnapshot(info, events, head);
     }
 

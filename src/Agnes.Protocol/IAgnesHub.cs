@@ -38,6 +38,9 @@ public interface IAgnesServer
     /// <summary>Cancels the in-flight turn for a session (maps to ACP <c>session/cancel</c>).</summary>
     Task Cancel(string sessionId);
 
+    /// <summary>Switches the session mode (maps to ACP <c>session/set_mode</c>).</summary>
+    Task SetMode(string sessionId, string modeId);
+
     Task RespondPermission(PermissionResponseRequest response);
 }
 

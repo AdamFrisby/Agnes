@@ -76,4 +76,16 @@ public interface IAgentSession : IAsyncDisposable
 
     /// <summary>Answers an outstanding <see cref="PermissionRequestedEvent"/>.</summary>
     Task RespondToPermissionAsync(string requestId, string optionId, CancellationToken cancellationToken = default);
+
+    /// <summary>The modes the agent offers for this session (e.g. Ask / Code), if any.</summary>
+    IReadOnlyList<SessionMode> Modes => [];
+
+    /// <summary>The currently active mode id, if the agent reports one.</summary>
+    string? CurrentModeId => null;
+
+    /// <summary>Switches the session mode (ACP <c>session/set_mode</c>).</summary>
+    Task SetModeAsync(string modeId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
+
+/// <summary>A selectable session mode offered by an agent (e.g. Ask, Code, Plan).</summary>
+public sealed record SessionMode(string Id, string Name);

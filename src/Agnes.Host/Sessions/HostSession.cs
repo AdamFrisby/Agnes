@@ -65,6 +65,11 @@ internal sealed class HostSession : IAsyncDisposable
 
     public Task CancelAsync() => _agent.CancelAsync(_cts.Token);
 
+    public Task SetModeAsync(string modeId) => _agent.SetModeAsync(modeId, _cts.Token);
+
+    public IReadOnlyList<Agnes.Abstractions.SessionMode> Modes => _agent.Modes;
+    public string? CurrentModeId => _agent.CurrentModeId;
+
     public Task RespondToPermissionAsync(string requestId, string optionId)
         => _agent.RespondToPermissionAsync(requestId, optionId, _cts.Token);
 

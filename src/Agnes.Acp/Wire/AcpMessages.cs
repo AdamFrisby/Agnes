@@ -72,6 +72,27 @@ internal sealed record AcpMcpServer
 internal sealed record AcpNewSessionResult
 {
     public required string SessionId { get; init; }
+    public AcpSessionModeState? Modes { get; init; }
+}
+
+internal sealed record AcpSessionModeState
+{
+    public string? CurrentModeId { get; init; }
+    public IReadOnlyList<AcpSessionMode> AvailableModes { get; init; } = [];
+}
+
+internal sealed record AcpSessionMode
+{
+    public required string Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+}
+
+// ---- session/set_mode (notification) ----
+
+internal sealed record AcpSetModeParams
+{
+    public required string SessionId { get; init; }
+    public required string ModeId { get; init; }
 }
 
 // ---- session/prompt ----
