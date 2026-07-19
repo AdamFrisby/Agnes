@@ -553,10 +553,41 @@
                             </StackPanel>
                         </Border>
 
-                        <ScrollViewer Grid.Row="1" Padding="0,16" VerticalScrollBarVisibility="Auto"
-                                      IsVisible="{Binding !IsInspectorOpen}">
-                            <ItemsControl x:Name="Transcript" ItemsSource="{Binding DisplayItems}" MaxWidth="768" Margin="24,0" HorizontalAlignment="Stretch">
-                                <ItemsControl.DataTemplates>
+                        <!-- Transcript: a virtualizing ListBox so a long conversation only realizes the
+                             rows on screen. Full-width (scrollbar at the window edge) with each row
+                             centred at the 768px reading width. Selection is disabled — the rows carry
+                             their own buttons. -->
+                        <ListBox Grid.Row="1" x:Name="Transcript" ItemsSource="{Binding DisplayItems}"
+                                 IsVisible="{Binding !IsInspectorOpen}"
+                                 Background="Transparent" BorderThickness="0"
+                                 Padding="24,16" HorizontalAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.Styles>
+                                <!-- The transcript is read-only: rows don't select or take focus, so it
+                                     behaves like a plain list while still virtualizing. -->
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="MaxWidth" Value="768" />
+                                    <Setter Property="HorizontalAlignment" Value="Center" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="MinHeight" Value="0" />
+                                    <Setter Property="Focusable" Value="False" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                </Style>
+                                <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent" />
+                                </Style>
+                                <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent" />
+                                </Style>
+                            </ListBox.Styles>
+                            <ListBox.DataTemplates>
 
                                     <DataTemplate DataType="tr:MessageBubbleItem">
                                         <Border Classes.user="{Binding IsUser}" CornerRadius="12" Padding="14,10" Margin="0,6">
@@ -659,9 +690,8 @@
                                                    FontStyle="Italic" Margin="0,6" TextWrapping="Wrap" />
                                     </DataTemplate>
 
-                                </ItemsControl.DataTemplates>
-                            </ItemsControl>
-                        </ScrollViewer>
+                            </ListBox.DataTemplates>
+                        </ListBox>
 
                         <!-- Rewind (viewing history) banner -->
                         <Border Grid.Row="1" VerticalAlignment="Top" IsVisible="{Binding IsRewound}"

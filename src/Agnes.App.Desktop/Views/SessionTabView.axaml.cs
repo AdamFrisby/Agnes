@@ -12,7 +12,7 @@ public partial class SessionTabView : UserControl
 {
     private const double SplitterWidth = 5;
     private Grid? _workspace;
-    private ItemsControl? _transcript;
+    private ListBox? _transcript;
     private SessionViewModel? _session;
     private double _leftWidth = 288;
     private double _rightWidth = 540;
@@ -21,7 +21,7 @@ public partial class SessionTabView : UserControl
     {
         InitializeComponent();
         _workspace = this.FindControl<Grid>("Workspace");
-        _transcript = this.FindControl<ItemsControl>("Transcript");
+        _transcript = this.FindControl<ListBox>("Transcript");
         if (_workspace is not null)
         {
             _workspace.DataContextChanged += (_, _) => HookSession();
@@ -61,7 +61,14 @@ public partial class SessionTabView : UserControl
         {
             if (_session.Items[i].AnchorId == anchorId)
             {
-                Dispatcher.UIThread.Post(() => _transcript.ContainerFromIndex(i)?.BringIntoView());
+                // The transcript virtualizes, so the target row may not be realized yet — ScrollIntoView
+                // realizes and scrolls to it (BringIntoView alone no-ops on an unrealized container).
+                var index = i;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _transcript.ScrollIntoView(index);
+                    _transcript.ContainerFromIndex(index)?.BringIntoView();
+                });
                 return;
             }
         }
