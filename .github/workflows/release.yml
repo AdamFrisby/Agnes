@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # Self-contained desktop app for each OS, uploaded to the GitHub Release.
+  desktop:
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest,  rid: linux-x64 }
+          - { os: windows-latest, rid: win-x64 }
+          - { os: macos-latest,   rid: osx-arm64 }
+          - { os: macos-latest,   rid: osx-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Derive version from tag
+        id: v
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        run: dotnet publish src/Agnes.App.Desktop -c Release -r ${{ matrix.rid }} --self-contained
+             -p:Version=${{ steps.v.outputs.version }} -o out/${{ matrix.rid }}
+
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path out/${{ matrix.rid }}/* -DestinationPath agnes-desktop-${{ matrix.rid }}-v${{ steps.v.outputs.version }}.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: agnes-desktop-*.zip
+
+  # Self-contained host bundle (Linux) for the Release.
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - run: dotnet publish src/Agnes.Host -c Release -r linux-x64 --self-contained
+             -p:Version=${{ steps.v.outputs.version }} -o out/host
+      - run: tar -C out/host -czf agnes-host-linux-x64-v${{ steps.v.outputs.version }}.tar.gz .
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: agnes-host-*.tar.gz
+
+  # Host container image to GHCR: ghcr.io/<owner>/agnes:<version> and :latest
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/agnes:${{ steps.v.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/agnes:latest

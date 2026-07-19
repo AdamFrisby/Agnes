@@ -97,10 +97,55 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         RunPaletteItemCommand = new RelayCommand<PaletteItem>(RunPaletteItem);
         RunTopPaletteItemCommand = new RelayCommand(() => RunPaletteItem(PaletteItems.FirstOrDefault()));
         ClosePaletteCommand = new RelayCommand(() => IsPaletteOpen = false);
+        OpenUpdateCommand = new RelayCommand(OpenUpdate);
     }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
     public IRelayCommand ClosePaletteCommand { get; }
+
+    // ---- update check (GitHub Releases) ----
+
+    [ObservableProperty]
+    private bool _updateAvailable;
+
+    [ObservableProperty]
+    private string _updateVersion = string.Empty;
+
+    private string? _updateUrl;
+
+    public IRelayCommand OpenUpdateCommand { get; private set; } = null!;
+
+    /// <summary>Best-effort background check; surfaces a top-bar "Update" button when a newer release exists.</summary>
+    public async Task CheckForUpdatesAsync()
+    {
+        var current = typeof(MainWindowViewModel).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+        var info = await UpdateCheck.CheckAsync(current);
+        if (info is { IsNewer: true })
+        {
+            _dispatcher.Post(() =>
+            {
+                _updateUrl = info.Url;
+                UpdateVersion = info.Version;
+                UpdateAvailable = true;
+                Notifier.Notify(new AppNotification("Update available", $"Agnes {info.Version} is available — click Update to download.", NotificationKind.Completion, string.Empty));
+            });
+        }
+    }
+
+    private void OpenUpdate()
+    {
+        if (_updateUrl is { Length: > 0 } url)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch
+            {
+                // Opening the browser is best-effort.
+            }
+        }
+    }
 
     public IRelayCommand CloseActiveTabCommand { get; }
     public IRelayCommand ToggleReducedMotionCommand { get; }
