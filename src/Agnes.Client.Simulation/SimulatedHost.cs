@@ -21,8 +21,6 @@ public sealed class SimulatedHost : IAgnesHost
         new("codex", "Codex", "0.9", Available: true),
     ];
 
-    private const int Quota = 5000;
-
     private const string SampleDiff =
         "--- a/src/config.ts\n" +
         "+++ b/src/config.ts\n" +
@@ -60,20 +58,12 @@ public sealed class SimulatedHost : IAgnesHost
 
     private readonly ConcurrentDictionary<string, SimSession> _sessions = new();
     private int _counter;
-    private int _remaining = 4820;
 
     public SimulatedHost(string hostUrl = "sim://demo") => HostUrl = hostUrl;
 
     public string HostUrl { get; }
     public AgnesConnectionState State { get; private set; } = AgnesConnectionState.Disconnected;
     public event Action<AgnesConnectionState>? StateChanged;
-
-    public string? UsageSummary { get; private set; }
-    public UsageInfo? Usage { get; private set; }
-    public event Action<string?>? UsageChanged;
-
-    private const int ContextMax = 200_000;
-    private long _contextUsed = 8_400;
 
     // The simulated host never changes its agent set; required by the interface.
 #pragma warning disable CS0067
@@ -85,19 +75,6 @@ public sealed class SimulatedHost : IAgnesHost
         Set(AgnesConnectionState.Connecting);
         await Task.Delay(120, cancellationToken).ConfigureAwait(false);
         Set(AgnesConnectionState.Connected);
-        UpdateUsage();
-    }
-
-    private void UpdateUsage()
-    {
-        UsageSummary = $"Free tier · {_remaining:N0} / {Quota:N0} tokens today";
-        Usage = new UsageInfo(
-            ContextUsed: _contextUsed,
-            ContextMax: ContextMax,
-            Used: Quota - _remaining,
-            Limit: Quota,
-            Label: UsageSummary);
-        UsageChanged?.Invoke(UsageSummary);
     }
 
     public Task<HostInfo> GetHostInfoAsync()
@@ -113,6 +90,7 @@ public sealed class SimulatedHost : IAgnesHost
         session.Emit(new MessageChunkEvent(MessageRole.Assistant,
             new TextContent($"Session ready on {DisplayName(adapterId)}. Ask me anything.")));
         session.Emit(new TurnEndedEvent(StopReason.EndTurn));
+        session.RecordUsage(0, 0); // seed the context-window meter (same UsageReportedEvent a real agent emits)
         session.SkipPermissions = skipPermissions;
         return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id), skipPermissions));
     }
@@ -168,9 +146,9 @@ public sealed class SimulatedHost : IAgnesHost
             session.Emit(new MessageChunkEvent(MessageRole.User, block));
         }
 
-        _remaining = Math.Max(0, _remaining - 140 - text.Length);
-        _contextUsed = Math.Min(ContextMax, _contextUsed + 1_200 + text.Length * 3);
-        UpdateUsage();
+        // Grow the context window and accrue a little cost, then emit the same UsageReportedEvent a
+        // real agent would — so the demo exercises the real per-session usage path, not a fake one.
+        session.RecordUsage(1_200 + text.Length * 3, 0.002 + text.Length * 0.00002);
 
         _ = Task.Run(() => RespondAsync(session, text, session.NewTurn()));
         return Task.CompletedTask;
@@ -434,6 +412,27 @@ public sealed class SimulatedHost : IAgnesHost
                 _log.Add(stamped);
                 View.Apply(stamped);
             }
+        }
+
+        // Representative per-session usage: a real Claude Code window is 200k tokens.
+        private const long Window = 200_000;
+        private long _contextUsed = 8_400;
+        private double _costUsd;
+
+        /// <summary>Advances the (simulated) context/cost and emits the real UsageReportedEvent shape.</summary>
+        public void RecordUsage(long contextDelta, double costDelta)
+        {
+            long ctx;
+            double cost;
+            lock (_gate)
+            {
+                _contextUsed = Math.Min(Window, _contextUsed + contextDelta);
+                _costUsd += costDelta;
+                ctx = _contextUsed;
+                cost = _costUsd;
+            }
+
+            Emit(new UsageReportedEvent(ContextTokens: ctx, ContextWindow: Window, CostUsd: cost > 0 ? cost : null));
         }
 
         public SessionSnapshot Snapshot()

@@ -826,14 +826,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     private void WireStatus(SessionDocument doc, IAgnesHost host)
     {
-        _dispatcher.Post(() =>
-        {
-            doc.ConnectionState = host.State;
-            doc.UsageSummary = host.UsageSummary;
-            doc.Usage = host.Usage;
-        });
+        _dispatcher.Post(() => doc.ConnectionState = host.State);
         host.StateChanged += state => _dispatcher.Post(() => doc.ConnectionState = state);
-        host.UsageChanged += usage => _dispatcher.Post(() => { doc.UsageSummary = usage; doc.Usage = host.Usage; });
+        // Usage is per-session and flows through the session event stream (SessionDocument mirrors
+        // its SessionViewModel.Usage) — not a host-level property.
 
         if (_inboxHosts.Add(host))
         {

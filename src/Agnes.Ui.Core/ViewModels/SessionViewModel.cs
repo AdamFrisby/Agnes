@@ -313,6 +313,33 @@ public sealed class SessionViewModel : ObservableObject
         Raise(nameof(ActivityText));
     }
 
+    /// <summary>
+    /// Real token/cost usage the agent reported this session, or null until it reports any. Built
+    /// only from <see cref="UsageReportedEvent"/> — never estimated, so it stays null (and the UI
+    /// shows nothing) for agents that don't report usage.
+    /// </summary>
+    public UsageInfo? Usage
+    {
+        get => _usage;
+        private set
+        {
+            if (Set(ref _usage, value))
+            {
+                Raise(nameof(UsageSummary));
+            }
+        }
+    }
+
+    /// <summary>A compact status caption (reported cost), or null when there's nothing real to show.</summary>
+    public string? UsageSummary => _usage?.Summary;
+
+    // Running usage figures, each updated only when the agent reports that field (partial events merge).
+    private UsageInfo? _usage;
+    private long? _ctxUsed;
+    private long? _ctxWindow;
+    private long? _outputTokens;
+    private double? _costUsd;
+
     public string BannerText => Banner switch
     {
         SessionBanner.Offline => "Offline — the host is unreachable.",
@@ -709,6 +736,16 @@ public sealed class SessionViewModel : ObservableObject
 
             case ModeChangedEvent mode:
                 CurrentModeId = mode.ModeId;
+                break;
+
+            case UsageReportedEvent u:
+                // Merge: each event may carry only some fields (context from a message, cost from the
+                // result), so keep the last real value for any field this event didn't report.
+                if (u.ContextTokens is not null) _ctxUsed = u.ContextTokens;
+                if (u.ContextWindow is not null) _ctxWindow = u.ContextWindow;
+                if (u.OutputTokens is not null) _outputTokens = u.OutputTokens;
+                if (u.CostUsd is not null) _costUsd = u.CostUsd;
+                Usage = new UsageInfo(_ctxUsed, _ctxWindow, _outputTokens, _costUsd);
                 break;
         }
 

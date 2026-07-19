@@ -14,6 +14,10 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
+    // The model's real context window, learned from the system/init line. Null until known (or if
+    // the model is unrecognized) — we never guess a window, we just omit the "/ max" when unsure.
+    private long? _contextWindow;
+
     public IEnumerable<SessionEvent> ToEvents(JsonElement line)
     {
         var type = GetString(line, "type");
@@ -37,6 +41,7 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
             case "system":
                 if (GetString(line, "subtype") == "init" && GetString(line, "session_id") is { Length: > 0 } id)
                 {
+                    _contextWindow = ContextWindowFor(GetString(line, "model"));
                     yield return new SessionStartedEvent(id);
                 }
 
@@ -59,14 +64,33 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
                 break;
 
             case "result":
+                // The result line carries the run's real cost — surface it (context tokens come from
+                // the per-message usage below, which reflects live window occupancy).
+                if (GetDouble(line, "total_cost_usd") is { } cost)
+                {
+                    yield return new UsageReportedEvent(CostUsd: cost);
+                }
+
                 var isError = line.TryGetProperty("is_error", out var err) && err.ValueKind == JsonValueKind.True;
                 yield return new TurnEndedEvent(isError ? StopReason.Refusal : StopReason.EndTurn);
                 break;
         }
     }
 
-    private static IEnumerable<SessionEvent> FromAssistant(JsonElement line)
+    private IEnumerable<SessionEvent> FromAssistant(JsonElement line)
     {
+        // Each assistant message carries a usage block; input + cache tokens are the current
+        // context-window occupancy the model reported. Emit it as real usage (never estimated).
+        if (line.TryGetProperty("message", out var msg) && msg.TryGetProperty("usage", out var usage))
+        {
+            var context = ContextTokensFrom(usage);
+            var output = GetLong(usage, "output_tokens");
+            if (context is not null || output is not null)
+            {
+                yield return new UsageReportedEvent(ContextTokens: context, ContextWindow: _contextWindow, OutputTokens: output);
+            }
+        }
+
         if (!TryGetContentArray(line, out var content))
         {
             yield break;
@@ -212,4 +236,57 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
            && element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String
             ? p.GetString()
             : null;
+
+    private static long? GetLong(JsonElement element, string name)
+        => element.ValueKind == JsonValueKind.Object
+           && element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number
+           && p.TryGetInt64(out var v)
+            ? v
+            : null;
+
+    private static double? GetDouble(JsonElement element, string name)
+        => element.ValueKind == JsonValueKind.Object
+           && element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number
+           && p.TryGetDouble(out var v)
+            ? v
+            : null;
+
+    // Context-window occupancy = the model's prompt-side tokens for this message: fresh input plus
+    // the cache-read and cache-creation tokens (all count against the window). Null if none present.
+    private static long? ContextTokensFrom(JsonElement usage)
+    {
+        long sum = 0;
+        var any = false;
+        foreach (var key in ContextTokenKeys)
+        {
+            if (GetLong(usage, key) is { } v)
+            {
+                sum += v;
+                any = true;
+            }
+        }
+
+        return any ? sum : null;
+    }
+
+    private static readonly string[] ContextTokenKeys =
+        ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"];
+
+    // The model's real context window. 200k is the standard window across the modern Claude lineup;
+    // the "1m" long-context variants expose 1M. Unrecognized models return null (no window shown).
+    private static long? ContextWindowFor(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return null;
+        }
+
+        var m = model.ToLowerInvariant();
+        if (m.Contains("1m"))
+        {
+            return 1_000_000;
+        }
+
+        return m.Contains("claude") ? 200_000 : null;
+    }
 }

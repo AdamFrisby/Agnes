@@ -73,34 +73,49 @@ public class SimulatedHostTests
     }
 
     [Fact]
-    public void Usage_info_computes_context_and_quota_percentages()
+    public void Usage_info_shows_a_meter_only_when_the_window_is_known()
     {
-        var u = new UsageInfo(ContextUsed: 50_000, ContextMax: 200_000, Used: 400, Limit: 5_000);
-        Assert.True(u.HasContext);
-        Assert.Equal(25, u.ContextPercent);
-        Assert.True(u.HasQuota);
-        Assert.Equal(8, u.QuotaPercent);
+        // Tokens + known window → full meter.
+        var full = new UsageInfo(ContextUsed: 50_000, ContextWindow: 200_000, CostUsd: 0.12);
+        Assert.True(full.HasContext);
+        Assert.True(full.HasAnyContext);
+        Assert.Equal(25, full.ContextPercent);
+        Assert.Equal("50,000 / 200,000", full.ContextText);
+        Assert.Equal("$0.12", full.Summary);
 
+        // Tokens but no window → number only, no meter, no percentage.
+        var tokensOnly = new UsageInfo(ContextUsed: 18_240);
+        Assert.False(tokensOnly.HasContext);
+        Assert.True(tokensOnly.HasAnyContext);
+        Assert.Equal(0, tokensOnly.ContextPercent);
+        Assert.Equal("18,240", tokensOnly.ContextText);
+
+        // Nothing reported → show nothing at all.
         var empty = new UsageInfo();
         Assert.False(empty.HasContext);
-        Assert.False(empty.HasQuota);
+        Assert.False(empty.HasAnyContext);
+        Assert.Null(empty.Summary);
+        Assert.Equal(string.Empty, empty.ContextText);
     }
 
     [Fact]
-    public async Task Simulated_host_reports_structured_usage_that_grows_with_prompts()
+    public async Task Simulated_host_emits_per_session_usage_events_that_grow_with_prompts()
     {
         var host = new SimulatedHost();
         await host.ConnectAsync();
-
-        Assert.NotNull(host.Usage);
-        Assert.True(host.Usage!.HasContext);
-        Assert.True(host.Usage.HasQuota);
-
-        var before = host.Usage.ContextUsed;
         var info = await host.OpenSessionAsync("opencode", "/tmp/agnes");
-        await host.PromptAsync(info.SessionId, [new TextContent("hello world")]);
+        var view = await host.SubscribeAsync(info.SessionId);
 
-        Assert.True(host.Usage!.ContextUsed > before);
+        // Usage rides the session event stream (the same UsageReportedEvent a real agent emits).
+        await WaitAsync(() => view.Events.OfType<UsageReportedEvent>().Any());
+        var before = view.Events.OfType<UsageReportedEvent>().Last().ContextTokens;
+
+        await host.PromptAsync(info.SessionId, [new TextContent("hello world")]);
+        await WaitAsync(() => view.Events.OfType<UsageReportedEvent>().Last().ContextTokens > before);
+
+        var latest = view.Events.OfType<UsageReportedEvent>().Last();
+        Assert.True(latest.ContextTokens > before);
+        Assert.Equal(200_000, latest.ContextWindow);
     }
 
     [Fact]

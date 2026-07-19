@@ -27,14 +27,8 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Raised when <see cref="State"/> changes.</summary>
     event Action<AgnesConnectionState>? StateChanged;
 
-    /// <summary>Free-form status the host reports (e.g. usage/quota), or null if unknown.</summary>
-    string? UsageSummary { get; }
-
-    /// <summary>Structured usage (context-window / quota), or null if the host doesn't report it.</summary>
-    UsageInfo? Usage { get; }
-
-    /// <summary>Raised when <see cref="UsageSummary"/> / <see cref="Usage"/> changes.</summary>
-    event Action<string?>? UsageChanged;
+    // Token/cost usage is per-session, not per-host: it rides the session event stream as a
+    // UsageReportedEvent and surfaces on SessionViewModel.Usage. See ClaudeCodeStreamMapper.
 
     /// <summary>The set of available agents changed on the host.</summary>
     event Action<IReadOnlyList<AgentInfo>>? AgentsChanged;

@@ -127,13 +127,14 @@
                                 Content="Event log" Background="Transparent" Foreground="{DynamicResource FgDim}"
                                 BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Show the raw event log" AutomationProperties.Name="Toggle raw event log" />
-                        <!-- structured context-window meter, when the host reports it -->
+                        <!-- real context-window usage the agent reported (bar only when the window is known) -->
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
-                                    IsVisible="{Binding Usage.HasContext, FallbackValue=false}"
-                                    ToolTip.Tip="Context window used">
+                                    IsVisible="{Binding Usage.HasAnyContext, FallbackValue=false}"
+                                    ToolTip.Tip="Context tokens used (reported by the agent)">
                             <TextBlock Text="ctx" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
                             <ProgressBar Minimum="0" Maximum="100" Value="{Binding Usage.ContextPercent, FallbackValue=0}"
                                          Width="70" Height="6" VerticalAlignment="Center"
+                                         IsVisible="{Binding Usage.HasContext, FallbackValue=false}"
                                          Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
                             <TextBlock Text="{Binding Usage.ContextText}" Foreground="{DynamicResource FgDim}" FontSize="10"
                                        VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}" />

@@ -244,10 +244,18 @@ public sealed partial class SessionDocument : Document
                 OnPropertyChanged(nameof(ActivityText));
                 OnPropertyChanged(nameof(NeedsAttention));
             }
+            else if (e.PropertyName is nameof(SessionViewModel.Usage)
+                or nameof(SessionViewModel.UsageSummary))
+            {
+                Usage = session.Usage;
+                UsageSummary = session.UsageSummary;
+            }
         };
         OnPropertyChanged(nameof(Activity));
         OnPropertyChanged(nameof(ActivityText));
         OnPropertyChanged(nameof(NeedsAttention));
+        Usage = session.Usage;
+        UsageSummary = session.UsageSummary;
     }
 
     // ---- cross-session attention (delegates to the live session) ----

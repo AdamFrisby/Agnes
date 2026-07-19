@@ -657,11 +657,8 @@ internal sealed class FakeHost : IAgnesHost
 {
     public string HostUrl => "fake://host";
     public AgnesConnectionState State { get; private set; } = AgnesConnectionState.Connected;
-    public string? UsageSummary => null;
-    public UsageInfo? Usage => null;
 
     public event Action<AgnesConnectionState>? StateChanged;
-    public event Action<string?>? UsageChanged;
     public event Action<IReadOnlyList<AgentInfo>>? AgentsChanged;
 
     public List<string> Prompts { get; } = [];
@@ -752,7 +749,7 @@ internal sealed class FakeHost : IAgnesHost
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     // Suppress unused-event warnings for the parts of the surface these tests don't exercise.
-    private void Touch() { UsageChanged?.Invoke(null); AgentsChanged?.Invoke([]); }
+    private void Touch() { AgentsChanged?.Invoke([]); }
 }
 
 /// <summary>Policy that returns a fixed decision for every request.</summary>

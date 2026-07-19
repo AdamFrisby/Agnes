@@ -20,19 +20,25 @@ public sealed record PairResponse(string DeviceId, string DeviceName, string Tok
 /// </summary>
 public sealed record UsageInfo(
     long? ContextUsed = null,
-    long? ContextMax = null,
-    long? Used = null,
-    long? Limit = null,
-    string? Label = null)
+    long? ContextWindow = null,
+    long? OutputTokens = null,
+    double? CostUsd = null)
 {
-    [JsonIgnore] public bool HasContext => ContextMax is > 0 && ContextUsed is >= 0;
-    [JsonIgnore] public bool HasQuota => Limit is > 0 && Used is >= 0;
+    /// <summary>The model reported a context-token count (so we can show at least the number).</summary>
+    [JsonIgnore] public bool HasAnyContext => ContextUsed is >= 0;
 
-    [JsonIgnore] public double ContextPercent => HasContext ? Math.Clamp(100.0 * ContextUsed!.Value / ContextMax!.Value, 0, 100) : 0;
-    [JsonIgnore] public double QuotaPercent => HasQuota ? Math.Clamp(100.0 * Used!.Value / Limit!.Value, 0, 100) : 0;
+    /// <summary>We know both the used tokens and the model's window (so we can show a meter).</summary>
+    [JsonIgnore] public bool HasContext => ContextWindow is > 0 && ContextUsed is >= 0;
 
-    [JsonIgnore] public string ContextText => HasContext ? $"{ContextUsed:N0} / {ContextMax:N0} ctx" : string.Empty;
-    [JsonIgnore] public string QuotaText => HasQuota ? $"{Used:N0} / {Limit:N0}" : string.Empty;
+    [JsonIgnore] public double ContextPercent => HasContext ? Math.Clamp(100.0 * ContextUsed!.Value / ContextWindow!.Value, 0, 100) : 0;
+
+    /// <summary>"18,240 / 200,000" when the window is known, else just "18,240", else empty.</summary>
+    [JsonIgnore] public string ContextText => HasContext
+        ? $"{ContextUsed:N0} / {ContextWindow:N0}"
+        : HasAnyContext ? $"{ContextUsed:N0}" : string.Empty;
+
+    /// <summary>A compact status caption (the real reported cost), or null when there's nothing to show.</summary>
+    [JsonIgnore] public string? Summary => CostUsd is > 0 ? $"${CostUsd:0.####}" : null;
 }
 
 /// <summary>An agent kind available on a host (a loaded adapter plugin).</summary>

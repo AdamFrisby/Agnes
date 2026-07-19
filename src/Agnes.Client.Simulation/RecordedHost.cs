@@ -31,11 +31,7 @@ public sealed class RecordedHost : IAgnesHost
     public AgnesConnectionState State { get; private set; } = AgnesConnectionState.Disconnected;
     public event Action<AgnesConnectionState>? StateChanged;
 
-    public string? UsageSummary => _byId.Count == 0 ? "No recordings" : $"{_byId.Count} recording(s)";
-    public UsageInfo? Usage => null;
-
 #pragma warning disable CS0067
-    public event Action<string?>? UsageChanged;
     public event Action<IReadOnlyList<AgentInfo>>? AgentsChanged;
 #pragma warning restore CS0067
 
