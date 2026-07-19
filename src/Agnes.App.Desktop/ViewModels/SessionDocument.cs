@@ -74,6 +74,18 @@ public sealed partial class SessionDocument : Document
     [ObservableProperty]
     private bool _pinned;
 
+    /// <summary>New-session choice: run the agent autonomously (skip per-tool approval). Default off.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PermissionModeTitle))]
+    [NotifyPropertyChangedFor(nameof(PermissionModeHint))]
+    private bool _skipPermissions;
+
+    public string PermissionModeTitle => SkipPermissions ? "Autonomous" : "Ask before each tool";
+
+    public string PermissionModeHint => SkipPermissions
+        ? "The agent runs tools without asking. Use only for trusted, sandboxed work."
+        : "You approve file edits, commands and other tool calls as they happen.";
+
     [ObservableProperty]
     private bool _isRenaming;
 
@@ -201,7 +213,7 @@ public sealed partial class SessionDocument : Document
     {
         Agents = new ObservableCollection<AgentChoice>(agents.Select(a =>
             new AgentChoice(a.DisplayName, a.AdapterId,
-                new AsyncRelayCommand(() => _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName)))));
+                new AsyncRelayCommand(() => _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions)))));
         Stage = TabStage.PickAgent;
         StatusText = string.Empty;
     }

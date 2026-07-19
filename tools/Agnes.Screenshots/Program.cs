@@ -54,10 +54,17 @@ public static class Program
         Pump(() => first.Hosts is { Count: > 0 });
         Capture(window, "01-host-picker.png");
 
-        // 2) Agent picker on the chosen host
+        // 2) Agent picker on the chosen host — default permission mode is "ask before each tool"
         first.Hosts!.First().Select.Execute(null);
         Pump(() => first.Agents is { Count: > 0 });
         Capture(window, "02-agent-picker.png");
+
+        // 2b) Autonomous permission mode (opt-in): the user flips the toggle before opening a session
+        first.SkipPermissions = true;
+        Settle(120);
+        Capture(window, "02b-autonomous-mode.png");
+        first.SkipPermissions = false;
+        Settle(60);
 
         // 3) A live conversation (note the status bar: connection + usage)
         first.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);

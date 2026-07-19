@@ -328,14 +328,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         await SelectHostAsync(doc, host);
     }
 
-    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName)
+    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false)
     {
         if (doc.Host is null)
         {
             return;
         }
 
-        var info = await doc.Host.OpenSessionAsync(adapterId, WorkingDirectory);
+        var info = await doc.Host.OpenSessionAsync(adapterId, WorkingDirectory, skipPermissions: skipPermissions);
         var view = await doc.Host.SubscribeAsync(info.SessionId);
         var title = ProjectTitle(info.WorkingDirectory, displayName);
         _dispatcher.Post(() =>

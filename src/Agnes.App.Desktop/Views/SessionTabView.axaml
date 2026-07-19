@@ -314,6 +314,24 @@
                             Foreground="{StaticResource FgDim}" BorderThickness="0" Padding="0" FontSize="12" Content="‹ Hosts" />
                     <TextBlock Text="Choose an agent" FontSize="22" FontWeight="SemiBold"
                                Foreground="{StaticResource Fg}" HorizontalAlignment="Center" />
+
+                    <!-- Permission mode for the new session -->
+                    <Border Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1"
+                            CornerRadius="10" Padding="14,10">
+                        <Grid ColumnDefinitions="Auto,*,Auto" >
+                            <TextBlock Grid.Column="0" Text="🛡" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                <TextBlock Foreground="{StaticResource Fg}" FontSize="13" FontWeight="SemiBold"
+                                           Text="{Binding PermissionModeTitle}" />
+                                <TextBlock Foreground="{StaticResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                           Text="{Binding PermissionModeHint}" />
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2" IsChecked="{Binding SkipPermissions, Mode=TwoWay}"
+                                          VerticalAlignment="Center" OnContent="" OffContent=""
+                                          AutomationProperties.Name="Run autonomously (skip permission prompts)" />
+                        </Grid>
+                    </Border>
+
                     <ItemsControl ItemsSource="{Binding Agents}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -797,29 +815,29 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
-                                <!-- Context toolbar: @-reference + attach file · mode selector -->
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                        <TextBox Text="{Binding ReferenceInput, Mode=TwoWay}" Width="200" Watermark="@ file or url…"
-                                                 Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                                 BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                                                 AutomationProperties.Name="Add a context reference">
-                                            <TextBox.KeyBindings>
-                                                <KeyBinding Gesture="Enter" Command="{Binding AddReferenceCommand}" />
-                                            </TextBox.KeyBindings>
-                                        </TextBox>
-                                        <Button Content="Add" Command="{Binding AddReferenceCommand}"
-                                                Background="Transparent" Foreground="{StaticResource FgDim}"
-                                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
-                                        <Button Content="Attach file…" Click="OnAttachFile"
-                                                Background="Transparent" Foreground="{StaticResource FgDim}"
-                                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12"
-                                                AutomationProperties.Name="Attach a file or image" />
-                                    </StackPanel>
+                                <!-- Context toolbar: @-reference + attach file · mode selector.
+                                     A WrapPanel so the controls reflow (never overlap) in narrow columns. -->
+                                <WrapPanel Orientation="Horizontal">
+                                    <TextBox Text="{Binding ReferenceInput, Mode=TwoWay}" Width="180" Watermark="@ file or url…"
+                                             Margin="0,0,6,6"
+                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                                             AutomationProperties.Name="Add a context reference">
+                                        <TextBox.KeyBindings>
+                                            <KeyBinding Gesture="Enter" Command="{Binding AddReferenceCommand}" />
+                                        </TextBox.KeyBindings>
+                                    </TextBox>
+                                    <Button Content="Add" Command="{Binding AddReferenceCommand}" Margin="0,0,6,6"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
+                                    <Button Content="Attach file…" Click="OnAttachFile" Margin="0,0,6,6"
+                                            Background="Transparent" Foreground="{StaticResource FgDim}"
+                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12"
+                                            AutomationProperties.Name="Attach a file or image" />
 
                                     <!-- mode selector (Ask / Code / …) -->
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
-                                                IsVisible="{Binding HasModes}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                                Margin="4,0,0,6" IsVisible="{Binding HasModes}">
                                         <TextBlock Text="Mode" Foreground="{StaticResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
                                         <ItemsControl ItemsSource="{Binding Modes}">
                                             <ItemsControl.ItemsPanel>
@@ -839,7 +857,7 @@
                                         <TextBlock Text="{Binding CurrentModeName}" Foreground="{StaticResource Accent}" FontSize="11"
                                                    FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0" />
                                     </StackPanel>
-                                </Grid>
+                                </WrapPanel>
 
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                     <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"
