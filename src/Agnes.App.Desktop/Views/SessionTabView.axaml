@@ -920,7 +920,7 @@
 
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                     <TextBox Grid.Column="0" x:Name="Composer" Text="{Binding PromptText, Mode=TwoWay}"
-                                             Watermark="Message the agent…    (Ctrl+Enter to send · Alt+↑/↓ for history · drag files to attach)"
+                                             Watermark="Message the agent…    (Ctrl+Enter to send · drag files or paste an image/file to attach)"
                                              AcceptsReturn="True" TextWrapping="Wrap"
                                              MinHeight="88" MaxHeight="280" VerticalContentAlignment="Top"
                                              ScrollViewer.VerticalScrollBarVisibility="Auto"

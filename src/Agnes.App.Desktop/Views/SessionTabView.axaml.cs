@@ -32,6 +32,80 @@ public partial class SessionTabView : UserControl
         // Drop files (or an image) anywhere on the session to attach them to the composer.
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
+
+        // Take over paste in the composer so an image or a copied file attaches (text still pastes).
+        if (this.FindControl<TextBox>("Composer") is { } composer)
+        {
+            composer.AddHandler(InputElement.KeyDownEvent, OnComposerKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        }
+    }
+
+    // Full paste handler: a clipboard image → inline image; a copied file → attachment; text → inserted.
+    private async void OnComposerKeyDown(object? sender, KeyEventArgs e)
+    {
+        var isPaste = e.Key == Key.V && (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta));
+        if (!isPaste || sender is not TextBox box || _session is null
+            || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+        {
+            return;
+        }
+
+        e.Handled = true; // we own paste now (set synchronously so the TextBox doesn't also paste)
+        try
+        {
+            if (await clipboard.TryGetDataAsync() is not { } transfer)
+            {
+                return;
+            }
+
+            // A copied file (document or image) keeps its identity as an attachment.
+            if (await transfer.TryGetFilesAsync() is { } files)
+            {
+                var attached = false;
+                foreach (var item in files)
+                {
+                    if (item is Avalonia.Platform.Storage.IStorageFile file)
+                    {
+                        await AttachStorageFileAsync(file);
+                        attached = true;
+                    }
+                }
+
+                if (attached)
+                {
+                    return;
+                }
+            }
+
+            // A raw clipboard image (e.g. a screenshot) → inline PNG.
+            if (await transfer.TryGetBitmapAsync() is { } bitmap)
+            {
+                using var ms = new System.IO.MemoryStream();
+                bitmap.Save(ms); // PNG
+                _session.Attach(new PromptAttachment("pasted image", "img",
+                    new Agnes.Abstractions.ImageContent("image/png", System.Convert.ToBase64String(ms.ToArray()))));
+                return;
+            }
+
+            // Otherwise it's text — insert it at the caret (replacing any selection).
+            if (await transfer.TryGetTextAsync() is { } text)
+            {
+                InsertAtCaret(box, text);
+            }
+        }
+        catch
+        {
+            // Clipboard access is best-effort per platform.
+        }
+    }
+
+    private static void InsertAtCaret(TextBox box, string text)
+    {
+        var current = box.Text ?? string.Empty;
+        var start = System.Math.Clamp(System.Math.Min(box.SelectionStart, box.SelectionEnd), 0, current.Length);
+        var end = System.Math.Clamp(System.Math.Max(box.SelectionStart, box.SelectionEnd), 0, current.Length);
+        box.Text = current[..start] + text + current[end..];
+        box.CaretIndex = start + text.Length;
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
