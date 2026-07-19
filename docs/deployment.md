@@ -4,6 +4,36 @@ The host runs your coding agents with your credentials and is reachable over the
 network, so treat it like any small server: terminate TLS, and only let paired
 devices in.
 
+## Running the host
+
+**Docker** (agents run inside the container):
+
+```bash
+docker compose up --build          # or: docker build -t agnes-host . && docker run …
+docker compose logs agnes          # read the pairing code from the logs
+```
+
+The image ships Node + git (for the Claude Code ACP bridge and worktrees);
+mount your projects at `/work` and agent credentials as needed (see
+`compose.yaml`). The container serves plain HTTP on 5081 — put TLS in front of
+it (below). The event log and device tokens persist in the `/data` volume.
+
+**From source** (agents run on the host machine; needed for Incus sandboxing):
+
+```bash
+dotnet run --project src/Agnes.Host          # dev
+# or a self-contained build:
+dotnet publish src/Agnes.Host -c Release -r linux-x64 --self-contained -o out/host
+```
+
+**Desktop client** — self-contained builds per OS:
+
+```bash
+dotnet publish src/Agnes.App.Desktop -c Release -r linux-x64  --self-contained
+dotnet publish src/Agnes.App.Desktop -c Release -r win-x64    --self-contained
+dotnet publish src/Agnes.App.Desktop -c Release -r osx-arm64  --self-contained
+```
+
 ## TLS
 
 Kestrel is configured for HTTPS on `https://0.0.0.0:5081` (`appsettings.json`).

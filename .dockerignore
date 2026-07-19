@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.git/
+**/.github/
+**/*.user
+scratch-shots/
+scratch-shots*/
+recordings/
+docs/
+*.md

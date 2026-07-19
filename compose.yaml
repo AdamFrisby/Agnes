@@ -1,0 +1,22 @@
+# Example Compose file for the Agnes host. Adjust the volumes to your machine, then:
+#   docker compose up --build
+# The pairing code is printed in the logs (`docker compose logs agnes`).
+services:
+  agnes:
+    build: .
+    image: agnes-host
+    ports:
+      - "5081:5081"
+    volumes:
+      - agnes-data:/data                 # event log (SQLite) + hashed device tokens
+      - ${AGNES_PROJECTS:-./work}:/work   # the code your agents operate on
+      # Mount agent credentials as needed, e.g. Claude Code:
+      # - ${HOME}/.claude:/root/.claude:ro
+    environment:
+      # Optional fixed bootstrap token for headless/automation (else use the printed pairing code):
+      # Agnes__PairingToken: "change-me"
+      Agnes__DisplayName: "Agnes (docker)"
+    restart: unless-stopped
+
+volumes:
+  agnes-data:
