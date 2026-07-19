@@ -101,13 +101,19 @@ public sealed class ToolCallItem : TranscriptItem
     /// <summary>Header label for the UI, e.g. "Read — Read a.cs".</summary>
     public string Header => $"{Kind} — {Title}";
 
+    /// <summary>The tool kind on its own (e.g. "Read"), for the compact single-line row.</summary>
+    public string KindLabel => Kind.ToString();
+
     public ToolCallStatus Status
     {
         get => _status;
-        set { if (Set(ref _status, value)) { Raise(nameof(StatusText)); } }
+        set { if (Set(ref _status, value)) { Raise(nameof(StatusText)); Raise(nameof(ShowStatus)); } }
     }
 
     public string StatusText => Status.ToString();
+
+    /// <summary>Only surface a status word when it's not the (common, unremarkable) completed case.</summary>
+    public bool ShowStatus => Status != ToolCallStatus.Completed;
 
     public string Detail
     {

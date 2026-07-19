@@ -27,6 +27,10 @@
             <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
             <Setter Property="FontStyle" Value="Italic" />
         </Style>
+        <!-- Compact tool rows are chromeless; a faint hover fill keeps them discoverable as clickable. -->
+        <Style Selector="Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Panel}" />
+        </Style>
         <Style Selector="Border.dot">
             <Setter Property="Background" Value="{DynamicResource FgFaint}" />
         </Style>
@@ -648,25 +652,32 @@
                                         </Border>
                                     </DataTemplate>
 
+                                    <!-- Compact, dense single-line tool call (this is a developer tool): no
+                                         card chrome, tight margins. Full output opens in the preview pane on
+                                         click; the "Tool output" toggle reveals a one-line summary under each. -->
                                     <DataTemplate DataType="tr:ToolCallItem">
-                                        <Button Command="{Binding $parent[ItemsControl].DataContext.ShowToolPreviewCommand}"
+                                        <Button Classes="tool" Command="{Binding $parent[ItemsControl].DataContext.ShowToolPreviewCommand}"
                                                 CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                                HorizontalContentAlignment="Left" Margin="0,6" Padding="12,9" CornerRadius="8"
-                                                Cursor="Hand" Background="{DynamicResource Panel}"
-                                                BorderBrush="{DynamicResource Line}" BorderThickness="1">
-                                            <StackPanel Spacing="4">
-                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <TextBlock Text="▸" Foreground="{DynamicResource Good}" FontFamily="{StaticResource MonoFont}" />
-                                                    <TextBlock Text="{Binding Header}" Foreground="{DynamicResource Fg}"
-                                                               FontWeight="SemiBold" FontFamily="{StaticResource MonoFont}" FontSize="12" />
-                                                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                                    <TextBlock Text="{Binding DurationText}" Foreground="{DynamicResource FgFaint}" FontSize="11"
-                                                               FontFamily="{StaticResource MonoFont}" IsVisible="{Binding HasDuration}" />
-                                                    <TextBlock Text="— tap to preview" Foreground="{DynamicResource FgFaint}" FontSize="11"
-                                                               IsVisible="{Binding HasDetail}" />
-                                                </StackPanel>
-                                                <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgDim}"
-                                                           FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                                HorizontalContentAlignment="Stretch" Margin="0,1" Padding="4,2" CornerRadius="4"
+                                                Cursor="Hand" Background="Transparent" BorderThickness="0"
+                                                ToolTip.Tip="Open the full tool output">
+                                            <StackPanel Spacing="1">
+                                                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+                                                    <TextBlock Grid.Column="0" Text="▸" Foreground="{DynamicResource Good}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Fg}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}"
+                                                               FontSize="11" VerticalAlignment="Center" IsVisible="{Binding ShowStatus}" />
+                                                    <TextBlock Grid.Column="4" Text="{Binding DurationText}" Foreground="{DynamicResource FgFaint}"
+                                                               FontSize="11" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center"
+                                                               IsVisible="{Binding HasDuration}" />
+                                                </Grid>
+                                                <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" Margin="20,0,0,0"
                                                            TextTrimming="CharacterEllipsis"
                                                            IsVisible="{Binding $parent[ItemsControl].DataContext.ToolsExpanded}" />
                                             </StackPanel>
