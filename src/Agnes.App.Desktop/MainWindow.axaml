@@ -45,7 +45,8 @@
                                          AutomationProperties.Name="Search query across sessions" />
                                 <TextBlock Text="No matches" Foreground="{StaticResource FgFaint}" FontSize="11"
                                            IsVisible="{Binding !HasGlobalResults}" />
-                                <ItemsControl ItemsSource="{Binding GlobalResults}" MaxHeight="360">
+                                <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding GlobalResults}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Button Command="{Binding $parent[ItemsControl].DataContext.SelectGlobalHitCommand}"
@@ -66,6 +67,7 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                </ScrollViewer>
                             </StackPanel>
                         </Flyout>
                     </Button.Flyout>
@@ -84,7 +86,8 @@
                         </StackPanel>
                         <Button.Flyout>
                             <Flyout Placement="Bottom">
-                                <ItemsControl ItemsSource="{Binding Inbox}" MinWidth="360" MaxHeight="420">
+                                <ScrollViewer MinWidth="360" MaxHeight="420" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Inbox}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border Padding="8,6" Margin="0,2" CornerRadius="6" Background="{StaticResource PanelAlt}">
@@ -97,6 +100,7 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                </ScrollViewer>
                             </Flyout>
                         </Button.Flyout>
                     </Button>
@@ -115,7 +119,8 @@
                         </StackPanel>
                         <Button.Flyout>
                             <Flyout Placement="Bottom">
-                                <ItemsControl ItemsSource="{Binding OpenSessions}" MinWidth="320" MaxHeight="420">
+                                <ScrollViewer MinWidth="320" MaxHeight="420" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding OpenSessions}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Button Command="{Binding $parent[ItemsControl].DataContext.ActivateSessionCommand}"
@@ -138,6 +143,7 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                </ScrollViewer>
                             </Flyout>
                         </Button.Flyout>
                     </Button>
@@ -175,7 +181,8 @@
                         </StackPanel>
                         <Button.Flyout>
                             <Flyout>
-                                <ItemsControl ItemsSource="{Binding ArchivedSessions}" MaxWidth="340">
+                                <ScrollViewer MaxWidth="340" MaxHeight="380" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding ArchivedSessions}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Button Command="{Binding $parent[ItemsControl].DataContext.ReopenArchivedCommand}"
@@ -190,6 +197,7 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                </ScrollViewer>
                             </Flyout>
                         </Button.Flyout>
                     </Button>

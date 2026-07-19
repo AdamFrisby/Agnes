@@ -189,7 +189,8 @@
                                                        Foreground="{StaticResource Fg}" FontWeight="SemiBold" FontSize="12" />
                                             <TextBlock Grid.Column="1" Text="{Binding Session.GitSummary}" Foreground="{StaticResource FgDim}" FontSize="11" />
                                         </Grid>
-                                        <ItemsControl ItemsSource="{Binding Session.GitChanges}" MaxHeight="200">
+                                        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding Session.GitChanges}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
@@ -201,6 +202,7 @@
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
+                                        </ScrollViewer>
                                         <TextBox Text="{Binding Session.CommitMessage, Mode=TwoWay}" Watermark="Commit message"
                                                  Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
                                                  BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
@@ -270,6 +272,7 @@
                     <TextBlock Text="New session" FontSize="22" FontWeight="SemiBold"
                                Foreground="{StaticResource Fg}" HorizontalAlignment="Center" />
                     <TextBlock Text="Choose a host" Foreground="{StaticResource FgDim}" HorizontalAlignment="Center" />
+                    <ScrollViewer MaxHeight="380" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl ItemsSource="{Binding Hosts}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -285,6 +288,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    </ScrollViewer>
                     <Button Command="{Binding ToggleAddHostCommand}" HorizontalAlignment="Left"
                             Background="Transparent" Foreground="{StaticResource FgDim}"
                             BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="10,6" FontSize="12"
@@ -332,6 +336,7 @@
                         </Grid>
                     </Border>
 
+                    <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl ItemsSource="{Binding Agents}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -347,6 +352,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    </ScrollViewer>
                     <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgFaint}" HorizontalAlignment="Center" />
                 </StackPanel>
             </Border>
@@ -525,7 +531,8 @@
                                             Background="Transparent" Foreground="{StaticResource FgDim}" BorderThickness="0"
                                             Padding="8,2" AutomationProperties.Name="Close search" />
                                 </Grid>
-                                <ItemsControl ItemsSource="{Binding Matches}" MaxHeight="150">
+                                <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Matches}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Button Command="{Binding $parent[ItemsControl].DataContext.SelectHitCommand}"
@@ -542,6 +549,7 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                </ScrollViewer>
                             </StackPanel>
                         </Border>
 
@@ -741,6 +749,7 @@
                                 <!-- Queued prompts (added while a turn runs; sent in order as turns end) -->
                                 <StackPanel Spacing="4" IsVisible="{Binding HasQueue}">
                                     <TextBlock Text="QUEUED" Foreground="{StaticResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+                                    <ScrollViewer MaxHeight="168" VerticalScrollBarVisibility="Auto">
                                     <ItemsControl ItemsSource="{Binding PendingPrompts}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
@@ -768,11 +777,13 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    </ScrollViewer>
                                 </StackPanel>
 
                                 <!-- Slash-command suggestions -->
                                 <Border IsVisible="{Binding ShowSlash}" Background="{StaticResource PanelAlt}"
                                         BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="4">
+                                    <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
                                     <ItemsControl ItemsSource="{Binding SlashSuggestions}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
@@ -789,6 +800,7 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    </ScrollViewer>
                                 </Border>
 
                                 <!-- Attached context chips -->
