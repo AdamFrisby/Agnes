@@ -149,6 +149,23 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
+    /// <summary>The persisted UI settings (window geometry, theme, density) for the shell to apply.</summary>
+    public AppSettings Settings => _settings;
+
+    /// <summary>Persists the window geometry so it reopens where the user left it.</summary>
+    public void SaveWindowState(double width, double height, int x, int y, bool maximized)
+    {
+        _settings = _settings with
+        {
+            WindowWidth = width,
+            WindowHeight = height,
+            WindowX = x,
+            WindowY = y,
+            WindowMaximized = maximized,
+        };
+        _settingsStore.Save(_settings);
+    }
+
     /// <summary>Creates a session view model and wires its notifications to the shell.</summary>
     private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
     {

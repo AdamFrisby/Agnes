@@ -2,8 +2,16 @@ using System.Text.Json;
 
 namespace Agnes.App.Desktop.Persistence;
 
-/// <summary>User accessibility / UI preferences.</summary>
-public sealed record AppSettings(bool ReducedMotion = false);
+/// <summary>User accessibility / UI preferences, window geometry, theme and density.</summary>
+public sealed record AppSettings(
+    bool ReducedMotion = false,
+    double WindowWidth = 1180,
+    double WindowHeight = 760,
+    int WindowX = int.MinValue,
+    int WindowY = int.MinValue,
+    bool WindowMaximized = false,
+    string Theme = "System",
+    double FontScale = 1.0);
 
 /// <summary>Persists <see cref="AppSettings"/> to a JSON file (best-effort).</summary>
 public sealed class SettingsStore

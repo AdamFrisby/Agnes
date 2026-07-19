@@ -6,26 +6,34 @@ using Avalonia.Threading;
 namespace Agnes.App.Desktop;
 
 /// <summary>
-/// Surfaces session notifications as in-app toasts via Avalonia's <see cref="WindowNotificationManager"/>
-/// — cross-platform with no extra dependencies. Blockers and errors show as warnings/errors, completions
-/// as information. This is the frontend's <see cref="INotifier"/>; a native OS-tray implementation could
-/// be swapped in behind the same interface without touching the view models.
+/// The desktop <see cref="INotifier"/>. When the window is focused, shows an in-app toast (via
+/// Avalonia's <see cref="WindowNotificationManager"/>); when it's in the background, fires a real
+/// OS notification (<see cref="NativeOsNotifier"/>) so a finished or blocked turn reaches the user
+/// even when Agnes isn't the active window.
 /// </summary>
 public sealed class AvaloniaNotifier : INotifier
 {
     private readonly WindowNotificationManager _manager;
+    private readonly Func<bool> _isWindowActive;
 
-    public AvaloniaNotifier(TopLevel topLevel)
+    public AvaloniaNotifier(TopLevel topLevel, Func<bool>? isWindowActive = null)
     {
         _manager = new WindowNotificationManager(topLevel)
         {
             Position = NotificationPosition.BottomRight,
             MaxItems = 4,
         };
+        _isWindowActive = isWindowActive ?? (() => true);
     }
 
     public void Notify(AppNotification notification)
     {
+        if (!_isWindowActive())
+        {
+            NativeOsNotifier.Notify(notification.Title, notification.Body);
+            return;
+        }
+
         Dispatcher.UIThread.Post(() => _manager.Show(new Notification(
             notification.Title,
             notification.Body,

@@ -12,6 +12,20 @@
         <KeyBinding Gesture="Ctrl+W" Command="{Binding CloseActiveTabCommand}" />
     </Window.KeyBindings>
 
+    <!-- Native menu — shown in the macOS menu bar (inert on Windows/Linux, where the top bar serves). -->
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="File">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="New Tab" Gesture="Ctrl+T" Command="{Binding NewTabCommand}" />
+                        <NativeMenuItem Header="Close Tab" Gesture="Ctrl+W" Command="{Binding CloseActiveTabCommand}" />
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+        </NativeMenu>
+    </NativeMenu.Menu>
+
     <Grid RowDefinitions="Auto,*">
 
         <!-- Top bar: title + new-tab (browser-style) -->

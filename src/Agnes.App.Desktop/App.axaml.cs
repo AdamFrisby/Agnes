@@ -24,14 +24,48 @@ public partial class App : Application
                 connector, new AvaloniaDispatcher(), new SessionStateStore(), new HostRegistryStore());
 
             var window = new MainWindow { DataContext = viewModel };
-            viewModel.Notifier = new AvaloniaNotifier(window);
+            // In-app toast when focused; native OS notification when the window is in the background.
+            viewModel.Notifier = new AvaloniaNotifier(window, () => viewModel.WindowActive);
             window.Activated += (_, _) => viewModel.WindowActive = true;
             window.Deactivated += (_, _) => viewModel.WindowActive = false;
+
+            RestoreWindowGeometry(window, viewModel.Settings);
+            window.Closing += (_, _) => SaveWindowGeometry(window, viewModel);
 
             desktop.MainWindow = window;
             _ = viewModel.RestoreAsync();
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static void RestoreWindowGeometry(MainWindow window, Persistence.AppSettings settings)
+    {
+        window.Width = settings.WindowWidth;
+        window.Height = settings.WindowHeight;
+        if (settings.WindowX != int.MinValue && settings.WindowY != int.MinValue)
+        {
+            window.WindowStartupLocation = Avalonia.Controls.WindowStartupLocation.Manual;
+            window.Position = new PixelPoint(settings.WindowX, settings.WindowY);
+        }
+
+        if (settings.WindowMaximized)
+        {
+            window.WindowState = Avalonia.Controls.WindowState.Maximized;
+        }
+    }
+
+    private static void SaveWindowGeometry(MainWindow window, MainWindowViewModel vm)
+    {
+        if (window.WindowState == Avalonia.Controls.WindowState.Maximized)
+        {
+            // Keep the last normal size/position; just record that it was maximized.
+            var s = vm.Settings;
+            vm.SaveWindowState(s.WindowWidth, s.WindowHeight, s.WindowX, s.WindowY, maximized: true);
+        }
+        else
+        {
+            vm.SaveWindowState(window.Width, window.Height, window.Position.X, window.Position.Y, maximized: false);
+        }
     }
 }
