@@ -24,11 +24,18 @@ public sealed class FilePermissionPolicy : IPermissionPolicy
 
     public static string DefaultPath()
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Agnes");
-        Directory.CreateDirectory(dir);
-        return Path.Combine(dir, "permission-policy.json");
+        // Resilient to virtual/sandboxed file systems (e.g. WASM) — see FilePromptStore.DefaultPath.
+        try
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var dir = Path.Combine(string.IsNullOrEmpty(appData) ? Path.GetTempPath() : appData, "Agnes");
+            Directory.CreateDirectory(dir);
+            return Path.Combine(dir, "permission-policy.json");
+        }
+        catch
+        {
+            return Path.Combine(Path.GetTempPath(), "agnes-permission-policy.json");
+        }
     }
 
     public bool? Decide(string hostUrl, ToolKind? toolKind)

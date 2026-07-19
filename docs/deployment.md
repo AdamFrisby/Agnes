@@ -34,6 +34,21 @@ dotnet publish src/Agnes.App.Desktop -c Release -r win-x64    --self-contained
 dotnet publish src/Agnes.App.Desktop -c Release -r osx-arm64  --self-contained
 ```
 
+**Web client** — the Uno WASM head, served by the host from the same origin (no
+CORS needed):
+
+```bash
+dotnet workload install wasm-tools
+dotnet publish src/Agnes.App/Agnes.App -f net10.0-browserwasm -c Release -o out/web
+# point the host at the published wwwroot:
+Agnes__WebRoot=out/web/wwwroot dotnet run --project src/Agnes.Host
+```
+
+Then open the host URL in a browser. The host serves the WASM framework assets
+with the right MIME types and falls back to `index.html` for client routes.
+The **mobile** heads (`net10.0-android`, `net10.0-desktop`) build from the same
+`src/Agnes.App` project.
+
 ## TLS
 
 Kestrel is configured for HTTPS on `https://0.0.0.0:5081` (`appsettings.json`).

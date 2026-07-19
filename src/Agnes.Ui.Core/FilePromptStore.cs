@@ -24,11 +24,20 @@ public sealed class FilePromptStore : IPromptStore
 
     public static string DefaultPath()
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Agnes");
-        Directory.CreateDirectory(dir);
-        return Path.Combine(dir, "prompts.json");
+        // Resilient to sandboxed/virtual file systems (e.g. WASM), where ApplicationData may be
+        // empty and directory creation can throw — fall back to temp, and let Load/Flush no-op if
+        // even that isn't writable.
+        try
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var dir = Path.Combine(string.IsNullOrEmpty(appData) ? Path.GetTempPath() : appData, "Agnes");
+            Directory.CreateDirectory(dir);
+            return Path.Combine(dir, "prompts.json");
+        }
+        catch
+        {
+            return Path.Combine(Path.GetTempPath(), "agnes-prompts.json");
+        }
     }
 
     public string LoadDraft(string sessionId)

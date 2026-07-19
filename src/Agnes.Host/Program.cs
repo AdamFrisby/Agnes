@@ -146,8 +146,25 @@ app.UseCors();
 
 if (webFiles is not null)
 {
+    // The WASM client ships framework assets with extensions the default MIME map doesn't know
+    // (.dat ICU data, .blat, .dll). Map the known ones and serve the rest as binary so the app boots.
+    var contentTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+    contentTypes.Mappings[".wasm"] = "application/wasm";
+    contentTypes.Mappings[".dat"] = "application/octet-stream";
+    contentTypes.Mappings[".blat"] = "application/octet-stream";
+    contentTypes.Mappings[".dll"] = "application/octet-stream";
+    contentTypes.Mappings[".pdb"] = "application/octet-stream";
+    contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
+
+    var staticOptions = new StaticFileOptions
+    {
+        FileProvider = webFiles,
+        ContentTypeProvider = contentTypes,
+        ServeUnknownFileTypes = true,
+        DefaultContentType = "application/octet-stream",
+    };
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = webFiles });
-    app.UseStaticFiles(new StaticFileOptions { FileProvider = webFiles });
+    app.UseStaticFiles(staticOptions);
 }
 
 // Reject unauthorized clients at the negotiate level so the connection never establishes.
