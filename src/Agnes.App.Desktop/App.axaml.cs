@@ -23,6 +23,8 @@ public partial class App : Application
             var viewModel = new MainWindowViewModel(
                 connector, new AvaloniaDispatcher(), new SessionStateStore(), new HostRegistryStore());
 
+            MainWindowViewModel.ApplyTheme(viewModel.Theme); // System / Light / Dark from settings
+
             var window = new MainWindow { DataContext = viewModel };
             // In-app toast when focused; native OS notification when the window is in the background.
             viewModel.Notifier = new AvaloniaNotifier(window, () => viewModel.WindowActive);

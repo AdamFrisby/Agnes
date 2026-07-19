@@ -4,7 +4,7 @@
         x:Class="Agnes.App.Desktop.MainWindow"
         Title="Agnes" Width="1180" Height="760"
         MinWidth="720" MinHeight="480"
-        Background="{StaticResource Bg}"
+        Background="{DynamicResource Bg}"
         FontFamily="{StaticResource UiFont}">
 
     <Window.KeyBindings>
@@ -26,27 +26,44 @@
         </NativeMenu>
     </NativeMenu.Menu>
 
+    <Window.Styles>
+        <!-- Segmented selector buttons (e.g. the theme picker) -->
+        <Style Selector="Button.seg">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="14,4" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.seg.on">
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="Foreground" Value="#1A1200" />
+        </Style>
+    </Window.Styles>
+
     <Grid RowDefinitions="Auto,*">
 
         <!-- Top bar: title + new-tab (browser-style) -->
-        <Border Grid.Row="0" Background="{StaticResource Panel}"
-                BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="14,9">
+        <Border Grid.Row="0" Background="{DynamicResource Panel}"
+                BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="14,9">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Border Width="10" Height="10" CornerRadius="5" Background="{StaticResource Accent}" VerticalAlignment="Center" />
-                    <TextBlock Text="Agnes" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Fg}" VerticalAlignment="Center" />
-                    <TextBlock Text="simulated host" FontSize="11" Foreground="{StaticResource FgFaint}"
+                    <Border Width="10" Height="10" CornerRadius="5" Background="{DynamicResource Accent}" VerticalAlignment="Center" />
+                    <TextBlock Text="Agnes" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
+                    <TextBlock Text="simulated host" FontSize="11" Foreground="{DynamicResource FgFaint}"
                                VerticalAlignment="Center" />
                 </StackPanel>
 
                 <!-- Search across all open sessions -->
                 <Button Grid.Column="1" HorizontalAlignment="Center" Padding="0" Background="Transparent" BorderThickness="0"
                         AutomationProperties.Name="Search across sessions">
-                    <Border Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Line}" BorderThickness="1"
+                    <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="8" Padding="10,5" Width="360">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="⌕" Foreground="{StaticResource FgFaint}" FontSize="13" VerticalAlignment="Center" />
-                            <TextBlock Text="Search across all sessions…" Foreground="{StaticResource FgFaint}" FontSize="12"
+                            <TextBlock Text="⌕" Foreground="{DynamicResource FgFaint}" FontSize="13" VerticalAlignment="Center" />
+                            <TextBlock Text="Search across all sessions…" Foreground="{DynamicResource FgFaint}" FontSize="12"
                                        VerticalAlignment="Center" />
                         </StackPanel>
                     </Border>
@@ -54,10 +71,10 @@
                         <Flyout Placement="Bottom">
                             <StackPanel Width="420" Spacing="8">
                                 <TextBox Text="{Binding GlobalSearchQuery, Mode=TwoWay}" Watermark="Search across all sessions…"
-                                         Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                         BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
+                                         Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                         BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
                                          AutomationProperties.Name="Search query across sessions" />
-                                <TextBlock Text="No matches" Foreground="{StaticResource FgFaint}" FontSize="11"
+                                <TextBlock Text="No matches" Foreground="{DynamicResource FgFaint}" FontSize="11"
                                            IsVisible="{Binding !HasGlobalResults}" />
                                 <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
                                 <ItemsControl ItemsSource="{Binding GlobalResults}">
@@ -69,12 +86,12 @@
                                                     Padding="7,5" CornerRadius="6" Cursor="Hand">
                                                 <StackPanel Spacing="2">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding SessionTitle}" Foreground="{StaticResource Fg}"
+                                                        <TextBlock Text="{Binding SessionTitle}" Foreground="{DynamicResource Fg}"
                                                                    FontSize="11" FontWeight="SemiBold" />
-                                                        <TextBlock Text="{Binding Kind}" Foreground="{StaticResource Good}" FontSize="10"
+                                                        <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
                                                                    FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding Snippet}" Foreground="{StaticResource FgDim}" FontSize="11"
+                                                    <TextBlock Text="{Binding Snippet}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                                                TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                                                 </StackPanel>
                                             </Button>
@@ -89,12 +106,12 @@
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <!-- Inbox: completed background runs -->
-                    <Button Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12"
+                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasInbox}" AutomationProperties.Name="Background run inbox">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="🗓 Inbox" VerticalAlignment="Center" />
-                            <Border Background="{StaticResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
+                            <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
                                 <TextBlock Text="{Binding InboxCount}" Foreground="#1A1200" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
@@ -104,11 +121,11 @@
                                 <ItemsControl ItemsSource="{Binding Inbox}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Padding="8,6" Margin="0,2" CornerRadius="6" Background="{StaticResource PanelAlt}">
+                                            <Border Padding="8,6" Margin="0,2" CornerRadius="6" Background="{DynamicResource PanelAlt}">
                                                 <StackPanel Spacing="2">
-                                                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" FontSize="12" FontWeight="SemiBold"
+                                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
                                                                TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Text="{Binding Summary}" Foreground="{StaticResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>
@@ -120,12 +137,12 @@
                     </Button>
 
                     <!-- Sessions switcher: state of every open session + attention -->
-                    <Button Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1"
+                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Sessions">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="Sessions" VerticalAlignment="Center" />
-                            <Border Background="{StaticResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center"
+                            <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center"
                                     IsVisible="{Binding HasAttention}">
                                 <TextBlock Text="{Binding AttentionCount}" Foreground="#1A1200" FontSize="10"
                                            FontWeight="SemiBold" HorizontalAlignment="Center" />
@@ -143,14 +160,14 @@
                                                     Padding="8,6" CornerRadius="6" Cursor="Hand">
                                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                                                     <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                                                            Background="{StaticResource Accent}" IsVisible="{Binding NeedsAttention}" />
+                                                            Background="{DynamicResource Accent}" IsVisible="{Binding NeedsAttention}" />
                                                     <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                                                            Background="{StaticResource FgFaint}" IsVisible="{Binding !NeedsAttention}" />
+                                                            Background="{DynamicResource FgFaint}" IsVisible="{Binding !NeedsAttention}" />
                                                     <StackPanel Grid.Column="1">
-                                                        <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" FontSize="12" />
-                                                        <TextBlock Text="{Binding HostName}" Foreground="{StaticResource FgFaint}" FontSize="10" />
+                                                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                        <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                                                     </StackPanel>
-                                                    <TextBlock Grid.Column="2" Text="{Binding ActivityText}" Foreground="{StaticResource FgDim}"
+                                                    <TextBlock Grid.Column="2" Text="{Binding ActivityText}" Foreground="{DynamicResource FgDim}"
                                                                FontSize="10" VerticalAlignment="Center" />
                                                 </Grid>
                                             </Button>
@@ -163,30 +180,40 @@
                     </Button>
 
                     <!-- Settings: accessibility + keyboard reference -->
-                    <Button Content="⚙" Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1"
+                    <Button Content="⚙" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings">
                         <Button.Flyout>
                             <Flyout Placement="Bottom">
                                 <StackPanel Width="320" Spacing="10">
-                                    <TextBlock Text="Accessibility" Foreground="{StaticResource Fg}" FontWeight="SemiBold" FontSize="12" />
-                                    <CheckBox IsChecked="{Binding ReducedMotion, Mode=TwoWay}" Foreground="{StaticResource Fg}"
+                                    <TextBlock Text="Appearance" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" />
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Button Content="System" Command="{Binding SetThemeCommand}" CommandParameter="System"
+                                                Classes.on="{Binding IsSystemTheme}" Classes="seg" />
+                                        <Button Content="Light" Command="{Binding SetThemeCommand}" CommandParameter="Light"
+                                                Classes.on="{Binding IsLightTheme}" Classes="seg" />
+                                        <Button Content="Dark" Command="{Binding SetThemeCommand}" CommandParameter="Dark"
+                                                Classes.on="{Binding IsDarkTheme}" Classes="seg" />
+                                    </StackPanel>
+                                    <Border Height="1" Background="{DynamicResource Line}" />
+                                    <TextBlock Text="Accessibility" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" />
+                                    <CheckBox IsChecked="{Binding ReducedMotion, Mode=TwoWay}" Foreground="{DynamicResource Fg}"
                                               Content="Reduce motion" AutomationProperties.Name="Reduce motion"
                                               ToolTip.Tip="Minimise non-essential animation" />
-                                    <Border Height="1" Background="{StaticResource Line}" />
-                                    <TextBlock Text="Keyboard" Foreground="{StaticResource Fg}" FontWeight="SemiBold" FontSize="12" />
+                                    <Border Height="1" Background="{DynamicResource Line}" />
+                                    <TextBlock Text="Keyboard" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" />
                                     <StackPanel Spacing="3">
-                                        <TextBlock Text="Ctrl+T  New tab · Ctrl+W  Close tab" Foreground="{StaticResource FgDim}" FontSize="11" />
-                                        <TextBlock Text="Ctrl+Enter  Send · Alt+↑/↓  Prompt history" Foreground="{StaticResource FgDim}" FontSize="11" />
-                                        <TextBlock Text="Ctrl+F  Search · F3/Shift+F3  Next/prev match" Foreground="{StaticResource FgDim}" FontSize="11" />
-                                        <TextBlock Text="F8/F7  Next/prev prompt · Ctrl+F8/F7  Next/prev change" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="Ctrl+T  New tab · Ctrl+W  Close tab" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="Ctrl+Enter  Send · Alt+↑/↓  Prompt history" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="Ctrl+F  Search · F3/Shift+F3  Next/prev match" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="F8/F7  Next/prev prompt · Ctrl+F8/F7  Next/prev change" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                     </StackPanel>
                                 </StackPanel>
                             </Flyout>
                         </Button.Flyout>
                     </Button>
-                    <Button Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1"
+                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="7" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasArchived}" AutomationProperties.Name="Reopen archived sessions">
                         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -204,8 +231,8 @@
                                                     HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                                                     Padding="8,6" CornerRadius="6" Cursor="Hand">
                                                 <StackPanel>
-                                                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" FontSize="12" />
-                                                    <TextBlock Text="{Binding HostName}" Foreground="{StaticResource FgFaint}" FontSize="10" />
+                                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                    <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                                                 </StackPanel>
                                             </Button>
                                         </DataTemplate>
@@ -216,8 +243,8 @@
                         </Button.Flyout>
                     </Button>
                     <Button Command="{Binding NewTabCommand}"
-                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1"
+                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="New tab">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="+" FontSize="14" />

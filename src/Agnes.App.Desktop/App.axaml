@@ -2,31 +2,54 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Agnes.App.Desktop.ViewModels"
              xmlns:views="using:Agnes.App.Desktop.Views"
-             x:Class="Agnes.App.Desktop.App"
-             RequestedThemeVariant="Dark">
+             x:Class="Agnes.App.Desktop.App">
 
     <Application.Resources>
-        <FontFamily x:Key="UiFont">Inter, Segoe UI, San Francisco, Ubuntu, sans-serif</FontFamily>
-        <FontFamily x:Key="MonoFont">Cascadia Code, Cascadia Mono, JetBrains Mono, Consolas, Menlo, monospace</FontFamily>
+        <ResourceDictionary>
+            <!-- Theme-invariant resources -->
+            <FontFamily x:Key="UiFont">Inter, Segoe UI, San Francisco, Ubuntu, sans-serif</FontFamily>
+            <FontFamily x:Key="MonoFont">Cascadia Code, Cascadia Mono, JetBrains Mono, Consolas, Menlo, monospace</FontFamily>
 
-        <SolidColorBrush x:Key="Bg" Color="#0C0E13" />
-        <SolidColorBrush x:Key="Panel" Color="#141821" />
-        <SolidColorBrush x:Key="PanelAlt" Color="#1A1F2A" />
-        <SolidColorBrush x:Key="Line" Color="#262D3B" />
-        <SolidColorBrush x:Key="Fg" Color="#E7E9EE" />
-        <SolidColorBrush x:Key="FgDim" Color="#98A2B3" />
-        <SolidColorBrush x:Key="FgFaint" Color="#5C6675" />
-        <SolidColorBrush x:Key="Accent" Color="#D97757" />
-        <SolidColorBrush x:Key="AccentSoft" Color="#33D97757" />
-        <SolidColorBrush x:Key="Good" Color="#5FD6A0" />
-        <SolidColorBrush x:Key="UserBubble" Color="#1B2431" />
-
-        <!-- Diff viewer -->
-        <SolidColorBrush x:Key="DiffAddBg" Color="#16351F" />
-        <SolidColorBrush x:Key="DiffDelBg" Color="#3A1D1D" />
-        <SolidColorBrush x:Key="HunkBg" Color="#162232" />
-        <SolidColorBrush x:Key="HunkFg" Color="#7FA7D9" />
-        <SolidColorBrush x:Key="Gutter" Color="#3B4453" />
+            <!-- Palette per theme; consumers bind DynamicResource so a theme switch applies live. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="Bg" Color="#0C0E13" />
+                    <SolidColorBrush x:Key="Panel" Color="#141821" />
+                    <SolidColorBrush x:Key="PanelAlt" Color="#1A1F2A" />
+                    <SolidColorBrush x:Key="Line" Color="#262D3B" />
+                    <SolidColorBrush x:Key="Fg" Color="#E7E9EE" />
+                    <SolidColorBrush x:Key="FgDim" Color="#98A2B3" />
+                    <SolidColorBrush x:Key="FgFaint" Color="#5C6675" />
+                    <SolidColorBrush x:Key="Accent" Color="#D97757" />
+                    <SolidColorBrush x:Key="AccentSoft" Color="#33D97757" />
+                    <SolidColorBrush x:Key="Good" Color="#5FD6A0" />
+                    <SolidColorBrush x:Key="UserBubble" Color="#1B2431" />
+                    <SolidColorBrush x:Key="DiffAddBg" Color="#16351F" />
+                    <SolidColorBrush x:Key="DiffDelBg" Color="#3A1D1D" />
+                    <SolidColorBrush x:Key="HunkBg" Color="#162232" />
+                    <SolidColorBrush x:Key="HunkFg" Color="#7FA7D9" />
+                    <SolidColorBrush x:Key="Gutter" Color="#3B4453" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="Bg" Color="#F5F4F1" />
+                    <SolidColorBrush x:Key="Panel" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="PanelAlt" Color="#ECEAE5" />
+                    <SolidColorBrush x:Key="Line" Color="#DED9D0" />
+                    <SolidColorBrush x:Key="Fg" Color="#20242C" />
+                    <SolidColorBrush x:Key="FgDim" Color="#5B6472" />
+                    <SolidColorBrush x:Key="FgFaint" Color="#8A93A1" />
+                    <SolidColorBrush x:Key="Accent" Color="#C15A3A" />
+                    <SolidColorBrush x:Key="AccentSoft" Color="#26C15A3A" />
+                    <SolidColorBrush x:Key="Good" Color="#2E9E6E" />
+                    <SolidColorBrush x:Key="UserBubble" Color="#EAE7E0" />
+                    <SolidColorBrush x:Key="DiffAddBg" Color="#DBF0E1" />
+                    <SolidColorBrush x:Key="DiffDelBg" Color="#F6DBDB" />
+                    <SolidColorBrush x:Key="HunkBg" Color="#E4ECF5" />
+                    <SolidColorBrush x:Key="HunkFg" Color="#3B6CA8" />
+                    <SolidColorBrush x:Key="Gutter" Color="#B7BEC9" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 
     <Application.DataTemplates>

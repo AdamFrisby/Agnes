@@ -86,6 +86,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ActivateSessionCommand = new RelayCommand<SessionDocument>(d => { if (d is not null) { _factory.SetActiveDockable(d); } });
         CloseActiveTabCommand = new RelayCommand(CloseActiveTab);
         ToggleReducedMotionCommand = new RelayCommand(() => ReducedMotion = !ReducedMotion);
+        SetThemeCommand = new RelayCommand<string>(t => { if (t is not null) { Theme = t; } });
     }
 
     public IRelayCommand CloseActiveTabCommand { get; }
@@ -151,6 +152,45 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     /// <summary>The persisted UI settings (window geometry, theme, density) for the shell to apply.</summary>
     public AppSettings Settings => _settings;
+
+    /// <summary>Theme: "System" (follow OS), "Light" or "Dark". Applies immediately and persists.</summary>
+    public string Theme
+    {
+        get => _settings.Theme;
+        set
+        {
+            if (!string.Equals(value, _settings.Theme, StringComparison.Ordinal))
+            {
+                _settings = _settings with { Theme = value };
+                _settingsStore.Save(_settings);
+                ApplyTheme(value);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsSystemTheme));
+                OnPropertyChanged(nameof(IsLightTheme));
+                OnPropertyChanged(nameof(IsDarkTheme));
+            }
+        }
+    }
+
+    public bool IsSystemTheme => Theme is not "Light" and not "Dark";
+    public bool IsLightTheme => Theme == "Light";
+    public bool IsDarkTheme => Theme == "Dark";
+
+    public IRelayCommand<string> SetThemeCommand { get; }
+
+    /// <summary>Applies a theme string to the running application (no-op off the UI/host).</summary>
+    public static void ApplyTheme(string theme)
+    {
+        if (Avalonia.Application.Current is { } app)
+        {
+            app.RequestedThemeVariant = theme switch
+            {
+                "Light" => Avalonia.Styling.ThemeVariant.Light,
+                "Dark" => Avalonia.Styling.ThemeVariant.Dark,
+                _ => Avalonia.Styling.ThemeVariant.Default,
+            };
+        }
+    }
 
     /// <summary>Persists the window geometry so it reopens where the user left it.</summary>
     public void SaveWindowState(double width, double height, int x, int y, bool maximized)

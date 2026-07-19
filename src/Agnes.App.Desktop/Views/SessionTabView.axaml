@@ -4,7 +4,7 @@
              xmlns:vm="using:Agnes.Ui.Core.ViewModels"
              xmlns:conv="using:Avalonia.Data.Converters"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
-             Background="{StaticResource Bg}"
+             Background="{DynamicResource Bg}"
              FontFamily="{StaticResource UiFont}">
 
     <UserControl.KeyBindings>
@@ -19,38 +19,38 @@
 
     <UserControl.Styles>
         <Style Selector="Border.user">
-            <Setter Property="Background" Value="{StaticResource UserBubble}" />
+            <Setter Property="Background" Value="{DynamicResource UserBubble}" />
         </Style>
         <Style Selector="TextBlock.thought">
-            <Setter Property="Foreground" Value="{StaticResource FgFaint}" />
+            <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
             <Setter Property="FontStyle" Value="Italic" />
         </Style>
         <Style Selector="Border.dot">
-            <Setter Property="Background" Value="{StaticResource FgFaint}" />
+            <Setter Property="Background" Value="{DynamicResource FgFaint}" />
         </Style>
         <Style Selector="Border.dot.on">
-            <Setter Property="Background" Value="{StaticResource Good}" />
+            <Setter Property="Background" Value="{DynamicResource Good}" />
         </Style>
         <!-- activity chip -->
         <Style Selector="Border.chip">
-            <Setter Property="Background" Value="{StaticResource PanelAlt}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+            <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
         </Style>
         <Style Selector="Border.chip.attention">
-            <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
         </Style>
         <Style Selector="Border.chip TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource FgDim}" />
+            <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
         </Style>
         <Style Selector="Border.chip.attention TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Accent}" />
+            <Setter Property="Foreground" Value="{DynamicResource Accent}" />
         </Style>
         <!-- agent-tree node selection -->
         <Style Selector="TreeView Button TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Fg}" />
+            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
         </Style>
         <Style Selector="Button.sel TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Accent}" />
+            <Setter Property="Foreground" Value="{DynamicResource Accent}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="TreeViewItem">
@@ -58,35 +58,35 @@
         </Style>
         <!-- diff rows -->
         <Style Selector="Border.add">
-            <Setter Property="Background" Value="{StaticResource DiffAddBg}" />
+            <Setter Property="Background" Value="{DynamicResource DiffAddBg}" />
         </Style>
         <Style Selector="Border.del">
-            <Setter Property="Background" Value="{StaticResource DiffDelBg}" />
+            <Setter Property="Background" Value="{DynamicResource DiffDelBg}" />
         </Style>
         <Style Selector="Border.hunk">
-            <Setter Property="Background" Value="{StaticResource HunkBg}" />
+            <Setter Property="Background" Value="{DynamicResource HunkBg}" />
         </Style>
         <Style Selector="Border.hunk TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource HunkFg}" />
+            <Setter Property="Foreground" Value="{DynamicResource HunkFg}" />
         </Style>
     </UserControl.Styles>
 
     <Grid RowDefinitions="Auto,*">
 
         <!-- Per-tab status bar -->
-        <Border Grid.Row="0" IsVisible="{Binding ShowStatusBar}" Background="{StaticResource Panel}"
-                BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="16,7">
+        <Border Grid.Row="0" IsVisible="{Binding ShowStatusBar}" Background="{DynamicResource Panel}"
+                BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="16,7">
             <StackPanel Spacing="0">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <Border Classes="dot" Classes.on="{Binding IsConnected}" Width="8" Height="8"
                                 CornerRadius="4" VerticalAlignment="Center" />
-                        <TextBlock Text="★" Foreground="{StaticResource Accent}" FontSize="12" VerticalAlignment="Center"
+                        <TextBlock Text="★" Foreground="{DynamicResource Accent}" FontSize="12" VerticalAlignment="Center"
                                    IsVisible="{Binding Pinned}" ToolTip.Tip="Pinned" />
-                        <TextBlock Text="{Binding HostName}" Foreground="{StaticResource Fg}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        <TextBlock Text="·" Foreground="{StaticResource FgFaint}" IsVisible="{Binding IsLive}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding AgentName}" Foreground="{StaticResource FgDim}" FontSize="12" IsVisible="{Binding IsLive}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding ConnectionText}" Foreground="{StaticResource FgFaint}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" IsVisible="{Binding IsLive}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding AgentName}" Foreground="{DynamicResource FgDim}" FontSize="12" IsVisible="{Binding IsLive}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding ConnectionText}" Foreground="{DynamicResource FgFaint}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
                         <Border Classes="chip" Classes.attention="{Binding NeedsAttention}" IsVisible="{Binding IsLive}"
                                 BorderThickness="1" CornerRadius="9" Padding="8,2" VerticalAlignment="Center" Margin="2,0,0,0">
                             <TextBlock Text="{Binding ActivityText}" FontSize="10" FontWeight="SemiBold" />
@@ -98,12 +98,12 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Line}"
+                                    <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
                                             BorderThickness="1" CornerRadius="10" Padding="8,1">
                                         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding}" Foreground="{StaticResource FgDim}" FontSize="10" />
+                                            <TextBlock Text="{Binding}" Foreground="{DynamicResource FgDim}" FontSize="10" />
                                             <Button Content="✕" Command="{Binding $parent[ItemsControl].DataContext.RemoveTagCommand}"
-                                                    CommandParameter="{Binding}" Background="Transparent" Foreground="{StaticResource FgFaint}"
+                                                    CommandParameter="{Binding}" Background="Transparent" Foreground="{DynamicResource FgFaint}"
                                                     BorderThickness="0" Padding="0" FontSize="9" Cursor="Hand"
                                                     AutomationProperties.Name="Remove tag" />
                                         </StackPanel>
@@ -114,56 +114,56 @@
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                         <Button Command="{Binding Session.ToggleToolsCommand}" IsVisible="{Binding Session.HasTools}"
-                                Content="Tool output" Background="Transparent" Foreground="{StaticResource FgDim}"
-                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                Content="Tool output" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Collapse / expand all tool output" AutomationProperties.Name="Toggle all tool output" />
                         <Button Command="{Binding Session.ToggleLeftCommand}" IsVisible="{Binding Session.HasSidebarContent}"
-                                Content="Panels" Background="Transparent" Foreground="{StaticResource FgDim}"
-                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                Content="Panels" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 AutomationProperties.Name="Toggle side panels" />
                         <Button Command="{Binding Session.ToggleInspectorCommand}" IsVisible="{Binding IsLive}"
-                                Content="Event log" Background="Transparent" Foreground="{StaticResource FgDim}"
-                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                Content="Event log" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Show the raw event log" AutomationProperties.Name="Toggle raw event log" />
                         <!-- structured context-window meter, when the host reports it -->
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                     IsVisible="{Binding Usage.HasContext, FallbackValue=false}"
                                     ToolTip.Tip="Context window used">
-                            <TextBlock Text="ctx" Foreground="{StaticResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
+                            <TextBlock Text="ctx" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
                             <ProgressBar Minimum="0" Maximum="100" Value="{Binding Usage.ContextPercent, FallbackValue=0}"
                                          Width="70" Height="6" VerticalAlignment="Center"
-                                         Foreground="{StaticResource Accent}" Background="{StaticResource PanelAlt}" />
-                            <TextBlock Text="{Binding Usage.ContextText}" Foreground="{StaticResource FgDim}" FontSize="10"
+                                         Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                            <TextBlock Text="{Binding Usage.ContextText}" Foreground="{DynamicResource FgDim}" FontSize="10"
                                        VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}" />
                         </StackPanel>
-                        <TextBlock Text="{Binding UsageSummary}" Foreground="{StaticResource FgDim}" FontSize="11"
+                        <TextBlock Text="{Binding UsageSummary}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                    VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                    IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
                         <!-- Sandbox: isolation status + lifecycle -->
-                        <Button IsVisible="{Binding Session.HasSandbox}" Background="Transparent" Foreground="{StaticResource FgDim}"
-                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                        <Button IsVisible="{Binding Session.HasSandbox}" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 AutomationProperties.Name="Sandbox">
                             <TextBlock Text="{Binding Session.SandboxSummary}" />
                             <Button.Flyout>
                                 <Flyout Placement="Bottom">
                                     <StackPanel Width="280" Spacing="8">
                                         <TextBlock Text="{Binding Session.Sandbox.Id, StringFormat='Sandbox: {0}'}"
-                                                   Foreground="{StaticResource Fg}" FontWeight="SemiBold" FontSize="12"
+                                                   Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12"
                                                    FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Text="{Binding Session.Sandbox.Provider, StringFormat='Provider: {0}'}"
-                                                   Foreground="{StaticResource FgDim}" FontSize="11" />
+                                                   Foreground="{DynamicResource FgDim}" FontSize="11" />
                                         <TextBlock Text="{Binding Session.Sandbox.State, StringFormat='State: {0}'}"
-                                                   Foreground="{StaticResource FgDim}" FontSize="11" />
+                                                   Foreground="{DynamicResource FgDim}" FontSize="11" />
                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                             <Button Content="Pause" Command="{Binding Session.PauseSandboxCommand}"
-                                                    Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                                    BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
                                             <Button Content="Resume" Command="{Binding Session.ResumeSandboxCommand}"
-                                                    Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                                    BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
                                             <Button Content="Delete" Command="{Binding Session.DeleteSandboxCommand}"
                                                     Background="Transparent" Foreground="#E5484D"
-                                                    BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
                                         </StackPanel>
                                     </StackPanel>
                                 </Flyout>
@@ -172,13 +172,13 @@
 
                         <!-- session menu -->
                         <!-- Git: branch + commit -->
-                        <Button IsVisible="{Binding Session.HasGit}" Background="Transparent" Foreground="{StaticResource FgDim}"
-                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                        <Button IsVisible="{Binding Session.HasGit}" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 AutomationProperties.Name="Git">
                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                 <TextBlock Text="⎇" FontSize="12" />
                                 <TextBlock Text="{Binding Session.GitBranch}" />
-                                <Border Width="6" Height="6" CornerRadius="3" Background="{StaticResource Accent}"
+                                <Border Width="6" Height="6" CornerRadius="3" Background="{DynamicResource Accent}"
                                         VerticalAlignment="Center" IsVisible="{Binding Session.GitDirty}" />
                             </StackPanel>
                             <Button.Flyout>
@@ -186,17 +186,17 @@
                                     <StackPanel Width="340" Spacing="8">
                                         <Grid ColumnDefinitions="*,Auto">
                                             <TextBlock Grid.Column="0" Text="{Binding Session.GitBranch, StringFormat='Branch: {0}'}"
-                                                       Foreground="{StaticResource Fg}" FontWeight="SemiBold" FontSize="12" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Session.GitSummary}" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                                       Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Session.GitSummary}" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                         </Grid>
                                         <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
                                         <ItemsControl ItemsSource="{Binding Session.GitChanges}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
-                                                        <TextBlock Text="{Binding Status}" Foreground="{StaticResource Accent}" FontSize="11"
+                                                        <TextBlock Text="{Binding Status}" Foreground="{DynamicResource Accent}" FontSize="11"
                                                                    Width="26" FontFamily="{StaticResource MonoFont}" />
-                                                        <TextBlock Text="{Binding Path}" Foreground="{StaticResource Fg}" FontSize="12"
+                                                        <TextBlock Text="{Binding Path}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                    FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
                                                 </DataTemplate>
@@ -204,20 +204,20 @@
                                         </ItemsControl>
                                         </ScrollViewer>
                                         <TextBox Text="{Binding Session.CommitMessage, Mode=TwoWay}" Watermark="Commit message"
-                                                 Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                                 BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
+                                                 Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                 BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
                                                  AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52"
                                                  AutomationProperties.Name="Commit message" />
                                         <Button Content="Commit all changes" Command="{Binding Session.CommitCommand}"
                                                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                                                Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="10,6" FontWeight="SemiBold" />
+                                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="10,6" FontWeight="SemiBold" />
                                     </StackPanel>
                                 </Flyout>
                             </Button.Flyout>
                         </Button>
 
-                        <Button Content="⋯" Background="Transparent" Foreground="{StaticResource FgDim}"
-                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,2" FontSize="12"
+                        <Button Content="⋯" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,2" FontSize="12"
                                 VerticalContentAlignment="Center" IsVisible="{Binding IsLive}" AutomationProperties.Name="Session menu">
                             <Button.Flyout>
                                 <MenuFlyout>
@@ -239,8 +239,8 @@
                 <!-- inline rename / tag editor -->
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding IsRenaming}">
                     <TextBox Text="{Binding RenameText, Mode=TwoWay}" Width="240" Watermark="Tab name"
-                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                             Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                             BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
                              AutomationProperties.Name="Rename tab">
                         <TextBox.KeyBindings>
                             <KeyBinding Gesture="Enter" Command="{Binding CommitRenameCommand}" />
@@ -248,18 +248,18 @@
                         </TextBox.KeyBindings>
                     </TextBox>
                     <Button Content="Save" Command="{Binding CommitRenameCommand}"
-                            Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,4" FontSize="12" />
+                            Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,4" FontSize="12" />
                     <TextBox Text="{Binding TagInput, Mode=TwoWay}" Width="160" Watermark="Add tag + Enter"
-                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                             Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                             BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
                              AutomationProperties.Name="Add tag">
                         <TextBox.KeyBindings>
                             <KeyBinding Gesture="Enter" Command="{Binding AddTagCommand}" />
                         </TextBox.KeyBindings>
                     </TextBox>
                     <Button Content="Done" Command="{Binding CancelRenameCommand}"
-                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,4" FontSize="12" />
+                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,4" FontSize="12" />
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -270,19 +270,19 @@
             <Border Padding="24" IsVisible="{Binding IsPickingHost}">
                 <StackPanel MaxWidth="460" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                     <TextBlock Text="New session" FontSize="22" FontWeight="SemiBold"
-                               Foreground="{StaticResource Fg}" HorizontalAlignment="Center" />
-                    <TextBlock Text="Choose a host" Foreground="{StaticResource FgDim}" HorizontalAlignment="Center" />
+                               Foreground="{DynamicResource Fg}" HorizontalAlignment="Center" />
+                    <TextBlock Text="Choose a host" Foreground="{DynamicResource FgDim}" HorizontalAlignment="Center" />
                     <ScrollViewer MaxHeight="380" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl ItemsSource="{Binding Hosts}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Button Command="{Binding Select}" HorizontalAlignment="Stretch"
                                         HorizontalContentAlignment="Left" Margin="0,4" CornerRadius="10"
-                                        Padding="14,12" Background="{StaticResource Panel}"
-                                        BorderBrush="{StaticResource Line}" BorderThickness="1">
+                                        Padding="14,12" Background="{DynamicResource Panel}"
+                                        BorderBrush="{DynamicResource Line}" BorderThickness="1">
                                     <StackPanel>
-                                        <TextBlock Text="{Binding Name}" Foreground="{StaticResource Fg}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding Url}" Foreground="{StaticResource FgFaint}" FontSize="11" />
+                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Url}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
                                     </StackPanel>
                                 </Button>
                             </DataTemplate>
@@ -290,24 +290,24 @@
                     </ItemsControl>
                     </ScrollViewer>
                     <Button Command="{Binding ToggleAddHostCommand}" HorizontalAlignment="Left"
-                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="10,6" FontSize="12"
+                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="10,6" FontSize="12"
                             Content="+ Add host" />
                     <StackPanel Spacing="6" IsVisible="{Binding ShowAddHost}">
                         <TextBox Text="{Binding NewHostName, Mode=TwoWay}" Watermark="Name (optional)"
-                                 Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                 BorderBrush="{StaticResource Line}" CornerRadius="8" Padding="10,8" />
+                                 Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                 BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8" />
                         <TextBox Text="{Binding NewHostUrl, Mode=TwoWay}" Watermark="https://host:5081"
-                                 Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                 BorderBrush="{StaticResource Line}" CornerRadius="8" Padding="10,8" />
+                                 Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                 BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8" />
                         <TextBox Text="{Binding NewHostToken, Mode=TwoWay}" Watermark="Pairing code (from the host)"
-                                 Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                 BorderBrush="{StaticResource Line}" CornerRadius="8" Padding="10,8"
+                                 Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                 BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8"
                                  ToolTip.Tip="Enter the pairing code the host prints at startup. A per-device token is issued and stored." />
                         <Button Content="Connect" Command="{Binding AddHostCommand}" HorizontalAlignment="Stretch"
-                                Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="8" Padding="12,8" FontWeight="SemiBold" />
+                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="8" Padding="12,8" FontWeight="SemiBold" />
                     </StackPanel>
-                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgFaint}"
+                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}"
                                HorizontalAlignment="Center" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
@@ -316,19 +316,19 @@
             <Border Padding="24" IsVisible="{Binding IsPickingAgent}">
                 <StackPanel MaxWidth="460" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                     <Button Command="{Binding BackCommand}" HorizontalAlignment="Left" Background="Transparent"
-                            Foreground="{StaticResource FgDim}" BorderThickness="0" Padding="0" FontSize="12" Content="‹ Hosts" />
+                            Foreground="{DynamicResource FgDim}" BorderThickness="0" Padding="0" FontSize="12" Content="‹ Hosts" />
                     <TextBlock Text="Choose an agent" FontSize="22" FontWeight="SemiBold"
-                               Foreground="{StaticResource Fg}" HorizontalAlignment="Center" />
+                               Foreground="{DynamicResource Fg}" HorizontalAlignment="Center" />
 
                     <!-- Permission mode for the new session -->
-                    <Border Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1"
+                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="10" Padding="14,10">
                         <Grid ColumnDefinitions="Auto,*,Auto" >
                             <TextBlock Grid.Column="0" Text="🛡" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
-                                <TextBlock Foreground="{StaticResource Fg}" FontSize="13" FontWeight="SemiBold"
+                                <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold"
                                            Text="{Binding PermissionModeTitle}" />
-                                <TextBlock Foreground="{StaticResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
                                            Text="{Binding PermissionModeHint}" />
                             </StackPanel>
                             <ToggleSwitch Grid.Column="2" IsChecked="{Binding SkipPermissions, Mode=TwoWay}"
@@ -343,19 +343,19 @@
                             <DataTemplate>
                                 <Button Command="{Binding Open}" HorizontalAlignment="Stretch"
                                         HorizontalContentAlignment="Left" Margin="0,4" CornerRadius="10"
-                                        Padding="14,12" Background="{StaticResource Panel}"
-                                        BorderBrush="{StaticResource Line}" BorderThickness="1"
+                                        Padding="14,12" Background="{DynamicResource Panel}"
+                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
                                         ToolTip.Tip="{Binding StatusText}">
                                     <StackPanel>
-                                        <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource Fg}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgFaint}" FontSize="11" />
+                                        <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
                                     </StackPanel>
                                 </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     </ScrollViewer>
-                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgFaint}" HorizontalAlignment="Center" />
+                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" HorizontalAlignment="Center" />
                 </StackPanel>
             </Border>
 
@@ -364,20 +364,20 @@
 
                 <!-- Clear connection / session state banner -->
                 <Border Grid.Row="0" DataContext="{Binding Session}" IsVisible="{Binding ShowBanner}"
-                        Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}"
+                        Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}"
                         BorderThickness="0,0,0,1" Padding="16,8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                         <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                                Background="{StaticResource Accent}" Margin="0,0,10,0" />
-                        <TextBlock Grid.Column="1" Text="{Binding BannerText}" Foreground="{StaticResource Fg}"
+                                Background="{DynamicResource Accent}" Margin="0,0,10,0" />
+                        <TextBlock Grid.Column="1" Text="{Binding BannerText}" Foreground="{DynamicResource Fg}"
                                    VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap"
                                    AutomationProperties.LiveSetting="Assertive" />
                         <Button Grid.Column="2" Content="Retry" Command="{Binding RetryCommand}" IsVisible="{Binding CanRetry}"
-                                Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,4"
+                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,4"
                                 FontSize="12" Margin="8,0,0,0" ToolTip.Tip="Retry the connection or resend the interrupted turn" />
                         <Button Grid.Column="3" Content="Dismiss" Command="{Binding DismissBannerCommand}"
-                                Background="Transparent" Foreground="{StaticResource FgDim}"
-                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,4"
+                                Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="12,4"
                                 FontSize="12" Margin="8,0,0,0" />
                     </Grid>
                 </Border>
@@ -393,12 +393,12 @@
 
                     <!-- LEFT: plan, files modified, tools run -->
                     <Border Grid.Column="0" IsVisible="{Binding ShowLeftPanel}"
-                            Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
+                            Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0">
                         <ScrollViewer Padding="14,16" VerticalScrollBarVisibility="Auto">
                             <StackPanel Spacing="18">
                                 <!-- Agent / subagent tree -->
                                 <StackPanel Spacing="6" IsVisible="{Binding HasSubagents}">
-                                    <TextBlock Text="AGENTS" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <TextBlock Text="AGENTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                     <TreeView ItemsSource="{Binding AgentTree}" Background="Transparent" BorderThickness="0">
                                         <TreeView.ItemTemplate>
                                             <TreeDataTemplate DataType="vm:AgentNode" ItemsSource="{Binding Children}">
@@ -407,9 +407,9 @@
                                                         Padding="2,3" Cursor="Hand" Classes.sel="{Binding IsSelected}">
                                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                                         <TextBlock Text="◆" FontSize="9" VerticalAlignment="Center"
-                                                                   Foreground="{StaticResource Good}" IsVisible="{Binding IsMain}" />
+                                                                   Foreground="{DynamicResource Good}" IsVisible="{Binding IsMain}" />
                                                         <TextBlock Text="•" FontSize="12" VerticalAlignment="Center"
-                                                                   Foreground="{StaticResource FgFaint}" IsVisible="{Binding !IsMain}" />
+                                                                   Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsMain}" />
                                                         <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
                                                                    TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
@@ -420,13 +420,13 @@
                                 </StackPanel>
 
                                 <StackPanel Spacing="6" IsVisible="{Binding Plan, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
-                                    <TextBlock Text="PLAN" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <TextBlock Text="PLAN" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                     <ItemsControl ItemsSource="{Binding Plan.Entries}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
-                                                    <TextBlock Text="{Binding Status}" Foreground="{StaticResource FgFaint}" FontSize="10" Width="70" />
-                                                    <TextBlock Text="{Binding Content}" Foreground="{StaticResource Fg}" FontSize="12" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="10" Width="70" />
+                                                    <TextBlock Text="{Binding Content}" Foreground="{DynamicResource Fg}" FontSize="12" TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
@@ -434,7 +434,7 @@
                                 </StackPanel>
 
                                 <StackPanel Spacing="4" IsVisible="{Binding HasFiles}">
-                                    <TextBlock Text="FILES MODIFIED" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <TextBlock Text="FILES MODIFIED" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                     <ItemsControl ItemsSource="{Binding ModifiedFiles}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
@@ -443,9 +443,9 @@
                                                         HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                                                         Padding="6,5" CornerRadius="6" Cursor="Hand">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding Name}" Foreground="{StaticResource Fg}" FontSize="12"
+                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                    FontFamily="{StaticResource MonoFont}" />
-                                                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgFaint}" FontSize="10" />
+                                                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                                                     </StackPanel>
                                                 </Button>
                                             </DataTemplate>
@@ -454,7 +454,7 @@
                                 </StackPanel>
 
                                 <StackPanel Spacing="4" IsVisible="{Binding HasTools}">
-                                    <TextBlock Text="TOOLS RUN" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <TextBlock Text="TOOLS RUN" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                     <ItemsControl ItemsSource="{Binding ToolActivity}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
@@ -463,9 +463,9 @@
                                                         HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                                                         Padding="6,5" CornerRadius="6" Cursor="Hand">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding Kind}" Foreground="{StaticResource Good}" FontSize="10"
+                                                        <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
                                                                    FontFamily="{StaticResource MonoFont}" Width="52" />
-                                                        <TextBlock Text="{Binding Name}" Foreground="{StaticResource Fg}" FontSize="12"
+                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                    FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
                                                 </Button>
@@ -476,18 +476,18 @@
 
                                 <!-- Audit trail: capabilities granted / denied -->
                                 <StackPanel Spacing="4" IsVisible="{Binding HasApprovals}">
-                                    <TextBlock Text="APPROVALS" Foreground="{StaticResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <TextBlock Text="APPROVALS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                     <ItemsControl ItemsSource="{Binding Approvals}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
                                                     <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                                                            Background="{StaticResource Good}" IsVisible="{Binding Allowed}" />
+                                                            Background="{DynamicResource Good}" IsVisible="{Binding Allowed}" />
                                                     <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                                                            Background="{StaticResource Accent}" IsVisible="{Binding !Allowed}" />
-                                                    <TextBlock Text="{Binding TimeText}" Foreground="{StaticResource FgFaint}" FontSize="10"
+                                                            Background="{DynamicResource Accent}" IsVisible="{Binding !Allowed}" />
+                                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
                                                                FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
-                                                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" FontSize="12"
+                                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                                                 </StackPanel>
                                             </DataTemplate>
@@ -499,19 +499,19 @@
                     </Border>
 
                     <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns"
-                                  Background="{StaticResource Line}" IsVisible="{Binding ShowLeftPanel}" />
+                                  Background="{DynamicResource Line}" IsVisible="{Binding ShowLeftPanel}" />
 
                     <!-- MIDDLE: chat -->
                     <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding ShowChat}">
 
                         <!-- within-session search (Ctrl+F) -->
-                        <Border Grid.Row="0" IsVisible="{Binding IsSearchOpen}" Background="{StaticResource Panel}"
-                                BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="24,8">
+                        <Border Grid.Row="0" IsVisible="{Binding IsSearchOpen}" Background="{DynamicResource Panel}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="24,8">
                             <StackPanel MaxWidth="768" HorizontalAlignment="Center" Spacing="6">
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                                     <TextBox Grid.Column="0" Text="{Binding SearchQuery, Mode=TwoWay}" Watermark="Search this session…"
-                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                                             Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                             BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
                                              AutomationProperties.Name="Search this session">
                                         <TextBox.KeyBindings>
                                             <KeyBinding Gesture="Enter" Command="{Binding NextMatchCommand}" />
@@ -519,18 +519,18 @@
                                             <KeyBinding Gesture="Escape" Command="{Binding CloseSearchCommand}" />
                                         </TextBox.KeyBindings>
                                     </TextBox>
-                                    <TextBlock Grid.Column="1" Text="{Binding MatchSummary}" Foreground="{StaticResource FgFaint}"
+                                    <TextBlock Grid.Column="1" Text="{Binding MatchSummary}" Foreground="{DynamicResource FgFaint}"
                                                FontSize="11" VerticalAlignment="Center" MinWidth="52" />
                                     <Button Grid.Column="2" Content="‹" Command="{Binding PrevMatchCommand}"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,2"
+                                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,2"
                                             AutomationProperties.Name="Previous match" />
                                     <Button Grid.Column="3" Content="›" Command="{Binding NextMatchCommand}"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,2"
+                                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,2"
                                             AutomationProperties.Name="Next match" />
                                     <Button Grid.Column="4" Content="✕" Command="{Binding CloseSearchCommand}"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}" BorderThickness="0"
+                                            Background="Transparent" Foreground="{DynamicResource FgDim}" BorderThickness="0"
                                             Padding="8,2" AutomationProperties.Name="Close search" />
                                 </Grid>
                                 <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto">
@@ -542,9 +542,9 @@
                                                     HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                                                     Padding="6,3" CornerRadius="5" Cursor="Hand">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <TextBlock Text="{Binding Kind}" Foreground="{StaticResource Good}" FontSize="10"
+                                                    <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
                                                                Width="56" FontFamily="{StaticResource MonoFont}" />
-                                                    <TextBlock Text="{Binding Snippet}" Foreground="{StaticResource FgDim}" FontSize="11"
+                                                    <TextBlock Text="{Binding Snippet}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                                                TextTrimming="CharacterEllipsis" />
                                                 </StackPanel>
                                             </Button>
@@ -598,20 +598,20 @@
                                             <StackPanel>
                                                 <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,3">
                                                     <TextBlock Grid.Column="0" Text="{Binding Speaker}" FontSize="11"
-                                                               Foreground="{StaticResource FgFaint}" />
+                                                               Foreground="{DynamicResource FgFaint}" />
                                                     <Button Grid.Column="1" Content="⤾ from here"
                                                             Command="{Binding $parent[ItemsControl].DataContext.RewindToCommand}"
-                                                            CommandParameter="{Binding}" Background="Transparent" Foreground="{StaticResource FgFaint}"
+                                                            CommandParameter="{Binding}" Background="Transparent" Foreground="{DynamicResource FgFaint}"
                                                             BorderThickness="0" Padding="0" FontSize="10" Cursor="Hand"
                                                             ToolTip.Tip="View the conversation as of this point"
                                                             AutomationProperties.Name="Rewind to here" />
                                                 </Grid>
                                                 <TextBlock Text="{Binding CondensedText}" Classes.thought="{Binding IsThought}"
-                                                           Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
+                                                           Foreground="{DynamicResource Fg}" TextWrapping="Wrap" />
                                                 <Button Content="Read full message ›" IsVisible="{Binding IsLong}"
                                                         Command="{Binding $parent[ItemsControl].DataContext.ShowMessagePreviewCommand}"
                                                         CommandParameter="{Binding}" HorizontalAlignment="Left" Margin="0,6,0,0"
-                                                        Background="Transparent" Foreground="{StaticResource Accent}" BorderThickness="0"
+                                                        Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
                                                         Padding="0" FontSize="12" Cursor="Hand" />
                                             </StackPanel>
                                         </Border>
@@ -621,20 +621,20 @@
                                         <Button Command="{Binding $parent[ItemsControl].DataContext.ShowToolPreviewCommand}"
                                                 CommandParameter="{Binding}" HorizontalAlignment="Stretch"
                                                 HorizontalContentAlignment="Left" Margin="0,6" Padding="12,9" CornerRadius="8"
-                                                Cursor="Hand" Background="{StaticResource Panel}"
-                                                BorderBrush="{StaticResource Line}" BorderThickness="1">
+                                                Cursor="Hand" Background="{DynamicResource Panel}"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1">
                                             <StackPanel Spacing="4">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <TextBlock Text="▸" Foreground="{StaticResource Good}" FontFamily="{StaticResource MonoFont}" />
-                                                    <TextBlock Text="{Binding Header}" Foreground="{StaticResource Fg}"
+                                                    <TextBlock Text="▸" Foreground="{DynamicResource Good}" FontFamily="{StaticResource MonoFont}" />
+                                                    <TextBlock Text="{Binding Header}" Foreground="{DynamicResource Fg}"
                                                                FontWeight="SemiBold" FontFamily="{StaticResource MonoFont}" FontSize="12" />
-                                                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgDim}" FontSize="11" />
-                                                    <TextBlock Text="{Binding DurationText}" Foreground="{StaticResource FgFaint}" FontSize="11"
+                                                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                                    <TextBlock Text="{Binding DurationText}" Foreground="{DynamicResource FgFaint}" FontSize="11"
                                                                FontFamily="{StaticResource MonoFont}" IsVisible="{Binding HasDuration}" />
-                                                    <TextBlock Text="— tap to preview" Foreground="{StaticResource FgFaint}" FontSize="11"
+                                                    <TextBlock Text="— tap to preview" Foreground="{DynamicResource FgFaint}" FontSize="11"
                                                                IsVisible="{Binding HasDetail}" />
                                                 </StackPanel>
-                                                <TextBlock Text="{Binding Summary}" Foreground="{StaticResource FgDim}"
+                                                <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgDim}"
                                                            FontFamily="{StaticResource MonoFont}" FontSize="12"
                                                            TextTrimming="CharacterEllipsis"
                                                            IsVisible="{Binding $parent[ItemsControl].DataContext.ToolsExpanded}" />
@@ -644,16 +644,16 @@
 
                                     <DataTemplate DataType="tr:PlanItemView">
                                         <Border Margin="0,6" Padding="12,9" CornerRadius="8"
-                                                Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1">
+                                                Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                                             <StackPanel>
-                                                <TextBlock Text="Plan" Foreground="{StaticResource Fg}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                                <TextBlock Text="Plan" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" Margin="0,0,0,4" />
                                                 <ItemsControl ItemsSource="{Binding Entries}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
                                                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
-                                                                <TextBlock Text="{Binding Status}" Foreground="{StaticResource FgFaint}"
+                                                                <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}"
                                                                            FontSize="11" Width="90" />
-                                                                <TextBlock Text="{Binding Content}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" />
+                                                                <TextBlock Text="{Binding Content}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" />
                                                             </StackPanel>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
@@ -664,33 +664,33 @@
 
                                     <DataTemplate DataType="tr:PermissionItem">
                                         <Border Margin="0,6" Padding="12,9" CornerRadius="8"
-                                                Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Accent}" BorderThickness="1">
+                                                Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Accent}" BorderThickness="1">
                                             <StackPanel Spacing="5">
-                                                <TextBlock Text="Permission requested" Foreground="{StaticResource Accent}"
+                                                <TextBlock Text="Permission requested" Foreground="{DynamicResource Accent}"
                                                            FontWeight="SemiBold" FontSize="12" />
-                                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
                                                 <!-- the five facts -->
                                                 <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="2">
-                                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Touches" Foreground="{StaticResource FgFaint}" FontSize="11" />
-                                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ResourceText}" Foreground="{StaticResource FgDim}"
+                                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Touches" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ResourceText}" Foreground="{DynamicResource FgDim}"
                                                                FontSize="11" FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
-                                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Reversible" Foreground="{StaticResource FgFaint}" FontSize="11" />
-                                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ReversibleText}" Foreground="{StaticResource FgDim}"
+                                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Reversible" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ReversibleText}" Foreground="{DynamicResource FgDim}"
                                                                FontSize="11" TextWrapping="Wrap" />
-                                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Why" Foreground="{StaticResource FgFaint}" FontSize="11" />
-                                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Rationale}" Foreground="{StaticResource FgDim}"
+                                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Why" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Rationale}" Foreground="{DynamicResource FgDim}"
                                                                FontSize="11" TextWrapping="Wrap" />
                                                 </Grid>
-                                                <TextBlock Text="{Binding NarrowestOptionHint}" Foreground="{StaticResource Accent}" FontSize="11"
+                                                <TextBlock Text="{Binding NarrowestOptionHint}" Foreground="{DynamicResource Accent}" FontSize="11"
                                                            IsVisible="{Binding HasNarrowestHint}" TextWrapping="Wrap" />
-                                                <TextBlock Text="{Binding ResolutionText}" Foreground="{StaticResource FgDim}" FontSize="11"
+                                                <TextBlock Text="{Binding ResolutionText}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                                            IsVisible="{Binding ResolutionText, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
 
                                     <DataTemplate DataType="tr:NoticeItem">
-                                        <TextBlock Text="{Binding Text}" Foreground="{StaticResource FgDim}"
+                                        <TextBlock Text="{Binding Text}" Foreground="{DynamicResource FgDim}"
                                                    FontStyle="Italic" Margin="0,6" TextWrapping="Wrap" />
                                     </DataTemplate>
 
@@ -699,26 +699,26 @@
 
                         <!-- Rewind (viewing history) banner -->
                         <Border Grid.Row="1" VerticalAlignment="Top" IsVisible="{Binding IsRewound}"
-                                Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}"
+                                Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}"
                                 BorderThickness="0,0,0,1" Padding="24,7" ZIndex="5">
                             <Grid ColumnDefinitions="*,Auto" MaxWidth="768" HorizontalAlignment="Center">
-                                <TextBlock Grid.Column="0" Text="Viewing earlier history (read-only)" Foreground="{StaticResource Fg}"
+                                <TextBlock Grid.Column="0" Text="Viewing earlier history (read-only)" Foreground="{DynamicResource Fg}"
                                            FontSize="12" VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Content="Resume" Command="{Binding ResumeCommand}"
-                                        Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,4" FontSize="12" />
+                                        Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,4" FontSize="12" />
                             </Grid>
                         </Border>
 
                         <!-- Raw event / debug inspector (over the transcript) -->
-                        <Border Grid.Row="1" IsVisible="{Binding IsInspectorOpen}" Background="{StaticResource Bg}">
+                        <Border Grid.Row="1" IsVisible="{Binding IsInspectorOpen}" Background="{DynamicResource Bg}">
                             <Grid RowDefinitions="Auto,*">
-                                <Border Grid.Row="0" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                                <Border Grid.Row="0" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
                                         BorderThickness="0,0,0,1" Padding="24,8">
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="Event log" Foreground="{StaticResource Fg}"
+                                        <TextBlock Grid.Column="0" Text="Event log" Foreground="{DynamicResource Fg}"
                                                    FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
                                         <Button Grid.Column="1" Content="✕" Command="{Binding ToggleInspectorCommand}"
-                                                Background="Transparent" Foreground="{StaticResource FgDim}" BorderThickness="0"
+                                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderThickness="0"
                                                 Padding="8,2" AutomationProperties.Name="Close event log" />
                                     </Grid>
                                 </Border>
@@ -727,13 +727,13 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid ColumnDefinitions="44,86,120,*" Margin="0,1">
-                                                    <TextBlock Grid.Column="0" Text="{Binding Sequence}" Foreground="{StaticResource Gutter}"
+                                                    <TextBlock Grid.Column="0" Text="{Binding Sequence}" Foreground="{DynamicResource Gutter}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="11" TextAlignment="Right" Padding="0,0,8,0" />
-                                                    <TextBlock Grid.Column="1" Text="{Binding Time}" Foreground="{StaticResource FgFaint}"
+                                                    <TextBlock Grid.Column="1" Text="{Binding Time}" Foreground="{DynamicResource FgFaint}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="11" />
-                                                    <TextBlock Grid.Column="2" Text="{Binding Kind}" Foreground="{StaticResource Good}"
+                                                    <TextBlock Grid.Column="2" Text="{Binding Kind}" Foreground="{DynamicResource Good}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Grid.Column="3" Text="{Binding Summary}" Foreground="{StaticResource FgDim}"
+                                                    <TextBlock Grid.Column="3" Text="{Binding Summary}" Foreground="{DynamicResource FgDim}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
                                                 </Grid>
                                             </DataTemplate>
@@ -744,18 +744,18 @@
                         </Border>
 
                         <Border Grid.Row="2" Margin="24,4" Padding="14,10" CornerRadius="10"
-                                Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                                Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
                                 IsVisible="{Binding PendingPermission, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                             <Grid ColumnDefinitions="*,Auto,Auto" MaxWidth="768" HorizontalAlignment="Center">
                                 <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding PendingPermission.Title}" Foreground="{StaticResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding PendingPermission.Title}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <TextBlock Text="{Binding PendingPermission.ResourceText}" Foreground="{StaticResource FgDim}" FontSize="11"
+                                        <TextBlock Text="{Binding PendingPermission.ResourceText}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                                    FontFamily="{StaticResource MonoFont}" />
-                                        <TextBlock Text="·" Foreground="{StaticResource FgFaint}" FontSize="11" />
-                                        <TextBlock Text="{Binding PendingPermission.ReversibleText}" Foreground="{StaticResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                        <TextBlock Text="{Binding PendingPermission.ReversibleText}" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                     </StackPanel>
-                                    <TextBlock Text="{Binding PendingPermission.NarrowestOptionHint}" Foreground="{StaticResource Accent}" FontSize="11"
+                                    <TextBlock Text="{Binding PendingPermission.NarrowestOptionHint}" Foreground="{DynamicResource Accent}" FontSize="11"
                                                IsVisible="{Binding PendingPermission.HasNarrowestHint}" />
                                 </StackPanel>
                                 <ItemsControl Grid.Column="1" Grid.ColumnSpan="2" ItemsSource="{Binding PendingPermission.Options}"
@@ -768,42 +768,42 @@
                                             <Button Content="{Binding Name}"
                                                     Command="{Binding $parent[ItemsControl].DataContext.RespondWithCommand}"
                                                     CommandParameter="{Binding}"
-                                                    Background="Transparent" Foreground="{StaticResource Fg}"
-                                                    BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="7" Padding="12,6" />
+                                                    Background="Transparent" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="7" Padding="12,6" />
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </Grid>
                         </Border>
 
-                        <Border Grid.Row="3" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                        <Border Grid.Row="3" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
                                 BorderThickness="0,1,0,0" Padding="24,12">
                             <StackPanel Spacing="8" MaxWidth="768" HorizontalAlignment="Center">
 
                                 <!-- Queued prompts (added while a turn runs; sent in order as turns end) -->
                                 <StackPanel Spacing="4" IsVisible="{Binding HasQueue}">
-                                    <TextBlock Text="QUEUED" Foreground="{StaticResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+                                    <TextBlock Text="QUEUED" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
                                     <ScrollViewer MaxHeight="168" VerticalScrollBarVisibility="Auto">
                                     <ItemsControl ItemsSource="{Binding PendingPrompts}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Line}"
+                                                <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
                                                         BorderThickness="1" CornerRadius="8" Padding="10,5" Margin="0,2">
                                                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                                                        <TextBlock Grid.Column="0" Text="⋮" Foreground="{StaticResource FgFaint}"
+                                                        <TextBlock Grid.Column="0" Text="⋮" Foreground="{DynamicResource FgFaint}"
                                                                    VerticalAlignment="Center" Margin="0,0,8,0" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{StaticResource Fg}"
+                                                        <TextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
                                                                    FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                                         <Button Grid.Column="2" Content="↑" Padding="6,1" FontSize="11" Background="Transparent"
-                                                                Foreground="{StaticResource FgDim}" BorderThickness="0" Cursor="Hand"
+                                                                Foreground="{DynamicResource FgDim}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.MoveQueuedUpCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Move up" />
                                                         <Button Grid.Column="3" Content="↓" Padding="6,1" FontSize="11" Background="Transparent"
-                                                                Foreground="{StaticResource FgDim}" BorderThickness="0" Cursor="Hand"
+                                                                Foreground="{DynamicResource FgDim}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.MoveQueuedDownCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Move down" />
                                                         <Button Grid.Column="4" Content="✕" Padding="6,1" FontSize="11" Background="Transparent"
-                                                                Foreground="{StaticResource FgFaint}" BorderThickness="0" Cursor="Hand"
+                                                                Foreground="{DynamicResource FgFaint}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.RemoveQueuedCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Remove from queue" />
                                                     </Grid>
@@ -815,8 +815,8 @@
                                 </StackPanel>
 
                                 <!-- Slash-command suggestions -->
-                                <Border IsVisible="{Binding ShowSlash}" Background="{StaticResource PanelAlt}"
-                                        BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="4">
+                                <Border IsVisible="{Binding ShowSlash}" Background="{DynamicResource PanelAlt}"
+                                        BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="4">
                                     <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
                                     <ItemsControl ItemsSource="{Binding SlashSuggestions}">
                                         <ItemsControl.ItemTemplate>
@@ -826,9 +826,9 @@
                                                         HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                                                         Padding="8,5" CornerRadius="6" Cursor="Hand">
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <TextBlock Text="{Binding Name, StringFormat='/{0}'}" Foreground="{StaticResource Accent}"
+                                                        <TextBlock Text="{Binding Name, StringFormat='/{0}'}" Foreground="{DynamicResource Accent}"
                                                                    FontFamily="{StaticResource MonoFont}" FontSize="12" Width="90" />
-                                                        <TextBlock Text="{Binding Description}" Foreground="{StaticResource FgDim}" FontSize="12" />
+                                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="12" />
                                                     </StackPanel>
                                                 </Button>
                                             </DataTemplate>
@@ -844,15 +844,15 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Background="{StaticResource PanelAlt}" BorderBrush="{StaticResource Line}"
+                                            <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
                                                     BorderThickness="1" CornerRadius="10" Padding="8,3" Margin="0,0,6,4">
                                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding KindText}" Foreground="{StaticResource Accent}" FontSize="10"
+                                                    <TextBlock Text="{Binding KindText}" Foreground="{DynamicResource Accent}" FontSize="10"
                                                                FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
-                                                    <TextBlock Text="{Binding Label}" Foreground="{StaticResource Fg}" FontSize="11"
+                                                    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="11"
                                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="220" />
                                                     <Button Content="✕" Command="{Binding $parent[ItemsControl].DataContext.RemoveAttachmentCommand}"
-                                                            CommandParameter="{Binding}" Background="Transparent" Foreground="{StaticResource FgFaint}"
+                                                            CommandParameter="{Binding}" Background="Transparent" Foreground="{DynamicResource FgFaint}"
                                                             BorderThickness="0" Padding="0" FontSize="9" Cursor="Hand"
                                                             AutomationProperties.Name="Remove attachment" />
                                                 </StackPanel>
@@ -866,25 +866,25 @@
                                 <WrapPanel Orientation="Horizontal">
                                     <TextBox Text="{Binding ReferenceInput, Mode=TwoWay}" Width="180" Watermark="@ file or url…"
                                              Margin="0,0,6,6"
-                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                             BorderBrush="{StaticResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
+                                             Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                             BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
                                              AutomationProperties.Name="Add a context reference">
                                         <TextBox.KeyBindings>
                                             <KeyBinding Gesture="Enter" Command="{Binding AddReferenceCommand}" />
                                         </TextBox.KeyBindings>
                                     </TextBox>
                                     <Button Content="Add" Command="{Binding AddReferenceCommand}" Margin="0,0,6,6"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
+                                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
                                     <Button Content="Attach file…" Click="OnAttachFile" Margin="0,0,6,6"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12"
+                                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12"
                                             AutomationProperties.Name="Attach a file or image" />
 
                                     <!-- mode selector (Ask / Code / …) -->
                                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                                 Margin="4,0,0,6" IsVisible="{Binding HasModes}">
-                                        <TextBlock Text="Mode" Foreground="{StaticResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
+                                        <TextBlock Text="Mode" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
                                         <ItemsControl ItemsSource="{Binding Modes}">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
@@ -894,13 +894,13 @@
                                                     <Button Content="{Binding Name}"
                                                             Command="{Binding $parent[ItemsControl].DataContext.SetModeCommand}"
                                                             CommandParameter="{Binding}"
-                                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7"
+                                                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7"
                                                             Padding="10,4" FontSize="12" AutomationProperties.Name="Switch mode" />
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
-                                        <TextBlock Text="{Binding CurrentModeName}" Foreground="{StaticResource Accent}" FontSize="11"
+                                        <TextBlock Text="{Binding CurrentModeName}" Foreground="{DynamicResource Accent}" FontSize="11"
                                                    FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0" />
                                     </StackPanel>
                                 </WrapPanel>
@@ -911,8 +911,8 @@
                                              AcceptsReturn="True" TextWrapping="Wrap"
                                              MinHeight="88" MaxHeight="280" VerticalContentAlignment="Top"
                                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                             Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                             BorderBrush="{StaticResource Line}" CornerRadius="10" Padding="12,10"
+                                             Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                             BorderBrush="{DynamicResource Line}" CornerRadius="10" Padding="12,10"
                                              AutomationProperties.Name="Message the agent">
                                         <TextBox.KeyBindings>
                                             <KeyBinding Gesture="Ctrl+Enter" Command="{Binding SendCommand}" />
@@ -928,30 +928,30 @@
                                         <Button Content="Send" Command="{Binding SendCommand}" IsVisible="{Binding !IsTurnActive}"
                                                 Height="40" HorizontalAlignment="Stretch"
                                                 VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
-                                                Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="10"
+                                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="10"
                                                 FontWeight="SemiBold" AutomationProperties.Name="Send message" />
                                         <!-- Running: Queue / Send now / Stop -->
                                         <Button Content="Queue" Command="{Binding SendCommand}" IsVisible="{Binding IsTurnActive}"
                                                 Height="34" HorizontalAlignment="Stretch"
                                                 VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
-                                                Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="10"
+                                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="10"
                                                 FontWeight="SemiBold" AutomationProperties.Name="Queue this prompt"
                                                 ToolTip.Tip="Send after the current turn finishes" />
                                         <Button Content="Send now" Command="{Binding SendNowCommand}" IsVisible="{Binding IsTurnActive}"
                                                 Height="30" HorizontalAlignment="Stretch" FontSize="12"
                                                 VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
-                                                Background="Transparent" Foreground="{StaticResource FgDim}"
-                                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
+                                                Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8"
                                                 AutomationProperties.Name="Stop the current turn and send now"
                                                 ToolTip.Tip="Stop the current turn and send now" />
                                         <Button Command="{Binding CancelCommand}" IsVisible="{Binding IsTurnActive}"
                                                 Height="30" HorizontalAlignment="Stretch"
                                                 VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
-                                                Background="Transparent" Foreground="{StaticResource Fg}"
-                                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
+                                                Background="Transparent" Foreground="{DynamicResource Fg}"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8"
                                                 AutomationProperties.Name="Stop the running turn" ToolTip.Tip="Stop the running turn">
                                             <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                                <Border Width="9" Height="9" CornerRadius="2" Background="{StaticResource Accent}" />
+                                                <Border Width="9" Height="9" CornerRadius="2" Background="{DynamicResource Accent}" />
                                                 <TextBlock Text="Stop" VerticalAlignment="Center" FontSize="12" />
                                             </StackPanel>
                                         </Button>
@@ -962,21 +962,21 @@
                     </Grid>
 
                     <GridSplitter Grid.Column="3" Width="5" ResizeDirection="Columns"
-                                  Background="{StaticResource Line}" IsVisible="{Binding ShowRightPanel}" />
+                                  Background="{DynamicResource Line}" IsVisible="{Binding ShowRightPanel}" />
 
                     <!-- RIGHT: full preview (diff viewer or text) -->
                     <Border Grid.Column="4" IsVisible="{Binding ShowRightPanel}"
-                            Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
+                            Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0">
                         <Grid RowDefinitions="Auto,*">
-                            <Border Grid.Row="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="14,10">
+                            <Border Grid.Row="0" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="14,10">
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
-                                    <TextBlock Grid.Column="0" Text="{Binding SelectedPreview.Title}" Foreground="{StaticResource Fg}"
+                                    <TextBlock Grid.Column="0" Text="{Binding SelectedPreview.Title}" Foreground="{DynamicResource Fg}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                                TextTrimming="CharacterEllipsis" />
                                     <Button Grid.Column="1" Command="{Binding SelectedPreview.ToggleSplitCommand}"
                                             IsVisible="{Binding SelectedPreview.IsDiff}"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6"
+                                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
                                             Padding="9,2" FontSize="11" Margin="0,0,8,0"
                                             ToolTip.Tip="Toggle split / unified diff" AutomationProperties.Name="Toggle split diff">
                                         <Panel>
@@ -985,17 +985,17 @@
                                         </Panel>
                                     </Button>
                                     <Button Grid.Column="2" Content="Copy" Click="OnCopyPreview"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6"
+                                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
                                             Padding="9,2" FontSize="11" Margin="0,0,8,0"
                                             ToolTip.Tip="Copy the contents to the clipboard" AutomationProperties.Name="Copy preview contents" />
                                     <Button Grid.Column="3" Content="Full screen" Command="{Binding ToggleFullScreenCommand}"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}"
-                                            BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6"
+                                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
                                             Padding="9,2" FontSize="11" Margin="0,0,8,0"
                                             ToolTip.Tip="Toggle full-screen review" AutomationProperties.Name="Toggle full-screen review" />
                                     <Button Grid.Column="4" Content="✕" Command="{Binding ClosePreviewCommand}"
-                                            Background="Transparent" Foreground="{StaticResource FgDim}" BorderThickness="0"
+                                            Background="Transparent" Foreground="{DynamicResource FgDim}" BorderThickness="0"
                                             Padding="8,2" FontSize="13" AutomationProperties.Name="Close preview" />
                                 </Grid>
                             </Border>
@@ -1010,14 +1010,14 @@
                                                     Classes.hunk="{Binding IsHunk}">
                                                 <Grid ColumnDefinitions="40,40,14,*">
                                                     <TextBlock Grid.Column="0" Text="{Binding OldLineText}" TextAlignment="Right"
-                                                               Foreground="{StaticResource Gutter}" FontFamily="{StaticResource MonoFont}"
+                                                               Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
                                                                FontSize="11" Padding="0,1,6,1" />
                                                     <TextBlock Grid.Column="1" Text="{Binding NewLineText}" TextAlignment="Right"
-                                                               Foreground="{StaticResource Gutter}" FontFamily="{StaticResource MonoFont}"
+                                                               Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
                                                                FontSize="11" Padding="0,1,6,1" />
-                                                    <TextBlock Grid.Column="2" Text="{Binding Marker}" Foreground="{StaticResource FgDim}"
+                                                    <TextBlock Grid.Column="2" Text="{Binding Marker}" Foreground="{DynamicResource FgDim}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="0,1" />
-                                                    <TextBlock Grid.Column="3" Text="{Binding Text}" Foreground="{StaticResource Fg}"
+                                                    <TextBlock Grid.Column="3" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
                                                                TextWrapping="Wrap" />
                                                 </Grid>
@@ -1038,12 +1038,12 @@
                                                 <Border Grid.Column="0" Classes.del="{Binding LeftRemoved}" Classes.hunk="{Binding IsHunk}">
                                                     <Grid ColumnDefinitions="40,*">
                                                         <TextBlock Grid.Column="0" Text="{Binding LeftNo}" TextAlignment="Right"
-                                                                   Foreground="{StaticResource Gutter}" FontFamily="{StaticResource MonoFont}"
+                                                                   Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
                                                                    FontSize="11" Padding="0,1,6,1" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding LeftText}" Foreground="{StaticResource Fg}"
+                                                        <TextBlock Grid.Column="1" Text="{Binding LeftText}" Foreground="{DynamicResource Fg}"
                                                                    FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
                                                                    IsVisible="{Binding !IsHunk}" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding HeaderText}" Foreground="{StaticResource HunkFg}"
+                                                        <TextBlock Grid.Column="1" Text="{Binding HeaderText}" Foreground="{DynamicResource HunkFg}"
                                                                    FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
                                                                    IsVisible="{Binding IsHunk}" />
                                                     </Grid>
@@ -1052,9 +1052,9 @@
                                                 <Border Grid.Column="1" Classes.add="{Binding RightAdded}" Classes.hunk="{Binding IsHunk}">
                                                     <Grid ColumnDefinitions="40,*">
                                                         <TextBlock Grid.Column="0" Text="{Binding RightNo}" TextAlignment="Right"
-                                                                   Foreground="{StaticResource Gutter}" FontFamily="{StaticResource MonoFont}"
+                                                                   Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
                                                                    FontSize="11" Padding="0,1,6,1" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding RightText}" Foreground="{StaticResource Fg}"
+                                                        <TextBlock Grid.Column="1" Text="{Binding RightText}" Foreground="{DynamicResource Fg}"
                                                                    FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1" />
                                                     </Grid>
                                                 </Border>
@@ -1067,7 +1067,7 @@
                             <!-- Plain text preview -->
                             <ScrollViewer Grid.Row="1" Padding="16" VerticalScrollBarVisibility="Auto"
                                           IsVisible="{Binding SelectedPreview.IsText}">
-                                <TextBlock Text="{Binding SelectedPreview.Body}" Foreground="{StaticResource Fg}"
+                                <TextBlock Text="{Binding SelectedPreview.Body}" Foreground="{DynamicResource Fg}"
                                            FontSize="13" TextWrapping="Wrap" />
                             </ScrollViewer>
                         </Grid>

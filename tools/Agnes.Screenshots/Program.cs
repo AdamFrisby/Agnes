@@ -44,6 +44,7 @@ public static class Program
         var vm = new MainWindowViewModel(NewConnector(recordingsDir), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
         var window = new MainWindow { DataContext = vm };
         window.Show();
+        MainWindowViewModel.ApplyTheme("Dark"); // pin dark for the canonical shots (a light one is captured too)
         vm.Notifier = new AvaloniaNotifier(window); // in-app toasts for blockers/completions
         vm.WindowActive = false; // simulate a background window so completion toasts also show
         vm.RestoreAsync(); // empty → one fresh host-picker tab; also enables persistence
@@ -72,6 +73,13 @@ public static class Program
         Prompt(first, "In one sentence, what is the Agent Client Protocol?");
         Pump(() => first.Session!.Items.OfType<MessageBubbleItem>().Count(m => !m.IsUser && !m.IsThought) >= 2);
         Capture(window, "03-conversation.png");
+
+        // 3t) The same conversation in the light theme (theme applies live).
+        vm.Theme = "Light";
+        Settle(200);
+        Capture(window, "03t-light-theme.png");
+        vm.Theme = "Dark";
+        Settle(150);
 
         // 3b) Conversation rewind: view history as of an earlier message (read-only).
         first.Session!.RewindToCommand.Execute(first.Session!.Items.OfType<MessageBubbleItem>().First(m => m.IsUser));
