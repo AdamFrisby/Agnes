@@ -573,7 +573,9 @@
                                      behaves like a plain list while still virtualizing. -->
                                 <Style Selector="ListBoxItem">
                                     <Setter Property="MaxWidth" Value="768" />
-                                    <Setter Property="HorizontalAlignment" Value="Center" />
+                                    <!-- Stretch (not Center): a stretch item clamped by MaxWidth fills the
+                                         768px column and is centred, rather than shrinking to its content. -->
+                                    <Setter Property="HorizontalAlignment" Value="Stretch" />
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="Padding" Value="0" />
                                     <Setter Property="MinHeight" Value="0" />
