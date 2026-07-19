@@ -98,6 +98,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         RunTopPaletteItemCommand = new RelayCommand(() => RunPaletteItem(PaletteItems.FirstOrDefault()));
         ClosePaletteCommand = new RelayCommand(() => IsPaletteOpen = false);
         OpenUpdateCommand = new RelayCommand(OpenUpdate);
+        SetScaleCommand = new RelayCommand<string>(s =>
+        {
+            FontScale = s switch { "small" => 0.9, "large" => 1.2, _ => 1.0 };
+        });
+        _factory.ActiveDockableChanged += (_, _) => UpdateWindowTitle();
     }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
@@ -235,6 +240,40 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool IsDarkTheme => Theme == "Dark";
 
     public IRelayCommand<string> SetThemeCommand { get; }
+
+    /// <summary>Whole-UI zoom (accessibility/density), 0.9–1.3. Applied via a layout transform.</summary>
+    public double FontScale
+    {
+        get => _settings.FontScale;
+        set
+        {
+            var clamped = Math.Clamp(value, 0.8, 1.5);
+            if (Math.Abs(clamped - _settings.FontScale) > 0.001)
+            {
+                _settings = _settings with { FontScale = clamped };
+                _settingsStore.Save(_settings);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsScaleSmall));
+                OnPropertyChanged(nameof(IsScaleDefault));
+                OnPropertyChanged(nameof(IsScaleLarge));
+            }
+        }
+    }
+
+    public bool IsScaleSmall => FontScale < 0.95;
+    public bool IsScaleDefault => FontScale is >= 0.95 and <= 1.05;
+    public bool IsScaleLarge => FontScale > 1.05;
+    public IRelayCommand<string> SetScaleCommand { get; private set; } = null!;
+
+    /// <summary>The window title — reflects the active session/project so alt-tab and taskbar read well.</summary>
+    [ObservableProperty]
+    private string _windowTitle = "Agnes";
+
+    private void UpdateWindowTitle()
+    {
+        var title = (_factory.DocumentDock?.ActiveDockable as SessionDocument)?.Title;
+        WindowTitle = string.IsNullOrWhiteSpace(title) || title == "New session" ? "Agnes" : $"{title} — Agnes";
+    }
 
     /// <summary>Applies a theme string to the running application (no-op off the UI/host).</summary>
     public static void ApplyTheme(string theme)

@@ -318,6 +318,10 @@
                     </StackPanel>
                     <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}"
                                HorizontalAlignment="Center" TextWrapping="Wrap" />
+                    <!-- First-run guidance -->
+                    <TextBlock Text="First time? Start a host (docker compose up, or dotnet run in src/Agnes.Host), then Add host with the pairing code it prints. Or try the Simulated host above."
+                               Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                               TextAlignment="Center" MaxWidth="380" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
 
