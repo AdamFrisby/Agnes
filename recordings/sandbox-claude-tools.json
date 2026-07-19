@@ -1,0 +1,115 @@
+{
+  "name": "Sandboxed Claude tool use",
+  "adapterId": "claude-code-native",
+  "agentDisplayName": "Claude Code (native)",
+  "recordedAt": "2026-07-19T01:31:47.0938654+00:00",
+  "events": [
+    {
+      "offsetMs": 0,
+      "event": {
+        "eventKind": "session_started",
+        "agentSessionId": "9735585c-d9a0-497f-94fe-fb0b5ec0867c",
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:31:47.0938654+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 1940,
+      "event": {
+        "eventKind": "tool_call",
+        "toolCallId": "toolu_019xDdBdA22ycyhcWJuC9QCj",
+        "title": "/work/task.txt",
+        "kind": 0,
+        "status": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\u0022file_path\u0022:\u0022/work/task.txt\u0022}"
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:31:49.0342904+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 1959,
+      "event": {
+        "eventKind": "tool_call_update",
+        "toolCallId": "toolu_019xDdBdA22ycyhcWJuC9QCj",
+        "status": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "1\tproject: demo\n2\tnumbers to sum: 7 and 35\n3\t"
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:31:49.0534481+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 3506,
+      "event": {
+        "eventKind": "tool_call",
+        "toolCallId": "toolu_017HHHN5ZJ7Pj9oWkBEdBQzi",
+        "title": "/work/answer.txt",
+        "kind": 1,
+        "status": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\u0022file_path\u0022:\u0022/work/answer.txt\u0022,\u0022content\u0022:\u002242\u0022}"
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:31:50.6008586+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 3522,
+      "event": {
+        "eventKind": "tool_call_update",
+        "toolCallId": "toolu_017HHHN5ZJ7Pj9oWkBEdBQzi",
+        "status": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "File created successfully at: /work/answer.txt (file state is current in your context \u2014 no need to Read it back)"
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:31:50.616165+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 4856,
+      "event": {
+        "eventKind": "message_chunk",
+        "role": 1,
+        "content": {
+          "type": "text",
+          "text": "Created answer.txt with the sum of 7 and 35: **42**."
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:31:51.9501185+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 4880,
+      "event": {
+        "eventKind": "turn_ended",
+        "reason": 0,
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:31:51.9748466+00:00",
+        "agentId": null
+      }
+    }
+  ],
+  "durationMs": 4880
+}

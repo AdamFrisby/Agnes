@@ -38,8 +38,17 @@ public sealed class ClaudeCredentialProvider : IAgentCredentialProvider
             if (File.Exists(credsPath))
             {
                 var raw = await File.ReadAllTextAsync(credsPath, cancellationToken).ConfigureAwait(false);
-                if (TrySanitise(raw, out var bundle))
+                if (TrySanitise(raw, out var bundle, out var accessToken))
                 {
+                    // The access token in CLAUDE_CODE_OAUTH_TOKEN is what actually authenticates the
+                    // in-VM claude CLI (it does not honour a materialised .credentials.json). Set it
+                    // unless the host already exported one above. Still materialise the sanitised file
+                    // (refresh_token stripped) as a secondary, forward-compatible artifact.
+                    if (!env.ContainsKey("CLAUDE_CODE_OAUTH_TOKEN"))
+                    {
+                        env["CLAUDE_CODE_OAUTH_TOKEN"] = accessToken;
+                    }
+
                     files.Add(new SandboxCredentialFile(".claude/.credentials.json", bundle));
                 }
             }
@@ -54,8 +63,13 @@ public sealed class ClaudeCredentialProvider : IAgentCredentialProvider
 
     /// <summary>Keeps accessToken + expiresAt; drops refresh_token and everything else.</summary>
     internal static bool TrySanitise(string? rawContents, out string sanitisedBundle)
+        => TrySanitise(rawContents, out sanitisedBundle, out _);
+
+    /// <summary>Keeps accessToken + expiresAt; drops refresh_token. Also returns the raw access token.</summary>
+    internal static bool TrySanitise(string? rawContents, out string sanitisedBundle, out string accessToken)
     {
         sanitisedBundle = string.Empty;
+        accessToken = string.Empty;
         if (string.IsNullOrEmpty(rawContents))
         {
             return false;
@@ -71,6 +85,8 @@ public sealed class ClaudeCredentialProvider : IAgentCredentialProvider
             {
                 return false;
             }
+
+            accessToken = token;
 
             using var stream = new MemoryStream();
             using (var writer = new Utf8JsonWriter(stream))

@@ -63,17 +63,21 @@ public sealed class AcpAgentAdapter : IAgentAdapter
     private Process StartProcess(AgentSessionOptions options)
     {
         // When a sandbox is set, run the agent inside it (e.g. `incus exec … -- agent`) instead of
-        // on the host; the agent's stdin/stdout flow through the exec pipe unchanged.
+        // on the host; the agent's stdin/stdout flow through the exec pipe unchanged. The guest
+        // working directory travels inside the wrapped argv, so the host launcher must use a real
+        // host directory, not the guest path.
         var (command, arguments) = (_spec.Command, (IReadOnlyList<string>)_spec.Arguments);
+        var hostWorkingDirectory = options.WorkingDirectory;
         if (options.Sandbox is { } sandbox)
         {
             (command, arguments) = sandbox.WrapCommand(command, arguments, options.WorkingDirectory);
+            hostWorkingDirectory = Environment.CurrentDirectory;
         }
 
         var startInfo = new ProcessStartInfo
         {
             FileName = command,
-            WorkingDirectory = options.WorkingDirectory,
+            WorkingDirectory = hostWorkingDirectory,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

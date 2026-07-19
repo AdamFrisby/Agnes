@@ -16,6 +16,9 @@
     <ProjectReference Include="..\..\src\Agnes.Acp\Agnes.Acp.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Agents.ClaudeCode\Agnes.Agents.ClaudeCode.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Agents.OpenCode\Agnes.Agents.OpenCode.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Agents.Native\Agnes.Agents.Native.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Sandbox\Agnes.Sandbox.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Sandbox.Incus\Agnes.Sandbox.Incus.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Recording\Agnes.Recording.csproj" />
   </ItemGroup>
 

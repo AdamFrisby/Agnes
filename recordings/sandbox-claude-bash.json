@@ -1,0 +1,79 @@
+{
+  "name": "Sandboxed Claude bash exec",
+  "adapterId": "claude-code-native",
+  "agentDisplayName": "Claude Code (native)",
+  "recordedAt": "2026-07-19T01:40:10.1404208+00:00",
+  "events": [
+    {
+      "offsetMs": 0,
+      "event": {
+        "eventKind": "session_started",
+        "agentSessionId": "a36aa718-eda3-438b-873e-4fc0afd1b94f",
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:40:10.1404208+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 1984,
+      "event": {
+        "eventKind": "tool_call",
+        "toolCallId": "toolu_0169kkHbSjSfK5PxiBLsQDGn",
+        "title": "uname -sr",
+        "kind": 5,
+        "status": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\u0022command\u0022:\u0022uname -sr\u0022,\u0022description\u0022:\u0022Print kernel name and release\u0022}"
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:40:12.1250887+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 2038,
+      "event": {
+        "eventKind": "tool_call_update",
+        "toolCallId": "toolu_0169kkHbSjSfK5PxiBLsQDGn",
+        "status": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "Linux 6.8.0-134-generic"
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:40:12.1792662+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 3587,
+      "event": {
+        "eventKind": "message_chunk",
+        "role": 1,
+        "content": {
+          "type": "text",
+          "text": "Linux 6.8.0-134-generic"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:40:13.7275463+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 3656,
+      "event": {
+        "eventKind": "turn_ended",
+        "reason": 0,
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:40:13.7971736+00:00",
+        "agentId": null
+      }
+    }
+  ],
+  "durationMs": 3656
+}

@@ -1,0 +1,43 @@
+{
+  "name": "Sandboxed Claude Q\u0026A",
+  "adapterId": "claude-code-native",
+  "agentDisplayName": "Claude Code (native)",
+  "recordedAt": "2026-07-19T01:30:43.7446149+00:00",
+  "events": [
+    {
+      "offsetMs": 0,
+      "event": {
+        "eventKind": "session_started",
+        "agentSessionId": "40bd82e5-1233-4151-998e-bffdeea7d01a",
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:30:43.7446149+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 1679,
+      "event": {
+        "eventKind": "message_chunk",
+        "role": 1,
+        "content": {
+          "type": "text",
+          "text": "408"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:30:45.4238544+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 1704,
+      "event": {
+        "eventKind": "turn_ended",
+        "reason": 0,
+        "sequence": 0,
+        "timestamp": "2026-07-19T01:30:45.4486769+00:00",
+        "agentId": null
+      }
+    }
+  ],
+  "durationMs": 1704
+}

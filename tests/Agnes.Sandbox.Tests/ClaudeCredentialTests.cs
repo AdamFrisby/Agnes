@@ -25,6 +25,19 @@ public class ClaudeCredentialTests
         Assert.False(oauth.TryGetProperty("scopes", out _));
     }
 
+    [Fact]
+    public void Sanitise_also_surfaces_the_raw_access_token_for_the_env_var()
+    {
+        // The in-VM claude CLI authenticates via CLAUDE_CODE_OAUTH_TOKEN (it ignores a materialised
+        // .credentials.json), so the provider must be able to extract the raw token.
+        var raw = """
+            {"claudeAiOauth":{"accessToken":"sk-ant-oat01-xyz","refreshToken":"secret","expiresAt":1893456000000}}
+            """;
+
+        Assert.True(ClaudeCredentialProvider.TrySanitise(raw, out _, out var accessToken));
+        Assert.Equal("sk-ant-oat01-xyz", accessToken);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not json")]

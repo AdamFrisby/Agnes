@@ -44,15 +44,19 @@ public sealed class NativeStreamAdapter : IAgentAdapter
     private Process StartProcess(AgentSessionOptions options)
     {
         // When a sandbox is set, run the agent inside it (streams flow through the exec pipe).
+        // The guest working directory travels inside the wrapped argv (e.g. `incus exec --cwd`);
+        // the host launcher process must use a real host directory, not the guest path.
         var (command, arguments) = (_spec.Command, (IReadOnlyList<string>)_spec.Arguments);
+        var hostWorkingDirectory = options.WorkingDirectory;
         if (options.Sandbox is { } sandbox)
         {
             (command, arguments) = sandbox.WrapCommand(command, arguments, options.WorkingDirectory);
+            hostWorkingDirectory = Environment.CurrentDirectory;
         }
 
         var psi = new ProcessStartInfo(command)
         {
-            WorkingDirectory = options.WorkingDirectory,
+            WorkingDirectory = hostWorkingDirectory,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
