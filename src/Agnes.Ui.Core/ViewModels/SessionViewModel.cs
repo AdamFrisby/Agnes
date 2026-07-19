@@ -516,6 +516,9 @@ public sealed class SessionViewModel : ObservableObject
         }
     }
 
+    /// <summary>Whether this session runs autonomously (tool calls without asking). Shown as a chip.</summary>
+    public bool IsAutonomous => _view.Info?.SkipPermissions == true;
+
     public bool HasSandbox => _sandbox is not null;
     public bool SandboxPaused => string.Equals(_sandbox?.State, "Paused", StringComparison.OrdinalIgnoreCase);
     public string SandboxSummary => _sandbox is null ? string.Empty : $"🛡 sandbox · {_sandbox.State.ToLowerInvariant()}";

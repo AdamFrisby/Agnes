@@ -113,7 +113,8 @@ public sealed class SimulatedHost : IAgnesHost
         session.Emit(new MessageChunkEvent(MessageRole.Assistant,
             new TextContent($"Session ready on {DisplayName(adapterId)}. Ask me anything.")));
         session.Emit(new TurnEndedEvent(StopReason.EndTurn));
-        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id)));
+        session.SkipPermissions = skipPermissions;
+        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id), skipPermissions));
     }
 
     // A simulated Incus sandbox so the desktop sandbox chip is demoable + screenshot-verifiable offline.
@@ -382,6 +383,7 @@ public sealed class SimulatedHost : IAgnesHost
         private readonly List<SessionEvent> _log = [];
         private long _seq;
         private CancellationTokenSource? _turn;
+        public bool SkipPermissions { get; set; }
 
         public SimSession(string id, string adapterId, string cwd)
         {
@@ -439,7 +441,7 @@ public sealed class SimulatedHost : IAgnesHost
             lock (_gate)
             {
                 return new SessionSnapshot(
-                    new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId, new SandboxStatus("incus", $"agnes-{Id}", "Running")),
+                    new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId, new SandboxStatus("incus", $"agnes-{Id}", "Running"), SkipPermissions),
                     _log.ToArray(), _seq);
             }
         }

@@ -81,6 +81,18 @@ public static class Program
         vm.Theme = "Dark";
         Settle(150);
 
+        // 3a) Autonomous session: the ⚡ chip shows the agent runs tools without asking.
+        vm.NewTabCommand.Execute(null);
+        var autoTab = LastTab(vm)!;
+        Pump(() => autoTab.Hosts is { Count: > 0 });
+        autoTab.Hosts!.First().Select.Execute(null);
+        Pump(() => autoTab.Agents is { Count: > 0 });
+        autoTab.SkipPermissions = true;
+        autoTab.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
+        Pump(() => autoTab.Session is { IsAutonomous: true });
+        Capture(window, "03a-autonomous-session.png");
+        vm.CloseActiveTabCommand.Execute(null);
+
         // 3b) Conversation rewind: view history as of an earlier message (read-only).
         first.Session!.RewindToCommand.Execute(first.Session!.Items.OfType<MessageBubbleItem>().First(m => m.IsUser));
         Pump(() => first.Session!.IsRewound);

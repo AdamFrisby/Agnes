@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Agnes.App.Desktop.Persistence;
 using Agnes.Client;
 using Agnes.Protocol;
@@ -87,6 +88,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         CloseActiveTabCommand = new RelayCommand(CloseActiveTab);
         ToggleReducedMotionCommand = new RelayCommand(() => ReducedMotion = !ReducedMotion);
         SetThemeCommand = new RelayCommand<string>(t => { if (t is not null) { Theme = t; } });
+        LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
+        RevokeDeviceCommand = new AsyncRelayCommand<string>(RevokeDeviceAsync);
     }
 
     public IRelayCommand CloseActiveTabCommand { get; }
@@ -189,6 +192,67 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 "Dark" => Avalonia.Styling.ThemeVariant.Dark,
                 _ => Avalonia.Styling.ThemeVariant.Default,
             };
+        }
+    }
+
+    // ---- device management (for the active session's host) ----
+
+    public ObservableCollection<DeviceInfo> Devices { get; } = [];
+
+    [ObservableProperty]
+    private string _devicesStatus = "Open a session on a host to manage its paired devices.";
+
+    public IAsyncRelayCommand LoadDevicesCommand { get; }
+    public IAsyncRelayCommand<string> RevokeDeviceCommand { get; }
+
+    private (string Url, string Token)? ActiveHttpHost()
+        => _factory.DocumentDock?.ActiveDockable is SessionDocument { Host: { } host } doc
+           && host.HostUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+            ? (host.HostUrl, doc.HostToken)
+            : null;
+
+    private async Task LoadDevicesAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => { Devices.Clear(); DevicesStatus = "Open a session on a host to manage its paired devices."; });
+            return;
+        }
+
+        try
+        {
+            DevicesStatus = "Loading…";
+            var list = await DeviceManagement.ListAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() =>
+            {
+                Devices.Clear();
+                foreach (var d in list) { Devices.Add(d); }
+                DevicesStatus = list.Count == 0 ? "No paired devices." : $"{list.Count} paired device(s).";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => DevicesStatus = "Couldn't load devices: " + ex.Message);
+        }
+    }
+
+    private async Task RevokeDeviceAsync(string? deviceId)
+    {
+        var target = ActiveHttpHost();
+        if (target is null || string.IsNullOrEmpty(deviceId))
+        {
+            return;
+        }
+
+        try
+        {
+            await DeviceManagement.RevokeAsync(target.Value.Url, target.Value.Token, deviceId);
+            await LoadDevicesAsync();
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => DevicesStatus = "Couldn't revoke: " + ex.Message);
         }
     }
 

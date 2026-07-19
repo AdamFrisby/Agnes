@@ -203,11 +203,34 @@
                                     <Border Height="1" Background="{DynamicResource Line}" />
                                     <TextBlock Text="Keyboard" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" />
                                     <StackPanel Spacing="3">
-                                        <TextBlock Text="Ctrl+T  New tab · Ctrl+W  Close tab" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="Ctrl+T  New tab · Ctrl+W  Close tab · Ctrl+Tab  Next tab" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                         <TextBlock Text="Ctrl+Enter  Send · Alt+↑/↓  Prompt history" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                         <TextBlock Text="Ctrl+F  Search · F3/Shift+F3  Next/prev match" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                         <TextBlock Text="F8/F7  Next/prev prompt · Ctrl+F8/F7  Next/prev change" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                     </StackPanel>
+                                    <Border Height="1" Background="{DynamicResource Line}" />
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="Paired devices" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Content="Refresh" Command="{Binding LoadDevicesCommand}" Classes="seg" />
+                                    </Grid>
+                                    <ItemsControl ItemsSource="{Binding Devices}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                        <TextBlock Text="{Binding PairedAt, StringFormat='paired {0:yyyy-MM-dd}'}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Content="Revoke" FontSize="11" Padding="9,3"
+                                                            Background="Transparent" Foreground="#E5484D"
+                                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.RevokeDeviceCommand}"
+                                                            CommandParameter="{Binding Id}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="{Binding DevicesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Flyout>
                         </Button.Flyout>

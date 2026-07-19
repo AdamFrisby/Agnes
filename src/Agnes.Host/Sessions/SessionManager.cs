@@ -112,7 +112,7 @@ public sealed class SessionManager : IAsyncDisposable
         await _store.SaveSessionAsync(record, cancellationToken).ConfigureAwait(false);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox));
+        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions);
     }
 
     /// <summary>Loads the persisted session catalogue on startup. Sessions are dormant (history
@@ -274,8 +274,9 @@ public sealed class SessionManager : IAsyncDisposable
         var (adapterId, workingDirectory) = _sessions.TryGetValue(sessionId, out var live)
             ? (live.AdapterId, live.WorkingDirectory)
             : (_catalog[sessionId].AdapterId, _catalog[sessionId].WorkingDirectory);
+        var skipPermissions = _catalog.TryGetValue(sessionId, out var rec) && rec.SkipPermissions;
         var info = new SessionInfo(sessionId, adapterId, workingDirectory, head,
-            live?.Modes, live?.CurrentModeId, GetSandboxStatus(sessionId));
+            live?.Modes, live?.CurrentModeId, GetSandboxStatus(sessionId), skipPermissions);
         return new SessionSnapshot(info, events, head);
     }
 

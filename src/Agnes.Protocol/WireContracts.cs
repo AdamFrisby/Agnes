@@ -50,7 +50,11 @@ public sealed record SessionInfo(
     long HeadSequence,
     IReadOnlyList<SessionMode>? Modes = null,
     string? CurrentModeId = null,
-    SandboxStatus? Sandbox = null);
+    SandboxStatus? Sandbox = null,
+    bool SkipPermissions = false);
+
+/// <summary>A device paired with a host (metadata only — never the token).</summary>
+public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt);
 
 /// <summary>Status of the sandbox a session runs in, or null if it runs on the host.</summary>
 public sealed record SandboxStatus(string Provider, string Id, string State);

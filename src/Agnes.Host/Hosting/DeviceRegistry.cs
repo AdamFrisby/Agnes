@@ -2,12 +2,10 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Agnes.Protocol;
 using Microsoft.Extensions.Logging;
 
 namespace Agnes.Host.Hosting;
-
-/// <summary>Public metadata about a paired device (never includes the token).</summary>
-public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt);
 
 /// <summary>The result of a successful pairing — the raw token is shown to the client exactly once.</summary>
 public sealed record PairingResult(string DeviceId, string DeviceName, string Token);

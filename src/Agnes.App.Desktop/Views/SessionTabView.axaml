@@ -139,6 +139,13 @@
                         <TextBlock Text="{Binding UsageSummary}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                    VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                    IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+                        <!-- Autonomous: agent runs tools without asking -->
+                        <Border IsVisible="{Binding Session.IsAutonomous}" Background="{DynamicResource AccentSoft}"
+                                BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="6" Padding="9,3"
+                                VerticalAlignment="Center" ToolTip.Tip="This session runs tool calls without asking for approval.">
+                            <TextBlock Text="⚡ autonomous" Foreground="{DynamicResource Accent}" FontSize="11" FontWeight="SemiBold" />
+                        </Border>
+
                         <!-- Sandbox: isolation status + lifecycle -->
                         <Button IsVisible="{Binding Session.HasSandbox}" Background="Transparent" Foreground="{DynamicResource FgDim}"
                                 BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
