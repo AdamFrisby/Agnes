@@ -62,6 +62,35 @@ public sealed record SessionInfo(
 /// <summary>A device paired with a host (metadata only — never the token).</summary>
 public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt);
 
+/// <summary>
+/// An MCP server registered on a host. <see cref="RunAt"/> is "host" (runs on the Agnes host; used
+/// by host sessions and forwarded into sandboxes) or "sandbox" (runs inside the VM). <see cref="Transport"/>
+/// is "stdio" (Command/Args/Env) or "http" (Url/BearerTokenEnv). A server is used only when Enabled.
+/// </summary>
+public sealed record McpServerInfo(
+    string Id,
+    string Name,
+    string RunAt,
+    bool Enabled,
+    string Transport,
+    string? Command,
+    IReadOnlyList<string> Args,
+    IReadOnlyDictionary<string, string> Env,
+    string? Url,
+    string? BearerTokenEnv);
+
+/// <summary>Create/replace payload for an MCP server (Id is assigned by the host on add).</summary>
+public sealed record McpServerRequest(
+    string Name,
+    string RunAt,
+    bool Enabled,
+    string Transport,
+    string? Command = null,
+    IReadOnlyList<string>? Args = null,
+    IReadOnlyDictionary<string, string>? Env = null,
+    string? Url = null,
+    string? BearerTokenEnv = null);
+
 /// <summary>Status of the sandbox a session runs in, or null if it runs on the host.</summary>
 public sealed record SandboxStatus(string Provider, string Id, string State);
 

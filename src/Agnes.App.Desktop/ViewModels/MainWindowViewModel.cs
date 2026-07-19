@@ -89,6 +89,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SetThemeCommand = new RelayCommand<string>(t => { if (t is not null) { Theme = t; } });
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
         RevokeDeviceCommand = new AsyncRelayCommand<string>(RevokeDeviceAsync);
+        LoadMcpServersCommand = new AsyncRelayCommand(LoadMcpServersAsync);
+        AddMcpServerCommand = new AsyncRelayCommand(AddMcpServerAsync);
+        RemoveMcpServerCommand = new AsyncRelayCommand<string>(RemoveMcpServerAsync);
+        ToggleMcpServerCommand = new AsyncRelayCommand<McpServerInfo>(ToggleMcpServerAsync);
+        SetMcpApprovalCommand = new RelayCommand<string>(v => { if (v is not null) { McpApproval = v; } });
+        SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
+        SetNewMcpTransportCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpTransport = v; } });
         NextTabCommand = new RelayCommand(() => CycleTab(1));
         PrevTabCommand = new RelayCommand(() => CycleTab(-1));
         ActivateTabByIndexCommand = new RelayCommand<string>(ActivateTabByIndex);
@@ -346,6 +353,167 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         catch (Exception ex)
         {
             _dispatcher.Post(() => DevicesStatus = "Couldn't revoke: " + ex.Message);
+        }
+    }
+
+    // ---- MCP server management (for the active session's host) ----
+
+    public ObservableCollection<McpServerInfo> McpServers { get; } = [];
+
+    [ObservableProperty]
+    private string _mcpStatus = "Open a session on a host to manage its MCP servers.";
+
+    // New-server form fields.
+    [ObservableProperty] private string _newMcpName = string.Empty;
+    [ObservableProperty] private string _newMcpRunAt = "host";       // "host" | "sandbox"
+    [ObservableProperty] private string _newMcpTransport = "stdio";  // "stdio" | "http"
+    [ObservableProperty] private string _newMcpCommand = string.Empty;
+    [ObservableProperty] private string _newMcpArgs = string.Empty;  // space-separated
+    [ObservableProperty] private string _newMcpUrl = string.Empty;
+
+    public bool NewMcpIsStdio => NewMcpTransport == "stdio";
+    public bool NewMcpIsHttp => NewMcpTransport == "http";
+    public bool NewMcpRunAtHost => NewMcpRunAt == "host";
+    public bool NewMcpRunAtSandbox => NewMcpRunAt == "sandbox";
+
+    partial void OnNewMcpTransportChanged(string value)
+    {
+        OnPropertyChanged(nameof(NewMcpIsStdio));
+        OnPropertyChanged(nameof(NewMcpIsHttp));
+    }
+
+    partial void OnNewMcpRunAtChanged(string value)
+    {
+        OnPropertyChanged(nameof(NewMcpRunAtHost));
+        OnPropertyChanged(nameof(NewMcpRunAtSandbox));
+    }
+
+    /// <summary>Gating posture for MCP tools Agnes proxies: "Ask" (prompt on first use) or "Trust".</summary>
+    public string McpApproval
+    {
+        get => _settings.McpApproval;
+        set
+        {
+            if (!string.Equals(value, _settings.McpApproval, StringComparison.Ordinal))
+            {
+                _settings = _settings with { McpApproval = value };
+                _settingsStore.Save(_settings);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(McpApprovalAsk));
+                OnPropertyChanged(nameof(McpApprovalTrust));
+            }
+        }
+    }
+
+    public bool McpApprovalAsk => McpApproval != "Trust";
+    public bool McpApprovalTrust => McpApproval == "Trust";
+    public IRelayCommand<string> SetMcpApprovalCommand { get; }
+    public IRelayCommand<string> SetNewMcpRunAtCommand { get; }
+    public IRelayCommand<string> SetNewMcpTransportCommand { get; }
+
+    public IAsyncRelayCommand LoadMcpServersCommand { get; }
+    public IAsyncRelayCommand AddMcpServerCommand { get; }
+    public IAsyncRelayCommand<string> RemoveMcpServerCommand { get; }
+    public IAsyncRelayCommand<McpServerInfo> ToggleMcpServerCommand { get; }
+
+    private async Task LoadMcpServersAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => { McpServers.Clear(); McpStatus = "Open a session on a host to manage its MCP servers."; });
+            return;
+        }
+
+        try
+        {
+            McpStatus = "Loading…";
+            var list = await McpManagement.ListAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() =>
+            {
+                McpServers.Clear();
+                foreach (var s in list) { McpServers.Add(s); }
+                McpStatus = list.Count == 0 ? "No MCP servers configured." : $"{list.Count} MCP server(s).";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => McpStatus = "Couldn't load MCP servers: " + ex.Message);
+        }
+    }
+
+    private async Task AddMcpServerAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null || string.IsNullOrWhiteSpace(NewMcpName))
+        {
+            return;
+        }
+
+        var args = NewMcpArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var request = new McpServerRequest(
+            Name: NewMcpName.Trim(),
+            RunAt: NewMcpRunAt,
+            Enabled: true,
+            Transport: NewMcpTransport,
+            Command: NewMcpIsStdio ? NewMcpCommand.Trim() : null,
+            Args: NewMcpIsStdio ? args : null,
+            Url: NewMcpIsHttp ? NewMcpUrl.Trim() : null);
+
+        try
+        {
+            await McpManagement.AddAsync(target.Value.Url, target.Value.Token, request);
+            _dispatcher.Post(() =>
+            {
+                NewMcpName = NewMcpCommand = NewMcpArgs = NewMcpUrl = string.Empty;
+            });
+            await LoadMcpServersAsync();
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => McpStatus = "Couldn't add server: " + ex.Message);
+        }
+    }
+
+    private async Task RemoveMcpServerAsync(string? id)
+    {
+        var target = ActiveHttpHost();
+        if (target is null || string.IsNullOrEmpty(id))
+        {
+            return;
+        }
+
+        try
+        {
+            await McpManagement.RemoveAsync(target.Value.Url, target.Value.Token, id);
+            await LoadMcpServersAsync();
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => McpStatus = "Couldn't remove server: " + ex.Message);
+        }
+    }
+
+    private async Task ToggleMcpServerAsync(McpServerInfo? server)
+    {
+        var target = ActiveHttpHost();
+        if (target is null || server is null)
+        {
+            return;
+        }
+
+        var request = new McpServerRequest(
+            server.Name, server.RunAt, !server.Enabled, server.Transport,
+            server.Command, server.Args, server.Env, server.Url, server.BearerTokenEnv);
+
+        try
+        {
+            await McpManagement.UpdateAsync(target.Value.Url, target.Value.Token, server.Id, request);
+            await LoadMcpServersAsync();
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => McpStatus = "Couldn't update server: " + ex.Message);
         }
     }
 

@@ -50,6 +50,12 @@ builder.Services.AddSingleton(sp => new DeviceRegistry(
     builder.Configuration["Agnes:PairingToken"], devicesFile,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<DeviceRegistry>()));
 
+// ---- MCP server registry (configured from the UI, persisted to ~/.agnes/mcp.json) ----
+var mcpFile = builder.Configuration["Agnes:McpFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "mcp.json");
+builder.Services.AddSingleton(sp => new McpRegistry(
+    mcpFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpRegistry>()));
+
 // ---- event store: SQLite if a path is configured, else in-memory ----
 var databasePath = builder.Configuration["Agnes:Database"];
 if (string.IsNullOrWhiteSpace(databasePath))
@@ -217,6 +223,23 @@ app.MapGet("/devices", (HttpContext ctx) =>
 app.MapDelete("/devices/{id}", (HttpContext ctx, string id) =>
     !Authorized(ctx, tokens) ? Results.Unauthorized()
     : tokens.Revoke(id) ? Results.NoContent() : Results.NotFound());
+
+// ---- MCP server management (requires a valid token; mirrors /devices) ----
+var mcp = app.Services.GetRequiredService<McpRegistry>();
+
+app.MapGet("/mcp", (HttpContext ctx) =>
+    Authorized(ctx, tokens) ? Results.Ok(mcp.List()) : Results.Unauthorized());
+
+app.MapPost("/mcp", (HttpContext ctx, McpServerRequest request) =>
+    Authorized(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());
+
+app.MapPut("/mcp/{id}", (HttpContext ctx, string id, McpServerRequest request) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : mcp.Update(id, request) is { } updated ? Results.Ok(updated) : Results.NotFound());
+
+app.MapDelete("/mcp/{id}", (HttpContext ctx, string id) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : mcp.Remove(id) ? Results.NoContent() : Results.NotFound());
 
 if (webFiles is not null)
 {

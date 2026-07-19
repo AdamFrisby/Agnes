@@ -127,16 +127,58 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
             () => client.AddHostAsync("http://localhost", "wrong-token", UseTestServer()));
     }
 
+    [Fact]
+    public async Task Mcp_servers_can_be_added_listed_and_removed_over_rest()
+    {
+        using var http = _factory.CreateClient();
+
+        Assert.Empty(await McpManagement.ListAsync("http://localhost", Token, http));
+
+        var added = await McpManagement.AddAsync("http://localhost", Token,
+            new Agnes.Protocol.McpServerRequest("files", "host", true, "stdio", Command: "npx", Args: ["-y", "mcp-files"]),
+            http);
+        Assert.NotNull(added);
+        Assert.Equal("files", added!.Name);
+        Assert.Equal("host", added.RunAt);
+
+        var list = await McpManagement.ListAsync("http://localhost", Token, http);
+        Assert.Single(list);
+
+        await McpManagement.RemoveAsync("http://localhost", Token, added.Id, http);
+        Assert.Empty(await McpManagement.ListAsync("http://localhost", Token, http));
+    }
+
+    [Fact]
+    public async Task Mcp_endpoints_reject_an_invalid_token()
+    {
+        using var http = _factory.CreateClient();
+        await Assert.ThrowsAnyAsync<Exception>(
+            () => McpManagement.ListAsync("http://localhost", "wrong-token", http));
+    }
+
     public sealed class HostFactory : WebApplicationFactory<Program>
     {
         public ScriptedAdapter Adapter { get; } = new();
 
+        // A throwaway MCP registry file so the test never touches the real ~/.agnes/mcp.json.
+        public string McpFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-mcp-it-{Guid.NewGuid():n}.json");
+
         protected override IHost CreateHost(IHostBuilder builder)
         {
             builder.ConfigureHostConfiguration(config =>
-                config.AddInMemoryCollection(new Dictionary<string, string?> { ["Agnes:PairingToken"] = Token }));
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Agnes:PairingToken"] = Token,
+                    ["Agnes:McpFile"] = McpFile,
+                }));
             builder.ConfigureServices(services => services.AddSingleton<IAgentAdapter>(Adapter));
             return base.CreateHost(builder);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && File.Exists(McpFile)) File.Delete(McpFile);
         }
     }
 

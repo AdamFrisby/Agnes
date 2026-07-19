@@ -267,6 +267,91 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                     <TextBlock Text="{Binding DevicesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+
+                                    <Border Height="1" Background="{DynamicResource Line}" />
+
+                                    <!-- MCP servers: configured here, run on the host or inside the sandbox -->
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="MCP servers" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Content="Refresh" Command="{Binding LoadMcpServersCommand}" Classes="seg" />
+                                    </Grid>
+
+                                    <!-- gating posture for the MCP tools Agnes forwards -->
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="Tools" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
+                                        <Button Content="Ask first" Command="{Binding SetMcpApprovalCommand}" CommandParameter="Ask"
+                                                Classes.on="{Binding McpApprovalAsk}" Classes="seg"
+                                                ToolTip.Tip="Prompt the first time a session uses a forwarded MCP server" />
+                                        <Button Content="Trust" Command="{Binding SetMcpApprovalCommand}" CommandParameter="Trust"
+                                                Classes.on="{Binding McpApprovalTrust}" Classes="seg"
+                                                ToolTip.Tip="Run forwarded MCP tools without prompting (still audited)" />
+                                    </StackPanel>
+
+                                    <ItemsControl ItemsSource="{Binding McpServers}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3" ColumnSpacing="6">
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                        <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
+                                                            <Run Text="{Binding Transport}" /><Run Text=" · run at " /><Run Text="{Binding RunAt}" />
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" FontSize="11" Padding="9,3" Classes="seg"
+                                                            Classes.on="{Binding Enabled}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip.Tip="Enable or disable this server">
+                                                        <Panel>
+                                                            <TextBlock Text="Enabled" IsVisible="{Binding Enabled}" />
+                                                            <TextBlock Text="Disabled" IsVisible="{Binding !Enabled}" />
+                                                        </Panel>
+                                                    </Button>
+                                                    <Button Grid.Column="2" Content="Remove" FontSize="11" Padding="9,3"
+                                                            Background="Transparent" Foreground="#E5484D"
+                                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.RemoveMcpServerCommand}"
+                                                            CommandParameter="{Binding Id}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- add a server -->
+                                    <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                            CornerRadius="8" Padding="9" Margin="0,2,0,0">
+                                        <StackPanel Spacing="6">
+                                            <TextBox Text="{Binding NewMcpName, Mode=TwoWay}" Watermark="Server name"
+                                                     FontSize="12" Padding="8,5" CornerRadius="6" />
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="Run at" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
+                                                <Button Content="Host" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="host"
+                                                        Classes.on="{Binding NewMcpRunAtHost}" Classes="seg" />
+                                                <Button Content="Sandbox" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="sandbox"
+                                                        Classes.on="{Binding NewMcpRunAtSandbox}" Classes="seg" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="Transport" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
+                                                <Button Content="stdio" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="stdio"
+                                                        Classes.on="{Binding NewMcpIsStdio}" Classes="seg" />
+                                                <Button Content="http" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="http"
+                                                        Classes.on="{Binding NewMcpIsHttp}" Classes="seg" />
+                                            </StackPanel>
+                                            <StackPanel Spacing="6" IsVisible="{Binding NewMcpIsStdio}">
+                                                <TextBox Text="{Binding NewMcpCommand, Mode=TwoWay}" Watermark="command (e.g. npx)"
+                                                         FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                                <TextBox Text="{Binding NewMcpArgs, Mode=TwoWay}" Watermark="args (space-separated)"
+                                                         FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                            </StackPanel>
+                                            <TextBox IsVisible="{Binding NewMcpIsHttp}" Text="{Binding NewMcpUrl, Mode=TwoWay}"
+                                                     Watermark="https://server/mcp" FontSize="12" Padding="8,5" CornerRadius="6"
+                                                     FontFamily="{StaticResource MonoFont}" />
+                                            <Button Content="Add server" Command="{Binding AddMcpServerCommand}" HorizontalAlignment="Left"
+                                                    Classes="seg" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <TextBlock Text="{Binding McpStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Flyout>
                         </Button.Flyout>

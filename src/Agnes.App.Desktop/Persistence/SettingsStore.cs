@@ -12,7 +12,8 @@ public sealed record AppSettings(
     bool WindowMaximized = false,
     string Theme = "System",
     double FontScale = 1.0,
-    string WorkingDirectory = "");
+    string WorkingDirectory = "",
+    string McpApproval = "Ask");
 
 /// <summary>Persists <see cref="AppSettings"/> to a JSON file (best-effort).</summary>
 public sealed class SettingsStore
