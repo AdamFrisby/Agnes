@@ -18,8 +18,12 @@ public static class ClaudeCodeNative
         DisplayName = "Claude Code (native)",
     };
 
+    // --print is required for headless stream-json mode (without it the CLI starts its interactive
+    // TUI and emits nothing on a pipe). --input-format stream-json keeps ONE process alive across
+    // turns (a persistent session), so we never respawn or --resume. Sandboxed launches also add
+    // --dangerously-skip-permissions (the VM is the boundary); that stays out of the host default.
     public static readonly string[] DefaultArguments =
-        ["--output-format", "stream-json", "--input-format", "stream-json", "--verbose"];
+        ["--print", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose"];
 
     public static NativeStreamAdapter Create(ILoggerFactory loggerFactory, string? command = null, IReadOnlyList<string>? arguments = null)
         => new(new NativeLaunchSpec

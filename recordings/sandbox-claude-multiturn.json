@@ -1,0 +1,77 @@
+{
+  "name": "Sandboxed Claude multi-turn",
+  "adapterId": "claude-code-native",
+  "agentDisplayName": "Claude Code (native)",
+  "recordedAt": "2026-07-19T02:03:55.5129485+00:00",
+  "events": [
+    {
+      "offsetMs": 0,
+      "event": {
+        "eventKind": "session_started",
+        "agentSessionId": "5be1fdf4-5c3e-4db9-b607-da98bc81d68b",
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:03:55.5129485+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 1751,
+      "event": {
+        "eventKind": "message_chunk",
+        "role": 1,
+        "content": {
+          "type": "text",
+          "text": "ok"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:03:57.264693+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 1791,
+      "event": {
+        "eventKind": "turn_ended",
+        "reason": 0,
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:03:57.3049236+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 1805,
+      "event": {
+        "eventKind": "session_started",
+        "agentSessionId": "5be1fdf4-5c3e-4db9-b607-da98bc81d68b",
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:03:57.3180396+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 3182,
+      "event": {
+        "eventKind": "message_chunk",
+        "role": 1,
+        "content": {
+          "type": "text",
+          "text": "17"
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:03:58.6953366+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 3214,
+      "event": {
+        "eventKind": "turn_ended",
+        "reason": 0,
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:03:58.7271274+00:00",
+        "agentId": null
+      }
+    }
+  ],
+  "durationMs": 3214
+}

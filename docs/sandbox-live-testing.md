@@ -84,6 +84,7 @@ Committed under `recordings/`, usable as `RecordedHost` fixtures:
 | `sandbox-claude-qa.json`    | text turn (answer `408`) |
 | `sandbox-claude-tools.json` | Read + Write tools; edited file written back to the host via the virtiofs `/work` mount |
 | `sandbox-claude-bash.json`  | Bash execution — `uname -sr` → `Linux 6.8.0-134-generic` (the **guest** kernel, not the host's, proving isolation) |
+| `sandbox-claude-multiturn.json` | two turns in one **persistent** in-VM process: "remember 17" → later recalls `17` |
 
 ## Findings from live testing
 
@@ -100,11 +101,18 @@ Committed under `recordings/`, usable as `RecordedHost` fixtures:
    root-owned tmpfs env file the run-wrapper injects) in addition to the
    sanitised file. The refresh token is still never shipped into the VM.
 
-3. **Multi-turn (known limitation, not fixed here).** The native adapter keeps
-   one long-lived `claude --print` process and feeds turns reactively; `claude`
-   exits after the first turn's `result`, so a second prompt yields no output.
-   `claude`'s CLI is one-process-per-turn: multi-turn continuity is done with a
-   fresh `claude --print --resume <session-id>` per turn (how CodeyBox does it).
-   This is a native-adapter session-model issue independent of sandboxing; the
-   ACP adapter is unaffected. Reworking `NativeAgentSession` to per-turn
-   `--resume` is tracked separately.
+3. **Persistent multi-turn session (fixed — the `setsid` trap).** We want a real
+   long-lived session: **one** `claude --print --input-format stream-json
+   --output-format stream-json` process kept alive and fed successive turns over
+   its stdin (not `--resume`, which is crash recovery and breaks cron/long-lived
+   use). claude fully supports this — but the sandbox's run-wrapper wrapped it in
+   `setsid` (inherited from CodeyBox, which runs one process *per turn* so never
+   noticed). With a detached session, claude **exits after turn 1's `result`**
+   when it next reads stdin, so turn 2 got nothing. Bisected live: same command
+   through `incus exec` works *without* `setsid` and dies *with* it. incus-exec
+   allocates no controlling tty here, so `setsid` added no isolation — removed it
+   from `IncusGuest.RunWrapper`. Now one in-VM process handles many turns and
+   remembers context across them (`sandbox-claude-multiturn.json`).
+
+   Also: the native adapter's `DefaultArguments` needed `--print` — without it the
+   CLI starts its interactive TUI and emits nothing on a pipe. Added.

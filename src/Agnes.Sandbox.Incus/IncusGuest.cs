@@ -11,6 +11,10 @@ internal static class IncusGuest
     /// Runs the agent as the unprivileged user with a scrubbed environment (ported from CodeyBox's
     /// exec wrapper, simplified for the interactive path: <c>exec</c> replaces the shell so the
     /// agent's stdin/stdout are the incus-exec pipe). Reads secrets from the root-owned env file.
+    /// NB: no <c>setsid</c> — a detached session makes a long-lived stream-json agent exit when it
+    /// reads stdin for a second turn (empirically: claude quits after turn 1). incus-exec allocates
+    /// no controlling tty here anyway, so setsid adds no isolation; keeping the agent in the exec's
+    /// own session preserves the persistent multi-turn stdin (and gives cleaner teardown).
     /// </summary>
     internal static string RunWrapper(IncusOptions o) => $$"""
         #!/bin/bash
@@ -21,7 +25,7 @@ internal static class IncusGuest
           while IFS= read -r -d '' e; do envs+=("$e"); done < "$env_file"
         fi
         umask 077
-        exec setsid -- setpriv --no-new-privs --reuid={{o.GuestUserId}} --regid={{o.GuestGroupId}} --clear-groups -- env -i -- "${envs[@]}" "$@"
+        exec setpriv --no-new-privs --reuid={{o.GuestUserId}} --regid={{o.GuestGroupId}} --clear-groups -- env -i -- "${envs[@]}" "$@"
         """;
 
     internal static string CloudInit(IncusOptions o) => $$"""
