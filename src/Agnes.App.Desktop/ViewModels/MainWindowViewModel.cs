@@ -383,19 +383,94 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         Notifier.Notify(notification);
     }
 
-    /// <summary>Jumps to the session (and the specific transcript item) a notification came from.</summary>
-    public void ActivateNotification(AppNotification notification)
+    /// <summary>Detaches a tab into its own floating window (Dock manages re-docking on drag-back).</summary>
+    public void FloatTab(SessionDocument doc)
     {
+        _factory.FloatDockable(doc);
+        SaveState();
+    }
+
+    /// <summary>
+    /// Jumps to the session (and the specific transcript item) a notification came from — in the main
+    /// window or in a detached floating window. Returns true if it focused a floating window (the
+    /// caller then need not activate the main window).
+    /// </summary>
+    public bool ActivateNotification(AppNotification notification)
+    {
+        // Main window tabs.
         var doc = OpenTabs().FirstOrDefault(d => d.Session?.SessionId == notification.SessionId);
-        if (doc is null)
+        if (doc is not null)
         {
-            return;
+            _factory.SetActiveDockable(doc);
+            RevealAnchor(doc, notification);
+            return false;
         }
 
-        _factory.SetActiveDockable(doc);
+        // Detached (floating) windows.
+        foreach (var window in ((IRootDock)Layout).Windows ?? [])
+        {
+            var floated = DocumentsIn(window.Layout).FirstOrDefault(d => d.Session?.SessionId == notification.SessionId);
+            if (floated is not null)
+            {
+                _factory.SetActiveDockable(floated);
+                RevealAnchor(floated, notification);
+                window.Host?.SetActive();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void RevealAnchor(SessionDocument doc, AppNotification notification)
+    {
         if (!string.IsNullOrEmpty(notification.AnchorId))
         {
             doc.Session?.ScrollTo(notification.AnchorId);
+        }
+    }
+
+    // All open session documents, across the main window and any detached windows.
+    private IEnumerable<SessionDocument> AllDocuments()
+        => OpenTabs().Concat(((IRootDock)Layout).Windows?.SelectMany(w => DocumentsIn(w.Layout)) ?? []);
+
+    private bool IsFloating(SessionDocument doc)
+        => (((IRootDock)Layout).Windows ?? []).Any(w => DocumentsIn(w.Layout).Contains(doc));
+
+    // Activates a document and brings its window (main or detached) forward.
+    private void FocusDocument(SessionDocument doc)
+    {
+        _factory.SetActiveDockable(doc);
+        foreach (var window in ((IRootDock)Layout).Windows ?? [])
+        {
+            if (DocumentsIn(window.Layout).Contains(doc))
+            {
+                window.Host?.SetActive();
+                return;
+            }
+        }
+    }
+
+    private static IEnumerable<SessionDocument> DocumentsIn(IDock? dock)
+    {
+        if (dock?.VisibleDockables is null)
+        {
+            yield break;
+        }
+
+        foreach (var dockable in dock.VisibleDockables)
+        {
+            if (dockable is SessionDocument sd)
+            {
+                yield return sd;
+            }
+            else if (dockable is IDock nested)
+            {
+                foreach (var inner in DocumentsIn(nested))
+                {
+                    yield return inner;
+                }
+            }
         }
     }
 
@@ -506,8 +581,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             new("New tab", "Ctrl+T", () => NewTabCommand.Execute(null)),
         };
-        all.AddRange(OpenTabs().Select(t => new PaletteItem(
-            string.IsNullOrWhiteSpace(t.Title) ? "New session" : t.Title, "session", () => _factory.SetActiveDockable(t))));
+        all.AddRange(AllDocuments().Select(t => new PaletteItem(
+            string.IsNullOrWhiteSpace(t.Title) ? "New session" : t.Title,
+            IsFloating(t) ? "window" : "session",
+            () => FocusDocument(t))));
 
         PaletteItems.Clear();
         foreach (var item in all.Where(i => q.Length == 0 || i.Label.Contains(q, StringComparison.OrdinalIgnoreCase)))

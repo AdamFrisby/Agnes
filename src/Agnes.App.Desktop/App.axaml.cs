@@ -33,8 +33,12 @@ public partial class App : Application
                 () => viewModel.WindowActive,
                 onActivated: n =>
                 {
-                    window.Activate();
-                    viewModel.ActivateNotification(n);
+                    // If the session lives in a detached window, ActivateNotification focuses it;
+                    // otherwise bring the main window forward.
+                    if (!viewModel.ActivateNotification(n))
+                    {
+                        window.Activate();
+                    }
                 });
             window.Activated += (_, _) => viewModel.WindowActive = true;
             window.Deactivated += (_, _) => viewModel.WindowActive = false;

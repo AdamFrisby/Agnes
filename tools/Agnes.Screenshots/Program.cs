@@ -239,6 +239,27 @@ public static class Program
         // 7) The browser-style tab strip (several tabs now open)
         Capture(window, "07-tabs.png");
 
+        // 7w) Multi-window: detach a tab into its own floating window.
+        try
+        {
+            var detach = LastTab(vm)!;
+            vm.FloatTab(detach);
+            Settle(400);
+            var root = (IRootDock)vm.Layout;
+            var floated = root.Windows?.Count ?? 0;
+            System.Console.WriteLine($"floated windows: {floated}");
+            if (root.Windows?.FirstOrDefault()?.Host is Window host)
+            {
+                host.Show();
+                Settle(300);
+                Capture(host, "07w-detached-window.png");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            System.Console.WriteLine("multi-window scene skipped: " + ex.Message);
+        }
+
         // 8) Auto-reconnect on relaunch: a fresh instance restoring the saved tabs
         var vm2 = new MainWindowViewModel(NewConnector(recordingsDir), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
         var window2 = new MainWindow { DataContext = vm2 };

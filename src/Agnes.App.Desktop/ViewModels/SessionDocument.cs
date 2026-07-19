@@ -36,6 +36,7 @@ public sealed partial class SessionDocument : Document
         ArchiveCommand = new RelayCommand(() => _controller.ArchiveTab(this));
         DuplicateCommand = new AsyncRelayCommand(() => _controller.DuplicateAsync(this));
         ForkCommand = new AsyncRelayCommand(() => _controller.ForkAsync(this));
+        MoveToWindowCommand = new RelayCommand(() => _controller.FloatTab(this));
     }
 
     [ObservableProperty]
@@ -131,6 +132,7 @@ public sealed partial class SessionDocument : Document
     public IRelayCommand ArchiveCommand { get; }
     public IAsyncRelayCommand DuplicateCommand { get; }
     public IAsyncRelayCommand ForkCommand { get; }
+    public IRelayCommand MoveToWindowCommand { get; }
 
     private void CommitRename()
     {

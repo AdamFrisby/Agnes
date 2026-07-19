@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Dock.Model.Mvvm;
@@ -37,6 +40,17 @@ public sealed class DockFactory : Factory
 
         DocumentDock = documentDock;
         return root;
+    }
+
+    public override void InitLayout(IDockable layout)
+    {
+        // Enable floating tabs into their own OS windows (drag a tab out, or "Open in new window").
+        HostWindowLocator = new Dictionary<string, Func<IHostWindow?>>
+        {
+            [nameof(IDockWindow)] = () => new HostWindow(),
+        };
+        DefaultHostWindowLocator = () => new HostWindow();
+        base.InitLayout(layout);
     }
 
     public override void OnDockableAdded(IDockable? dockable)

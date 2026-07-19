@@ -30,6 +30,9 @@ public interface ITabController
 
     /// <summary>Open a new tab that forks a fresh session from the same host and agent.</summary>
     Task ForkAsync(SessionDocument doc);
+
+    /// <summary>Detach the tab into its own floating window (drag it back to re-dock).</summary>
+    void FloatTab(SessionDocument doc);
 }
 
 /// <summary>A cross-session search result: a transcript hit plus the tab it lives in.</summary>
