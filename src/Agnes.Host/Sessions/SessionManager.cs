@@ -45,7 +45,7 @@ public sealed class SessionManager : IAsyncDisposable
 
     public IReadOnlyList<AgentInfo> ListAgents()
         => _adapters.Values
-            .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version, Available: true))
+            .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version, Available: a.IsAvailable()))
             .ToArray();
 
     public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, CancellationToken cancellationToken = default)

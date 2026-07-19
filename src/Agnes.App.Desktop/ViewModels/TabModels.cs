@@ -67,14 +67,20 @@ public sealed class HostChoice
 /// <summary>An agent option on the new-tab agent picker.</summary>
 public sealed class AgentChoice
 {
-    public AgentChoice(string displayName, string adapterId, ICommand open)
+    public AgentChoice(string displayName, string adapterId, ICommand open, bool available = true)
     {
         DisplayName = displayName;
         AdapterId = adapterId;
         Open = open;
+        Available = available;
     }
 
     public string DisplayName { get; }
     public string AdapterId { get; }
     public ICommand Open { get; }
+
+    /// <summary>Whether the agent's CLI is installed on the host. Unavailable agents can't be opened.</summary>
+    public bool Available { get; }
+
+    public string StatusText => Available ? AdapterId : $"{AdapterId} · not installed on host";
 }

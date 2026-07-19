@@ -213,7 +213,10 @@ public sealed partial class SessionDocument : Document
     {
         Agents = new ObservableCollection<AgentChoice>(agents.Select(a =>
             new AgentChoice(a.DisplayName, a.AdapterId,
-                new AsyncRelayCommand(() => _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions)))));
+                new AsyncRelayCommand(
+                    () => _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions),
+                    () => a.Available),
+                a.Available)));
         Stage = TabStage.PickAgent;
         StatusText = string.Empty;
     }

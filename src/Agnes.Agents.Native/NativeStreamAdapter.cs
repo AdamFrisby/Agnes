@@ -32,6 +32,8 @@ public sealed class NativeStreamAdapter : IAgentAdapter
 
     public AgentDescriptor Descriptor => _spec.Descriptor;
 
+    public bool IsAvailable() => AgentCommand.IsOnPath(_spec.Command);
+
     public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {
         var logger = _loggerFactory.CreateLogger<NativeStreamAdapter>();

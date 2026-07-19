@@ -343,10 +343,11 @@
                                 <Button Command="{Binding Open}" HorizontalAlignment="Stretch"
                                         HorizontalContentAlignment="Left" Margin="0,4" CornerRadius="10"
                                         Padding="14,12" Background="{StaticResource Panel}"
-                                        BorderBrush="{StaticResource Line}" BorderThickness="1">
+                                        BorderBrush="{StaticResource Line}" BorderThickness="1"
+                                        ToolTip.Tip="{Binding StatusText}">
                                     <StackPanel>
                                         <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource Fg}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding AdapterId}" Foreground="{StaticResource FgFaint}" FontSize="11" />
+                                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource FgFaint}" FontSize="11" />
                                     </StackPanel>
                                 </Button>
                             </DataTemplate>

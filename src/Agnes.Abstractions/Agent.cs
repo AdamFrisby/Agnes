@@ -75,6 +75,54 @@ public interface IAgentAdapter
 
     /// <summary>Launches the agent and opens a new session.</summary>
     Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether this agent can actually be launched right now (its CLI is installed and resolvable).
+    /// Surfaced to clients so the picker doesn't offer agents that will fail to start. Adapters that
+    /// launch an external process should probe for it; the default assumes availability.
+    /// </summary>
+    bool IsAvailable() => true;
+}
+
+/// <summary>Resolves whether a launcher command exists on the host, like <c>which</c>/<c>where</c>.</summary>
+public static class AgentCommand
+{
+    public static bool IsOnPath(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            return false;
+        }
+
+        // A command with a path separator is taken literally.
+        if (command.Contains(Path.DirectorySeparatorChar) || command.Contains(Path.AltDirectorySeparatorChar))
+        {
+            return File.Exists(command);
+        }
+
+        var pathVar = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(pathVar))
+        {
+            return false;
+        }
+
+        var extensions = OperatingSystem.IsWindows()
+            ? (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT").Split(';', StringSplitOptions.RemoveEmptyEntries)
+            : [string.Empty];
+
+        foreach (var dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var ext in extensions)
+            {
+                if (File.Exists(Path.Combine(dir, command + ext)))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 }
 
 /// <summary>
