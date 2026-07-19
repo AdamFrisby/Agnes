@@ -33,6 +33,12 @@ public interface ITabController
 
     /// <summary>Detach the tab into its own floating window (drag it back to re-dock).</summary>
     void FloatTab(SessionDocument doc);
+
+    /// <summary>The working directory to prefill for a new session (last used, or the user's home).</summary>
+    string DefaultWorkingDirectory { get; }
+
+    /// <summary>Remembers the working directory a session was opened in, as the next default.</summary>
+    void RememberWorkingDirectory(string path);
 }
 
 /// <summary>A cross-session search result: a transcript hit plus the tab it lives in.</summary>

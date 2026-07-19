@@ -19,7 +19,6 @@ namespace Agnes.App.Desktop.ViewModels;
 /// </summary>
 public sealed partial class MainWindowViewModel : ObservableObject, ITabController
 {
-    private const string WorkingDirectory = "/tmp/agnes";
     private static readonly KnownHost SimulatedHost = new("Simulated host", "sim://demo", string.Empty);
     private static readonly KnownHost RecordedHost = new("Recorded sessions", "rec://local", string.Empty);
 
@@ -383,6 +382,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         Notifier.Notify(notification);
     }
 
+    /// <summary>The directory to prefill for a new session — last used, else the user's home.</summary>
+    public string DefaultWorkingDirectory =>
+        string.IsNullOrWhiteSpace(_settings.WorkingDirectory)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            : _settings.WorkingDirectory;
+
+    public void RememberWorkingDirectory(string path)
+    {
+        if (!string.IsNullOrWhiteSpace(path) && path != _settings.WorkingDirectory)
+        {
+            _settings = _settings with { WorkingDirectory = path };
+            _settingsStore.Save(_settings);
+        }
+    }
+
     /// <summary>Detaches a tab into its own floating window (Dock manages re-docking on drag-back).</summary>
     public void FloatTab(SessionDocument doc)
     {
@@ -738,7 +752,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             return;
         }
 
-        var info = await doc.Host.OpenSessionAsync(adapterId, WorkingDirectory, skipPermissions: skipPermissions);
+        var workingDirectory = string.IsNullOrWhiteSpace(doc.WorkingDirectory) ? DefaultWorkingDirectory : doc.WorkingDirectory.Trim();
+        RememberWorkingDirectory(workingDirectory);
+        var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions);
         var view = await doc.Host.SubscribeAsync(info.SessionId);
         var title = ProjectTitle(info.WorkingDirectory, displayName);
         _dispatcher.Post(() =>
@@ -984,9 +1000,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             fork.HostToken = doc.HostToken;
             WireStatus(fork, doc.Host);
 
-            // New session on the same host/agent, isolated in its own git worktree so the two
-            // sessions can run in parallel without colliding.
-            var info = await doc.Host.OpenSessionAsync(descriptor.AdapterId, WorkingDirectory, useWorktree: true);
+            // New session on the same host/agent and project, isolated in its own git worktree so
+            // the two sessions can run in parallel without colliding.
+            var forkDirectory = string.IsNullOrWhiteSpace(doc.WorkingDirectory) ? DefaultWorkingDirectory : doc.WorkingDirectory.Trim();
+            var info = await doc.Host.OpenSessionAsync(descriptor.AdapterId, forkDirectory, useWorktree: true);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             _dispatcher.Post(() =>
             {

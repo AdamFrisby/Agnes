@@ -192,6 +192,26 @@ public partial class SessionTabView : UserControl
         Apply(columns[4], columns[3], vm.ShowRightPanel, ref _rightWidth);
     }
 
+    private async void OnBrowseWorkingDirectory(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not ViewModels.SessionDocument doc
+            || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage)
+        {
+            return;
+        }
+
+        var folders = await storage.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions
+        {
+            Title = "Choose the project folder",
+            AllowMultiple = false,
+        });
+
+        if (folders.FirstOrDefault()?.Path.LocalPath is { Length: > 0 } path)
+        {
+            doc.WorkingDirectory = path;
+        }
+    }
+
     private async void OnAttachFile(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_session is null || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage)

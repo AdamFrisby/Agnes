@@ -11,7 +11,8 @@ public sealed record AppSettings(
     int WindowY = int.MinValue,
     bool WindowMaximized = false,
     string Theme = "System",
-    double FontScale = 1.0);
+    double FontScale = 1.0,
+    string WorkingDirectory = "");
 
 /// <summary>Persists <see cref="AppSettings"/> to a JSON file (best-effort).</summary>
 public sealed class SettingsStore

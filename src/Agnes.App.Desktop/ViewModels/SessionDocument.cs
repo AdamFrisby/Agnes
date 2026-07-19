@@ -21,6 +21,7 @@ public sealed partial class SessionDocument : Document
     public SessionDocument(ITabController controller)
     {
         _controller = controller;
+        _workingDirectory = controller.DefaultWorkingDirectory;
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this));
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
@@ -38,6 +39,10 @@ public sealed partial class SessionDocument : Document
         ForkCommand = new AsyncRelayCommand(() => _controller.ForkAsync(this));
         MoveToWindowCommand = new RelayCommand(() => _controller.FloatTab(this));
     }
+
+    /// <summary>The host directory a new session will run in (the project folder).</summary>
+    [ObservableProperty]
+    private string _workingDirectory;
 
     [ObservableProperty]
     private TabStage _stage = TabStage.PickHost;

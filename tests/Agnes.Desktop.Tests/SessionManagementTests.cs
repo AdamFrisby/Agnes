@@ -33,6 +33,8 @@ public class SessionManagementTests
         await WaitAsync(() => tab.Hosts is { Count: > 0 });
         tab.Hosts!.First().Select.Execute(null);
         await WaitAsync(() => tab.Agents is { Count: > 0 });
+        // The user picks the project folder before opening the agent (it names the tab).
+        tab.WorkingDirectory = "/tmp/agnes";
         tab.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
         await WaitAsync(() => tab.Session is not null);
         return tab;

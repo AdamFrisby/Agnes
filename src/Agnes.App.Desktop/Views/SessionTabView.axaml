@@ -335,6 +335,21 @@
                     <TextBlock Text="Choose an agent" FontSize="22" FontWeight="SemiBold"
                                Foreground="{DynamicResource Fg}" HorizontalAlignment="Center" />
 
+                    <!-- Working directory (the project the agent works on, on the host) -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Working directory (on the host)" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                            <TextBox Grid.Column="0" Text="{Binding WorkingDirectory, Mode=TwoWay}" Watermark="/path/to/your/project"
+                                     Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                     BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8" FontSize="12"
+                                     FontFamily="{StaticResource MonoFont}" />
+                            <Button Grid.Column="1" Content="Browse…" Click="OnBrowseWorkingDirectory"
+                                    Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="10,8" FontSize="12"
+                                    ToolTip.Tip="Pick a folder on this machine (for a local host)" />
+                        </Grid>
+                    </StackPanel>
+
                     <!-- Permission mode for the new session -->
                     <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="10" Padding="14,10">

@@ -1,0 +1,65 @@
+[
+  {
+    "hostName": "Simulated host",
+    "hostUrl": "sim://demo",
+    "token": "",
+    "sessionId": "sim-0001",
+    "adapterId": "opencode",
+    "title": "agnes",
+    "pinned": false,
+    "tags": null
+  },
+  {
+    "hostName": "Simulated host",
+    "hostUrl": "sim://demo",
+    "token": "",
+    "sessionId": "sim-0003",
+    "adapterId": "opencode",
+    "title": "Config refactor",
+    "pinned": true,
+    "tags": [
+      "backend",
+      "review"
+    ]
+  },
+  {
+    "hostName": "Simulated host",
+    "hostUrl": "sim://demo",
+    "token": "",
+    "sessionId": "sim-0004",
+    "adapterId": "opencode",
+    "title": "agnes",
+    "pinned": false,
+    "tags": null
+  },
+  {
+    "hostName": "Simulated host",
+    "hostUrl": "sim://demo",
+    "token": "",
+    "sessionId": "sim-0005",
+    "adapterId": "opencode",
+    "title": "agnes",
+    "pinned": false,
+    "tags": null
+  },
+  {
+    "hostName": "Simulated host",
+    "hostUrl": "sim://demo",
+    "token": "",
+    "sessionId": "sim-0006",
+    "adapterId": "opencode",
+    "title": "agnes",
+    "pinned": false,
+    "tags": null
+  },
+  {
+    "hostName": "Simulated host",
+    "hostUrl": "sim://demo",
+    "token": "",
+    "sessionId": "sim-0007",
+    "adapterId": "opencode",
+    "title": "agnes",
+    "pinned": false,
+    "tags": null
+  }
+]
