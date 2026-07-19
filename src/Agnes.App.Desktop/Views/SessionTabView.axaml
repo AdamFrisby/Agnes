@@ -139,6 +139,37 @@
                         <TextBlock Text="{Binding UsageSummary}" Foreground="{StaticResource FgDim}" FontSize="11"
                                    VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                    IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+                        <!-- Sandbox: isolation status + lifecycle -->
+                        <Button IsVisible="{Binding Session.HasSandbox}" Background="Transparent" Foreground="{StaticResource FgDim}"
+                                BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                AutomationProperties.Name="Sandbox">
+                            <TextBlock Text="{Binding Session.SandboxSummary}" />
+                            <Button.Flyout>
+                                <Flyout Placement="Bottom">
+                                    <StackPanel Width="280" Spacing="8">
+                                        <TextBlock Text="{Binding Session.Sandbox.Id, StringFormat='Sandbox: {0}'}"
+                                                   Foreground="{StaticResource Fg}" FontWeight="SemiBold" FontSize="12"
+                                                   FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Session.Sandbox.Provider, StringFormat='Provider: {0}'}"
+                                                   Foreground="{StaticResource FgDim}" FontSize="11" />
+                                        <TextBlock Text="{Binding Session.Sandbox.State, StringFormat='State: {0}'}"
+                                                   Foreground="{StaticResource FgDim}" FontSize="11" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button Content="Pause" Command="{Binding Session.PauseSandboxCommand}"
+                                                    Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                                    BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
+                                            <Button Content="Resume" Command="{Binding Session.ResumeSandboxCommand}"
+                                                    Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
+                                                    BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
+                                            <Button Content="Delete" Command="{Binding Session.DeleteSandboxCommand}"
+                                                    Background="Transparent" Foreground="#E5484D"
+                                                    BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
+
                         <!-- session menu -->
                         <!-- Git: branch + commit -->
                         <Button IsVisible="{Binding Session.HasGit}" Background="Transparent" Foreground="{StaticResource FgDim}"

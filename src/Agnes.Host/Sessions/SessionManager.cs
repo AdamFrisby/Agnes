@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using Agnes.Abstractions;
 using Agnes.Host.Events;
 using Agnes.Protocol;
+using Agnes.Sandbox;
+using Agnes.Sandbox.Credentials;
 using Microsoft.Extensions.Logging;
 
 namespace Agnes.Host.Sessions;
@@ -15,20 +17,30 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<SessionManager> _logger;
     private readonly Git.GitService _git = new();
+    private readonly ISandboxProvider? _sandboxes;
+    private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
+    private readonly ClaudeTokenRotationPusher? _rotationPusher;
     private readonly ConcurrentDictionary<string, HostSession> _sessions = new();
     private readonly ConcurrentDictionary<string, (string Repo, string Worktree)> _worktrees = new();
+    private readonly ConcurrentDictionary<string, ISandbox> _sandboxBySession = new();
 
     public SessionManager(
         IEnumerable<IAgentAdapter> adapters,
         IEventStore store,
         ISessionBroadcaster broadcaster,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        ISandboxProvider? sandboxes = null,
+        IEnumerable<IAgentCredentialProvider>? credentialProviders = null,
+        ClaudeTokenRotationPusher? rotationPusher = null)
     {
         _adapters = adapters.ToDictionary(a => a.Descriptor.Id);
         _store = store;
         _broadcaster = broadcaster;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<SessionManager>();
+        _sandboxes = sandboxes;
+        _credentialProviders = credentialProviders?.ToArray() ?? [];
+        _rotationPusher = rotationPusher;
     }
 
     public IReadOnlyList<AgentInfo> ListAgents()
@@ -56,8 +68,27 @@ public sealed class SessionManager : IAsyncDisposable
             }
         }
 
+        // Optionally provision a sandbox and run the agent inside it (with credentials materialised).
+        ISandbox? sandbox = null;
+        if (_sandboxes is not null)
+        {
+            sandbox = await _sandboxes.CreateAsync(
+                new SandboxSpec { HostWorkingDirectory = effectiveDirectory }, cancellationToken).ConfigureAwait(false);
+            _sandboxBySession[sessionId] = sandbox;
+
+            var credentialProvider = _credentialProviders.FirstOrDefault(p => p.Handles(adapterId));
+            if (credentialProvider is not null)
+            {
+                var credential = await credentialProvider.GetAsync(adapterId, cancellationToken).ConfigureAwait(false);
+                await sandbox.MaterializeCredentialAsync(credential, cancellationToken).ConfigureAwait(false);
+                _rotationPusher?.RegisterActiveSandbox(sandbox);
+            }
+
+            _logger.LogInformation("Session {SessionId} runs in sandbox {SandboxId}", sessionId, sandbox.Id);
+        }
+
         var agent = await adapter.StartSessionAsync(
-            new AgentSessionOptions { WorkingDirectory = effectiveDirectory },
+            new AgentSessionOptions { WorkingDirectory = sandbox is null ? effectiveDirectory : "/work", Sandbox = sandbox },
             cancellationToken).ConfigureAwait(false);
 
         var session = new HostSession(
@@ -67,8 +98,40 @@ public sealed class SessionManager : IAsyncDisposable
         _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId);
+        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox));
     }
+
+    // ---- sandbox lifecycle ----
+
+    public async Task PauseSandboxAsync(string sessionId)
+    {
+        if (_sandboxBySession.TryGetValue(sessionId, out var sandbox) && sandbox is IPausableSandbox pausable)
+        {
+            await pausable.PauseAsync().ConfigureAwait(false);
+        }
+    }
+
+    public async Task ResumeSandboxAsync(string sessionId)
+    {
+        if (_sandboxBySession.TryGetValue(sessionId, out var sandbox) && sandbox is IPausableSandbox pausable)
+        {
+            await pausable.ResumeAsync().ConfigureAwait(false);
+        }
+    }
+
+    public async Task DeleteSandboxAsync(string sessionId)
+    {
+        if (_sandboxBySession.TryRemove(sessionId, out var sandbox))
+        {
+            await sandbox.DeleteAsync().ConfigureAwait(false);
+        }
+    }
+
+    public SandboxStatus? GetSandboxStatus(string sessionId)
+        => _sandboxBySession.TryGetValue(sessionId, out var sandbox) ? MapSandbox(sandbox) : null;
+
+    private static SandboxStatus? MapSandbox(ISandbox? sandbox)
+        => sandbox is null ? null : new SandboxStatus(sandbox.Info.Provider, sandbox.Info.Id, sandbox.Info.State.ToString());
 
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
         => Require(sessionId).PromptAsync(content);
@@ -91,7 +154,7 @@ public sealed class SessionManager : IAsyncDisposable
         var session = Require(sessionId);
         var events = await _store.ReadSinceAsync(sessionId, sinceSequence, cancellationToken).ConfigureAwait(false);
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        var info = new SessionInfo(sessionId, session.AdapterId, session.WorkingDirectory, head, session.Modes, session.CurrentModeId);
+        var info = new SessionInfo(sessionId, session.AdapterId, session.WorkingDirectory, head, session.Modes, session.CurrentModeId, GetSandboxStatus(sessionId));
         return new SessionSnapshot(info, events, head);
     }
 

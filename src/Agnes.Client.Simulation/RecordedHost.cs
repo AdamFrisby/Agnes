@@ -95,6 +95,10 @@ public sealed class RecordedHost : IAgnesHost
     public event Action<InboxRun>? InboxRunReceived;
 #pragma warning restore CS0067
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId) => Task.CompletedTask;
+    public Task PauseSandboxAsync(string sessionId) => Task.CompletedTask;
+    public Task ResumeSandboxAsync(string sessionId) => Task.CompletedTask;
+    public Task DeleteSandboxAsync(string sessionId) => Task.CompletedTask;
+    public Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId) => Task.FromResult<SandboxStatus?>(null);
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private static string Slug(string name, int index)

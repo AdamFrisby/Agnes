@@ -43,6 +43,7 @@ public sealed class SessionViewModel : ObservableObject
     private bool _showSlash;
     private string _referenceInput = string.Empty;
     private string? _currentModeId;
+    private SandboxStatus? _sandbox;
     private GitStatus? _git;
     private string _commitMessage = string.Empty;
     private int _matchCursor = -1;
@@ -87,6 +88,10 @@ public sealed class SessionViewModel : ObservableObject
         }
 
         _currentModeId = view.Info?.CurrentModeId;
+        _sandbox = view.Info?.Sandbox;
+        PauseSandboxCommand = new AsyncRelayCommand(PauseSandboxAsync, () => HasSandbox && !SandboxPaused);
+        ResumeSandboxCommand = new AsyncRelayCommand(ResumeSandboxAsync, () => HasSandbox && SandboxPaused);
+        DeleteSandboxCommand = new AsyncRelayCommand(DeleteSandboxAsync, () => HasSandbox);
         AddReferenceCommand = new RelayCommand(AddReference);
         RemoveAttachmentCommand = new RelayCommand<PromptAttachment>(a => { if (a is not null) { Attachments.Remove(a); Raise(nameof(HasAttachments)); } });
         ApplySlashCommand = new RelayCommand<SlashCommand>(ApplySlash);
@@ -488,6 +493,55 @@ public sealed class SessionViewModel : ObservableObject
                 CommitCommand.RaiseCanExecuteChanged();
             }
         }
+    }
+
+    public AsyncRelayCommand PauseSandboxCommand { get; }
+    public AsyncRelayCommand ResumeSandboxCommand { get; }
+    public AsyncRelayCommand DeleteSandboxCommand { get; }
+
+    public SandboxStatus? Sandbox
+    {
+        get => _sandbox;
+        private set
+        {
+            if (Set(ref _sandbox, value))
+            {
+                Raise(nameof(HasSandbox));
+                Raise(nameof(SandboxPaused));
+                Raise(nameof(SandboxSummary));
+                PauseSandboxCommand.RaiseCanExecuteChanged();
+                ResumeSandboxCommand.RaiseCanExecuteChanged();
+                DeleteSandboxCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasSandbox => _sandbox is not null;
+    public bool SandboxPaused => string.Equals(_sandbox?.State, "Paused", StringComparison.OrdinalIgnoreCase);
+    public string SandboxSummary => _sandbox is null ? string.Empty : $"🛡 sandbox · {_sandbox.State.ToLowerInvariant()}";
+
+    private async Task PauseSandboxAsync()
+    {
+        await _host.PauseSandboxAsync(SessionId);
+        await RefreshSandboxAsync();
+    }
+
+    private async Task ResumeSandboxAsync()
+    {
+        await _host.ResumeSandboxAsync(SessionId);
+        await RefreshSandboxAsync();
+    }
+
+    private async Task DeleteSandboxAsync()
+    {
+        await _host.DeleteSandboxAsync(SessionId);
+        _dispatcher.Post(() => Sandbox = null);
+    }
+
+    private async Task RefreshSandboxAsync()
+    {
+        var status = await _host.GetSandboxStatusAsync(SessionId);
+        _dispatcher.Post(() => Sandbox = status);
     }
 
     public bool HasGit => _git?.IsRepository == true;

@@ -41,6 +41,20 @@ public sealed record AgentSessionOptions
 
     /// <summary>Extra environment variables to set for the agent process.</summary>
     public IReadOnlyDictionary<string, string>? Environment { get; init; }
+
+    /// <summary>When set, the adapter launches the agent inside this sandbox instead of on the host.</summary>
+    public ISandboxCommand? Sandbox { get; init; }
+}
+
+/// <summary>
+/// Rewrites a host command so it runs inside a sandbox (e.g. <c>incus exec</c>). Kept in
+/// Abstractions so agent adapters can wrap their launch without depending on a sandbox backend.
+/// </summary>
+public interface ISandboxCommand
+{
+    /// <summary>Wraps <paramref name="command"/>+<paramref name="arguments"/> to run in the sandbox.</summary>
+    (string Command, IReadOnlyList<string> Arguments) WrapCommand(
+        string command, IReadOnlyList<string> arguments, string workingDirectory);
 }
 
 /// <summary>

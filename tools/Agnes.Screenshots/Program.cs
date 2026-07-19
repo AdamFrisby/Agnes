@@ -103,6 +103,15 @@ public static class Program
         tools.Session!.ToggleFullScreenCommand.Execute(null);
         tools.Session!.ClosePreviewCommand.Execute(null);
 
+        // 4s) Sandbox isolation chip: the session runs in an Incus VM; pause it to show the state.
+        Pump(() => tools.Session!.HasSandbox);
+        Capture(window, "04s-sandbox-running.png");
+        tools.Session!.PauseSandboxCommand.Execute(null);
+        Pump(() => tools.Session!.SandboxPaused);
+        Capture(window, "04s-sandbox-paused.png");
+        tools.Session!.ResumeSandboxCommand.Execute(null);
+        Pump(() => !tools.Session!.SandboxPaused);
+
         // 4d) Clear session-state banner (offline / reconnecting / interrupted / stale).
         tools.Session!.MarkStale();
         Pump(() => tools.Session!.ShowBanner);

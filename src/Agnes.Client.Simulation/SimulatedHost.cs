@@ -113,8 +113,38 @@ public sealed class SimulatedHost : IAgnesHost
         session.Emit(new MessageChunkEvent(MessageRole.Assistant,
             new TextContent($"Session ready on {DisplayName(adapterId)}. Ask me anything.")));
         session.Emit(new TurnEndedEvent(StopReason.EndTurn));
-        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId));
+        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id)));
     }
+
+    // A simulated Incus sandbox so the desktop sandbox chip is demoable + screenshot-verifiable offline.
+    private readonly ConcurrentDictionary<string, string> _sandboxState = new();
+
+    private SandboxStatus SandboxFor(string sessionId)
+    {
+        var state = _sandboxState.GetOrAdd(sessionId, _ => "Running");
+        return new SandboxStatus("incus", $"agnes-{sessionId}", state);
+    }
+
+    public Task PauseSandboxAsync(string sessionId)
+    {
+        _sandboxState[sessionId] = "Paused";
+        return Task.CompletedTask;
+    }
+
+    public Task ResumeSandboxAsync(string sessionId)
+    {
+        _sandboxState[sessionId] = "Running";
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteSandboxAsync(string sessionId)
+    {
+        _sandboxState.TryRemove(sessionId, out _);
+        return Task.CompletedTask;
+    }
+
+    public Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId)
+        => Task.FromResult<SandboxStatus?>(_sandboxState.ContainsKey(sessionId) ? SandboxFor(sessionId) : null);
 
     public Task<SessionView> SubscribeAsync(string sessionId, long since = 0)
     {
@@ -408,7 +438,9 @@ public sealed class SimulatedHost : IAgnesHost
         {
             lock (_gate)
             {
-                return new SessionSnapshot(new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId), _log.ToArray(), _seq);
+                return new SessionSnapshot(
+                    new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId, new SandboxStatus("incus", $"agnes-{Id}", "Running")),
+                    _log.ToArray(), _seq);
             }
         }
     }

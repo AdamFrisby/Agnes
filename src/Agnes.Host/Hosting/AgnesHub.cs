@@ -84,4 +84,13 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task RespondPermission(PermissionResponseRequest response)
         => _sessions.RespondPermissionAsync(response.SessionId, response.RequestId, response.OptionId);
+
+    public Task PauseSandbox(string sessionId) => _sessions.PauseSandboxAsync(sessionId);
+
+    public Task ResumeSandbox(string sessionId) => _sessions.ResumeSandboxAsync(sessionId);
+
+    public Task DeleteSandbox(string sessionId) => _sessions.DeleteSandboxAsync(sessionId);
+
+    public Task<SandboxStatus?> GetSandboxStatus(string sessionId)
+        => Task.FromResult(_sessions.GetSandboxStatus(sessionId));
 }

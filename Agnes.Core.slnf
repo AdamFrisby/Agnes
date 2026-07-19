@@ -7,6 +7,8 @@
       "src/Agnes.Agents.ClaudeCode/Agnes.Agents.ClaudeCode.csproj",
       "src/Agnes.Agents.Native/Agnes.Agents.Native.csproj",
       "src/Agnes.Protocol/Agnes.Protocol.csproj",
+      "src/Agnes.Sandbox/Agnes.Sandbox.csproj",
+      "src/Agnes.Sandbox.Incus/Agnes.Sandbox.Incus.csproj",
       "src/Agnes.Host/Agnes.Host.csproj",
       "src/Agnes.Client/Agnes.Client.csproj",
       "src/Agnes.Client.Simulation/Agnes.Client.Simulation.csproj",
@@ -17,6 +19,7 @@
       "tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj",
       "tests/Agnes.Agents.Native.Tests/Agnes.Agents.Native.Tests.csproj",
       "tests/Agnes.Host.Tests/Agnes.Host.Tests.csproj",
+      "tests/Agnes.Sandbox.Tests/Agnes.Sandbox.Tests.csproj",
       "tests/Agnes.Ui.Core.Tests/Agnes.Ui.Core.Tests.csproj",
       "tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj",
       "tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj"

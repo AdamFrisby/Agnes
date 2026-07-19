@@ -80,6 +80,18 @@ public interface IAgnesHost : IAsyncDisposable
 
     /// <summary>Raised when a background run lands in the inbox.</summary>
     event Action<InboxRun>? InboxRunReceived;
+
+    /// <summary>Pauses the session's sandbox (no-op if it runs on the host).</summary>
+    Task PauseSandboxAsync(string sessionId);
+
+    /// <summary>Resumes the session's paused sandbox.</summary>
+    Task ResumeSandboxAsync(string sessionId);
+
+    /// <summary>Deletes the session's sandbox.</summary>
+    Task DeleteSandboxAsync(string sessionId);
+
+    /// <summary>Current sandbox status of the session, or null if it runs on the host.</summary>
+    Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId);
 }
 
 /// <summary>Creates/looks up host connections. Swap the implementation to simulate a server.</summary>

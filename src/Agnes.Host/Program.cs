@@ -76,7 +76,36 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Native.ClaudeCod
     builder.Configuration["Agnes:ClaudeCodeNative:Command"],
     builder.Configuration.GetSection("Agnes:ClaudeCodeNative:Args").Get<string[]>()));
 
+// ---- sandboxing (opt-in) ----
+// When Agnes:Sandbox:Provider=incus, agents run inside per-session Incus VMs with their
+// credentials materialised in. Off by default: no behaviour change unless configured.
+if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddSingleton(sp => new Agnes.Sandbox.Incus.IncusSandboxProvider(
+        new Agnes.Sandbox.Incus.IncusOptions
+        {
+            BinaryPath = builder.Configuration["Agnes:Sandbox:Incus:Binary"] ?? "incus",
+            ProjectName = builder.Configuration["Agnes:Sandbox:Incus:Project"] ?? "agnes",
+            StoragePoolName = builder.Configuration["Agnes:Sandbox:Incus:StoragePool"] ?? "default",
+            DefaultImage = builder.Configuration["Agnes:Sandbox:Incus:Image"] ?? "images:ubuntu/24.04/cloud",
+            Bridge = builder.Configuration["Agnes:Sandbox:Incus:Bridge"] ?? "incusbr0",
+        },
+        sp.GetRequiredService<ILoggerFactory>()));
+    builder.Services.AddSingleton<Agnes.Sandbox.ISandboxProvider>(
+        sp => sp.GetRequiredService<Agnes.Sandbox.Incus.IncusSandboxProvider>());
+
+    builder.Services.AddSingleton<Agnes.Sandbox.Credentials.ClaudeCredentialProvider>();
+    builder.Services.AddSingleton<Agnes.Sandbox.Credentials.IAgentCredentialProvider>(
+        sp => sp.GetRequiredService<Agnes.Sandbox.Credentials.ClaudeCredentialProvider>());
+
+    builder.Services.AddSingleton<Agnes.Sandbox.Credentials.ClaudeTokenRotationPusher>();
+}
+
 var app = builder.Build();
+
+// Eagerly instantiate the rotation pusher (its FileSystemWatcher starts in the ctor) so live
+// sandboxes get refreshed credentials when the host claude CLI rotates its OAuth token.
+_ = app.Services.GetService<Agnes.Sandbox.Credentials.ClaudeTokenRotationPusher>();
 
 var tokens = app.Services.GetRequiredService<DeviceTokenStore>();
 

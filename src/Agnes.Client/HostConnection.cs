@@ -140,5 +140,17 @@ public sealed class HostConnection : IAgnesHost
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RespondPermission), new PermissionResponseRequest(sessionId, requestId, optionId));
 
+    public Task PauseSandboxAsync(string sessionId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.PauseSandbox), sessionId);
+
+    public Task ResumeSandboxAsync(string sessionId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.ResumeSandbox), sessionId);
+
+    public Task DeleteSandboxAsync(string sessionId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.DeleteSandbox), sessionId);
+
+    public Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId)
+        => _hub.InvokeAsync<SandboxStatus?>(nameof(IAgnesServer.GetSandboxStatus), sessionId);
+
     public async ValueTask DisposeAsync() => await _hub.DisposeAsync();
 }

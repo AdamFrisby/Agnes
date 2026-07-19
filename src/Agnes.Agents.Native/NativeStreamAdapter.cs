@@ -43,7 +43,14 @@ public sealed class NativeStreamAdapter : IAgentAdapter
 
     private Process StartProcess(AgentSessionOptions options)
     {
-        var psi = new ProcessStartInfo(_spec.Command)
+        // When a sandbox is set, run the agent inside it (streams flow through the exec pipe).
+        var (command, arguments) = (_spec.Command, (IReadOnlyList<string>)_spec.Arguments);
+        if (options.Sandbox is { } sandbox)
+        {
+            (command, arguments) = sandbox.WrapCommand(command, arguments, options.WorkingDirectory);
+        }
+
+        var psi = new ProcessStartInfo(command)
         {
             WorkingDirectory = options.WorkingDirectory,
             RedirectStandardInput = true,
@@ -52,7 +59,7 @@ public sealed class NativeStreamAdapter : IAgentAdapter
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        foreach (var arg in _spec.Arguments)
+        foreach (var arg in arguments)
         {
             psi.ArgumentList.Add(arg);
         }

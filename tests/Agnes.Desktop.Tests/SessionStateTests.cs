@@ -733,6 +733,12 @@ internal sealed class FakeHost : IAgnesHost
     public Task<IReadOnlyList<ScheduledTask>> ListScheduledTasksAsync() => Task.FromResult<IReadOnlyList<ScheduledTask>>([]);
     public Task RemoveScheduledTaskAsync(string taskId) => Task.CompletedTask;
     public Task<IReadOnlyList<InboxRun>> GetInboxAsync() => Task.FromResult<IReadOnlyList<InboxRun>>([]);
+
+    public List<string> SandboxCalls { get; } = [];
+    public Task PauseSandboxAsync(string sessionId) { SandboxCalls.Add($"pause:{sessionId}"); return Task.CompletedTask; }
+    public Task ResumeSandboxAsync(string sessionId) { SandboxCalls.Add($"resume:{sessionId}"); return Task.CompletedTask; }
+    public Task DeleteSandboxAsync(string sessionId) { SandboxCalls.Add($"delete:{sessionId}"); return Task.CompletedTask; }
+    public Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId) => Task.FromResult<SandboxStatus?>(null);
 #pragma warning disable CS0067
     public event Action<InboxRun>? InboxRunReceived;
 #pragma warning restore CS0067

@@ -1,0 +1,79 @@
+using Agnes.Sandbox;
+using Agnes.Sandbox.Incus;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Agnes.Sandbox.Tests;
+
+public class IncusCommandTests
+{
+    private static readonly IncusOptions Options = new();
+
+    [Fact]
+    public void Build_init_produces_a_vm_with_limits_and_ownership()
+    {
+        var argv = IncusCommandBuilder.BuildInit(Options, "images:ubuntu/24.04/cloud", "agnes-abc", new SandboxResourceLimits());
+        Assert.Equal("incus", argv[0]);
+        Assert.Contains("--project", argv);
+        Assert.Contains("agnes", argv);
+        Assert.Contains("init", argv);
+        Assert.Contains("--vm", argv);
+        Assert.Contains("--no-profiles", argv);
+        Assert.Contains(argv, a => a.StartsWith("limits.cpu=", StringComparison.Ordinal));
+        Assert.Contains(argv, a => a.StartsWith("limits.memory=", StringComparison.Ordinal) && a.EndsWith('B'));
+        Assert.Contains("user.agnes.managed=true", argv);
+    }
+
+    [Fact]
+    public void Build_exec_wraps_with_cwd_and_argv_separator()
+    {
+        var argv = IncusCommandBuilder.BuildExec(Options, "agnes-abc", ["claude", "--print"], "/work", asUser: false);
+        Assert.Equal(["incus", "--project", "agnes", "exec", "agnes-abc", "--cwd", "/work", "--", "claude", "--print"], argv);
+    }
+
+    [Fact]
+    public void Build_file_push_targets_the_instance_path_with_mode()
+    {
+        var argv = IncusCommandBuilder.BuildFilePush(Options, "agnes-abc", "/run/agnes/agent-env", "0600", 0, 0);
+        Assert.Contains("file", argv);
+        Assert.Contains("push", argv);
+        Assert.Contains("-", argv);
+        Assert.Contains("agnes-abc/run/agnes/agent-env", argv);
+        Assert.Contains("--mode=0600", argv);
+    }
+
+    [Fact]
+    public void Pause_and_delete_build_the_right_verbs()
+    {
+        Assert.Contains("pause", IncusCommandBuilder.BuildPause(Options, "agnes-abc"));
+        var del = IncusCommandBuilder.BuildDelete(Options, "agnes-abc");
+        Assert.Contains("delete", del);
+        Assert.Contains("--force", del);
+    }
+
+    [Theory]
+    [InlineData("a; rm -rf /")]
+    [InlineData("-x")]
+    [InlineData("a b")]
+    [InlineData("")]
+    public void Instance_name_validation_rejects_injection(string bad)
+        => Assert.Throws<ArgumentException>(() => IncusCommandBuilder.BuildStart(Options, bad));
+
+    [Theory]
+    [InlineData("relative/path")]
+    [InlineData("/has/../traversal")]
+    [InlineData("//double")]
+    [InlineData("/trailing/")]
+    public void Guest_path_validation_rejects_non_canonical(string bad)
+        => Assert.Throws<ArgumentException>(() => IncusCommandBuilder.BuildExec(Options, "agnes-abc", ["x"], bad, asUser: false));
+
+    [Fact]
+    public void Wrap_command_runs_the_agent_via_the_run_wrapper()
+    {
+        var sandbox = new IncusSandbox("agnes-abc", Options, new IncusCliRunner(NullLogger.Instance), NullLogger.Instance);
+        var (command, args) = sandbox.WrapCommand("claude", ["--output-format", "stream-json"], "/work");
+
+        Assert.Equal("incus", command);
+        Assert.Equal(["--project", "agnes", "exec", "agnes-abc", "--cwd", "/work", "--",
+            "/usr/local/bin/agnes-run", "claude", "--output-format", "stream-json"], args);
+    }
+}

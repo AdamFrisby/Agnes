@@ -43,7 +43,11 @@ public sealed record SessionInfo(
     string WorkingDirectory,
     long HeadSequence,
     IReadOnlyList<SessionMode>? Modes = null,
-    string? CurrentModeId = null);
+    string? CurrentModeId = null,
+    SandboxStatus? Sandbox = null);
+
+/// <summary>Status of the sandbox a session runs in, or null if it runs on the host.</summary>
+public sealed record SandboxStatus(string Provider, string Id, string State);
 
 /// <summary>A point-in-time replay: all events up to <see cref="HeadSequence"/>.</summary>
 public sealed record SessionSnapshot(

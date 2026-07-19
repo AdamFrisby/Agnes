@@ -39,6 +39,9 @@ public sealed class ScriptedAgentAdapter : IAgentAdapter
 {
     public ScriptedAgentSession Session { get; } = new();
 
+    /// <summary>The options passed to the most recent <see cref="StartSessionAsync"/> call.</summary>
+    public AgentSessionOptions? LastOptions { get; private set; }
+
     public AgentDescriptor Descriptor { get; } = new()
     {
         Id = "scripted",
@@ -46,5 +49,8 @@ public sealed class ScriptedAgentAdapter : IAgentAdapter
     };
 
     public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
-        => Task.FromResult<IAgentSession>(Session);
+    {
+        LastOptions = options;
+        return Task.FromResult<IAgentSession>(Session);
+    }
 }

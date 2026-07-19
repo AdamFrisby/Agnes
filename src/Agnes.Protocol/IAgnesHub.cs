@@ -60,6 +60,14 @@ public interface IAgnesServer
 
     /// <summary>Completed background runs (newest first).</summary>
     Task<IReadOnlyList<InboxRun>> GetInbox();
+
+    /// <summary>Pause / resume / delete the session's sandbox (no-op if it runs on the host).</summary>
+    Task PauseSandbox(string sessionId);
+    Task ResumeSandbox(string sessionId);
+    Task DeleteSandbox(string sessionId);
+
+    /// <summary>Current sandbox status of the session, or null if it runs on the host.</summary>
+    Task<SandboxStatus?> GetSandboxStatus(string sessionId);
 }
 
 /// <summary>
