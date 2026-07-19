@@ -10,9 +10,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly SessionManager _sessions;
     private readonly ScheduledTaskManager _schedule;
     private readonly HostIdentity _identity;
-    private readonly DeviceTokenStore _tokens;
+    private readonly DeviceRegistry _tokens;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceTokenStore tokens)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens)
     {
         _sessions = sessions;
         _schedule = schedule;

@@ -6,6 +6,12 @@ namespace Agnes.Protocol;
 /// <summary>Identity of a host a client can connect to.</summary>
 public sealed record HostInfo(string HostId, string DisplayName, string Version);
 
+/// <summary>Request to pair a new device using the host's current pairing code.</summary>
+public sealed record PairRequest(string Code, string DeviceName);
+
+/// <summary>A successful pairing — the per-device token to store and connect with (shown once).</summary>
+public sealed record PairResponse(string DeviceId, string DeviceName, string Token);
+
 /// <summary>
 /// Structured usage a host may report for a session: context-window consumption and/or
 /// token/credit usage against a quota. Any field may be null when unknown; <see cref="Label"/>

@@ -321,7 +321,26 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             return;
         }
 
-        var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, doc.NewHostToken);
+        // The field takes a pairing code: exchange it for a durable per-device token. If pairing
+        // doesn't apply (e.g. a pre-issued bootstrap token was pasted), fall back to using it directly.
+        var codeOrToken = doc.NewHostToken.Trim();
+        var token = codeOrToken;
+        if (!string.IsNullOrEmpty(codeOrToken))
+        {
+            try
+            {
+                doc.StatusText = "Pairing…";
+                var deviceName = $"{Environment.MachineName} (desktop)";
+                var paired = await Agnes.Client.DevicePairing.PairAsync(url, codeOrToken, deviceName);
+                token = paired.Token;
+            }
+            catch
+            {
+                // Not a valid pairing code — treat the entry as a direct token.
+            }
+        }
+
+        var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, token);
         _knownHosts.Add(host);
         _hostStore.Save(_knownHosts.Where(h => h.Url != SimulatedHost.Url && h.Url != RecordedHost.Url).ToList());
         _dispatcher.Post(() => doc.ShowAddHost = false);

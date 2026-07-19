@@ -11,10 +11,30 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSignalR();
 
-// CORS so a browser-hosted frontend (Uno WASM) can reach the hub cross-origin.
-// Auth is a query-string token (not cookies); reflect any origin for dev.
+// CORS for a browser-hosted frontend (Uno WASM) reaching the hub cross-origin. The web client
+// served from this same origin needs no CORS; only configure origins when it's hosted elsewhere.
+//   Agnes:AllowedOrigins  — comma/space-separated allowlist (recommended for cross-origin).
+//   Agnes:AllowAllOrigins — dev only: reflect any origin (unsafe on a public network).
+var allowedOrigins = (builder.Configuration["Agnes:AllowedOrigins"] ?? string.Empty)
+    .Split([',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var allowAllOrigins = builder.Configuration.GetValue("Agnes:AllowAllOrigins", false);
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
-    policy.SetIsOriginAllowed(_ => true).AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+{
+    policy.AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+    if (allowAllOrigins)
+    {
+        policy.SetIsOriginAllowed(_ => true);
+    }
+    else if (allowedOrigins.Length > 0)
+    {
+        policy.WithOrigins(allowedOrigins);
+    }
+    else
+    {
+        // No cross-origin browsers permitted (native clients and the co-hosted web client still work).
+        policy.SetIsOriginAllowed(_ => false);
+    }
+}));
 
 // ---- host identity ----
 var displayName = builder.Configuration["Agnes:DisplayName"] ?? Environment.MachineName;
@@ -23,8 +43,12 @@ builder.Services.AddSingleton(new HostIdentity(
     DisplayName: displayName,
     Version: typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.1.0"));
 
-// ---- auth (dev device token) ----
-builder.Services.AddSingleton(new DeviceTokenStore(builder.Configuration["Agnes:PairingToken"]));
+// ---- auth: per-device tokens + a pairing code (see DeviceRegistry) ----
+var devicesFile = builder.Configuration["Agnes:DevicesFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "devices.json");
+builder.Services.AddSingleton(sp => new DeviceRegistry(
+    builder.Configuration["Agnes:PairingToken"], devicesFile,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<DeviceRegistry>()));
 
 // ---- event store: SQLite if a path is configured, else in-memory ----
 var databasePath = builder.Configuration["Agnes:Database"];
@@ -107,7 +131,7 @@ var app = builder.Build();
 // sandboxes get refreshed credentials when the host claude CLI rotates its OAuth token.
 _ = app.Services.GetService<Agnes.Sandbox.Credentials.ClaudeTokenRotationPusher>();
 
-var tokens = app.Services.GetRequiredService<DeviceTokenStore>();
+var tokens = app.Services.GetRequiredService<DeviceRegistry>();
 
 // Optionally serve a web frontend (e.g. the Uno WASM build) from the same origin as
 // the hub — avoids cross-origin setup and lets a browser reach both on one port.
@@ -141,6 +165,33 @@ app.Use(async (context, next) =>
 
 app.MapHub<AgnesHub>(WireProtocol.HubPath);
 
+// ---- device pairing + management ----
+// Pair a new device with the current code; returns a durable per-device token (shown once).
+app.MapPost("/pair", (PairRequest request) =>
+{
+    var result = tokens.TryPair(request.Code, request.DeviceName);
+    return result is null
+        ? Results.Json(new { error = "Invalid or expired pairing code." }, statusCode: StatusCodes.Status401Unauthorized)
+        : Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+});
+
+// List / revoke paired devices (requires a valid token).
+static bool Authorized(HttpContext ctx, DeviceRegistry reg)
+{
+    var header = ctx.Request.Headers.Authorization.ToString();
+    var token = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? header["Bearer ".Length..]
+        : ctx.Request.Query[WireProtocol.TokenParameter].ToString();
+    return reg.IsValid(token);
+}
+
+app.MapGet("/devices", (HttpContext ctx) =>
+    Authorized(ctx, tokens) ? Results.Ok(tokens.ListDevices()) : Results.Unauthorized());
+
+app.MapDelete("/devices/{id}", (HttpContext ctx, string id) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : tokens.Revoke(id) ? Results.NoContent() : Results.NotFound());
+
 if (webFiles is not null)
 {
     app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = webFiles });
@@ -150,8 +201,8 @@ else
     app.MapGet("/", () => $"Agnes host — wire protocol v{WireProtocol.Version}. Hub at {WireProtocol.HubPath}.");
 }
 
-// Surface the dev pairing token so a client can connect.
-app.Logger.LogInformation("Agnes pairing token: {Token}", tokens.PairingToken);
+// Print the pairing code so a new device can pair. (Tokens are per-device and never logged.)
+app.Logger.LogInformation("Agnes pairing code: {Code}  — enter this on a new client to pair it.", tokens.PairingCode);
 
 app.Run();
 

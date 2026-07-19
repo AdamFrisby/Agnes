@@ -300,9 +300,10 @@
                         <TextBox Text="{Binding NewHostUrl, Mode=TwoWay}" Watermark="https://host:5081"
                                  Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
                                  BorderBrush="{StaticResource Line}" CornerRadius="8" Padding="10,8" />
-                        <TextBox Text="{Binding NewHostToken, Mode=TwoWay}" Watermark="Pairing token"
+                        <TextBox Text="{Binding NewHostToken, Mode=TwoWay}" Watermark="Pairing code (from the host)"
                                  Background="{StaticResource PanelAlt}" Foreground="{StaticResource Fg}"
-                                 BorderBrush="{StaticResource Line}" CornerRadius="8" Padding="10,8" />
+                                 BorderBrush="{StaticResource Line}" CornerRadius="8" Padding="10,8"
+                                 ToolTip.Tip="Enter the pairing code the host prints at startup. A per-device token is issued and stored." />
                         <Button Content="Connect" Command="{Binding AddHostCommand}" HorizontalAlignment="Stretch"
                                 Background="{StaticResource Accent}" Foreground="#1A1200" CornerRadius="8" Padding="12,8" FontWeight="SemiBold" />
                     </StackPanel>
