@@ -19,8 +19,8 @@
                 BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="14,9">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Border Width="10" Height="10" CornerRadius="5" Background="{StaticResource Accent}" />
-                    <TextBlock Text="Agnes" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Fg}" />
+                    <Border Width="10" Height="10" CornerRadius="5" Background="{StaticResource Accent}" VerticalAlignment="Center" />
+                    <TextBlock Text="Agnes" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Fg}" VerticalAlignment="Center" />
                     <TextBlock Text="simulated host" FontSize="11" Foreground="{StaticResource FgFaint}"
                                VerticalAlignment="Center" />
                 </StackPanel>
@@ -73,14 +73,14 @@
                     </Button.Flyout>
                 </Button>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <!-- Inbox: completed background runs -->
                     <Button Background="Transparent" Foreground="{StaticResource FgDim}"
                             BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasInbox}" AutomationProperties.Name="Background run inbox">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <TextBlock Text="🗓 Inbox" />
-                            <Border Background="{StaticResource Accent}" CornerRadius="8" Padding="5,0" MinWidth="16">
+                            <TextBlock Text="🗓 Inbox" VerticalAlignment="Center" />
+                            <Border Background="{StaticResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
                                 <TextBlock Text="{Binding InboxCount}" Foreground="#1A1200" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
@@ -110,8 +110,8 @@
                             BorderBrush="{StaticResource Line}" BorderThickness="1"
                             CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Sessions">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <TextBlock Text="Sessions" />
-                            <Border Background="{StaticResource Accent}" CornerRadius="8" Padding="5,0" MinWidth="16"
+                            <TextBlock Text="Sessions" VerticalAlignment="Center" />
+                            <Border Background="{StaticResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center"
                                     IsVisible="{Binding HasAttention}">
                                 <TextBlock Text="{Binding AttentionCount}" Foreground="#1A1200" FontSize="10"
                                            FontWeight="SemiBold" HorizontalAlignment="Center" />
