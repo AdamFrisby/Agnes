@@ -90,7 +90,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SetThemeCommand = new RelayCommand<string>(t => { if (t is not null) { Theme = t; } });
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
         RevokeDeviceCommand = new AsyncRelayCommand<string>(RevokeDeviceAsync);
+        NextTabCommand = new RelayCommand(() => CycleTab(1));
+        PrevTabCommand = new RelayCommand(() => CycleTab(-1));
+        ActivateTabByIndexCommand = new RelayCommand<string>(ActivateTabByIndex);
+        TogglePaletteCommand = new RelayCommand(() => IsPaletteOpen = !IsPaletteOpen);
+        RunPaletteItemCommand = new RelayCommand<PaletteItem>(RunPaletteItem);
+        RunTopPaletteItemCommand = new RelayCommand(() => RunPaletteItem(PaletteItems.FirstOrDefault()));
+        ClosePaletteCommand = new RelayCommand(() => IsPaletteOpen = false);
     }
+
+    public IRelayCommand RunTopPaletteItemCommand { get; }
+    public IRelayCommand ClosePaletteCommand { get; }
 
     public IRelayCommand CloseActiveTabCommand { get; }
     public IRelayCommand ToggleReducedMotionCommand { get; }
@@ -361,6 +371,82 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     private IEnumerable<SessionDocument> OpenTabs()
         => _factory.DocumentDock?.VisibleDockables?.OfType<SessionDocument>() ?? [];
+
+    public IRelayCommand NextTabCommand { get; private set; } = null!;
+    public IRelayCommand PrevTabCommand { get; private set; } = null!;
+    public IRelayCommand<string> ActivateTabByIndexCommand { get; private set; } = null!;
+
+    // ---- command palette (Ctrl+K): jump to a session or run a global action ----
+
+    [ObservableProperty]
+    private bool _isPaletteOpen;
+
+    [ObservableProperty]
+    private string _paletteQuery = string.Empty;
+
+    public ObservableCollection<PaletteItem> PaletteItems { get; } = [];
+    public IRelayCommand TogglePaletteCommand { get; private set; } = null!;
+    public IRelayCommand<PaletteItem> RunPaletteItemCommand { get; private set; } = null!;
+
+    partial void OnPaletteQueryChanged(string value) => RebuildPalette();
+
+    partial void OnIsPaletteOpenChanged(bool value)
+    {
+        if (value)
+        {
+            PaletteQuery = string.Empty;
+            RebuildPalette();
+        }
+    }
+
+    private void RebuildPalette()
+    {
+        var q = PaletteQuery.Trim();
+        var all = new List<PaletteItem>
+        {
+            new("New tab", "Ctrl+T", () => NewTabCommand.Execute(null)),
+        };
+        all.AddRange(OpenTabs().Select(t => new PaletteItem(
+            string.IsNullOrWhiteSpace(t.Title) ? "New session" : t.Title, "session", () => _factory.SetActiveDockable(t))));
+
+        PaletteItems.Clear();
+        foreach (var item in all.Where(i => q.Length == 0 || i.Label.Contains(q, StringComparison.OrdinalIgnoreCase)))
+        {
+            PaletteItems.Add(item);
+        }
+    }
+
+    private void RunPaletteItem(PaletteItem? item)
+    {
+        IsPaletteOpen = false;
+        item?.Invoke();
+    }
+
+    private void CycleTab(int direction)
+    {
+        var tabs = OpenTabs().ToList();
+        if (tabs.Count < 2)
+        {
+            return;
+        }
+
+        var active = _factory.DocumentDock?.ActiveDockable as SessionDocument;
+        var index = active is null ? 0 : tabs.IndexOf(active);
+        var next = ((index + direction) % tabs.Count + tabs.Count) % tabs.Count;
+        _factory.SetActiveDockable(tabs[next]);
+    }
+
+    private void ActivateTabByIndex(string? oneBased)
+    {
+        if (int.TryParse(oneBased, out var n))
+        {
+            var tabs = OpenTabs().ToList();
+            if (n >= 1 && n <= tabs.Count)
+            {
+                _factory.SetActiveDockable(tabs[n - 1]);
+            }
+        }
+    }
 
     /// <summary>Archived (closed-but-kept) sessions, restorable from the tab menu.</summary>
     public System.Collections.ObjectModel.ObservableCollection<SessionDescriptor> ArchivedSessions { get; } = [];

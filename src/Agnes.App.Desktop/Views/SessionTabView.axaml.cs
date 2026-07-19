@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Agnes.Ui.Core.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
@@ -27,6 +28,10 @@ public partial class SessionTabView : UserControl
             _workspace.DataContextChanged += (_, _) => HookSession();
             HookSession();
         }
+
+        // Drop files (or an image) anywhere on the session to attach them to the composer.
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DropEvent, OnDrop);
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -128,23 +133,57 @@ public partial class SessionTabView : UserControl
 
         foreach (var file in files)
         {
-            var name = file.Name;
-            var isImage = name.EndsWith(".png", System.StringComparison.OrdinalIgnoreCase)
-                          || name.EndsWith(".jpg", System.StringComparison.OrdinalIgnoreCase)
-                          || name.EndsWith(".jpeg", System.StringComparison.OrdinalIgnoreCase)
-                          || name.EndsWith(".gif", System.StringComparison.OrdinalIgnoreCase);
-            if (isImage)
+            await AttachStorageFileAsync(file);
+        }
+    }
+
+    // Attach a picked/dropped file: images become inline image blocks, everything else an @-reference.
+    private async System.Threading.Tasks.Task AttachStorageFileAsync(Avalonia.Platform.Storage.IStorageFile file)
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        var name = file.Name;
+        if (IsImage(name))
+        {
+            await using var stream = await file.OpenReadAsync();
+            using var ms = new System.IO.MemoryStream();
+            await stream.CopyToAsync(ms);
+            var mime = name.EndsWith(".png", System.StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
+            _session.Attach(new PromptAttachment(name, "img",
+                new Agnes.Abstractions.ImageContent(mime, System.Convert.ToBase64String(ms.ToArray()))));
+        }
+        else
+        {
+            _session.Attach(PromptAttachment.Reference(file.Path.LocalPath));
+        }
+    }
+
+    private static bool IsImage(string name)
+        => name.EndsWith(".png", System.StringComparison.OrdinalIgnoreCase)
+        || name.EndsWith(".jpg", System.StringComparison.OrdinalIgnoreCase)
+        || name.EndsWith(".jpeg", System.StringComparison.OrdinalIgnoreCase)
+        || name.EndsWith(".gif", System.StringComparison.OrdinalIgnoreCase);
+
+    private void OnDragOver(object? sender, Avalonia.Input.DragEventArgs e)
+        => e.DragEffects = e.DataTransfer.Contains(Avalonia.Input.DataFormat.File)
+            ? Avalonia.Input.DragDropEffects.Copy
+            : Avalonia.Input.DragDropEffects.None;
+
+    private async void OnDrop(object? sender, Avalonia.Input.DragEventArgs e)
+    {
+        if (_session is null || e.DataTransfer.TryGetFiles() is not { } items)
+        {
+            return;
+        }
+
+        foreach (var item in items)
+        {
+            if (item is Avalonia.Platform.Storage.IStorageFile file)
             {
-                await using var stream = await file.OpenReadAsync();
-                using var ms = new System.IO.MemoryStream();
-                await stream.CopyToAsync(ms);
-                var mime = name.EndsWith(".png", System.StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
-                var block = new Agnes.Abstractions.ImageContent(mime, System.Convert.ToBase64String(ms.ToArray()));
-                _session.Attach(new PromptAttachment(name, "img", block));
-            }
-            else
-            {
-                _session.Attach(PromptAttachment.Reference(file.Path.LocalPath));
+                await AttachStorageFileAsync(file);
             }
         }
     }

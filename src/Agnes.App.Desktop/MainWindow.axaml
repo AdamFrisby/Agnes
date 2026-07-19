@@ -10,6 +10,20 @@
     <Window.KeyBindings>
         <KeyBinding Gesture="Ctrl+T" Command="{Binding NewTabCommand}" />
         <KeyBinding Gesture="Ctrl+W" Command="{Binding CloseActiveTabCommand}" />
+        <KeyBinding Gesture="Ctrl+Tab" Command="{Binding NextTabCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+Tab" Command="{Binding PrevTabCommand}" />
+        <KeyBinding Gesture="Ctrl+PageDown" Command="{Binding NextTabCommand}" />
+        <KeyBinding Gesture="Ctrl+PageUp" Command="{Binding PrevTabCommand}" />
+        <KeyBinding Gesture="Ctrl+D1" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="1" />
+        <KeyBinding Gesture="Ctrl+D2" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="2" />
+        <KeyBinding Gesture="Ctrl+D3" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="3" />
+        <KeyBinding Gesture="Ctrl+D4" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="4" />
+        <KeyBinding Gesture="Ctrl+D5" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="5" />
+        <KeyBinding Gesture="Ctrl+D6" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="6" />
+        <KeyBinding Gesture="Ctrl+D7" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="7" />
+        <KeyBinding Gesture="Ctrl+D8" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="8" />
+        <KeyBinding Gesture="Ctrl+D9" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="9" />
+        <KeyBinding Gesture="Ctrl+K" Command="{Binding TogglePaletteCommand}" />
     </Window.KeyBindings>
 
     <!-- Native menu — shown in the macOS menu bar (inert on Windows/Linux, where the top bar serves). -->
@@ -279,5 +293,42 @@
         </Border>
 
         <dc:DockControl Grid.Row="1" Layout="{Binding Layout}" />
+
+        <!-- Command palette (Ctrl+K): jump to a session or run an action -->
+        <Border Grid.Row="0" Grid.RowSpan="2" ZIndex="100" IsVisible="{Binding IsPaletteOpen}"
+                Background="#88000000">
+            <Border Width="540" MaxHeight="460" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,90,0,0"
+                    Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                    CornerRadius="12" Padding="10" BoxShadow="0 20 60 -20 #000000">
+                <StackPanel Spacing="8">
+                    <TextBox x:Name="PaletteBox" Text="{Binding PaletteQuery, Mode=TwoWay}"
+                             Watermark="Jump to a session or action…" FontSize="14"
+                             Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                             BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Gesture="Enter" Command="{Binding RunTopPaletteItemCommand}" />
+                            <KeyBinding Gesture="Escape" Command="{Binding ClosePaletteCommand}" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                    <ScrollViewer MaxHeight="380" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding PaletteItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Command="{Binding $parent[ItemsControl].DataContext.RunPaletteItemCommand}"
+                                            CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                            Padding="10,7" CornerRadius="7" Cursor="Hand">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="13" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Hint}" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </StackPanel>
+            </Border>
+        </Border>
     </Grid>
 </Window>

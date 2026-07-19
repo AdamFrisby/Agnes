@@ -5,10 +5,12 @@
              xmlns:conv="using:Avalonia.Data.Converters"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
              Background="{DynamicResource Bg}"
-             FontFamily="{StaticResource UiFont}">
+             FontFamily="{StaticResource UiFont}"
+             DragDrop.AllowDrop="True">
 
     <UserControl.KeyBindings>
         <KeyBinding Gesture="Ctrl+F" Command="{Binding Session.OpenSearchCommand}" />
+        <KeyBinding Gesture="Escape" Command="{Binding Session.CloseSearchCommand}" />
         <KeyBinding Gesture="F3" Command="{Binding Session.NextMatchCommand}" />
         <KeyBinding Gesture="Shift+F3" Command="{Binding Session.PrevMatchCommand}" />
         <KeyBinding Gesture="F7" Command="{Binding Session.PrevPromptCommand}" />
@@ -913,8 +915,8 @@
                                 </WrapPanel>
 
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                                    <TextBox Grid.Column="0" Text="{Binding PromptText, Mode=TwoWay}"
-                                             Watermark="Message the agent…    (Ctrl+Enter to send · Alt+↑/↓ for history)"
+                                    <TextBox Grid.Column="0" x:Name="Composer" Text="{Binding PromptText, Mode=TwoWay}"
+                                             Watermark="Message the agent…    (Ctrl+Enter to send · Alt+↑/↓ for history · drag files to attach)"
                                              AcceptsReturn="True" TextWrapping="Wrap"
                                              MinHeight="88" MaxHeight="280" VerticalContentAlignment="Top"
                                              ScrollViewer.VerticalScrollBarVisibility="Auto"

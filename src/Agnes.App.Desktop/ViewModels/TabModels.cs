@@ -64,6 +64,9 @@ public sealed class HostChoice
     public ICommand Select { get; }
 }
 
+/// <summary>An entry in the command palette (Ctrl+K): a session to jump to or a global action.</summary>
+public sealed record PaletteItem(string Label, string Hint, System.Action Invoke);
+
 /// <summary>An agent option on the new-tab agent picker.</summary>
 public sealed class AgentChoice
 {

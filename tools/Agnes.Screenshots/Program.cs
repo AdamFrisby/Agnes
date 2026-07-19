@@ -91,6 +91,12 @@ public static class Program
         autoTab.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
         Pump(() => autoTab.Session is { IsAutonomous: true });
         Capture(window, "03a-autonomous-session.png");
+
+        // 3p) Command palette (Ctrl+K): jump to a session or run an action.
+        vm.IsPaletteOpen = true;
+        Settle(180);
+        Capture(window, "03p-command-palette.png");
+        vm.IsPaletteOpen = false;
         vm.CloseActiveTabCommand.Execute(null);
 
         // 3b) Conversation rewind: view history as of an earlier message (read-only).
