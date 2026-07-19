@@ -56,7 +56,12 @@ public sealed record SessionSnapshot(
     long HeadSequence);
 
 /// <summary>Request to open a new session against an adapter.</summary>
-public sealed record OpenSessionRequest(string AdapterId, string WorkingDirectory, bool UseWorktree = false);
+/// <param name="SkipPermissions">
+/// Opt into autonomous operation — the agent runs tool calls without asking. Default false: the
+/// agent asks the user to approve each tool call (Agnes's intended interactive behaviour).
+/// </param>
+public sealed record OpenSessionRequest(
+    string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false);
 
 /// <summary>Request to send a prompt to a session.</summary>
 public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock> Content);

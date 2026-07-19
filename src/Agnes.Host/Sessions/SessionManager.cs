@@ -48,7 +48,7 @@ public sealed class SessionManager : IAsyncDisposable
             .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version, Available: true))
             .ToArray();
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, CancellationToken cancellationToken = default)
     {
         if (!_adapters.TryGetValue(adapterId, out var adapter))
         {
@@ -88,7 +88,12 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         var agent = await adapter.StartSessionAsync(
-            new AgentSessionOptions { WorkingDirectory = sandbox is null ? effectiveDirectory : "/work", Sandbox = sandbox },
+            new AgentSessionOptions
+            {
+                WorkingDirectory = sandbox is null ? effectiveDirectory : "/work",
+                Sandbox = sandbox,
+                SkipPermissions = skipPermissions,
+            },
             cancellationToken).ConfigureAwait(false);
 
         var session = new HostSession(

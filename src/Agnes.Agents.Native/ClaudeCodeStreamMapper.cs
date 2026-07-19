@@ -19,6 +19,21 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
         var type = GetString(line, "type");
         switch (type)
         {
+            case "control_request":
+                // claude asks permission for a tool over the stdio control channel (enabled by
+                // --permission-prompt-tool stdio). Surface it as a permission request the user answers.
+                if (line.TryGetProperty("request", out var req)
+                    && GetString(req, "subtype") == "can_use_tool"
+                    && GetString(line, "request_id") is { Length: > 0 } requestId)
+                {
+                    var toolName = GetString(req, "tool_name") ?? "tool";
+                    var toolUseId = GetString(req, "tool_use_id") ?? requestId;
+                    yield return new PermissionRequestedEvent(requestId, toolUseId,
+                        $"Allow {toolName}?", DefaultPermissionOptions);
+                }
+
+                break;
+
             case "system":
                 if (GetString(line, "subtype") == "init" && GetString(line, "session_id") is { Length: > 0 } id)
                 {
@@ -113,6 +128,25 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
         };
         return JsonSerializer.Serialize(payload, Options);
     }
+
+    // "stdio" routes each tool-permission decision to a can_use_tool control_request on the stream
+    // (which we answer). --dangerously-skip-permissions is the opt-in autonomous mode.
+    public IReadOnlyList<string> PermissionLaunchArguments(bool skipPermissions)
+        => skipPermissions ? ["--dangerously-skip-permissions"] : ["--permission-prompt-tool", "stdio"];
+
+    public string BuildPermissionResponse(string requestId, bool allow)
+    {
+        var response = allow
+            ? (object)new { subtype = "success", request_id = requestId, response = new { behavior = "allow" } }
+            : new { subtype = "success", request_id = requestId, response = new { behavior = "deny", message = "Denied by the user." } };
+        return JsonSerializer.Serialize(new { type = "control_response", response }, Options);
+    }
+
+    private static readonly PermissionOption[] DefaultPermissionOptions =
+    [
+        new("allow", "Allow", PermissionOptionKind.AllowOnce),
+        new("reject", "Reject", PermissionOptionKind.RejectOnce),
+    ];
 
     private static ToolKind ToKind(string name) => name switch
     {

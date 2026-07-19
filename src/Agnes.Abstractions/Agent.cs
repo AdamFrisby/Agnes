@@ -44,6 +44,13 @@ public sealed record AgentSessionOptions
 
     /// <summary>When set, the adapter launches the agent inside this sandbox instead of on the host.</summary>
     public ISandboxCommand? Sandbox { get; init; }
+
+    /// <summary>
+    /// When true, the user has opted into autonomous operation: the agent runs tool calls without
+    /// asking for approval. Default is false — the agent must request permission for each tool call
+    /// (surfaced to the user), which is the intended interactive behaviour for Agnes.
+    /// </summary>
+    public bool SkipPermissions { get; init; }
 }
 
 /// <summary>

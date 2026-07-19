@@ -71,9 +71,30 @@ the VM (pass `--keep` to leave it for inspection). `--image/--project/--pool/--b
 override the defaults.
 
 The recorder provisions → materialises credentials → launches `claude` inside →
-records → tears down. It uses the native adapter flags
-`--print --output-format stream-json --input-format stream-json --verbose
---dangerously-skip-permissions` (the sandbox VM *is* the permission boundary).
+records → tears down. By **default** the agent asks before each tool call and
+the recorder auto-approves (see the permission protocol below); pass
+`--skip-permissions` to opt into autonomous operation.
+
+## Permissions: ask by default, skip is opt-in
+
+Agnes is interactive, so the agent must ask the user before tool calls (our
+approve/deny UX) — `--dangerously-skip-permissions` is an opt-in, never the
+default. claude's headless mode supports this over its stdio **control
+protocol**, discovered from the CLI binary and confirmed live:
+
+- Launch with `--permission-prompt-tool stdio`. Before each tool call claude
+  emits `{"type":"control_request","request_id":"…","request":{"subtype":
+  "can_use_tool","tool_name":"…"}}`.
+- The client answers on stdin: `{"type":"control_response","response":{"subtype":
+  "success","request_id":"…","response":{"behavior":"allow"|"deny"}}}` (no
+  `updatedInput` needed — verified).
+
+`ClaudeCodeStreamMapper` maps `can_use_tool` → `PermissionRequestedEvent` (which
+surfaces in the UI); `NativeAgentSession.RespondToPermissionAsync` writes the
+`control_response`. The mode is chosen per session:
+`AgentSessionOptions.SkipPermissions` / `OpenSessionRequest.SkipPermissions`
+(default false) selects `--permission-prompt-tool stdio` vs.
+`--dangerously-skip-permissions`.
 
 ## Captured replay samples
 
@@ -85,6 +106,7 @@ Committed under `recordings/`, usable as `RecordedHost` fixtures:
 | `sandbox-claude-tools.json` | Read + Write tools; edited file written back to the host via the virtiofs `/work` mount |
 | `sandbox-claude-bash.json`  | Bash execution — `uname -sr` → `Linux 6.8.0-134-generic` (the **guest** kernel, not the host's, proving isolation) |
 | `sandbox-claude-multiturn.json` | two turns in one **persistent** in-VM process: "remember 17" → later recalls `17` |
+| `sandbox-claude-permission.json` | **default (permissioned) mode**: claude asks before Write → approved → file written |
 
 ## Findings from live testing
 

@@ -72,4 +72,39 @@ public class ClaudeCodeStreamMapperTests
         var text = doc.RootElement.GetProperty("message").GetProperty("content")[0].GetProperty("text").GetString();
         Assert.Equal("hello there", text);
     }
+
+    [Fact]
+    public void Can_use_tool_control_request_becomes_a_permission_request()
+    {
+        var e = Map("""
+            {"type":"control_request","request_id":"req-9","request":{"subtype":"can_use_tool","tool_name":"Write","tool_use_id":"tu-1","input":{"file_path":"/work/a.txt"}}}
+            """);
+        var perm = Assert.IsType<PermissionRequestedEvent>(Assert.Single(e));
+        Assert.Equal("req-9", perm.RequestId);
+        Assert.Equal("tu-1", perm.ToolCallId);
+        Assert.Contains("Write", perm.Title);
+        Assert.Contains(perm.Options, o => o.OptionId == "allow");
+        Assert.Contains(perm.Options, o => o.OptionId == "reject");
+    }
+
+    [Fact]
+    public void Permission_launch_arguments_default_to_asking_and_skip_when_opted_in()
+    {
+        var mapper = new ClaudeCodeStreamMapper();
+        Assert.Equal(["--permission-prompt-tool", "stdio"], mapper.PermissionLaunchArguments(skipPermissions: false));
+        Assert.Equal(["--dangerously-skip-permissions"], mapper.PermissionLaunchArguments(skipPermissions: true));
+    }
+
+    [Theory]
+    [InlineData(true, "allow")]
+    [InlineData(false, "deny")]
+    public void Permission_response_is_valid_control_response(bool allow, string behavior)
+    {
+        var line = new ClaudeCodeStreamMapper().BuildPermissionResponse("req-9", allow);
+        using var doc = JsonDocument.Parse(line!);
+        Assert.Equal("control_response", doc.RootElement.GetProperty("type").GetString());
+        var response = doc.RootElement.GetProperty("response");
+        Assert.Equal("req-9", response.GetProperty("request_id").GetString());
+        Assert.Equal(behavior, response.GetProperty("response").GetProperty("behavior").GetString());
+    }
 }

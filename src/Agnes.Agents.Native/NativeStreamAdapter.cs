@@ -43,10 +43,14 @@ public sealed class NativeStreamAdapter : IAgentAdapter
 
     private Process StartProcess(AgentSessionOptions options)
     {
+        // Base args + the permission model (ask-per-tool by default, or skip when the user opts in).
+        var baseArgs = new List<string>(_spec.Arguments);
+        baseArgs.AddRange(_spec.Mapper.PermissionLaunchArguments(options.SkipPermissions));
+
         // When a sandbox is set, run the agent inside it (streams flow through the exec pipe).
         // The guest working directory travels inside the wrapped argv (e.g. `incus exec --cwd`);
         // the host launcher process must use a real host directory, not the guest path.
-        var (command, arguments) = (_spec.Command, (IReadOnlyList<string>)_spec.Arguments);
+        var (command, arguments) = (_spec.Command, (IReadOnlyList<string>)baseArgs);
         var hostWorkingDirectory = options.WorkingDirectory;
         if (options.Sandbox is { } sandbox)
         {

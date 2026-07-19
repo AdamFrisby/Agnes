@@ -22,6 +22,7 @@ internal sealed class NativeAgentSession : IAgentSession
     private readonly Channel<SessionEvent> _events =
         Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = true });
     private readonly object _turnGate = new();
+    private readonly SemaphoreSlim _stdinLock = new(1, 1);
     private TaskCompletionSource<StopReason>? _turn;
 
     public NativeAgentSession(TextReader stdout, TextWriter stdin, INativeStreamMapper mapper, ILogger logger, IAsyncDisposable? lifetime = null)
@@ -46,8 +47,7 @@ internal sealed class NativeAgentSession : IAgentSession
             _turn = turn;
         }
 
-        await _stdin.WriteLineAsync(_mapper.BuildUserTurn(content)).ConfigureAwait(false);
-        await _stdin.FlushAsync().ConfigureAwait(false);
+        await WriteLineAsync(_mapper.BuildUserTurn(content), cancellationToken).ConfigureAwait(false);
 
         using (cancellationToken.Register(() => turn.TrySetCanceled()))
         {
@@ -59,9 +59,30 @@ internal sealed class NativeAgentSession : IAgentSession
     // message can be wired through the mapper.
     public Task CancelAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-    // Permissions over native stream-json depend on the CLI's control protocol; not modeled yet.
-    public Task RespondToPermissionAsync(string requestId, string optionId, CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
+    public async Task RespondToPermissionAsync(string requestId, string optionId, CancellationToken cancellationToken = default)
+    {
+        var allow = optionId.StartsWith("allow", StringComparison.OrdinalIgnoreCase);
+        if (_mapper.BuildPermissionResponse(requestId, allow) is { } line)
+        {
+            await WriteLineAsync(line, cancellationToken).ConfigureAwait(false);
+            Emit(new PermissionResolvedEvent(requestId, optionId, allow ? PermissionOutcome.Allowed : PermissionOutcome.Denied));
+        }
+    }
+
+    /// <summary>Serialises writes to the agent's stdin (user turns and control responses may race).</summary>
+    private async Task WriteLineAsync(string line, CancellationToken cancellationToken)
+    {
+        await _stdinLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _stdin.WriteLineAsync(line).ConfigureAwait(false);
+            await _stdin.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _stdinLock.Release();
+        }
+    }
 
     private async Task ReadLoopAsync()
     {

@@ -1,0 +1,115 @@
+{
+  "name": "Sandboxed Claude permission approval",
+  "adapterId": "claude-code-native",
+  "agentDisplayName": "Claude Code (native)",
+  "recordedAt": "2026-07-19T02:36:56.3976966+00:00",
+  "events": [
+    {
+      "offsetMs": 0,
+      "event": {
+        "eventKind": "session_started",
+        "agentSessionId": "6b0a55e3-7b9b-4fc3-ae82-816d14e532c2",
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:36:56.3976966+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 2068,
+      "event": {
+        "eventKind": "tool_call",
+        "toolCallId": "toolu_01Nv264m6pMSQLeguEwTDpGm",
+        "title": "/work/approved.txt",
+        "kind": 1,
+        "status": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\u0022file_path\u0022:\u0022/work/approved.txt\u0022,\u0022content\u0022:\u0022yes\\n\u0022}"
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:36:58.4659028+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 2078,
+      "event": {
+        "eventKind": "permission_requested",
+        "requestId": "4147ff0e-cad7-4a4d-8688-82851b2843f1",
+        "toolCallId": "toolu_01Nv264m6pMSQLeguEwTDpGm",
+        "title": "Allow Write?",
+        "options": [
+          {
+            "optionId": "allow",
+            "name": "Allow",
+            "kind": 0
+          },
+          {
+            "optionId": "reject",
+            "name": "Reject",
+            "kind": 2
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:36:58.4763619+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 2083,
+      "event": {
+        "eventKind": "permission_resolved",
+        "requestId": "4147ff0e-cad7-4a4d-8688-82851b2843f1",
+        "optionId": "allow",
+        "outcome": 0,
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:36:58.4807567+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 2128,
+      "event": {
+        "eventKind": "tool_call_update",
+        "toolCallId": "toolu_01Nv264m6pMSQLeguEwTDpGm",
+        "status": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "File created successfully at: /work/approved.txt (file state is current in your context \u2014 no need to Read it back)"
+          }
+        ],
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:36:58.5257521+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 3849,
+      "event": {
+        "eventKind": "message_chunk",
+        "role": 1,
+        "content": {
+          "type": "text",
+          "text": "Created /work/approved.txt containing \u0022yes\u0022."
+        },
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:37:00.2469045+00:00",
+        "agentId": null
+      }
+    },
+    {
+      "offsetMs": 3867,
+      "event": {
+        "eventKind": "turn_ended",
+        "reason": 0,
+        "sequence": 0,
+        "timestamp": "2026-07-19T02:37:00.2649957+00:00",
+        "agentId": null
+      }
+    }
+  ],
+  "durationMs": 3867
+}

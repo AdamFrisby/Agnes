@@ -28,7 +28,7 @@ if (options is null)
 {
     Console.Error.WriteLine(
         "usage: Agnes.Record --agent <opencode|claude-code|claude-native> [--sandbox incus] " +
-        "[--image <alias>] [--project <p>] [--pool <p>] [--bridge <b>] [--keep] " +
+        "[--image <alias>] [--project <p>] [--pool <p>] [--bridge <b>] [--keep] [--skip-permissions] " +
         "[--out <file>] [--name <name>] [--cwd <dir>] <prompt> [<prompt> ...]");
     return 1;
 }
@@ -36,18 +36,10 @@ if (options is null)
 using var loggerFactory = LoggerFactory.Create(b => b.AddSimpleConsole(o => o.SingleLine = true).SetMinimumLevel(LogLevel.Warning));
 
 Directory.CreateDirectory(options.Cwd);
-// Headless streaming claude: --print keeps it non-interactive over pipes; stream-json both ways
-// for multi-turn; --dangerously-skip-permissions because the sandbox VM is the security boundary.
-string[] nativeArgs =
-[
-    "--print", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose",
-    "--dangerously-skip-permissions",
-];
-
 IAgentAdapter adapter = options.Agent switch
 {
     "claude-code" => ClaudeCodeAgent.Create(loggerFactory),
-    "claude-native" => ClaudeCodeNative.Create(loggerFactory, arguments: nativeArgs),
+    "claude-native" => ClaudeCodeNative.Create(loggerFactory),
     _ => OpenCodeAgent.Create(loggerFactory),
 };
 
@@ -84,6 +76,7 @@ var launchOptions = new AgentSessionOptions
 {
     WorkingDirectory = sandbox is null ? options.Cwd : "/work",
     Sandbox = sandbox,
+    SkipPermissions = options.SkipPermissions,
 };
 
 Console.WriteLine($">> launching {adapter.Descriptor.DisplayName}{(sandbox is null ? "" : " (in sandbox)")} and recording…");
@@ -174,6 +167,7 @@ static RecordOptions? ParseArgs(string[] args)
     string? outPath = null, name = null, sandbox = null;
     string project = "default", pool = "codeybox-zfs", bridge = "cb-net", image = "agnes-claude-baseline";
     var keep = false;
+    var skipPermissions = false;
     var cwd = Path.Combine(Path.GetTempPath(), "agnes-record");
     var prompts = new List<string>();
 
@@ -191,13 +185,14 @@ static RecordOptions? ParseArgs(string[] args)
             case "--bridge": bridge = args[++i]; break;
             case "--image": image = args[++i]; break;
             case "--keep": keep = true; break;
+            case "--skip-permissions": skipPermissions = true; break;
             default: prompts.Add(args[i]); break;
         }
     }
 
-    return prompts.Count == 0 ? null : new RecordOptions(agent, outPath, name, cwd, prompts, sandbox, project, pool, bridge, image, keep);
+    return prompts.Count == 0 ? null : new RecordOptions(agent, outPath, name, cwd, prompts, sandbox, project, pool, bridge, image, keep, skipPermissions);
 }
 
 internal sealed record RecordOptions(
     string Agent, string? Out, string? Name, string Cwd, IReadOnlyList<string> Prompts,
-    string? Sandbox, string Project, string Pool, string Bridge, string Image, bool Keep);
+    string? Sandbox, string Project, string Pool, string Bridge, string Image, bool Keep, bool SkipPermissions);

@@ -106,7 +106,7 @@ public sealed class SimulatedHost : IAgnesHost
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync()
         => Task.FromResult<IReadOnlyList<AgentInfo>>(Agents);
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false)
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false)
     {
         var id = $"sim-{Interlocked.Increment(ref _counter):x4}";
         var session = _sessions.GetOrAdd(id, _ => new SimSession(id, adapterId, workingDirectory));

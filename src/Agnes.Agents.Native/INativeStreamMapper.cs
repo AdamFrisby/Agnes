@@ -14,4 +14,19 @@ public interface INativeStreamMapper
 
     /// <summary>Builds the JSON line written to the agent's stdin to send a user prompt.</summary>
     string BuildUserTurn(IReadOnlyList<ContentBlock> content);
+
+    /// <summary>
+    /// CLI arguments that select the permission model. When <paramref name="skipPermissions"/> is
+    /// false (the default), the agent must ask the user before each tool call (surfaced as a
+    /// <see cref="PermissionRequestedEvent"/>); when true, the user has opted into autonomous
+    /// operation and tool calls run without prompting.
+    /// </summary>
+    IReadOnlyList<string> PermissionLaunchArguments(bool skipPermissions);
+
+    /// <summary>
+    /// Builds the stdin JSON line answering a pending permission request, or null if the CLI has no
+    /// interactive permission protocol. <paramref name="requestId"/> is the id from the originating
+    /// <see cref="PermissionRequestedEvent"/>.
+    /// </summary>
+    string? BuildPermissionResponse(string requestId, bool allow);
 }
