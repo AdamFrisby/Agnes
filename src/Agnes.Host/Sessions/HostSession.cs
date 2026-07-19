@@ -41,6 +41,9 @@ internal sealed class HostSession : IAsyncDisposable
     public string AdapterId { get; }
     public string WorkingDirectory { get; }
 
+    /// <summary>The agent's own session id (used to resume it after a host restart).</summary>
+    public string AgentSessionId => _agent.AgentSessionId;
+
     /// <summary>Records a user prompt in the log, then drives an agent turn in the background.</summary>
     public async Task PromptAsync(IReadOnlyList<ContentBlock> content)
     {

@@ -58,6 +58,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(TurnEndedEvent), "turn_ended")]
 [JsonDerivedType(typeof(AgentErrorEvent), "agent_error")]
 [JsonDerivedType(typeof(SubagentStartedEvent), "subagent_started")]
+[JsonDerivedType(typeof(NoticeEvent), "notice")]
 public abstract record SessionEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -121,6 +122,9 @@ public sealed record TerminalOutputEvent(string TerminalId, string Data) : Sessi
 
 /// <summary>An agent turn finished.</summary>
 public sealed record TurnEndedEvent(StopReason Reason) : SessionEvent;
+
+/// <summary>A host-level informational notice in the transcript (e.g. a session was reconnected).</summary>
+public sealed record NoticeEvent(string Message, bool IsError = false) : SessionEvent;
 
 /// <summary>The agent (or adapter) reported an error.</summary>
 public sealed record AgentErrorEvent(string Message) : SessionEvent;

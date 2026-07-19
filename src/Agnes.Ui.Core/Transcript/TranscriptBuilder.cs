@@ -121,6 +121,11 @@ public sealed class TranscriptBuilder
                 Items.Add(new NoticeItem(err.Message, isError: true) { AgentId = agentId });
                 break;
 
+            case NoticeEvent notice:
+                CloseBubble();
+                Items.Add(new NoticeItem(notice.Message, notice.IsError) { AgentId = agentId });
+                break;
+
             case TurnEndedEvent:
                 CloseBubble();
                 break;

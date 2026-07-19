@@ -51,6 +51,12 @@ public sealed record AgentSessionOptions
     /// (surfaced to the user), which is the intended interactive behaviour for Agnes.
     /// </summary>
     public bool SkipPermissions { get; init; }
+
+    /// <summary>
+    /// When set, resume the agent's prior conversation with this id (e.g. after a host restart)
+    /// instead of starting fresh. Only used by adapters whose CLI supports resuming a session.
+    /// </summary>
+    public string? ResumeSessionId { get; init; }
 }
 
 /// <summary>

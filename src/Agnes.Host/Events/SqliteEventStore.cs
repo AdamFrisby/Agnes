@@ -33,8 +33,60 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
                 json       TEXT NOT NULL,
                 PRIMARY KEY (session_id, seq)
             );
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id        TEXT PRIMARY KEY,
+                adapter_id        TEXT NOT NULL,
+                working_directory TEXT NOT NULL,
+                agent_session_id  TEXT,
+                use_worktree      INTEGER NOT NULL,
+                skip_permissions  INTEGER NOT NULL,
+                sandboxed         INTEGER NOT NULL DEFAULT 0,
+                created_at        TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
+    }
+
+    public async Task SaveSessionAsync(SessionRecord record, CancellationToken cancellationToken = default)
+    {
+        await using var connection = Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO sessions (session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at)
+            VALUES ($sid, $adapter, $wd, $agent, $wt, $skip, $sandboxed, $created)
+            ON CONFLICT(session_id) DO UPDATE SET
+                agent_session_id = excluded.agent_session_id;
+            """;
+        command.Parameters.AddWithValue("$sid", record.SessionId);
+        command.Parameters.AddWithValue("$adapter", record.AdapterId);
+        command.Parameters.AddWithValue("$wd", record.WorkingDirectory);
+        command.Parameters.AddWithValue("$agent", (object?)record.AgentSessionId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$wt", record.UseWorktree ? 1 : 0);
+        command.Parameters.AddWithValue("$skip", record.SkipPermissions ? 1 : 0);
+        command.Parameters.AddWithValue("$sandboxed", record.Sandboxed ? 1 : 0);
+        command.Parameters.AddWithValue("$created", record.CreatedAt.ToString("O"));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<SessionRecord>> ListSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = Open();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at FROM sessions ORDER BY created_at ASC;";
+        var records = new List<SessionRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            records.Add(new SessionRecord(
+                reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.GetInt64(4) != 0, reader.GetInt64(5) != 0, reader.GetInt64(6) != 0,
+                DateTimeOffset.Parse(reader.GetString(7))));
+        }
+
+        return records;
     }
 
     public async Task<SessionEvent> AppendAsync(string sessionId, SessionEvent @event, CancellationToken cancellationToken = default)

@@ -49,6 +49,13 @@ public sealed class NativeStreamAdapter : IAgentAdapter
         var baseArgs = new List<string>(_spec.Arguments);
         baseArgs.AddRange(_spec.Mapper.PermissionLaunchArguments(options.SkipPermissions));
 
+        // Resume a prior conversation (e.g. after a host restart) when the CLI supports it.
+        if (!string.IsNullOrEmpty(options.ResumeSessionId))
+        {
+            baseArgs.Add("--resume");
+            baseArgs.Add(options.ResumeSessionId);
+        }
+
         // When a sandbox is set, run the agent inside it (streams flow through the exec pipe).
         // The guest working directory travels inside the wrapped argv (e.g. `incus exec --cwd`);
         // the host launcher process must use a real host directory, not the guest path.

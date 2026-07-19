@@ -131,6 +131,9 @@ var app = builder.Build();
 // sandboxes get refreshed credentials when the host claude CLI rotates its OAuth token.
 _ = app.Services.GetService<Agnes.Sandbox.Credentials.ClaudeTokenRotationPusher>();
 
+// Restore the session catalogue so sessions (and their history) survive a host restart.
+await app.Services.GetRequiredService<SessionManager>().RestoreAsync();
+
 var tokens = app.Services.GetRequiredService<DeviceRegistry>();
 
 // Optionally serve a web frontend (e.g. the Uno WASM build) from the same origin as

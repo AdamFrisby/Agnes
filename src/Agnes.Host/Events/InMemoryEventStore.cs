@@ -46,6 +46,17 @@ public sealed class InMemoryEventStore : IEventStore
         }
     }
 
+    private readonly ConcurrentDictionary<string, SessionRecord> _catalog = new();
+
+    public Task SaveSessionAsync(SessionRecord record, CancellationToken cancellationToken = default)
+    {
+        _catalog[record.SessionId] = record;
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<SessionRecord>> ListSessionsAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<SessionRecord>>(_catalog.Values.ToArray());
+
     private sealed class SessionLog
     {
         public object Gate { get; } = new();
