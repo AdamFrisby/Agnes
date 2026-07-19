@@ -383,6 +383,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         Notifier.Notify(notification);
     }
 
+    /// <summary>Jumps to the session (and the specific transcript item) a notification came from.</summary>
+    public void ActivateNotification(AppNotification notification)
+    {
+        var doc = OpenTabs().FirstOrDefault(d => d.Session?.SessionId == notification.SessionId);
+        if (doc is null)
+        {
+            return;
+        }
+
+        _factory.SetActiveDockable(doc);
+        if (!string.IsNullOrEmpty(notification.AnchorId))
+        {
+            doc.Session?.ScrollTo(notification.AnchorId);
+        }
+    }
+
     private void CloseActiveTab()
     {
         if (_factory.DocumentDock?.ActiveDockable is SessionDocument doc)

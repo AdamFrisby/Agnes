@@ -679,7 +679,7 @@ public sealed class SessionViewModel : ObservableObject
                     break;
                 }
 
-                NotificationRaised?.Invoke(new AppNotification("Permission needed", pr.Title, NotificationKind.Blocker, SessionId));
+                NotificationRaised?.Invoke(new AppNotification("Permission needed", pr.Title, NotificationKind.Blocker, SessionId, pr.ToolCallId));
                 break;
 
             case PermissionResolvedEvent rr:
@@ -691,7 +691,7 @@ public sealed class SessionViewModel : ObservableObject
 
             case TurnEndedEvent { Reason: not StopReason.Cancelled }:
                 IsTurnActive = false;
-                NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId));
+                NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId, Items.LastOrDefault()?.AnchorId));
                 DrainQueue();
                 _ = RefreshGitAsync(); // changes likely landed this turn
                 break;
@@ -704,7 +704,7 @@ public sealed class SessionViewModel : ObservableObject
                 IsTurnActive = false;
                 _interrupted = true;
                 UpdateBanner();
-                NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId));
+                NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId, Items.LastOrDefault()?.AnchorId));
                 break;
 
             case ModeChangedEvent mode:

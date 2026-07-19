@@ -27,7 +27,15 @@ public partial class App : Application
 
             var window = new MainWindow { DataContext = viewModel };
             // In-app toast when focused; native OS notification when the window is in the background.
-            viewModel.Notifier = new AvaloniaNotifier(window, () => viewModel.WindowActive);
+            // Clicking a toast brings the window forward and jumps to the session + item it came from.
+            viewModel.Notifier = new AvaloniaNotifier(
+                window,
+                () => viewModel.WindowActive,
+                onActivated: n =>
+                {
+                    window.Activate();
+                    viewModel.ActivateNotification(n);
+                });
             window.Activated += (_, _) => viewModel.WindowActive = true;
             window.Deactivated += (_, _) => viewModel.WindowActive = false;
 

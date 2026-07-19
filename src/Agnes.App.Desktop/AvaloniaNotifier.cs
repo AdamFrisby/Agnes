@@ -15,8 +15,9 @@ public sealed class AvaloniaNotifier : INotifier
 {
     private readonly WindowNotificationManager _manager;
     private readonly Func<bool> _isWindowActive;
+    private readonly Action<AppNotification>? _onActivated;
 
-    public AvaloniaNotifier(TopLevel topLevel, Func<bool>? isWindowActive = null)
+    public AvaloniaNotifier(TopLevel topLevel, Func<bool>? isWindowActive = null, Action<AppNotification>? onActivated = null)
     {
         _manager = new WindowNotificationManager(topLevel)
         {
@@ -24,6 +25,7 @@ public sealed class AvaloniaNotifier : INotifier
             MaxItems = 4,
         };
         _isWindowActive = isWindowActive ?? (() => true);
+        _onActivated = onActivated;
     }
 
     public void Notify(AppNotification notification)
@@ -34,10 +36,12 @@ public sealed class AvaloniaNotifier : INotifier
             return;
         }
 
+        // Clicking the toast jumps to the session (and the specific item) that raised it.
         Dispatcher.UIThread.Post(() => _manager.Show(new Notification(
             notification.Title,
             notification.Body,
-            Map(notification.Kind))));
+            Map(notification.Kind),
+            onClick: () => _onActivated?.Invoke(notification))));
     }
 
     private static NotificationType Map(NotificationKind kind) => kind switch

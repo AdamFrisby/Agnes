@@ -13,8 +13,11 @@ public enum NotificationKind
     Error,
 }
 
-/// <summary>A user-facing notification a session wants surfaced (in-app toast or OS notification).</summary>
-public sealed record AppNotification(string Title, string Body, NotificationKind Kind, string SessionId);
+/// <summary>
+/// A user-facing notification a session wants surfaced (in-app toast or OS notification).
+/// <paramref name="AnchorId"/> is the transcript item to scroll to when the user activates it.
+/// </summary>
+public sealed record AppNotification(string Title, string Body, NotificationKind Kind, string SessionId, string? AnchorId = null);
 
 /// <summary>Surfaces <see cref="AppNotification"/>s. Implemented per frontend (toast, OS tray, …).</summary>
 public interface INotifier
