@@ -18,7 +18,7 @@ public sealed class SimulatedHost : IAgnesHost
         new("opencode", "OpenCode", "1.17.13", Available: true),
         new("claude-code", "Claude Code (ACP)", "2.0", Available: true),
         new("claude-code-native", "Claude Code (native)", "2.0", Available: true),
-        new("codex", "Codex", "0.9", Available: true),
+        new("codex", "Codex", "0.144", Available: true),
     ];
 
     private const string SampleDiff =

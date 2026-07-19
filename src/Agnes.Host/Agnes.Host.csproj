@@ -20,6 +20,7 @@
     <ProjectReference Include="..\Agnes.Agents.ClaudeCode\Agnes.Agents.ClaudeCode.csproj" />
     <ProjectReference Include="..\Agnes.Agents.OpenCode\Agnes.Agents.OpenCode.csproj" />
     <ProjectReference Include="..\Agnes.Agents.Native\Agnes.Agents.Native.csproj" />
+    <ProjectReference Include="..\Agnes.Agents.Codex\Agnes.Agents.Codex.csproj" />
     <ProjectReference Include="..\Agnes.Sandbox\Agnes.Sandbox.csproj" />
     <ProjectReference Include="..\Agnes.Sandbox.Incus\Agnes.Sandbox.Incus.csproj" />
   </ItemGroup>

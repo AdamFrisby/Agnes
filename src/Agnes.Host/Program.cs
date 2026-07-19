@@ -100,6 +100,12 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Native.ClaudeCod
     builder.Configuration["Agnes:ClaudeCodeNative:Command"],
     builder.Configuration.GetSection("Agnes:ClaudeCodeNative:Args").Get<string[]>()));
 
+// Codex via its NATIVE app-server (persistent JSON-RPC stdio), the interactive Codex fit.
+builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Codex.CodexAppServer.Create(
+    sp.GetRequiredService<ILoggerFactory>(),
+    builder.Configuration["Agnes:Codex:Command"],
+    builder.Configuration.GetSection("Agnes:Codex:Args").Get<string[]>()));
+
 // ---- sandboxing (opt-in) ----
 // When Agnes:Sandbox:Provider=incus, agents run inside per-session Incus VMs with their
 // credentials materialised in. Off by default: no behaviour change unless configured.
