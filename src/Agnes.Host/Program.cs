@@ -406,6 +406,43 @@ app.MapPost("/credentials/token", (HttpContext ctx, StoreCredentialRequest req) 
     return Results.Ok(new { host = req.Host });
 });
 
+// ---- projects: the per-repo bundles a session inherits (sandbox + MCP + GitHub account + defaults) ----
+var projects = app.Services.GetService<Agnes.Host.Projects.ProjectStore>();
+var projectGit = new Agnes.Host.Git.GitService();
+
+app.MapGet("/projects", (HttpContext ctx) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : projects is null ? Results.NotFound()
+    : Results.Ok(projects.List().Select(Agnes.Host.Projects.ProjectMapping.ToDto)));
+
+app.MapGet("/projects/{id}", (HttpContext ctx, string id) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : projects?.Get(id) is { } p ? Results.Ok(Agnes.Host.Projects.ProjectMapping.ToDto(p)) : Results.NotFound());
+
+// What project a working directory resolves to (a non-creating preview for the session setup).
+app.MapGet("/projects/resolve", async (HttpContext ctx, string? dir) =>
+{
+    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (projects is null) return Results.NotFound();
+    var remote = await projectGit.GetRemoteUrlAsync(dir ?? string.Empty);
+    var repoKey = Agnes.Host.Hosting.GitRemote.TryParse(remote, out var h, out var r) ? $"{h}/{r}" : string.Empty;
+    return Results.Ok(Agnes.Host.Projects.ProjectMapping.ToDto(projects.Peek(repoKey)));
+});
+
+app.MapPut("/projects/{id}", (HttpContext ctx, string id, ProjectDto dto) =>
+{
+    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (projects is null) return Results.NotFound();
+    var saved = projects.Save(Agnes.Host.Projects.ProjectMapping.ToProject(dto with { Id = id }));
+    _ = images?.RebuildForProjectAsync(saved); // re-bake the project's sandbox image in the background
+    return Results.Ok(Agnes.Host.Projects.ProjectMapping.ToDto(saved));
+});
+
+app.MapDelete("/projects/{id}", (HttpContext ctx, string id) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : projects is null ? Results.NotFound()
+    : projects.Remove(id) ? Results.NoContent() : Results.NotFound());
+
 if (webFiles is not null)
 {
     app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = webFiles });

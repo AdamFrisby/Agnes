@@ -241,7 +241,7 @@ public sealed class SessionManager : IAsyncDisposable
         await _store.SaveSessionAsync(record, cancellationToken).ConfigureAwait(false);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions);
+        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name);
     }
 
     // Which agents Agnes can inject an MCP config into, and how: (config format, home-relative file,

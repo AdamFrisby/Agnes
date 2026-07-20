@@ -57,7 +57,24 @@ public sealed record SessionInfo(
     IReadOnlyList<SessionMode>? Modes = null,
     string? CurrentModeId = null,
     SandboxStatus? Sandbox = null,
-    bool SkipPermissions = false);
+    bool SkipPermissions = false,
+    string? Project = null);
+
+/// <summary>The per-session defaults a project suggests.</summary>
+public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Off", string McpApproval = "Ask");
+
+/// <summary>
+/// A project as the client sees it: the per-repo bundle of sandbox contents, MCP servers, GitHub
+/// account and defaults that its sessions inherit. RepoKey "" is the default/fallback project.
+/// </summary>
+public sealed record ProjectDto(
+    string Id,
+    string Name,
+    string RepoKey,
+    SandboxImageDto Sandbox,
+    IReadOnlyList<McpServerInfo> McpServers,
+    string? CredentialAccount,
+    ProjectDefaultsDto Defaults);
 
 /// <summary>A device paired with a host (metadata only — never the token).</summary>
 public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt);

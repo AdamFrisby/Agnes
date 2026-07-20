@@ -131,6 +131,40 @@ public sealed class ProjectStore
         }
     }
 
+    /// <summary>
+    /// Like <see cref="Resolve"/> but never persists — returns the matching project, or a transient
+    /// preview of the project a repo WOULD get (repo-named, seeded from the default). For the UI to show
+    /// what a session will use without creating a project just from browsing.
+    /// </summary>
+    public Project Peek(string? repoKey)
+    {
+        var key = (repoKey ?? string.Empty).Trim();
+        if (key.Length == 0)
+        {
+            return Default();
+        }
+
+        lock (_gate)
+        {
+            var match = _projects.FirstOrDefault(p => string.Equals(p.RepoKey, key, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match;
+            }
+
+            var seed = Default();
+            return new Project
+            {
+                Name = NameFromKey(key),
+                RepoKey = key,
+                Sandbox = seed.Sandbox,
+                McpServers = seed.McpServers,
+                CredentialAccount = seed.CredentialAccount,
+                Defaults = seed.Defaults,
+            };
+        }
+    }
+
     // "github.com/AdamFrisby/Agnes" -> "Agnes"
     private static string NameFromKey(string key)
     {
