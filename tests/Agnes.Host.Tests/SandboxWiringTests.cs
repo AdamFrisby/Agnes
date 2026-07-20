@@ -166,6 +166,52 @@ public class SandboxWiringTests
     }
 
     [Fact]
+    public async Task Sandbox_session_forwards_run_at_host_servers_via_the_shim()
+    {
+        var mcpFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
+        try
+        {
+            var mcp = new Agnes.Host.Hosting.McpRegistry(mcpFile);
+            mcp.Add(new Agnes.Protocol.McpServerRequest("host-tool", "host", true, "stdio", Command: "real-mcp"));
+
+            var forward = new Agnes.Host.Hosting.McpForwardRegistry();
+            await using var listener = new Agnes.Host.Hosting.McpForwardListener(
+                forward, System.Net.IPAddress.Loopback, 0, "127.0.0.1",
+                NullLogger<Agnes.Host.Hosting.McpForwardListener>.Instance);
+            listener.Start();
+
+            var adapter = new ScriptedAgentAdapter("codex");
+            var sandboxes = new FakeSandboxProvider();
+            await using var manager = new SessionManager(
+                [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                sandboxes, [new FakeCredentialProvider()], null, mcp, forward, listener);
+
+            await manager.OpenSessionAsync("codex", "/tmp/project");
+
+            var bundle = Assert.Single(sandboxes.Last.Materialised);
+
+            // The forward shim was materialized, and the config launches it (not the real command).
+            Assert.Contains(bundle.Files, f => f.HomeRelativePath == ".agnes/mcp-forward.py");
+            var config = bundle.Files.First(f => f.HomeRelativePath == ".codex/config.toml").Contents;
+            Assert.Contains("mcp-forward.py", config);
+            Assert.DoesNotContain("real-mcp", config); // the real host command never enters the VM
+
+            // The shim's connection details ride the (single) env bundle.
+            Assert.Equal("127.0.0.1", bundle.EnvironmentVariables["AGNES_MCP_HOST"]);
+            Assert.Equal(listener.Port.ToString(), bundle.EnvironmentVariables["AGNES_MCP_PORT"]);
+            Assert.True(bundle.EnvironmentVariables.ContainsKey("AGNES_MCP_TOKEN"));
+
+            // And the token actually resolves the granted server in the forward registry.
+            var token = bundle.EnvironmentVariables["AGNES_MCP_TOKEN"];
+            Assert.NotNull(forward.Resolve(token, "host-tool"));
+        }
+        finally
+        {
+            if (File.Exists(mcpFile)) File.Delete(mcpFile);
+        }
+    }
+
+    [Fact]
     public async Task Host_claude_native_session_gets_an_mcp_config_path_flag()
     {
         var mcpFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");

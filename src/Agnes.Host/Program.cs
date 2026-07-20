@@ -135,6 +135,25 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
         sp => sp.GetRequiredService<Agnes.Sandbox.Credentials.ClaudeCredentialProvider>());
 
     builder.Services.AddSingleton<Agnes.Sandbox.Credentials.ClaudeTokenRotationPusher>();
+
+    // MCP forward proxy: lets a sandboxed agent reach RunAt=Host MCP servers running on this host,
+    // over the sandbox bridge (token-gated, bound only to the bridge address).
+    builder.Services.AddSingleton<Agnes.Host.Hosting.McpForwardRegistry>();
+    var mcpBridge = builder.Configuration["Agnes:Sandbox:Incus:Bridge"] ?? "incusbr0";
+    var mcpHostAddress = ResolveBridgeAddress(builder.Configuration["Agnes:Sandbox:Incus:HostAddress"], mcpBridge);
+    if (mcpHostAddress is not null)
+    {
+        var mcpPort = int.TryParse(builder.Configuration["Agnes:Sandbox:Incus:McpPort"], out var configuredPort) ? configuredPort : 0;
+        builder.Services.AddSingleton(sp =>
+        {
+            var listener = new Agnes.Host.Hosting.McpForwardListener(
+                sp.GetRequiredService<Agnes.Host.Hosting.McpForwardRegistry>(),
+                mcpHostAddress, mcpPort, mcpHostAddress.ToString(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.McpForwardListener>());
+            listener.Start();
+            return listener;
+        });
+    }
 }
 
 var app = builder.Build();
@@ -142,6 +161,8 @@ var app = builder.Build();
 // Eagerly instantiate the rotation pusher (its FileSystemWatcher starts in the ctor) so live
 // sandboxes get refreshed credentials when the host claude CLI rotates its OAuth token.
 _ = app.Services.GetService<Agnes.Sandbox.Credentials.ClaudeTokenRotationPusher>();
+// Start the MCP forward listener (if sandboxing + a bridge address are configured).
+_ = app.Services.GetService<Agnes.Host.Hosting.McpForwardListener>();
 
 // Restore the session catalogue so sessions (and their history) survive a host restart.
 await app.Services.GetRequiredService<SessionManager>().RestoreAsync();
@@ -206,6 +227,29 @@ app.MapPost("/pair", (PairRequest request) =>
         ? Results.Json(new { error = "Invalid or expired pairing code." }, statusCode: StatusCodes.Status401Unauthorized)
         : Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
 });
+
+// The host's IPv4 address on the sandbox bridge — where the MCP forward listener binds and what the
+// guest dials. Prefer the configured value; otherwise read it off the bridge interface. Null → the
+// forward proxy stays off (host MCP servers just won't reach sandboxes).
+static System.Net.IPAddress? ResolveBridgeAddress(string? configured, string bridge)
+{
+    if (!string.IsNullOrWhiteSpace(configured) && System.Net.IPAddress.TryParse(configured, out var ip))
+    {
+        return ip;
+    }
+
+    try
+    {
+        var nic = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+            .FirstOrDefault(n => string.Equals(n.Name, bridge, StringComparison.Ordinal));
+        return nic?.GetIPProperties().UnicastAddresses
+            .FirstOrDefault(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)?.Address;
+    }
+    catch
+    {
+        return null;
+    }
+}
 
 // List / revoke paired devices (requires a valid token).
 static bool Authorized(HttpContext ctx, DeviceRegistry reg)

@@ -21,7 +21,10 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly ISandboxProvider? _sandboxes;
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
     private readonly ClaudeTokenRotationPusher? _rotationPusher;
-    private readonly Hosting.McpRegistry? _mcp;
+    private readonly McpRegistry? _mcp;
+    private readonly McpForwardRegistry? _forward;
+    private readonly McpForwardListener? _forwardListener;
+    private readonly ConcurrentDictionary<string, string> _forwardTokenBySession = new();
     private readonly ConcurrentDictionary<string, HostSession> _sessions = new();
     private readonly ConcurrentDictionary<string, (string Repo, string Worktree)> _worktrees = new();
     private readonly ConcurrentDictionary<string, ISandbox> _sandboxBySession = new();
@@ -36,7 +39,9 @@ public sealed class SessionManager : IAsyncDisposable
         ISandboxProvider? sandboxes = null,
         IEnumerable<IAgentCredentialProvider>? credentialProviders = null,
         ClaudeTokenRotationPusher? rotationPusher = null,
-        Hosting.McpRegistry? mcp = null)
+        McpRegistry? mcp = null,
+        McpForwardRegistry? forward = null,
+        McpForwardListener? forwardListener = null)
     {
         _adapters = adapters.ToDictionary(a => a.Descriptor.Id);
         _store = store;
@@ -47,6 +52,8 @@ public sealed class SessionManager : IAsyncDisposable
         _credentialProviders = credentialProviders?.ToArray() ?? [];
         _rotationPusher = rotationPusher;
         _mcp = mcp;
+        _forward = forward;
+        _forwardListener = forwardListener;
     }
 
     public IReadOnlyList<AgentInfo> ListAgents()
@@ -74,30 +81,51 @@ public sealed class SessionManager : IAsyncDisposable
             }
         }
 
-        // Optionally provision a sandbox and run the agent inside it (with credentials materialised).
+        // Optionally provision a sandbox and run the agent inside it. Credentials and MCP config
+        // (RunAt=Sandbox servers, plus RunAt=Host servers wired to the forward shim) are materialized
+        // together in ONE bundle so the combined env write doesn't clobber the credential env file.
         ISandbox? sandbox = null;
+        string? mcpConfigPath = null;
         if (_sandboxes is not null)
         {
             sandbox = await _sandboxes.CreateAsync(
                 new SandboxSpec { HostWorkingDirectory = effectiveDirectory }, cancellationToken).ConfigureAwait(false);
             _sandboxBySession[sessionId] = sandbox;
 
+            var env = new Dictionary<string, string>();
+            var files = new List<SandboxCredentialFile>();
+
             var credentialProvider = _credentialProviders.FirstOrDefault(p => p.Handles(adapterId));
             if (credentialProvider is not null)
             {
                 var credential = await credentialProvider.GetAsync(adapterId, cancellationToken).ConfigureAwait(false);
-                await sandbox.MaterializeCredentialAsync(credential, cancellationToken).ConfigureAwait(false);
+                foreach (var (k, v) in credential.EnvironmentVariables)
+                {
+                    env[k] = v;
+                }
+
+                files.AddRange(credential.Files);
+            }
+
+            mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, env, files);
+
+            if (env.Count > 0 || files.Count > 0)
+            {
+                await sandbox.MaterializeCredentialAsync(
+                    new SandboxCredential { EnvironmentVariables = env, Files = files }, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (credentialProvider is not null)
+            {
                 _rotationPusher?.RegisterActiveSandbox(sandbox);
             }
 
             _logger.LogInformation("Session {SessionId} runs in sandbox {SandboxId}", sessionId, sandbox.Id);
         }
-
-        // Materialize the session's MCP config (from the registry) — into the VM for a sandboxed
-        // session, or a host temp file otherwise. Runs after credentials so the empty-env MCP write
-        // doesn't clobber the credential env file. RunAt=Host forwarding into sandboxes is Batch 3.
-        var mcpConfigPath = await MaterializeMcpConfigAsync(
-            adapterId, sandbox, sandbox is null ? McpRunAt.Host : McpRunAt.Sandbox, cancellationToken).ConfigureAwait(false);
+        else
+        {
+            mcpConfigPath = await MaterializeHostMcpAsync(adapterId, cancellationToken).ConfigureAwait(false);
+        }
 
         var agent = await adapter.StartSessionAsync(
             new AgentSessionOptions
@@ -137,44 +165,69 @@ public sealed class SessionManager : IAsyncDisposable
     };
 
     /// <summary>
-    /// Generates the session's MCP config from the registry and puts it where the agent will read it:
-    /// materialized into the VM home for a sandboxed session, or a host temp file otherwise. Returns
-    /// the path to pass via the CLI's config flag (Claude's <c>--mcp-config</c>), or null.
+    /// Builds a sandboxed session's MCP config into the given bundle (env + files): RunAt=Sandbox
+    /// servers run in-VM directly; RunAt=Host servers are rewritten to launch the forward shim (which
+    /// reaches the real host server through the proxy). Returns the config path for the CLI flag, or null.
     /// </summary>
-    private async Task<string?> MaterializeMcpConfigAsync(
-        string adapterId, ISandbox? sandbox, McpRunAt runAt, CancellationToken cancellationToken)
+    private string? AddSandboxMcp(string adapterId, ISandbox sandbox, string sessionId,
+        Dictionary<string, string> env, List<SandboxCredentialFile> files)
     {
         if (_mcp is null || McpTargetFor(adapterId) is not { } target)
         {
             return null;
         }
 
-        var servers = _mcp.Applicable(runAt);
+        var entries = new List<McpServerInfo>(_mcp.Applicable(McpRunAt.Sandbox));
+
+        var hostServers = _forward is not null && _forwardListener is not null
+            ? _mcp.Applicable(McpRunAt.Host)
+            : [];
+        if (hostServers.Count > 0)
+        {
+            var shimVmPath = $"{sandbox.HomeDirectory.TrimEnd('/')}/{McpForward.ShimHomeRelativePath}";
+            files.Add(new SandboxCredentialFile(McpForward.ShimHomeRelativePath, McpForward.ShimScript));
+
+            var token = _forward!.Register(hostServers);
+            _forwardTokenBySession[sessionId] = token;
+            env["AGNES_MCP_HOST"] = _forwardListener!.AdvertiseHost;
+            env["AGNES_MCP_PORT"] = _forwardListener.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            env["AGNES_MCP_TOKEN"] = token;
+
+            entries.AddRange(hostServers.Select(s => ShimEntry(s, shimVmPath)));
+        }
+
+        if (entries.Count == 0)
+        {
+            return null;
+        }
+
+        var content = target.Format == "claude" ? McpConfig.ForClaude(entries) : McpConfig.ForCodex(entries);
+        files.Add(new SandboxCredentialFile(target.HomeRel, content));
+        _logger.LogInformation("Materialized {Count} MCP server(s) into sandbox {SandboxId}", entries.Count, sandbox.Id);
+        return target.UsesFlag ? $"{sandbox.HomeDirectory.TrimEnd('/')}/{target.HomeRel}" : null;
+    }
+
+    // A RunAt=Host server, as the sandbox sees it: launch the forward shim, which tunnels to the host.
+    private static McpServerInfo ShimEntry(McpServerInfo s, string shimVmPath) => new(
+        s.Id, s.Name, s.RunAt, s.Enabled, "stdio", "python3", [shimVmPath, s.Name],
+        new Dictionary<string, string>(), null, null);
+
+    /// <summary>Writes a host (non-sandbox) session's RunAt=Host MCP config to a temp file for the CLI flag.</summary>
+    private async Task<string?> MaterializeHostMcpAsync(string adapterId, CancellationToken cancellationToken)
+    {
+        if (_mcp is null || McpTargetFor(adapterId) is not { UsesFlag: true })
+        {
+            return null; // only the config-flag (Claude) host path is wired; host-Codex/ACP deferred
+        }
+
+        var servers = _mcp.Applicable(McpRunAt.Host);
         if (servers.Count == 0)
         {
             return null;
         }
 
-        var content = target.Format == "claude" ? McpConfig.ForClaude(servers) : McpConfig.ForCodex(servers);
-
-        if (sandbox is not null)
-        {
-            // Empty env → WriteAgentEnv is a no-op, so this doesn't clobber the credential env file.
-            await sandbox.MaterializeCredentialAsync(
-                new SandboxCredential { Files = [new SandboxCredentialFile(target.HomeRel, content)] },
-                cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Materialized {Count} MCP server(s) into sandbox {SandboxId}", servers.Count, sandbox.Id);
-            return target.UsesFlag ? $"{sandbox.HomeDirectory.TrimEnd('/')}/{target.HomeRel}" : null;
-        }
-
-        // Host session: only the config-flag (Claude) path is wired; host-Codex/ACP are deferred.
-        if (!target.UsesFlag)
-        {
-            return null;
-        }
-
         var tempFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
-        await File.WriteAllTextAsync(tempFile, content, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(tempFile, McpConfig.ForClaude(servers), cancellationToken).ConfigureAwait(false);
         return tempFile;
     }
 
@@ -275,6 +328,11 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task DeleteSandboxAsync(string sessionId)
     {
+        if (_forwardTokenBySession.TryRemove(sessionId, out var token))
+        {
+            _forward?.Unregister(token);
+        }
+
         if (_sandboxBySession.TryRemove(sessionId, out var sandbox))
         {
             await sandbox.DeleteAsync().ConfigureAwait(false);
