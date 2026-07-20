@@ -274,6 +274,55 @@ public class SandboxWiringTests
     }
 
     [Fact]
+    public void Sandboxed_agent_availability_reflects_the_baked_image()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"agnes-img-{Guid.NewGuid():n}.json");
+        try
+        {
+            // Default manifest bakes claude-code-native + codex, not opencode.
+            var images = new Agnes.Host.Sessions.SandboxImageManager(
+                new SandboxImageManagerTests.FakeImageBuilder { Exists = true }, file,
+                NullLogger<Agnes.Host.Sessions.SandboxImageManager>.Instance);
+            var manager = new SessionManager(
+                [new ScriptedAgentAdapter("codex"), new ScriptedAgentAdapter("opencode")],
+                new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance, images: images);
+
+            var agents = manager.ListAgents();
+            Assert.True(agents.Single(a => a.AdapterId == "codex").Available);
+            Assert.False(agents.Single(a => a.AdapterId == "opencode").Available);
+        }
+        finally
+        {
+            if (File.Exists(file)) File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public async Task Sandbox_open_bakes_a_missing_image_and_launches_from_the_alias()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"agnes-img-{Guid.NewGuid():n}.json");
+        try
+        {
+            var builder = new SandboxImageManagerTests.FakeImageBuilder { Exists = false };
+            var images = new Agnes.Host.Sessions.SandboxImageManager(
+                builder, file, NullLogger<Agnes.Host.Sessions.SandboxImageManager>.Instance);
+            var sandboxes = new FakeSandboxProvider();
+            await using var manager = new SessionManager(
+                [new ScriptedAgentAdapter("codex")], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                sandboxes, [new FakeCredentialProvider()], images: images);
+
+            await manager.OpenSessionAsync("codex", "/tmp/project");
+
+            Assert.Equal(1, builder.Builds); // baked once because it was missing
+            Assert.Equal("agnes-baseline", sandboxes.Specs.Single().ImageReference); // launched from the baked alias
+        }
+        finally
+        {
+            if (File.Exists(file)) File.Delete(file);
+        }
+    }
+
+    [Fact]
     public async Task No_sandbox_provider_leaves_agent_on_host()
     {
         var adapter = new ScriptedAgentAdapter();

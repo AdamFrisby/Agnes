@@ -154,6 +154,16 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
             return listener;
         });
     }
+
+    // Baked baseline image: the daemon bakes it (packages + agent CLIs) so sandboxed sessions start
+    // complete. Auto-baked on first use if missing; rebuilt when the UI manifest is saved.
+    builder.Services.AddSingleton<Agnes.Sandbox.ISandboxImageBuilder>(
+        sp => sp.GetRequiredService<Agnes.Sandbox.Incus.IncusSandboxProvider>());
+    var imageManifestFile = builder.Configuration["Agnes:Sandbox:ImageManifest"]
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandbox-image.json");
+    builder.Services.AddSingleton(sp => new Agnes.Host.Sessions.SandboxImageManager(
+        sp.GetRequiredService<Agnes.Sandbox.ISandboxImageBuilder>(), imageManifestFile,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxImageManager>()));
 }
 
 var app = builder.Build();

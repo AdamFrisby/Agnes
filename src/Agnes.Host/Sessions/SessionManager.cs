@@ -24,6 +24,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly McpRegistry? _mcp;
     private readonly McpForwardRegistry? _forward;
     private readonly McpForwardListener? _forwardListener;
+    private readonly SandboxImageManager? _images;
     private readonly ConcurrentDictionary<string, string> _forwardTokenBySession = new();
     private readonly ConcurrentDictionary<string, HostSession> _sessions = new();
     private readonly ConcurrentDictionary<string, (string Repo, string Worktree)> _worktrees = new();
@@ -41,7 +42,8 @@ public sealed class SessionManager : IAsyncDisposable
         ClaudeTokenRotationPusher? rotationPusher = null,
         McpRegistry? mcp = null,
         McpForwardRegistry? forward = null,
-        McpForwardListener? forwardListener = null)
+        McpForwardListener? forwardListener = null,
+        SandboxImageManager? images = null)
     {
         _adapters = adapters.ToDictionary(a => a.Descriptor.Id);
         _store = store;
@@ -54,6 +56,7 @@ public sealed class SessionManager : IAsyncDisposable
         _mcp = mcp;
         _forward = forward;
         _forwardListener = forwardListener;
+        _images = images;
         if (_forwardListener is not null)
         {
             _forwardListener.OnToolCall = OnForwardedToolCall;
@@ -71,7 +74,10 @@ public sealed class SessionManager : IAsyncDisposable
 
     public IReadOnlyList<AgentInfo> ListAgents()
         => _adapters.Values
-            .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version, Available: a.IsAvailable()))
+            // When agents run in a sandbox, availability reflects the baked image (host PATH is
+            // irrelevant — the agent runs in the VM, not on the host).
+            .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version,
+                Available: _images is not null ? _images.ImageHasAgent(a.Descriptor.Id) : a.IsAvailable()))
             .ToArray();
 
     public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", CancellationToken cancellationToken = default)
@@ -101,8 +107,16 @@ public sealed class SessionManager : IAsyncDisposable
         string? mcpConfigPath = null;
         if (_sandboxes is not null)
         {
+            // Ensure the baseline image exists (bake it if missing) before launching from it.
+            var image = string.Empty;
+            if (_images is not null)
+            {
+                await _images.EnsureAsync(cancellationToken).ConfigureAwait(false);
+                image = _images.Alias;
+            }
+
             sandbox = await _sandboxes.CreateAsync(
-                new SandboxSpec { HostWorkingDirectory = effectiveDirectory }, cancellationToken).ConfigureAwait(false);
+                new SandboxSpec { HostWorkingDirectory = effectiveDirectory, ImageReference = image }, cancellationToken).ConfigureAwait(false);
             _sandboxBySession[sessionId] = sandbox;
 
             var env = new Dictionary<string, string>();
