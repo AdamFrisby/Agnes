@@ -155,6 +155,25 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
         });
     }
 
+    // Git credential broker: lets a sandboxed agent authenticate a git push without holding any
+    // secret — its git helper calls back to this listener (over the bridge, token-gated), which mints
+    // a short-lived, repo-scoped credential on the host. Same bridge-bound shape as the MCP forward.
+    builder.Services.AddSingleton<Agnes.Host.Hosting.CredentialBrokerRegistry>();
+    if (mcpHostAddress is not null)
+    {
+        var gitPort = int.TryParse(builder.Configuration["Agnes:Sandbox:Incus:GitPort"], out var configuredGitPort) ? configuredGitPort : 0;
+        builder.Services.AddSingleton(sp =>
+        {
+            var listener = new Agnes.Host.Hosting.CredentialBrokerListener(
+                sp.GetRequiredService<Agnes.Host.Hosting.CredentialBrokerRegistry>(),
+                sp.GetRequiredService<Agnes.Host.Hosting.CredentialSourceRegistry>(),
+                mcpHostAddress, gitPort, mcpHostAddress.ToString(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.CredentialBrokerListener>());
+            listener.Start();
+            return listener;
+        });
+    }
+
     // Baked baseline image: the daemon bakes it (packages + agent CLIs) so sandboxed sessions start
     // complete. Auto-baked on first use if missing; rebuilt when the UI manifest is saved.
     builder.Services.AddSingleton<Agnes.Sandbox.ISandboxImageBuilder>(
@@ -166,11 +185,26 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxImageManager>()));
 }
 
+// Credential sources + the Connect-GitHub flow are always available (a user can link GitHub before
+// they ever open a sandbox); the broker above only consumes what's registered here.
+builder.Services.AddSingleton<Agnes.Host.Hosting.CredentialSourceRegistry>();
+builder.Services.AddSingleton(_ => new Agnes.Host.Hosting.GitHubAppStore());
+builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.GitHubConnectFlow(
+    sp.GetRequiredService<Agnes.Host.Hosting.GitHubAppStore>(),
+    sp.GetRequiredService<Agnes.Host.Hosting.CredentialSourceRegistry>(),
+    new HttpClient(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.GitHubConnectFlow>()));
+
 var app = builder.Build();
 
 // Eagerly instantiate the rotation pusher (its FileSystemWatcher starts in the ctor) so live
 // sandboxes get refreshed credentials when the host claude CLI rotates its OAuth token.
 _ = app.Services.GetService<Agnes.Sandbox.Credentials.ClaudeTokenRotationPusher>();
+
+// Eagerly start the credential broker listener (Start() binds the socket) and the GitHub connect
+// flow (its ctor re-registers the minting source if an App is already linked + installed).
+_ = app.Services.GetService<Agnes.Host.Hosting.CredentialBrokerListener>();
+_ = app.Services.GetService<Agnes.Host.Hosting.GitHubConnectFlow>();
 // Start the MCP forward listener (if sandboxing + a bridge address are configured).
 _ = app.Services.GetService<Agnes.Host.Hosting.McpForwardListener>();
 
@@ -323,6 +357,34 @@ app.MapPost("/sandbox/image/rebuild", (HttpContext ctx) =>
     _ = images.RebuildAsync();
     return Results.Ok(SandboxImageMapping.Status(images.Status));
 });
+
+// ---- credentials: link GitHub (App-manifest flow) so sandboxes can push with scoped tokens ----
+var ghConnect = app.Services.GetService<Agnes.Host.Hosting.GitHubConnectFlow>();
+
+app.MapGet("/credentials/status", (HttpContext ctx) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : ghConnect is null ? Results.NotFound()
+    : Results.Ok(ghConnect.Status()));
+
+// Start the connect: returns the loopback URL the desktop opens in the user's browser.
+app.MapPost("/credentials/github/connect", (HttpContext ctx) =>
+{
+    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (ghConnect is null) return Results.NotFound();
+    var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+    return Results.Ok(new { url = ghConnect.BeginConnect(baseUrl) });
+});
+
+// Browser legs — no bearer (the browser can't carry it); guarded by the unguessable state token.
+app.MapGet("/credentials/github/start", (string? state) =>
+{
+    var html = ghConnect?.StartPage(state);
+    return html is null ? Results.NotFound() : Results.Content(html, "text/html");
+});
+
+app.MapGet("/credentials/github/callback", async (string? code, string? state, string? installation_id) =>
+    ghConnect is null ? Results.NotFound()
+    : Results.Content(await ghConnect.HandleCallbackAsync(code, state, installation_id), "text/html"));
 
 if (webFiles is not null)
 {
