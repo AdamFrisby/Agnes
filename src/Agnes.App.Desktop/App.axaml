@@ -2,6 +2,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Agnes.App.Desktop.ViewModels"
              xmlns:views="using:Agnes.App.Desktop.Views"
+             xmlns:dc="using:Dock.Avalonia.Controls"
+             xmlns:cr="using:Avalonia.Controls.Recycling"
+             xmlns:app="using:Agnes.App.Desktop"
              x:Class="Agnes.App.Desktop.App">
 
     <Application.Resources>
@@ -9,6 +12,10 @@
             <!-- Theme-invariant resources -->
             <FontFamily x:Key="UiFont">Inter, Segoe UI, San Francisco, Ubuntu, sans-serif</FontFamily>
             <FontFamily x:Key="MonoFont">Cascadia Code, Cascadia Mono, JetBrains Mono, Consolas, Menlo, monospace</FontFamily>
+
+            <!-- One shared dock content recycler (see the DockControl style below); the factory evicts a
+                 document's cached view when its tab closes, so views don't accumulate. -->
+            <app:PerItemControlRecycling x:Key="DockRecycler" />
 
             <!-- Palette per theme; consumers bind DynamicResource so a theme switch applies live. -->
             <ResourceDictionary.ThemeDictionaries>
@@ -64,6 +71,13 @@
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml" />
+        <!-- Recycle document views per data item (by reference), so each document — and each document
+             TYPE — gets its own view. Fixes Dock handing a newly-activated document of a different type
+             the previously-built view (a SettingsTabView tab showed a SessionTabView). Applies to every
+             DockControl, including floated HostWindows. -->
+        <Style Selector="dc|DockControl">
+            <Setter Property="(cr:ControlRecyclingDataTemplate.ControlRecycling)" Value="{StaticResource DockRecycler}" />
+        </Style>
     </Application.Styles>
 
 </Application>

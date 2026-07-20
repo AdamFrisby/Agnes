@@ -125,7 +125,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             FontScale = s switch { "small" => 0.9, "large" => 1.2, _ => 1.0 };
         });
-        _factory.ActiveDockableChanged += (_, _) => OnActiveDockableChanged();
+        _factory.ActiveDockableChanged += (_, _) => UpdateWindowTitle();
     }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
@@ -298,20 +298,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         WindowTitle = string.IsNullOrWhiteSpace(title) || title == "New session" ? "Agnes" : $"{title} — Agnes";
     }
 
-    // The dock can't host a second document TYPE (it keeps showing the last session when a settings tab
-    // is activated), so the Settings tab lives in the dock's strip but its content is rendered by our
-    // own overlay ContentControl, shown while a settings tab is the active dockable.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSettingsActive))]
-    private SettingsDocument? _activeSettings;
-
-    public bool IsSettingsActive => ActiveSettings is not null;
-
-    private void OnActiveDockableChanged()
-    {
-        UpdateWindowTitle();
-        ActiveSettings = _factory.DocumentDock?.ActiveDockable as SettingsDocument;
-    }
 
     /// <summary>Applies a theme string to the running application (no-op off the UI/host).</summary>
     public static void ApplyTheme(string theme)
@@ -467,7 +453,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         dock.ActiveDockable = existing;
         _factory.SetActiveDockable(existing);
         _factory.SetFocusedDockable(dock, existing);
-        ActiveSettings = existing; // show the overlay immediately (belt-and-suspenders alongside the event)
     }
 
     private async Task LoadCredentialStatusAsync()

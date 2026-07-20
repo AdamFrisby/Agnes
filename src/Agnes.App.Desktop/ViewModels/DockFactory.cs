@@ -62,6 +62,14 @@ public sealed class DockFactory : Factory
     public override void OnDockableClosed(IDockable? dockable)
     {
         base.OnDockableClosed(dockable);
+        // Drop the closed document's cached view from the shared dock recycler so it doesn't leak.
+        if (dockable is not null
+            && Avalonia.Application.Current?.Resources.TryGetResource("DockRecycler", null, out var r) == true
+            && r is PerItemControlRecycling recycler)
+        {
+            recycler.Forget(dockable);
+        }
+
         LayoutChanged?.Invoke();
     }
 }

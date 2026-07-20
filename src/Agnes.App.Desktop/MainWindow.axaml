@@ -255,12 +255,6 @@
 
         <dc:DockControl Grid.Row="1" Layout="{Binding Layout}" />
 
-        <!-- Settings tab content: the Settings tab lives in the dock strip, but the dock can't host a
-             second document type, so we render its content here over the dock while it's active. The
-             top inset keeps the dock's tab strip visible (the Settings tab still shows + is clickable). -->
-        <ContentControl Grid.Row="1" ZIndex="20" Margin="0,29,0,0" IsVisible="{Binding IsSettingsActive}"
-                        Content="{Binding ActiveSettings}" />
-
         <!-- Command palette (Ctrl+K): jump to a session or run an action -->
         <Border Grid.Row="0" Grid.RowSpan="2" ZIndex="100" IsVisible="{Binding IsPaletteOpen}"
                 Background="#88000000">
