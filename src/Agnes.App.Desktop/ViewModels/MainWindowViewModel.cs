@@ -96,6 +96,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SetMcpApprovalCommand = new RelayCommand<string>(v => { if (v is not null) { McpApproval = v; } });
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
         SetNewMcpTransportCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpTransport = v; } });
+        LoadSandboxImageCommand = new AsyncRelayCommand(LoadSandboxImageAsync);
+        SaveSandboxImageCommand = new AsyncRelayCommand(SaveSandboxImageAsync);
+        RebuildSandboxImageCommand = new AsyncRelayCommand(RebuildSandboxImageAsync);
         NextTabCommand = new RelayCommand(() => CycleTab(1));
         PrevTabCommand = new RelayCommand(() => CycleTab(-1));
         ActivateTabByIndexCommand = new RelayCommand<string>(ActivateTabByIndex);
@@ -514,6 +517,136 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         catch (Exception ex)
         {
             _dispatcher.Post(() => McpStatus = "Couldn't update server: " + ex.Message);
+        }
+    }
+
+    // ---- sandbox baseline image (for the active session's host) ----
+
+    [ObservableProperty] private string _sandboxImageStatus = "Open a session on a host to manage its sandbox image.";
+    [ObservableProperty] private string _sandboxImageBase = "images:ubuntu/24.04/cloud";
+    [ObservableProperty] private bool _sandboxImageNode = true;
+    [ObservableProperty] private string _sandboxImageApt = string.Empty;   // space-separated
+    [ObservableProperty] private string _sandboxImageNpm = string.Empty;
+    [ObservableProperty] private string _sandboxImagePip = string.Empty;
+
+    // The last-loaded manifest, so alias + agents (not edited here) survive a save.
+    private SandboxImageDto? _loadedImage;
+
+    public IAsyncRelayCommand LoadSandboxImageCommand { get; }
+    public IAsyncRelayCommand SaveSandboxImageCommand { get; }
+    public IAsyncRelayCommand RebuildSandboxImageCommand { get; }
+
+    private static string[] SplitPackages(string value)
+        => value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private void SetImageStatus(SandboxImageStatusDto? status)
+        => SandboxImageStatus = status is null ? "unknown" : $"{status.State}: {status.Message}";
+
+    private async Task LoadSandboxImageAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => SandboxImageStatus = "Open a session on a host to manage its sandbox image.");
+            return;
+        }
+
+        try
+        {
+            var view = await SandboxImageManagement.GetAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() =>
+            {
+                if (view is null)
+                {
+                    SandboxImageStatus = "This host has no sandbox configured.";
+                    return;
+                }
+
+                _loadedImage = view.Manifest;
+                SandboxImageBase = view.Manifest.BaseImage;
+                SandboxImageNode = view.Manifest.Node;
+                SandboxImageApt = string.Join(' ', view.Manifest.AptPackages);
+                SandboxImageNpm = string.Join(' ', view.Manifest.NpmGlobals);
+                SandboxImagePip = string.Join(' ', view.Manifest.PipPackages);
+                SetImageStatus(view.Status);
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SandboxImageStatus = "Couldn't load: " + ex.Message);
+        }
+    }
+
+    private SandboxImageDto BuildImageDto() => new(
+        SandboxImageBase.Trim(),
+        _loadedImage?.Alias ?? "agnes-baseline",
+        SandboxImageNode,
+        SplitPackages(SandboxImageApt),
+        SplitPackages(SandboxImageNpm),
+        SplitPackages(SandboxImagePip),
+        _loadedImage?.Agents ?? []);
+
+    private async Task SaveSandboxImageAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var status = await SandboxImageManagement.SaveAsync(target.Value.Url, target.Value.Token, BuildImageDto());
+            _dispatcher.Post(() => SetImageStatus(status));
+            await PollImageStatusAsync(target.Value);
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SandboxImageStatus = "Couldn't save: " + ex.Message);
+        }
+    }
+
+    private async Task RebuildSandboxImageAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var status = await SandboxImageManagement.RebuildAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() => SetImageStatus(status));
+            await PollImageStatusAsync(target.Value);
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SandboxImageStatus = "Couldn't rebuild: " + ex.Message);
+        }
+    }
+
+    // Refresh status while a bake is in progress (baking can take minutes).
+    private async Task PollImageStatusAsync((string Url, string Token) target)
+    {
+        for (var i = 0; i < 60; i++)
+        {
+            await Task.Delay(3000);
+            SandboxImageStatusDto? status;
+            try
+            {
+                status = await SandboxImageManagement.GetStatusAsync(target.Url, target.Token);
+            }
+            catch
+            {
+                return;
+            }
+
+            _dispatcher.Post(() => SetImageStatus(status));
+            if (status is null || !string.Equals(status.State, "building", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
         }
     }
 

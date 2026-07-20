@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Agnes.Integration.Tests;
 
@@ -156,12 +157,31 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
             () => McpManagement.ListAsync("http://localhost", "wrong-token", http));
     }
 
+    [Fact]
+    public async Task Sandbox_image_manifest_round_trips_over_rest()
+    {
+        using var http = _factory.CreateClient();
+
+        var view = await SandboxImageManagement.GetAsync("http://localhost", Token, http);
+        Assert.NotNull(view);
+        Assert.Equal("agnes-baseline", view!.Manifest.Alias);
+        Assert.Contains(view.Manifest.Agents, a => a.AdapterId == "codex");
+
+        var updated = view.Manifest with { NpmGlobals = ["my-mcp-server"] };
+        var status = await SandboxImageManagement.SaveAsync("http://localhost", Token, updated, http);
+        Assert.NotNull(status);
+
+        var after = await SandboxImageManagement.GetAsync("http://localhost", Token, http);
+        Assert.Contains("my-mcp-server", after!.Manifest.NpmGlobals);
+    }
+
     public sealed class HostFactory : WebApplicationFactory<Program>
     {
         public ScriptedAdapter Adapter { get; } = new();
 
-        // A throwaway MCP registry file so the test never touches the real ~/.agnes/mcp.json.
+        // Throwaway files so the test never touches the real ~/.agnes/*.
         public string McpFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-mcp-it-{Guid.NewGuid():n}.json");
+        public string ImageFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-img-it-{Guid.NewGuid():n}.json");
 
         protected override IHost CreateHost(IHostBuilder builder)
         {
@@ -171,7 +191,16 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
                     ["Agnes:PairingToken"] = Token,
                     ["Agnes:McpFile"] = McpFile,
                 }));
-            builder.ConfigureServices(services => services.AddSingleton<IAgentAdapter>(Adapter));
+            builder.ConfigureServices(services =>
+            {
+                services.AddSingleton<IAgentAdapter>(Adapter);
+                // Register the sandbox-image manager with a no-op builder so /sandbox/image works
+                // without a real Incus host (the endpoints are gated on the manager being present).
+                services.AddSingleton<Agnes.Sandbox.ISandboxImageBuilder, NoopImageBuilder>();
+                services.AddSingleton(sp => new Agnes.Host.Sessions.SandboxImageManager(
+                    sp.GetRequiredService<Agnes.Sandbox.ISandboxImageBuilder>(), ImageFile,
+                    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxImageManager>()));
+            });
             return base.CreateHost(builder);
         }
 
@@ -179,7 +208,14 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
         {
             base.Dispose(disposing);
             if (disposing && File.Exists(McpFile)) File.Delete(McpFile);
+            if (disposing && File.Exists(ImageFile)) File.Delete(ImageFile);
         }
+    }
+
+    private sealed class NoopImageBuilder : Agnes.Sandbox.ISandboxImageBuilder
+    {
+        public Task<bool> ImageExistsAsync(string alias, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task BuildImageAsync(Agnes.Sandbox.SandboxImageManifest manifest, IProgress<string>? progress = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     public sealed class ScriptedAdapter : IAgentAdapter

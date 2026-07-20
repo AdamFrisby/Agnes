@@ -352,6 +352,35 @@
                                     </Border>
 
                                     <TextBlock Text="{Binding McpStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+
+                                    <Border Height="1" Background="{DynamicResource Line}" />
+
+                                    <!-- Sandbox image: the daemon bakes packages + agent CLIs into a baseline VM image -->
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                        <TextBlock Grid.Column="0" Text="Sandbox image" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Content="Refresh" Command="{Binding LoadSandboxImageCommand}" Classes="seg" />
+                                        <Button Grid.Column="2" Content="Rebuild" Command="{Binding RebuildSandboxImageCommand}" Classes="seg" />
+                                    </Grid>
+
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Base image" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                        <TextBox Text="{Binding SandboxImageBase, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
+                                                 FontFamily="{StaticResource MonoFont}" />
+                                        <CheckBox IsChecked="{Binding SandboxImageNode, Mode=TwoWay}" Foreground="{DynamicResource Fg}"
+                                                  Content="Install node + npm" ToolTip.Tip="Needed for npx MCP servers and node-based agents" />
+                                        <TextBlock Text="apt packages" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                        <TextBox Text="{Binding SandboxImageApt, Mode=TwoWay}" Watermark="git ripgrep curl…" FontSize="12" Padding="8,5"
+                                                 CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                        <TextBlock Text="npm globals" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                        <TextBox Text="{Binding SandboxImageNpm, Mode=TwoWay}" Watermark="node MCP servers, tools…" FontSize="12" Padding="8,5"
+                                                 CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                        <TextBlock Text="pip packages" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                        <TextBox Text="{Binding SandboxImagePip, Mode=TwoWay}" FontSize="12" Padding="8,5"
+                                                 CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                        <Button Content="Save &amp; rebuild" Command="{Binding SaveSandboxImageCommand}" HorizontalAlignment="Left" Classes="seg" />
+                                    </StackPanel>
+
+                                    <TextBlock Text="{Binding SandboxImageStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Flyout>
                         </Button.Flyout>

@@ -295,6 +295,35 @@ app.MapDelete("/mcp/{id}", (HttpContext ctx, string id) =>
     !Authorized(ctx, tokens) ? Results.Unauthorized()
     : mcp.Remove(id) ? Results.NoContent() : Results.NotFound());
 
+// ---- baked sandbox image (only when sandboxing is configured) ----
+var images = app.Services.GetService<Agnes.Host.Sessions.SandboxImageManager>();
+
+app.MapGet("/sandbox/image", (HttpContext ctx) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : images is null ? Results.NotFound()
+    : Results.Ok(SandboxImageMapping.View(images)));
+
+app.MapGet("/sandbox/image/status", (HttpContext ctx) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : images is null ? Results.NotFound()
+    : Results.Ok(SandboxImageMapping.Status(images.Status)));
+
+app.MapPut("/sandbox/image", (HttpContext ctx, SandboxImageDto dto) =>
+{
+    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (images is null) return Results.NotFound();
+    _ = images.SaveAndRebuildAsync(SandboxImageMapping.ToManifest(dto)); // rebuild runs in the background
+    return Results.Ok(SandboxImageMapping.Status(images.Status));
+});
+
+app.MapPost("/sandbox/image/rebuild", (HttpContext ctx) =>
+{
+    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (images is null) return Results.NotFound();
+    _ = images.RebuildAsync();
+    return Results.Ok(SandboxImageMapping.Status(images.Status));
+});
+
 if (webFiles is not null)
 {
     app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = webFiles });

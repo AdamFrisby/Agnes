@@ -94,6 +94,25 @@ public sealed record McpServerRequest(
 /// <summary>Status of the sandbox a session runs in, or null if it runs on the host.</summary>
 public sealed record SandboxStatus(string Provider, string Id, string State);
 
+/// <summary>The baked-sandbox-image manifest, over the wire (mirrors host SandboxImageManifest).</summary>
+public sealed record SandboxImageDto(
+    string BaseImage,
+    string Alias,
+    bool Node,
+    IReadOnlyList<string> AptPackages,
+    IReadOnlyList<string> NpmGlobals,
+    IReadOnlyList<string> PipPackages,
+    IReadOnlyList<SandboxImageAgentDto> Agents);
+
+/// <summary>An agent CLI in a baked image: Source is "copy:&lt;hostBinary&gt;" or "npm:&lt;package&gt;".</summary>
+public sealed record SandboxImageAgentDto(string AdapterId, string Source);
+
+/// <summary>Bake status: State is "absent" | "building" | "ready" | "failed".</summary>
+public sealed record SandboxImageStatusDto(string State, string Message, DateTimeOffset? UpdatedAt);
+
+/// <summary>The manifest plus its current bake status.</summary>
+public sealed record SandboxImageView(SandboxImageDto Manifest, SandboxImageStatusDto Status);
+
 /// <summary>A point-in-time replay: all events up to <see cref="HeadSequence"/>.</summary>
 public sealed record SessionSnapshot(
     SessionInfo Session,
