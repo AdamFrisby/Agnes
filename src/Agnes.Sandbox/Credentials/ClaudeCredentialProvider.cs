@@ -22,7 +22,10 @@ public sealed class ClaudeCredentialProvider : IAgentCredentialProvider
     public async Task<SandboxCredential> GetAsync(string adapterId, CancellationToken cancellationToken = default)
     {
         var env = new Dictionary<string, string>();
-        foreach (var name in new[] { "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN" })
+        // ANTHROPIC_MODEL lets the host pin which model the in-VM claude CLI uses (e.g. claude-opus-4-8
+        // or claude-fable-5); the VM has no ~/.claude/settings.json of its own, so without this it falls
+        // back to the CLI's built-in default.
+        foreach (var name in new[] { "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_MODEL" })
         {
             if (Environment.GetEnvironmentVariable(name) is { Length: > 0 } value)
             {
