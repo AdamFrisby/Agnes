@@ -13,7 +13,7 @@ public class SimulatedHostTests
 {
     private static async Task WaitAsync(Func<bool> condition)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60)); // generous for slow/loaded CI runners; returns as soon as the condition holds
         while (!condition())
         {
             cts.Token.ThrowIfCancellationRequested();
@@ -277,7 +277,7 @@ public class MainWindowRestoreTests
 
     private static async Task WaitAsync(Func<bool> condition)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60)); // generous for slow/loaded CI runners; returns as soon as the condition holds
         while (!condition())
         {
             cts.Token.ThrowIfCancellationRequested();

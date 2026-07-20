@@ -1,14 +1,49 @@
 name: CI
 
+# Runs once a day (only if there were commits that day), on pull requests, and on demand.
+# It intentionally does NOT run on every push to main — a daily build is plenty for this repo.
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: '0 6 * * *'   # ~06:00 UTC daily; the "gate" job skips it when nothing changed
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
+
+# Don't pile up runs — cancel a superseded run on the same ref (e.g. rapid PR pushes).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  # Gate: on the daily schedule, only continue when there were commits in the last day.
+  # Non-scheduled triggers (pull_request, manual) always continue.
+  gate:
+    name: Decide whether to run
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "Trigger '${{ github.event_name }}' → run."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$(git log --since='25 hours ago' --oneline)" ]; then
+            echo "Commits in the last day → run."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No commits in the last day → skip the build."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-test:
     name: Build & test (core)
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +67,8 @@ jobs:
 
   ui-build:
     name: Build Uno UI heads (desktop + web)
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
