@@ -98,14 +98,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ConnectGitHubCommand = new AsyncRelayCommand(ConnectGitHubAsync);
         OpenSettingsCommand = new RelayCommand(OpenSettings);
         SetSettingsCategoryCommand = new RelayCommand<string>(v => { if (v is not null) { SettingsCategory = v; } });
+        LoadProjectsCommand = new AsyncRelayCommand(LoadProjectsAsync);
+        SelectProjectCommand = new RelayCommand<ProjectDto>(SelectProject);
+        SaveProjectCommand = new AsyncRelayCommand(SaveProjectAsync);
+        AddProjectMcpCommand = new RelayCommand(AddProjectMcp);
+        RemoveProjectMcpCommand = new RelayCommand<McpServerInfo>(m => { if (m is not null) { ProjectMcp.Remove(m); } });
         SettingsCategories =
         [
+            // This device (client-global)
             new SettingsCategoryVm("appearance", "Appearance", "🎨", "theme dark light system ui scale zoom accessibility reduce motion font density"),
-            new SettingsCategoryVm("devices", "Devices", "🔑", "paired devices pairing token revoke auth access per-device"),
-            new SettingsCategoryVm("mcp", "MCP servers", "🧩", "mcp model context protocol tools server forward sandbox host approval ask trust"),
-            new SettingsCategoryVm("github", "GitHub", "⑂", "github git push credential token connect app scope repo installation secret"),
-            new SettingsCategoryVm("sandbox", "Sandbox image", "📦", "sandbox image bake incus vm packages node apt npm pip agents baseline"),
             new SettingsCategoryVm("keyboard", "Keyboard", "⌨", "keyboard shortcuts keys bindings gestures"),
+            // The connected host
+            new SettingsCategoryVm("github", "GitHub accounts", "⑂", "github git push credential token connect app scope repo installation secret account"),
+            new SettingsCategoryVm("devices", "Devices", "🔑", "paired devices pairing token revoke auth access per-device"),
+            // Per-project
+            new SettingsCategoryVm("projects", "Projects", "📁", "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
         ];
         SettingsCategories[0].IsSelected = true;
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
@@ -397,11 +404,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     [ObservableProperty] private string _settingsCategory = "appearance";
 
     public bool CatAppearance => SettingsCategory == "appearance";
-    public bool CatDevices => SettingsCategory == "devices";
-    public bool CatMcp => SettingsCategory == "mcp";
-    public bool CatGitHub => SettingsCategory == "github";
-    public bool CatSandbox => SettingsCategory == "sandbox";
     public bool CatKeyboard => SettingsCategory == "keyboard";
+    public bool CatGitHub => SettingsCategory == "github";
+    public bool CatDevices => SettingsCategory == "devices";
+    public bool CatProjects => SettingsCategory == "projects";
+
+    /// <summary>The connected host these host-scoped settings apply to (e.g. GitHub, Devices, Projects).</summary>
+    public string ActiveHostName => ActiveHttpHost() is { } t
+        ? (_factory.DocumentDock?.ActiveDockable as SessionDocument)?.HostName ?? new Uri(t.Url).Host
+        : "no connected host";
 
     partial void OnSettingsCategoryChanged(string value)
     {
@@ -411,11 +422,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
 
         OnPropertyChanged(nameof(CatAppearance));
-        OnPropertyChanged(nameof(CatDevices));
-        OnPropertyChanged(nameof(CatMcp));
-        OnPropertyChanged(nameof(CatGitHub));
-        OnPropertyChanged(nameof(CatSandbox));
         OnPropertyChanged(nameof(CatKeyboard));
+        OnPropertyChanged(nameof(CatGitHub));
+        OnPropertyChanged(nameof(CatDevices));
+        OnPropertyChanged(nameof(CatProjects));
+        OnPropertyChanged(nameof(ActiveHostName));
+        if (value == "projects" && SelectedProject is null)
+        {
+            _ = LoadProjectsAsync();
+        }
     }
 
     partial void OnSettingsSearchChanged(string value)
@@ -453,6 +468,126 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         dock.ActiveDockable = existing;
         _factory.SetActiveDockable(existing);
         _factory.SetFocusedDockable(dock, existing);
+    }
+
+    // ---- Projects: per-repo bundles on the connected host (sandbox + MCP + GitHub account + defaults) ----
+    public IAsyncRelayCommand LoadProjectsCommand { get; }
+    public IRelayCommand<ProjectDto> SelectProjectCommand { get; }
+    public IAsyncRelayCommand SaveProjectCommand { get; }
+    public IRelayCommand AddProjectMcpCommand { get; }
+    public IRelayCommand<McpServerInfo> RemoveProjectMcpCommand { get; }
+
+    public ObservableCollection<ProjectDto> Projects { get; } = [];
+    public ObservableCollection<McpServerInfo> ProjectMcp { get; } = [];
+    public ObservableCollection<string> GitHubAccounts { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelectedProject))]
+    private ProjectDto? _selectedProject;
+
+    [ObservableProperty] private string _projectsStatus = "Open a session on a host to manage its projects.";
+    [ObservableProperty] private string _projName = string.Empty;
+    [ObservableProperty] private bool _projNode;
+    [ObservableProperty] private string _projApt = string.Empty;
+    [ObservableProperty] private string _projNpm = string.Empty;
+    [ObservableProperty] private string _projPip = string.Empty;
+    [ObservableProperty] private string _projGitMode = "Off";
+    [ObservableProperty] private bool _projSkipPermissions;
+    [ObservableProperty] private string _projMcpApproval = "Ask";
+    [ObservableProperty] private string _projAccount = string.Empty;
+
+    public bool HasSelectedProject => SelectedProject is not null;
+
+    private async Task LoadProjectsAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => { Projects.Clear(); ProjectsStatus = "Open a session on a host to manage its projects."; });
+            return;
+        }
+
+        try
+        {
+            var list = await ProjectManagement.ListAsync(target.Value.Url, target.Value.Token);
+            var credentials = await CredentialManagement.GetStatusAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() =>
+            {
+                Projects.Clear();
+                foreach (var p in list) { Projects.Add(p); }
+                GitHubAccounts.Clear();
+                if (credentials?.Account is { Length: > 0 } accounts)
+                {
+                    foreach (var a in accounts.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)) { GitHubAccounts.Add(a); }
+                }
+
+                ProjectsStatus = list.Count == 0 ? "No projects yet — open a session in a repo and it becomes one." : $"{list.Count} project(s) on {ActiveHostName}.";
+                if (list.Count > 0) { SelectProject(list.FirstOrDefault(p => p.Id == SelectedProject?.Id) ?? list[0]); }
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => ProjectsStatus = "Couldn't load projects: " + ex.Message);
+        }
+    }
+
+    private void SelectProject(ProjectDto? project)
+    {
+        if (project is null) { return; }
+        SelectedProject = project;
+        ProjName = project.Name;
+        ProjNode = project.Sandbox.Node;
+        ProjApt = string.Join(' ', project.Sandbox.AptPackages);
+        ProjNpm = string.Join(' ', project.Sandbox.NpmGlobals);
+        ProjPip = string.Join(' ', project.Sandbox.PipPackages);
+        ProjGitMode = project.Defaults.GitCredentialMode;
+        ProjSkipPermissions = project.Defaults.SkipPermissions;
+        ProjMcpApproval = project.Defaults.McpApproval;
+        ProjAccount = project.CredentialAccount ?? string.Empty;
+        ProjectMcp.Clear();
+        foreach (var m in project.McpServers) { ProjectMcp.Add(m); }
+    }
+
+    private async Task SaveProjectAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null || SelectedProject is null) { return; }
+
+        static IReadOnlyList<string> Split(string s) => s.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var sandbox = SelectedProject.Sandbox with { Node = ProjNode, AptPackages = Split(ProjApt), NpmGlobals = Split(ProjNpm), PipPackages = Split(ProjPip) };
+        var dto = SelectedProject with
+        {
+            Name = ProjName,
+            Sandbox = sandbox,
+            McpServers = ProjectMcp.ToArray(),
+            CredentialAccount = string.IsNullOrWhiteSpace(ProjAccount) ? null : ProjAccount,
+            Defaults = new ProjectDefaultsDto(ProjSkipPermissions, ProjGitMode, ProjMcpApproval),
+        };
+
+        try
+        {
+            await ProjectManagement.SaveAsync(target.Value.Url, target.Value.Token, dto);
+            _dispatcher.Post(() => ProjectsStatus = $"Saved '{dto.Name}' — its sandbox image is rebuilding.");
+            await LoadProjectsAsync();
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => ProjectsStatus = "Couldn't save: " + ex.Message);
+        }
+    }
+
+    private void AddProjectMcp()
+    {
+        if (string.IsNullOrWhiteSpace(NewMcpName)) { return; }
+        var args = NewMcpArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        ProjectMcp.Add(new McpServerInfo(
+            Guid.NewGuid().ToString("n"), NewMcpName.Trim(), NewMcpRunAt, true, NewMcpTransport,
+            NewMcpIsStdio ? NewMcpCommand : null, NewMcpIsStdio ? args : [], new Dictionary<string, string>(),
+            NewMcpIsHttp ? NewMcpUrl : null, null));
+        NewMcpName = string.Empty;
+        NewMcpCommand = string.Empty;
+        NewMcpArgs = string.Empty;
+        NewMcpUrl = string.Empty;
     }
 
     private async Task LoadCredentialStatusAsync()
