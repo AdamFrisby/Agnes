@@ -281,10 +281,10 @@
                                         <TextBlock Text="Tools" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
                                         <Button Content="Ask first" Command="{Binding SetMcpApprovalCommand}" CommandParameter="Ask"
                                                 Classes.on="{Binding McpApprovalAsk}" Classes="seg"
-                                                ToolTip.Tip="Prompt the first time a session uses a forwarded MCP server" />
+                                                ToolTip.Tip="Attended sessions approve each MCP tool as usual; autonomous sessions don't get host MCP servers forwarded" />
                                         <Button Content="Trust" Command="{Binding SetMcpApprovalCommand}" CommandParameter="Trust"
                                                 Classes.on="{Binding McpApprovalTrust}" Classes="seg"
-                                                ToolTip.Tip="Run forwarded MCP tools without prompting (still audited)" />
+                                                ToolTip.Tip="Also forward host MCP servers to autonomous sessions (calls are still recorded in the MCP audit trail)" />
                                     </StackPanel>
 
                                     <ItemsControl ItemsSource="{Binding McpServers}">

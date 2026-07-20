@@ -51,7 +51,7 @@ public sealed class RecordedHost : IAgnesHost
         => Task.FromResult<IReadOnlyList<AgentInfo>>(
             _byId.Select(kv => new AgentInfo(kv.Key, kv.Value.Name, "recording", Available: true)).ToArray());
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false)
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask")
     {
         var recording = _byId.TryGetValue(adapterId, out var r) ? r : _byId.Values.FirstOrDefault();
         var id = $"rec-{Interlocked.Increment(ref _counter):x4}";

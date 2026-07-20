@@ -211,6 +211,42 @@ public class SandboxWiringTests
         }
     }
 
+    [Theory]
+    [InlineData(true, "Ask", false)]   // autonomous + Ask → host servers withheld
+    [InlineData(true, "Trust", true)]  // autonomous + Trust → forwarded
+    [InlineData(false, "Ask", true)]   // attended → always forwarded (agent prompts per tool)
+    public async Task Autonomous_forwarding_respects_the_approval_preference(bool autonomous, string approval, bool expectForwarded)
+    {
+        var mcpFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
+        try
+        {
+            var mcp = new Agnes.Host.Hosting.McpRegistry(mcpFile);
+            mcp.Add(new Agnes.Protocol.McpServerRequest("host-tool", "host", true, "stdio", Command: "real-mcp"));
+
+            var forward = new Agnes.Host.Hosting.McpForwardRegistry();
+            await using var listener = new Agnes.Host.Hosting.McpForwardListener(
+                forward, System.Net.IPAddress.Loopback, 0, "127.0.0.1",
+                NullLogger<Agnes.Host.Hosting.McpForwardListener>.Instance);
+            listener.Start();
+
+            var sandboxes = new FakeSandboxProvider();
+            await using var manager = new SessionManager(
+                [new ScriptedAgentAdapter("codex")], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                sandboxes, [new FakeCredentialProvider()], null, mcp, forward, listener);
+
+            await manager.OpenSessionAsync("codex", "/tmp/project", skipPermissions: autonomous, mcpApproval: approval);
+
+            var forwarded = sandboxes.Last.Materialised
+                .SelectMany(c => c.Files)
+                .Any(f => f.HomeRelativePath == ".agnes/mcp-forward.py");
+            Assert.Equal(expectForwarded, forwarded);
+        }
+        finally
+        {
+            if (File.Exists(mcpFile)) File.Delete(mcpFile);
+        }
+    }
+
     [Fact]
     public async Task Host_claude_native_session_gets_an_mcp_config_path_flag()
     {

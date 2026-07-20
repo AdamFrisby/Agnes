@@ -922,7 +922,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         var workingDirectory = string.IsNullOrWhiteSpace(doc.WorkingDirectory) ? DefaultWorkingDirectory : doc.WorkingDirectory.Trim();
         RememberWorkingDirectory(workingDirectory);
-        var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions);
+        var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval);
         var view = await doc.Host.SubscribeAsync(info.SessionId);
         var title = ProjectTitle(info.WorkingDirectory, displayName);
         _dispatcher.Post(() =>

@@ -54,6 +54,35 @@ public class McpForwardTests
     }
 
     [Fact]
+    public async Task Listener_reports_tools_call_for_audit()
+    {
+        if (!AgentCommand.IsOnPath("cat"))
+        {
+            return;
+        }
+
+        var reg = new McpForwardRegistry();
+        var token = reg.Register([Echo()], "session-1");
+        var seen = new TaskCompletionSource<(string Server, string Tool)>();
+        await using var listener = new McpForwardListener(reg, IPAddress.Loopback, 0, "127.0.0.1", NullLogger<McpForwardListener>.Instance)
+        {
+            OnToolCall = (_, server, tool) => seen.TrySetResult((server, tool)),
+        };
+        listener.Start();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, listener.Port);
+        var stream = client.GetStream();
+
+        await SendAsync(stream, JsonSerializer.Serialize(new { token, server = "echo" }) + "\n");
+        await SendAsync(stream, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"read_file\"}}\n");
+
+        var (srv, tool) = await seen.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("echo", srv);
+        Assert.Equal("read_file", tool);
+    }
+
+    [Fact]
     public async Task Listener_rejects_an_unknown_token_and_spawns_nothing()
     {
         var reg = new McpForwardRegistry();

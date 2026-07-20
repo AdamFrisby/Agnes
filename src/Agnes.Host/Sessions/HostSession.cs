@@ -101,6 +101,10 @@ internal sealed class HostSession : IAsyncDisposable
         await _broadcaster.PublishAsync(SessionId, stored).ConfigureAwait(false);
     }
 
+    /// <summary>Records a forwarded MCP tool call in the session log (audit; from the forward proxy).</summary>
+    public Task RecordMcpCallAsync(string server, string tool)
+        => AppendAndPublishAsync(new McpToolCallEvent(server, tool));
+
     public async ValueTask DisposeAsync()
     {
         await _cts.CancelAsync().ConfigureAwait(false);

@@ -106,7 +106,8 @@ public sealed record SessionSnapshot(
 /// agent asks the user to approve each tool call (Agnes's intended interactive behaviour).
 /// </param>
 public sealed record OpenSessionRequest(
-    string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false);
+    string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false,
+    string McpApproval = "Ask");
 
 /// <summary>Request to send a prompt to a session.</summary>
 public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock> Content);

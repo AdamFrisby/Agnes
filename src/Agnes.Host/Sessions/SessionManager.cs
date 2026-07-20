@@ -54,6 +54,19 @@ public sealed class SessionManager : IAsyncDisposable
         _mcp = mcp;
         _forward = forward;
         _forwardListener = forwardListener;
+        if (_forwardListener is not null)
+        {
+            _forwardListener.OnToolCall = OnForwardedToolCall;
+        }
+    }
+
+    // A sandboxed agent called a forwarded host MCP tool — record it in that session's log (audit).
+    private void OnForwardedToolCall(string token, string server, string tool)
+    {
+        if (_forward?.SessionFor(token) is { } sessionId && _sessions.TryGetValue(sessionId, out var session))
+        {
+            _ = session.RecordMcpCallAsync(server, tool);
+        }
     }
 
     public IReadOnlyList<AgentInfo> ListAgents()
@@ -61,7 +74,7 @@ public sealed class SessionManager : IAsyncDisposable
             .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version, Available: a.IsAvailable()))
             .ToArray();
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", CancellationToken cancellationToken = default)
     {
         if (!_adapters.TryGetValue(adapterId, out var adapter))
         {
@@ -107,7 +120,7 @@ public sealed class SessionManager : IAsyncDisposable
                 files.AddRange(credential.Files);
             }
 
-            mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, env, files);
+            mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, env, files);
 
             if (env.Count > 0 || files.Count > 0)
             {
@@ -170,7 +183,7 @@ public sealed class SessionManager : IAsyncDisposable
     /// reaches the real host server through the proxy). Returns the config path for the CLI flag, or null.
     /// </summary>
     private string? AddSandboxMcp(string adapterId, ISandbox sandbox, string sessionId,
-        Dictionary<string, string> env, List<SandboxCredentialFile> files)
+        bool skipPermissions, string mcpApproval, Dictionary<string, string> env, List<SandboxCredentialFile> files)
     {
         if (_mcp is null || McpTargetFor(adapterId) is not { } target)
         {
@@ -179,7 +192,11 @@ public sealed class SessionManager : IAsyncDisposable
 
         var entries = new List<McpServerInfo>(_mcp.Applicable(McpRunAt.Sandbox));
 
-        var hostServers = _forward is not null && _forwardListener is not null
+        // An autonomous session doesn't prompt per tool, so host servers are only forwarded to it
+        // when the user has chosen to trust them (the "Ask vs Trust" preference). Attended sessions
+        // always get forwarding — the agent's own permission protocol gates each tool call.
+        var forwardAllowed = !skipPermissions || string.Equals(mcpApproval, "Trust", StringComparison.OrdinalIgnoreCase);
+        var hostServers = _forward is not null && _forwardListener is not null && forwardAllowed
             ? _mcp.Applicable(McpRunAt.Host)
             : [];
         if (hostServers.Count > 0)
@@ -187,7 +204,7 @@ public sealed class SessionManager : IAsyncDisposable
             var shimVmPath = $"{sandbox.HomeDirectory.TrimEnd('/')}/{McpForward.ShimHomeRelativePath}";
             files.Add(new SandboxCredentialFile(McpForward.ShimHomeRelativePath, McpForward.ShimScript));
 
-            var token = _forward!.Register(hostServers);
+            var token = _forward!.Register(hostServers, sessionId);
             _forwardTokenBySession[sessionId] = token;
             env["AGNES_MCP_HOST"] = _forwardListener!.AdvertiseHost;
             env["AGNES_MCP_PORT"] = _forwardListener.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);

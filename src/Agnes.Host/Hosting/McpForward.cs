@@ -17,22 +17,26 @@ namespace Agnes.Host.Hosting;
 /// </summary>
 public sealed class McpForwardRegistry
 {
-    private readonly ConcurrentDictionary<string, IReadOnlyList<McpServerInfo>> _byToken = new();
+    private readonly ConcurrentDictionary<string, Grant> _byToken = new();
 
     /// <summary>Grants a session access to these servers; returns the token the shim presents.</summary>
-    public string Register(IReadOnlyList<McpServerInfo> servers)
+    public string Register(IReadOnlyList<McpServerInfo> servers, string? sessionId = null)
     {
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24))
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-        _byToken[token] = servers;
+        _byToken[token] = new Grant(sessionId, servers);
         return token;
     }
 
     /// <summary>Resolves a (token, server-name) pair to its spec, or null if not granted.</summary>
     public McpServerInfo? Resolve(string? token, string? server)
-        => token is not null && server is not null && _byToken.TryGetValue(token, out var list)
-            ? list.FirstOrDefault(s => s.Name == server)
+        => token is not null && server is not null && _byToken.TryGetValue(token, out var grant)
+            ? grant.Servers.FirstOrDefault(s => s.Name == server)
             : null;
+
+    /// <summary>The session a token was granted to (for routing audit events), or null.</summary>
+    public string? SessionFor(string? token)
+        => token is not null && _byToken.TryGetValue(token, out var grant) ? grant.SessionId : null;
 
     public void Unregister(string? token)
     {
@@ -41,6 +45,8 @@ public sealed class McpForwardRegistry
             _byToken.TryRemove(token, out _);
         }
     }
+
+    private sealed record Grant(string? SessionId, IReadOnlyList<McpServerInfo> Servers);
 }
 
 /// <summary>
@@ -66,6 +72,9 @@ public sealed class McpForwardListener : IAsyncDisposable
         _listener = new TcpListener(bindAddress, port);
         AdvertiseHost = advertiseHost;
     }
+
+    /// <summary>Invoked (token, server, tool) when a forwarded agent makes an MCP tools/call — for audit.</summary>
+    public Action<string, string, string>? OnToolCall { get; set; }
 
     /// <summary>The host address a guest uses to reach this listener.</summary>
     public string AdvertiseHost { get; }
@@ -126,7 +135,8 @@ public sealed class McpForwardListener : IAsyncDisposable
                 backend = StartBackend(spec);
                 _logger.LogInformation("Forwarding MCP server '{Server}' (pid {Pid})", spec.Name, backend.Id);
 
-                var up = Pump(stream, backend.StandardInput.BaseStream, cancellationToken);
+                // Up (agent→server) is scanned for tools/call to audit; down is a plain pump.
+                var up = PumpUp(stream, backend.StandardInput.BaseStream, request!.Token, spec.Name, cancellationToken);
                 var down = Pump(backend.StandardOutput.BaseStream, stream, cancellationToken);
                 await Task.WhenAny(up, down).ConfigureAwait(false);
             }
@@ -162,6 +172,68 @@ public sealed class McpForwardListener : IAsyncDisposable
         }
 
         return Process.Start(psi) ?? throw new InvalidOperationException($"Could not start MCP server '{spec.Command}'.");
+    }
+
+    // Agent→server pump that also reassembles newline-delimited JSON-RPC to audit tools/call. Bytes
+    // are forwarded immediately (low latency); a parallel line accumulator does the (best-effort) parse.
+    private async Task PumpUp(Stream src, Stream dst, string token, string server, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[16 * 1024];
+        var line = new List<byte>(256);
+        int read;
+        try
+        {
+            while ((read = await src.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                await dst.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                await dst.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+                if (OnToolCall is null)
+                {
+                    continue;
+                }
+
+                for (var i = 0; i < read; i++)
+                {
+                    if (buffer[i] == (byte)'\n')
+                    {
+                        ReportIfToolCall(line, token, server);
+                        line.Clear();
+                    }
+                    else if (line.Count < 1024 * 1024)
+                    {
+                        line.Add(buffer[i]);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // one side closed
+        }
+    }
+
+    private void ReportIfToolCall(List<byte> lineBytes, string token, string server)
+    {
+        if (lineBytes.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(lineBytes.ToArray()));
+            if (doc.RootElement.TryGetProperty("method", out var m) && m.ValueEquals("tools/call")
+                && doc.RootElement.TryGetProperty("params", out var p)
+                && p.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String)
+            {
+                OnToolCall?.Invoke(token, server, name.GetString() ?? "tool");
+            }
+        }
+        catch
+        {
+            // not a JSON-RPC line we care about
+        }
     }
 
     // Copy src→dst, flushing each chunk so interactive JSON-RPC messages aren't buffered.

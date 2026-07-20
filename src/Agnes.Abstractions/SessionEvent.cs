@@ -60,6 +60,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(AgentErrorEvent), "agent_error")]
 [JsonDerivedType(typeof(SubagentStartedEvent), "subagent_started")]
 [JsonDerivedType(typeof(NoticeEvent), "notice")]
+[JsonDerivedType(typeof(McpToolCallEvent), "mcp_tool_call")]
 public abstract record SessionEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -140,6 +141,13 @@ public sealed record UsageReportedEvent(
 
 /// <summary>A host-level informational notice in the transcript (e.g. a session was reconnected).</summary>
 public sealed record NoticeEvent(string Message, bool IsError = false) : SessionEvent;
+
+/// <summary>
+/// A tool call the host observed a sandboxed agent make against a <b>forwarded</b> host MCP server
+/// (Agnes is in the JSON-RPC path, so it can record it). Audit-only: the client shows it in an MCP
+/// trail; it does not gate the call (the agent's own permission protocol does that).
+/// </summary>
+public sealed record McpToolCallEvent(string Server, string Tool) : SessionEvent;
 
 /// <summary>The agent (or adapter) reported an error.</summary>
 public sealed record AgentErrorEvent(string Message) : SessionEvent;

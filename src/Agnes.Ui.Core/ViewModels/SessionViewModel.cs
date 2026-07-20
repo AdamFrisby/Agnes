@@ -219,6 +219,9 @@ public sealed class SessionViewModel : ObservableObject
     /// <summary>Audit trail: every permission granted or denied this session.</summary>
     public ObservableCollection<PermissionAuditEntry> Approvals { get; } = [];
 
+    /// <summary>Audit trail: forwarded MCP tool calls a sandboxed agent made against host servers.</summary>
+    public ObservableCollection<McpCallEntry> McpCalls { get; } = [];
+
     public PlanItemView? Plan
     {
         get => _plan;
@@ -235,7 +238,8 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasFiles => ModifiedFiles.Count > 0;
     public bool HasTools => ToolActivity.Count > 0;
     public bool HasApprovals => Approvals.Count > 0;
-    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools || HasApprovals || HasSubagents;
+    public bool HasMcpCalls => McpCalls.Count > 0;
+    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasSubagents;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
     public bool ShowRightPanel => SelectedPreview is not null;
 
@@ -736,6 +740,12 @@ public sealed class SessionViewModel : ObservableObject
 
             case ModeChangedEvent mode:
                 CurrentModeId = mode.ModeId;
+                break;
+
+            case McpToolCallEvent mcp:
+                McpCalls.Insert(0, new McpCallEntry(mcp.Server, mcp.Tool, @event.Timestamp));
+                Raise(nameof(HasMcpCalls));
+                RaisePanels();
                 break;
 
             case UsageReportedEvent u:

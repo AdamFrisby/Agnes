@@ -39,7 +39,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         => Task.FromResult(_sessions.ListAgents());
 
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
-        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions);
+        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval);
 
     public async Task<SessionSnapshot> Subscribe(string sessionId, long sinceSequence)
     {

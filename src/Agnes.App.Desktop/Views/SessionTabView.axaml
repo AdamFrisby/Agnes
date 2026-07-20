@@ -529,6 +529,23 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
+
+                                <!-- MCP CALLS: forwarded host MCP tools a sandboxed agent invoked -->
+                                <StackPanel Spacing="4" IsVisible="{Binding HasMcpCalls}">
+                                    <TextBlock Text="MCP CALLS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <ItemsControl ItemsSource="{Binding McpCalls}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
+                                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                               FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
                     </Border>
