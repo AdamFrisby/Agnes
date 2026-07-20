@@ -61,6 +61,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(SubagentStartedEvent), "subagent_started")]
 [JsonDerivedType(typeof(NoticeEvent), "notice")]
 [JsonDerivedType(typeof(McpToolCallEvent), "mcp_tool_call")]
+[JsonDerivedType(typeof(GitCredentialEvent), "git_credential")]
 public abstract record SessionEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -148,6 +149,13 @@ public sealed record NoticeEvent(string Message, bool IsError = false) : Session
 /// trail; it does not gate the call (the agent's own permission protocol does that).
 /// </summary>
 public sealed record McpToolCallEvent(string Server, string Tool) : SessionEvent;
+
+/// <summary>
+/// A sandboxed agent obtained (or was denied) a brokered git credential — the audit trail for the
+/// credential broker. <see cref="Allowed"/> is false when the request was out of scope or the user
+/// declined the permission card.
+/// </summary>
+public sealed record GitCredentialEvent(string Host, string? Repo, bool Allowed) : SessionEvent;
 
 /// <summary>The agent (or adapter) reported an error.</summary>
 public sealed record AgentErrorEvent(string Message) : SessionEvent;

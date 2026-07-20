@@ -39,7 +39,7 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task<IReadOnlyList<AgentInfo>> ListAgentsAsync();
 
-    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask");
+    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off");
 
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>
     Task<SessionView> SubscribeAsync(string sessionId, long since = 0);

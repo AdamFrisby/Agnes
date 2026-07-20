@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Agnes.Abstractions;
 using Agnes.Host.Events;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,10 @@ internal sealed class HostSession : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _pump;
+
+    // Host-originated permission requests (e.g. the credential broker asking to push) awaiting a
+    // client's answer — kept apart from agent-originated ones, which are answered by the agent.
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _hostPermissions = new();
 
     public HostSession(
         string sessionId,
@@ -74,7 +79,54 @@ internal sealed class HostSession : IAsyncDisposable
     public string? CurrentModeId => _agent.CurrentModeId;
 
     public Task RespondToPermissionAsync(string requestId, string optionId)
-        => _agent.RespondToPermissionAsync(requestId, optionId, _cts.Token);
+    {
+        // A host-originated request (credential broker) is resolved locally; anything else is the
+        // agent's own permission request and goes back to the agent.
+        if (_hostPermissions.TryGetValue(requestId, out var pending))
+        {
+            pending.TrySetResult(string.Equals(optionId, "allow", StringComparison.OrdinalIgnoreCase));
+            return Task.CompletedTask;
+        }
+
+        return _agent.RespondToPermissionAsync(requestId, optionId, _cts.Token);
+    }
+
+    /// <summary>
+    /// Surfaces a permission card for a brokered git push and waits for the user's answer (times out to
+    /// a deny so a never-answered push doesn't hang the broker forever). Returns true iff allowed.
+    /// </summary>
+    public async Task<bool> RequestGitPermissionAsync(string host, string? repo)
+    {
+        var requestId = "gitcred-" + Guid.NewGuid().ToString("n");
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _hostPermissions[requestId] = tcs;
+
+        var target = string.IsNullOrEmpty(repo) ? host : $"{repo}";
+        var options = new[]
+        {
+            new PermissionOption("allow", "Allow push", PermissionOptionKind.AllowOnce),
+            new PermissionOption("deny", "Deny", PermissionOptionKind.RejectOnce),
+        };
+        await AppendAndPublishAsync(new PermissionRequestedEvent(requestId, string.Empty,
+            $"Allow the sandboxed agent to push to {target}?", options)).ConfigureAwait(false);
+
+        bool allowed;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(110));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, _cts.Token);
+            await using var registration = linked.Token.Register(() => tcs.TrySetResult(false));
+            allowed = await tcs.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            _hostPermissions.TryRemove(requestId, out _);
+        }
+
+        await AppendAndPublishAsync(new PermissionResolvedEvent(requestId, allowed ? "allow" : "deny",
+            allowed ? PermissionOutcome.Allowed : PermissionOutcome.Denied)).ConfigureAwait(false);
+        return allowed;
+    }
 
     private async Task PumpAsync()
     {
@@ -104,6 +156,10 @@ internal sealed class HostSession : IAsyncDisposable
     /// <summary>Records a forwarded MCP tool call in the session log (audit; from the forward proxy).</summary>
     public Task RecordMcpCallAsync(string server, string tool)
         => AppendAndPublishAsync(new McpToolCallEvent(server, tool));
+
+    /// <summary>Records a brokered git-credential grant/denial in the session log (audit).</summary>
+    public Task RecordGitCredentialAsync(string host, string? repo, bool allowed)
+        => AppendAndPublishAsync(new GitCredentialEvent(host, repo, allowed));
 
     public async ValueTask DisposeAsync()
     {

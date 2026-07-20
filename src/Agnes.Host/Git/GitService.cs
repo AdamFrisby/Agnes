@@ -84,6 +84,31 @@ public sealed class GitService
     public Task RemoveWorktreeAsync(string repoDirectory, string worktreePath, CancellationToken cancellationToken = default)
         => RunAsync(repoDirectory, cancellationToken, "worktree", "remove", "--force", worktreePath);
 
+    /// <summary>The working directory's <c>origin</c> remote URL, or null if there's no repo/remote.</summary>
+    public async Task<string?> GetRemoteUrlAsync(string workingDirectory, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workingDirectory) || !Directory.Exists(workingDirectory))
+        {
+            return null;
+        }
+
+        var result = await RunAsync(workingDirectory, cancellationToken, "remote", "get-url", "origin");
+        return result.ExitCode == 0 && result.StdOut.Trim().Length > 0 ? result.StdOut.Trim() : null;
+    }
+
+    /// <summary>The commit identity git would use here (repo-local or global), for the sandbox's gitconfig.</summary>
+    public async Task<(string? Name, string? Email)> GetIdentityAsync(string workingDirectory, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workingDirectory) || !Directory.Exists(workingDirectory))
+        {
+            return (null, null);
+        }
+
+        var name = (await RunAsync(workingDirectory, cancellationToken, "config", "user.name")).StdOut.Trim();
+        var email = (await RunAsync(workingDirectory, cancellationToken, "config", "user.email")).StdOut.Trim();
+        return (string.IsNullOrEmpty(name) ? null : name, string.IsNullOrEmpty(email) ? null : email);
+    }
+
     private static async Task<(int ExitCode, string StdOut, string StdErr)> RunAsync(
         string workingDirectory, CancellationToken cancellationToken, params string[] args)
     {

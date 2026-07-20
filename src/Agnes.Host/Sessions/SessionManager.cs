@@ -25,7 +25,10 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly McpForwardRegistry? _forward;
     private readonly McpForwardListener? _forwardListener;
     private readonly SandboxImageManager? _images;
+    private readonly CredentialBrokerRegistry? _credentialBroker;
+    private readonly CredentialBrokerListener? _credentialListener;
     private readonly ConcurrentDictionary<string, string> _forwardTokenBySession = new();
+    private readonly ConcurrentDictionary<string, string> _credentialTokenBySession = new();
     private readonly ConcurrentDictionary<string, HostSession> _sessions = new();
     private readonly ConcurrentDictionary<string, (string Repo, string Worktree)> _worktrees = new();
     private readonly ConcurrentDictionary<string, ISandbox> _sandboxBySession = new();
@@ -43,7 +46,9 @@ public sealed class SessionManager : IAsyncDisposable
         McpRegistry? mcp = null,
         McpForwardRegistry? forward = null,
         McpForwardListener? forwardListener = null,
-        SandboxImageManager? images = null)
+        SandboxImageManager? images = null,
+        CredentialBrokerRegistry? credentialBroker = null,
+        CredentialBrokerListener? credentialListener = null)
     {
         _adapters = adapters.ToDictionary(a => a.Descriptor.Id);
         _store = store;
@@ -57,9 +62,39 @@ public sealed class SessionManager : IAsyncDisposable
         _forward = forward;
         _forwardListener = forwardListener;
         _images = images;
+        _credentialBroker = credentialBroker;
+        _credentialListener = credentialListener;
         if (_forwardListener is not null)
         {
             _forwardListener.OnToolCall = OnForwardedToolCall;
+        }
+
+        if (_credentialListener is not null)
+        {
+            _credentialListener.OnAuthorize = OnGitCredentialAuthorizeAsync;
+            _credentialListener.OnUse = OnGitCredentialUsed;
+        }
+    }
+
+    // The broker asks whether a sandboxed push may proceed: "Trust" grants auto-allow; "Ask" surfaces
+    // a permission card in the session and waits for the user.
+    private async Task<bool> OnGitCredentialAuthorizeAsync(CredentialGrant grant, CredentialRequest request)
+    {
+        if (grant.SessionId is null || !_sessions.TryGetValue(grant.SessionId, out var session))
+        {
+            return false;
+        }
+
+        return string.Equals(grant.Mode, "Trust", StringComparison.OrdinalIgnoreCase)
+            || await session.RequestGitPermissionAsync(request.Host, request.Repo).ConfigureAwait(false);
+    }
+
+    // A sandboxed agent obtained (or was denied) a brokered credential — record it in the session log.
+    private void OnGitCredentialUsed(string token, CredentialRequest request, bool allowed)
+    {
+        if (_credentialBroker?.SessionFor(token) is { } sessionId && _sessions.TryGetValue(sessionId, out var session))
+        {
+            _ = session.RecordGitCredentialAsync(request.Host, request.Repo, allowed);
         }
     }
 
@@ -80,7 +115,7 @@ public sealed class SessionManager : IAsyncDisposable
                 Available: _images is not null ? _images.ImageHasAgent(a.Descriptor.Id) : a.IsAvailable()))
             .ToArray();
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", CancellationToken cancellationToken = default)
     {
         if (!_adapters.TryGetValue(adapterId, out var adapter))
         {
@@ -135,6 +170,7 @@ public sealed class SessionManager : IAsyncDisposable
             }
 
             mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, env, files);
+            await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, env, files, cancellationToken).ConfigureAwait(false);
 
             if (env.Count > 0 || files.Count > 0)
             {
@@ -242,6 +278,43 @@ public sealed class SessionManager : IAsyncDisposable
     private static McpServerInfo ShimEntry(McpServerInfo s, string shimVmPath) => new(
         s.Id, s.Name, s.RunAt, s.Enabled, "stdio", "python3", [shimVmPath, s.Name],
         new Dictionary<string, string>(), null, null);
+
+    /// <summary>
+    /// Wires git credential brokering into a sandboxed session's bundle: derives the push scope from
+    /// the working directory's origin remote, grants a per-session token, and materializes the guest
+    /// git helper + ~/.gitconfig (helper + useHttpPath + commit identity) + the AGNES_GIT_* env. The
+    /// agent can then <c>git push</c>; the broker mints a scoped credential on the host at push time.
+    /// </summary>
+    private async Task AddSandboxGitCredentialsAsync(ISandbox sandbox, string sessionId, string hostWorkingDirectory,
+        string gitCredentialMode, Dictionary<string, string> env, List<SandboxCredentialFile> files, CancellationToken cancellationToken)
+    {
+        if (_credentialBroker is null || _credentialListener is null
+            || string.IsNullOrWhiteSpace(gitCredentialMode) || string.Equals(gitCredentialMode, "Off", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var remote = await _git.GetRemoteUrlAsync(hostWorkingDirectory, cancellationToken).ConfigureAwait(false);
+        if (!GitRemote.TryParse(remote, out var host, out var repo))
+        {
+            _logger.LogInformation("Session {SessionId}: git credentials requested but no parseable origin remote; skipping.", sessionId);
+            return;
+        }
+
+        var (userName, userEmail) = await _git.GetIdentityAsync(hostWorkingDirectory, cancellationToken).ConfigureAwait(false);
+
+        var mode = string.Equals(gitCredentialMode, "Trust", StringComparison.OrdinalIgnoreCase) ? "Trust" : "Ask";
+        var token = _credentialBroker.Register(new CredentialGrant(sessionId, host, repo, mode));
+        _credentialTokenBySession[sessionId] = token;
+
+        env["AGNES_GIT_HOST"] = _credentialListener.AdvertiseHost;
+        env["AGNES_GIT_PORT"] = _credentialListener.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        env["AGNES_GIT_TOKEN"] = token;
+
+        files.Add(new SandboxCredentialFile(GitCredentialHelper.HelperHomeRelativePath, GitCredentialHelper.Script));
+        files.Add(new SandboxCredentialFile(".gitconfig", GitCredentialHelper.GitConfig(sandbox.HomeDirectory, userName, userEmail)));
+        _logger.LogInformation("Session {SessionId}: git push to {Repo} on {Host} brokered ({Mode}).", sessionId, repo, host, mode);
+    }
 
     /// <summary>Writes a host (non-sandbox) session's RunAt=Host MCP config to a temp file for the CLI flag.</summary>
     private async Task<string?> MaterializeHostMcpAsync(string adapterId, CancellationToken cancellationToken)
@@ -362,6 +435,11 @@ public sealed class SessionManager : IAsyncDisposable
         if (_forwardTokenBySession.TryRemove(sessionId, out var token))
         {
             _forward?.Unregister(token);
+        }
+
+        if (_credentialTokenBySession.TryRemove(sessionId, out var credentialToken))
+        {
+            _credentialBroker?.Unregister(credentialToken);
         }
 
         if (_sandboxBySession.TryRemove(sessionId, out var sandbox))

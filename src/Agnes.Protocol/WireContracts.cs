@@ -126,7 +126,10 @@ public sealed record SessionSnapshot(
 /// </param>
 public sealed record OpenSessionRequest(
     string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false,
-    string McpApproval = "Ask");
+    string McpApproval = "Ask", string GitCredentialMode = "Off");
+
+/// <summary>Stores a token credential source for a host (the low-setup fine-grained-PAT fallback).</summary>
+public sealed record StoreCredentialRequest(string Host, string Token, string? Username = null);
 
 /// <summary>Request to send a prompt to a session.</summary>
 public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock> Content);

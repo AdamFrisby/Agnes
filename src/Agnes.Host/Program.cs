@@ -386,6 +386,20 @@ app.MapGet("/credentials/github/callback", async (string? code, string? state, s
     ghConnect is null ? Results.NotFound()
     : Results.Content(await ghConnect.HandleCallbackAsync(code, state, installation_id), "text/html"));
 
+// Fallback: store a token credential source (a fine-grained PAT) for a host.
+var credentialSources = app.Services.GetService<Agnes.Host.Hosting.CredentialSourceRegistry>();
+app.MapPost("/credentials/token", (HttpContext ctx, StoreCredentialRequest req) =>
+{
+    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (credentialSources is null || string.IsNullOrWhiteSpace(req.Host) || string.IsNullOrWhiteSpace(req.Token))
+    {
+        return Results.BadRequest();
+    }
+
+    credentialSources.Set(new Agnes.Host.Hosting.StoredTokenCredentialSource(req.Host, req.Token, req.Username ?? "x-access-token"));
+    return Results.Ok(new { host = req.Host });
+});
+
 if (webFiles is not null)
 {
     app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = webFiles });
