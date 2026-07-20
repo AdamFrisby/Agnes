@@ -57,6 +57,13 @@ public sealed record AgentSessionOptions
     /// instead of starting fresh. Only used by adapters whose CLI supports resuming a session.
     /// </summary>
     public string? ResumeSessionId { get; init; }
+
+    /// <summary>
+    /// Path to a generated MCP-server config file the agent should load (Agnes-managed, so it never
+    /// touches the user's own config). Adapters whose CLI takes a config-file flag (e.g. Claude Code's
+    /// <c>--mcp-config</c>) pass it; others that read a materialized config file ignore this.
+    /// </summary>
+    public string? McpConfigPath { get; init; }
 }
 
 /// <summary>

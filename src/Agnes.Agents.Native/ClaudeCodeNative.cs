@@ -32,5 +32,6 @@ public static class ClaudeCodeNative
             Arguments = arguments ?? DefaultArguments,
             Descriptor = Descriptor,
             Mapper = new ClaudeCodeStreamMapper(),
+            McpConfigFlag = "--mcp-config",
         }, loggerFactory);
 }

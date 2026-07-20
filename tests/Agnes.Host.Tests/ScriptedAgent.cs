@@ -42,11 +42,10 @@ public sealed class ScriptedAgentAdapter : IAgentAdapter
     /// <summary>The options passed to the most recent <see cref="StartSessionAsync"/> call.</summary>
     public AgentSessionOptions? LastOptions { get; private set; }
 
-    public AgentDescriptor Descriptor { get; } = new()
-    {
-        Id = "scripted",
-        DisplayName = "Scripted Agent",
-    };
+    public ScriptedAgentAdapter(string id = "scripted")
+        => Descriptor = new() { Id = id, DisplayName = "Scripted Agent" };
+
+    public AgentDescriptor Descriptor { get; }
 
     public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {

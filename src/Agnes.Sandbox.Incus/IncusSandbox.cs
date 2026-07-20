@@ -24,6 +24,7 @@ internal sealed class IncusSandbox : ISandbox, IPausableSandbox
     }
 
     public string Id { get; }
+    public string HomeDirectory => _options.GuestHome;
     public bool IsPaused => _state == SandboxState.Paused;
     public SandboxInfo Info => new(IncusSandboxProvider.ProviderId, Id, _state);
 

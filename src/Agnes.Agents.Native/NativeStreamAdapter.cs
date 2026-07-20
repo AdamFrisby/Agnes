@@ -12,6 +12,9 @@ public sealed record NativeLaunchSpec
     public IReadOnlyDictionary<string, string>? Environment { get; init; }
     public required AgentDescriptor Descriptor { get; init; }
     public required INativeStreamMapper Mapper { get; init; }
+
+    /// <summary>CLI flag that loads an MCP config file (e.g. "--mcp-config"), or null if unsupported.</summary>
+    public string? McpConfigFlag { get; init; }
 }
 
 /// <summary>
@@ -54,6 +57,13 @@ public sealed class NativeStreamAdapter : IAgentAdapter
         {
             baseArgs.Add("--resume");
             baseArgs.Add(options.ResumeSessionId);
+        }
+
+        // Load Agnes-managed MCP servers via the CLI's config-file flag (e.g. claude --mcp-config).
+        if (!string.IsNullOrEmpty(_spec.McpConfigFlag) && !string.IsNullOrEmpty(options.McpConfigPath))
+        {
+            baseArgs.Add(_spec.McpConfigFlag);
+            baseArgs.Add(options.McpConfigPath);
         }
 
         // When a sandbox is set, run the agent inside it (streams flow through the exec pipe).

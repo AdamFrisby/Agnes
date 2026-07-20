@@ -25,6 +25,9 @@ public interface ISandbox : ISandboxCommand, IAsyncDisposable
 {
     string Id { get; }
 
+    /// <summary>The agent user's home directory inside the sandbox (materialized files land under it).</summary>
+    string HomeDirectory { get; }
+
     Task<SandboxExecResult> ExecAsync(SandboxExec exec, CancellationToken cancellationToken = default);
 
     /// <summary>Provisions the agent's credentials (env + files) into the sandbox securely.</summary>

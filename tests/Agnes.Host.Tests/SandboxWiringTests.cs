@@ -18,6 +18,7 @@ public class SandboxWiringTests
     private sealed class FakeSandbox : ISandbox, IPausableSandbox
     {
         public string Id { get; } = "fake-vm-1";
+        public string HomeDirectory => "/home/agnes";
         public bool IsPaused { get; private set; }
         public bool Deleted { get; private set; }
         public List<SandboxCredential> Materialised { get; } = [];
@@ -131,6 +132,63 @@ public class SandboxWiringTests
         await manager.DeleteSandboxAsync(info.SessionId);
         Assert.True(sandbox.Deleted);
         Assert.Null(manager.GetSandboxStatus(info.SessionId));
+    }
+
+    [Fact]
+    public async Task Sandbox_session_materialises_mcp_config_for_run_at_sandbox_servers()
+    {
+        var mcpFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
+        try
+        {
+            var mcp = new Agnes.Host.Hosting.McpRegistry(mcpFile);
+            mcp.Add(new Agnes.Protocol.McpServerRequest("files", "sandbox", true, "stdio", Command: "npx", Args: ["-y", "mcp"]));
+            mcp.Add(new Agnes.Protocol.McpServerRequest("host-only", "host", true, "stdio", Command: "x")); // excluded
+
+            var adapter = new ScriptedAgentAdapter("codex");
+            var sandboxes = new FakeSandboxProvider();
+            await using var manager = new SessionManager(
+                [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                sandboxes, [new FakeCredentialProvider()], null, mcp);
+
+            await manager.OpenSessionAsync("codex", "/tmp/project");
+
+            var configFile = sandboxes.Last.Materialised
+                .SelectMany(c => c.Files)
+                .FirstOrDefault(f => f.HomeRelativePath == ".codex/config.toml");
+            Assert.NotNull(configFile);
+            Assert.Contains("[mcp_servers.files]", configFile!.Contents);
+            Assert.DoesNotContain("host-only", configFile.Contents); // RunAt=host excluded from a sandbox session
+        }
+        finally
+        {
+            if (File.Exists(mcpFile)) File.Delete(mcpFile);
+        }
+    }
+
+    [Fact]
+    public async Task Host_claude_native_session_gets_an_mcp_config_path_flag()
+    {
+        var mcpFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
+        try
+        {
+            var mcp = new Agnes.Host.Hosting.McpRegistry(mcpFile);
+            mcp.Add(new Agnes.Protocol.McpServerRequest("files", "host", true, "stdio", Command: "npx", Args: ["-y", "mcp"]));
+
+            var adapter = new ScriptedAgentAdapter("claude-code-native");
+            await using var manager = new SessionManager(
+                [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance, mcp: mcp);
+
+            await manager.OpenSessionAsync("claude-code-native", "/tmp/work");
+
+            var path = adapter.LastOptions!.McpConfigPath;
+            Assert.False(string.IsNullOrEmpty(path));
+            Assert.Contains("mcpServers", await File.ReadAllTextAsync(path!));
+            File.Delete(path!);
+        }
+        finally
+        {
+            if (File.Exists(mcpFile)) File.Delete(mcpFile);
+        }
     }
 
     [Fact]
