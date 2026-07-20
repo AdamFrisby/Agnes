@@ -131,6 +131,9 @@ public sealed record OpenSessionRequest(
 /// <summary>Stores a token credential source for a host (the low-setup fine-grained-PAT fallback).</summary>
 public sealed record StoreCredentialRequest(string Host, string Token, string? Username = null);
 
+/// <summary>The host's credential-linking state (GitHub App): not-connected / app-created / connected.</summary>
+public sealed record CredentialStatus(string State, string? Slug, bool Installed, string? Account);
+
 /// <summary>Request to send a prompt to a session.</summary>
 public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock> Content);
 

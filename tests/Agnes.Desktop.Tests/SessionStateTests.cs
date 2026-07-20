@@ -742,7 +742,7 @@ internal sealed class FakeHost : IAgnesHost
 
     public Task<HostInfo> GetHostInfoAsync() => Task.FromResult(new HostInfo("fake", "fake", "1.0"));
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync() => Task.FromResult<IReadOnlyList<AgentInfo>>([]);
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask")
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off")
         => Task.FromResult(new SessionInfo("s1", adapterId, workingDirectory, 0));
     public Task<SessionView> SubscribeAsync(string sessionId, long since = 0) => Task.FromResult(new SessionView(sessionId));
 

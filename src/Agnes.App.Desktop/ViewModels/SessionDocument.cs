@@ -25,6 +25,7 @@ public sealed partial class SessionDocument : Document
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this));
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
+        SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
 
         Tags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTags));
 
@@ -92,6 +93,28 @@ public sealed partial class SessionDocument : Document
         ? "The agent runs tools without asking. Use only for trusted, sandboxed work."
         : "You approve file edits, commands and other tool calls as they happen.";
 
+    /// <summary>
+    /// New-session choice for a sandboxed session: whether the agent may `git push`, and how — "Off"
+    /// (no credentials), "Ask" (a permission card per push), or "Trust" (auto-allow). Default "Off".
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GitCredOff))]
+    [NotifyPropertyChangedFor(nameof(GitCredAsk))]
+    [NotifyPropertyChangedFor(nameof(GitCredTrust))]
+    [NotifyPropertyChangedFor(nameof(GitCredentialHint))]
+    private string _gitCredentialMode = "Off";
+
+    public bool GitCredOff => GitCredentialMode == "Off";
+    public bool GitCredAsk => GitCredentialMode == "Ask";
+    public bool GitCredTrust => GitCredentialMode == "Trust";
+
+    public string GitCredentialHint => GitCredentialMode switch
+    {
+        "Ask" => "The agent may push; you approve each push with a card. Credentials stay on the host.",
+        "Trust" => "The agent may push without asking. Credentials stay on the host; scoped to this repo.",
+        _ => "The agent can't push. Turn on to broker a scoped, host-held credential at push time.",
+    };
+
     [ObservableProperty]
     private bool _isRenaming;
 
@@ -125,6 +148,7 @@ public sealed partial class SessionDocument : Document
 
     public IAsyncRelayCommand AddHostCommand { get; }
     public IRelayCommand ToggleAddHostCommand { get; }
+    public IRelayCommand<string> SetGitCredentialModeCommand { get; }
     public IRelayCommand BackCommand { get; }
 
     // ---- session management: rename / pin / tag / archive / duplicate / fork ----
@@ -221,7 +245,7 @@ public sealed partial class SessionDocument : Document
         Agents = new ObservableCollection<AgentChoice>(agents.Select(a =>
             new AgentChoice(a.DisplayName, a.AdapterId,
                 new AsyncRelayCommand(
-                    () => _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions),
+                    () => _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode),
                     () => a.Available),
                 a.Available)));
         Stage = TabStage.PickAgent;

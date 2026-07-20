@@ -16,7 +16,7 @@ public interface ITabController
 {
     Task SelectHostAsync(SessionDocument doc, KnownHost host);
     Task AddHostAsync(SessionDocument doc);
-    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false);
+    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off");
     void BackToHosts(SessionDocument doc);
 
     /// <summary>Persist tab metadata (rename / pin / tag) after an in-tab change.</summary>

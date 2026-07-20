@@ -355,6 +355,17 @@
 
                                     <Border Height="1" Background="{DynamicResource Line}" />
 
+                                    <!-- GitHub: link an account so sandboxed agents can push with scoped, host-held tokens -->
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                        <TextBlock Grid.Column="0" Text="GitHub" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Content="Status" Command="{Binding LoadCredentialStatusCommand}" Classes="seg" />
+                                        <Button Grid.Column="2" Content="Connect GitHub" Command="{Binding ConnectGitHubCommand}" Classes="seg"
+                                                ToolTip.Tip="Create + install a GitHub app in two clicks; sandboxed pushes then mint scoped, ~1h tokens" />
+                                    </Grid>
+                                    <TextBlock Text="{Binding CredentialStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+
+                                    <Border Height="1" Background="{DynamicResource Line}" />
+
                                     <!-- Sandbox image: the daemon bakes packages + agent CLIs into a baseline VM image -->
                                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                                         <TextBlock Grid.Column="0" Text="Sandbox image" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />

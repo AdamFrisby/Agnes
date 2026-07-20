@@ -239,7 +239,12 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasTools => ToolActivity.Count > 0;
     public bool HasApprovals => Approvals.Count > 0;
     public bool HasMcpCalls => McpCalls.Count > 0;
-    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasSubagents;
+
+    /// <summary>Audit trail of brokered git-credential grants/denials for this session.</summary>
+    public ObservableCollection<CredentialUseEntry> CredentialUses { get; } = [];
+    public bool HasCredentialUses => CredentialUses.Count > 0;
+
+    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
     public bool ShowRightPanel => SelectedPreview is not null;
 
@@ -745,6 +750,12 @@ public sealed class SessionViewModel : ObservableObject
             case McpToolCallEvent mcp:
                 McpCalls.Insert(0, new McpCallEntry(mcp.Server, mcp.Tool, @event.Timestamp));
                 Raise(nameof(HasMcpCalls));
+                RaisePanels();
+                break;
+
+            case GitCredentialEvent gc:
+                CredentialUses.Insert(0, new CredentialUseEntry(gc.Host, gc.Repo, gc.Allowed, @event.Timestamp));
+                Raise(nameof(HasCredentialUses));
                 RaisePanels();
                 break;
 

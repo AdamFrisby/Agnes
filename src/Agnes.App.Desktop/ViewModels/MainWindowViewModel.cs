@@ -94,6 +94,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         RemoveMcpServerCommand = new AsyncRelayCommand<string>(RemoveMcpServerAsync);
         ToggleMcpServerCommand = new AsyncRelayCommand<McpServerInfo>(ToggleMcpServerAsync);
         SetMcpApprovalCommand = new RelayCommand<string>(v => { if (v is not null) { McpApproval = v; } });
+        LoadCredentialStatusCommand = new AsyncRelayCommand(LoadCredentialStatusAsync);
+        ConnectGitHubCommand = new AsyncRelayCommand(ConnectGitHubAsync);
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
         SetNewMcpTransportCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpTransport = v; } });
         LoadSandboxImageCommand = new AsyncRelayCommand(LoadSandboxImageAsync);
@@ -365,6 +367,62 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     [ObservableProperty]
     private string _mcpStatus = "Open a session on a host to manage its MCP servers.";
+
+    // GitHub / credentials linking (per host — uses the active session's host, like MCP/devices).
+    [ObservableProperty]
+    private string _credentialStatus = "Open a session on a host to link GitHub.";
+
+    public IAsyncRelayCommand LoadCredentialStatusCommand { get; }
+    public IAsyncRelayCommand ConnectGitHubCommand { get; }
+
+    private async Task LoadCredentialStatusAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => CredentialStatus = "Open a session on a host to link GitHub.");
+            return;
+        }
+
+        try
+        {
+            var status = await CredentialManagement.GetStatusAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() => CredentialStatus = status switch
+            {
+                { Installed: true } => $"GitHub connected ({status.Slug}). Sandboxed pushes mint scoped tokens.",
+                { State: "app-created" } => "GitHub app created — finish installing it to enable pushes.",
+                _ => "GitHub not linked. Sandboxed git push needs a linked account.",
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => CredentialStatus = "Couldn't load credential status: " + ex.Message);
+        }
+    }
+
+    private async Task ConnectGitHubAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            CredentialStatus = "Open a session on a host first, then Connect GitHub.";
+            return;
+        }
+
+        try
+        {
+            var url = await CredentialManagement.ConnectGitHubAsync(target.Value.Url, target.Value.Token);
+            if (url is { Length: > 0 })
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+                _dispatcher.Post(() => CredentialStatus = "Continue in your browser: create the app, then choose repositories.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => CredentialStatus = "Couldn't start GitHub connect: " + ex.Message);
+        }
+    }
 
     // New-server form fields.
     [ObservableProperty] private string _newMcpName = string.Empty;
@@ -1046,7 +1104,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         await SelectHostAsync(doc, host);
     }
 
-    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false)
+    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off")
     {
         if (doc.Host is null)
         {
@@ -1055,7 +1113,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         var workingDirectory = string.IsNullOrWhiteSpace(doc.WorkingDirectory) ? DefaultWorkingDirectory : doc.WorkingDirectory.Trim();
         RememberWorkingDirectory(workingDirectory);
-        var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval);
+        var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode);
         var view = await doc.Host.SubscribeAsync(info.SessionId);
         var title = ProjectTitle(info.WorkingDirectory, displayName);
         _dispatcher.Post(() =>
