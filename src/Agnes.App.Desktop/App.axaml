@@ -56,6 +56,9 @@
         <DataTemplate DataType="vm:SessionDocument">
             <views:SessionTabView />
         </DataTemplate>
+        <DataTemplate DataType="vm:SettingsDocument">
+            <views:SettingsTabView />
+        </DataTemplate>
     </Application.DataTemplates>
 
     <Application.Styles>

@@ -96,6 +96,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SetMcpApprovalCommand = new RelayCommand<string>(v => { if (v is not null) { McpApproval = v; } });
         LoadCredentialStatusCommand = new AsyncRelayCommand(LoadCredentialStatusAsync);
         ConnectGitHubCommand = new AsyncRelayCommand(ConnectGitHubAsync);
+        OpenSettingsCommand = new RelayCommand(OpenSettings);
+        SetSettingsCategoryCommand = new RelayCommand<string>(v => { if (v is not null) { SettingsCategory = v; } });
+        SettingsCategories =
+        [
+            new SettingsCategoryVm("appearance", "Appearance", "🎨", "theme dark light system ui scale zoom accessibility reduce motion font density"),
+            new SettingsCategoryVm("devices", "Devices", "🔑", "paired devices pairing token revoke auth access per-device"),
+            new SettingsCategoryVm("mcp", "MCP servers", "🧩", "mcp model context protocol tools server forward sandbox host approval ask trust"),
+            new SettingsCategoryVm("github", "GitHub", "⑂", "github git push credential token connect app scope repo installation secret"),
+            new SettingsCategoryVm("sandbox", "Sandbox image", "📦", "sandbox image bake incus vm packages node apt npm pip agents baseline"),
+            new SettingsCategoryVm("keyboard", "Keyboard", "⌨", "keyboard shortcuts keys bindings gestures"),
+        ];
+        SettingsCategories[0].IsSelected = true;
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
         SetNewMcpTransportCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpTransport = v; } });
         LoadSandboxImageCommand = new AsyncRelayCommand(LoadSandboxImageAsync);
@@ -113,7 +125,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             FontScale = s switch { "small" => 0.9, "large" => 1.2, _ => 1.0 };
         });
-        _factory.ActiveDockableChanged += (_, _) => UpdateWindowTitle();
+        _factory.ActiveDockableChanged += (_, _) => OnActiveDockableChanged();
     }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
@@ -286,6 +298,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         WindowTitle = string.IsNullOrWhiteSpace(title) || title == "New session" ? "Agnes" : $"{title} — Agnes";
     }
 
+    // The dock can't host a second document TYPE (it keeps showing the last session when a settings tab
+    // is activated), so the Settings tab lives in the dock's strip but its content is rendered by our
+    // own overlay ContentControl, shown while a settings tab is the active dockable.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSettingsActive))]
+    private SettingsDocument? _activeSettings;
+
+    public bool IsSettingsActive => ActiveSettings is not null;
+
+    private void OnActiveDockableChanged()
+    {
+        UpdateWindowTitle();
+        ActiveSettings = _factory.DocumentDock?.ActiveDockable as SettingsDocument;
+    }
+
     /// <summary>Applies a theme string to the running application (no-op off the UI/host).</summary>
     public static void ApplyTheme(string theme)
     {
@@ -374,6 +401,74 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     public IAsyncRelayCommand LoadCredentialStatusCommand { get; }
     public IAsyncRelayCommand ConnectGitHubCommand { get; }
+
+    // ---- Settings tab (a first-class document, opened by the gear) ----
+    public IRelayCommand OpenSettingsCommand { get; }
+    public IRelayCommand<string> SetSettingsCategoryCommand { get; }
+    public System.Collections.ObjectModel.ObservableCollection<SettingsCategoryVm> SettingsCategories { get; }
+
+    [ObservableProperty] private string _settingsSearch = string.Empty;
+    [ObservableProperty] private string _settingsCategory = "appearance";
+
+    public bool CatAppearance => SettingsCategory == "appearance";
+    public bool CatDevices => SettingsCategory == "devices";
+    public bool CatMcp => SettingsCategory == "mcp";
+    public bool CatGitHub => SettingsCategory == "github";
+    public bool CatSandbox => SettingsCategory == "sandbox";
+    public bool CatKeyboard => SettingsCategory == "keyboard";
+
+    partial void OnSettingsCategoryChanged(string value)
+    {
+        foreach (var c in SettingsCategories)
+        {
+            c.IsSelected = c.Id == value;
+        }
+
+        OnPropertyChanged(nameof(CatAppearance));
+        OnPropertyChanged(nameof(CatDevices));
+        OnPropertyChanged(nameof(CatMcp));
+        OnPropertyChanged(nameof(CatGitHub));
+        OnPropertyChanged(nameof(CatSandbox));
+        OnPropertyChanged(nameof(CatKeyboard));
+    }
+
+    partial void OnSettingsSearchChanged(string value)
+    {
+        var query = (value ?? string.Empty).Trim();
+        SettingsCategoryVm? firstMatch = null;
+        foreach (var c in SettingsCategories)
+        {
+            c.IsVisible = c.Matches(query);
+            firstMatch ??= c.IsVisible ? c : null;
+        }
+
+        // If the current category was filtered out by the search, jump to the first match.
+        if (query.Length > 0 && firstMatch is not null
+            && SettingsCategories.FirstOrDefault(c => c.Id == SettingsCategory) is { IsVisible: false })
+        {
+            SettingsCategory = firstMatch.Id;
+        }
+    }
+
+    private void OpenSettings()
+    {
+        if (_factory.DocumentDock is not { } dock)
+        {
+            return;
+        }
+
+        var existing = dock.VisibleDockables?.OfType<SettingsDocument>().FirstOrDefault();
+        if (existing is null)
+        {
+            existing = new SettingsDocument(this);
+            _factory.AddDockable(dock, existing);
+        }
+
+        dock.ActiveDockable = existing;
+        _factory.SetActiveDockable(existing);
+        _factory.SetFocusedDockable(dock, existing);
+        ActiveSettings = existing; // show the overlay immediately (belt-and-suspenders alongside the event)
+    }
 
     private async Task LoadCredentialStatusAsync()
     {

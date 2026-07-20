@@ -3,6 +3,7 @@
              xmlns:tr="using:Agnes.Ui.Core.Transcript"
              xmlns:vm="using:Agnes.Ui.Core.ViewModels"
              xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:ctl="using:Agnes.App.Desktop.Controls"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
              Background="{DynamicResource Bg}"
              FontFamily="{StaticResource UiFont}"
@@ -342,7 +343,11 @@
 
                     <!-- Working directory (the project the agent works on, on the host) -->
                     <StackPanel Spacing="4">
-                        <TextBlock Text="Working directory (on the host)" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Working directory (on the host)" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
+                            <ctl:InfoHint Description="The project folder the agent works in — a path on the host running the daemon. It becomes the agent's working directory; in a sandbox it's bind-mounted to /work, so the agent sees exactly these files and its edits/commits write back here. Its git remote also scopes what the agent may push."
+                                          Security="Only this folder is exposed to a sandboxed agent — everything else on the host stays isolated. Because it's the real folder (not a copy), branch/checkout actions move your host checkout too; use the worktree option to insulate it." />
+                        </StackPanel>
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
                             <TextBox Grid.Column="0" Text="{Binding WorkingDirectory, Mode=TwoWay}" Watermark="/path/to/your/project"
                                      Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
@@ -361,8 +366,12 @@
                         <Grid ColumnDefinitions="Auto,*,Auto" >
                             <TextBlock Grid.Column="0" Text="🛡" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
-                                <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold"
-                                           Text="{Binding PermissionModeTitle}" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold"
+                                               Text="{Binding PermissionModeTitle}" />
+                                    <ctl:InfoHint Description="Whether the agent asks before each tool call. Ask before each tool: you approve every file edit, command, and other tool use as it happens. Autonomous: the agent runs tools without asking."
+                                                  Security="Autonomous mode lets the agent edit files and run commands with no approval. Use it only for work you trust, and prefer a sandbox so it can't touch anything outside the mounted project." />
+                                </StackPanel>
                                 <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
                                            Text="{Binding PermissionModeHint}" />
                             </StackPanel>

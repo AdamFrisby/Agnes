@@ -1,0 +1,264 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             x:Class="Agnes.App.Desktop.Views.SettingsTabView">
+
+    <UserControl.Styles>
+        <!-- Left-nav category items -->
+        <Style Selector="Button.navitem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+        </Style>
+        <Style Selector="Button.navitem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+        </Style>
+        <Style Selector="Button.navitem.on">
+            <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+        </Style>
+        <Style Selector="TextBlock.sectionTitle">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.fieldLabel">
+            <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid DataContext="{Binding Owner}" RowDefinitions="Auto,*" Background="{DynamicResource Bg}">
+
+        <!-- Header + search -->
+        <Border Grid.Row="0" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
+                BorderThickness="0,0,0,1" Padding="24,16">
+            <StackPanel Spacing="10" MaxWidth="900" HorizontalAlignment="Left">
+                <TextBlock Text="Settings" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                        CornerRadius="8" Padding="10,2" Width="340" HorizontalAlignment="Left">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Grid.Column="0" Text="&#x1F50D;" FontSize="12" Foreground="{DynamicResource FgFaint}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBox Grid.Column="1" Text="{Binding SettingsSearch, Mode=TwoWay}" Watermark="Search settings…"
+                                 Background="Transparent" BorderThickness="0" FontSize="13" Padding="0,6" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="210,*">
+
+            <!-- LEFT NAV -->
+            <ScrollViewer Grid.Column="0" Background="{DynamicResource Panel}" Padding="10,14">
+                <ItemsControl ItemsSource="{Binding SettingsCategories}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Classes="navitem" Classes.on="{Binding IsSelected}" IsVisible="{Binding IsVisible}"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Command="{Binding $parent[ItemsControl].DataContext.SetSettingsCategoryCommand}"
+                                    CommandParameter="{Binding Id}">
+                                <StackPanel Orientation="Horizontal" Spacing="9">
+                                    <TextBlock Text="{Binding Icon}" FontSize="13" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Label}" FontSize="13" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- CONTENT -->
+            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="0">
+                <StackPanel MaxWidth="640" Margin="28,22,28,40" Spacing="14" HorizontalAlignment="Left">
+
+                    <!-- APPEARANCE -->
+                    <StackPanel Spacing="12" IsVisible="{Binding CatAppearance}">
+                        <TextBlock Classes="sectionTitle" Text="Appearance" />
+
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Theme" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Controls the app's colour scheme. System follows your OS light/dark setting; Light and Dark pin it." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Button Content="System" Command="{Binding SetThemeCommand}" CommandParameter="System" Classes.on="{Binding IsSystemTheme}" Classes="seg" />
+                                <Button Content="Light" Command="{Binding SetThemeCommand}" CommandParameter="Light" Classes.on="{Binding IsLightTheme}" Classes="seg" />
+                                <Button Content="Dark" Command="{Binding SetThemeCommand}" CommandParameter="Dark" Classes.on="{Binding IsDarkTheme}" Classes="seg" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="UI scale" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Zooms the whole interface for readability or density. Affects text and control sizes everywhere." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Button Content="Small" Command="{Binding SetScaleCommand}" CommandParameter="small" Classes.on="{Binding IsScaleSmall}" Classes="seg" />
+                                <Button Content="Default" Command="{Binding SetScaleCommand}" CommandParameter="default" Classes.on="{Binding IsScaleDefault}" Classes="seg" />
+                                <Button Content="Large" Command="{Binding SetScaleCommand}" CommandParameter="large" Classes.on="{Binding IsScaleLarge}" Classes="seg" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <CheckBox IsChecked="{Binding ReducedMotion, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Reduce motion" />
+                            <ctl:InfoHint Description="Minimises non-essential animation and transitions. Helpful for motion sensitivity or lower-powered displays." />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- DEVICES -->
+                    <StackPanel Spacing="12" IsVisible="{Binding CatDevices}">
+                        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Devices" />
+                            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                                          Description="Every client that pairs with this host gets its own bearer token. Revoke one to cut off a lost or unwanted device without affecting the others."
+                                          Security="Tokens are stored only as hashes on the host — a revoked device can no longer connect. Anyone holding a valid token has full access to this host's sessions." />
+                            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadDevicesCommand}" Classes="seg" />
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Devices}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                            <TextBlock Text="{Binding PairedAt, StringFormat='paired {0:yyyy-MM-dd}'}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="Revoke" FontSize="11" Padding="9,3" Background="Transparent" Foreground="#E5484D"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                                Command="{Binding $parent[ItemsControl].DataContext.RevokeDeviceCommand}" CommandParameter="{Binding Id}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{Binding DevicesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- MCP SERVERS -->
+                    <StackPanel Spacing="12" IsVisible="{Binding CatMcp}">
+                        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="MCP servers" />
+                            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                                          Description="Model Context Protocol servers give agents extra tools. Configure them here; each runs on the host or inside the sandbox."
+                                          Security="A host MCP server runs with your host privileges. Forwarding one into a sandbox lets the agent reach it — every forwarded call is recorded in the session's MCP audit trail." />
+                            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadMcpServersCommand}" Classes="seg" />
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Classes="fieldLabel" Text="Tools" VerticalAlignment="Center" />
+                            <Button Content="Ask first" Command="{Binding SetMcpApprovalCommand}" CommandParameter="Ask" Classes.on="{Binding McpApprovalAsk}" Classes="seg" />
+                            <Button Content="Trust" Command="{Binding SetMcpApprovalCommand}" CommandParameter="Trust" Classes.on="{Binding McpApprovalTrust}" Classes="seg" />
+                            <ctl:InfoHint Description="How host MCP servers reach sessions. Ask first: only attended sessions get them (and approve each tool); autonomous sessions don't. Trust: also forward to autonomous sessions."
+                                          Security="Trust lets a fully autonomous agent invoke host MCP tools with no per-call approval. Calls are still audited, but nothing gates them — use only for tools you'd let run unattended." />
+                        </StackPanel>
+
+                        <ItemsControl ItemsSource="{Binding McpServers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3" ColumnSpacing="6">
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                            <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
+                                                <Run Text="{Binding Transport}" /><Run Text=" · run at " /><Run Text="{Binding RunAt}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" FontSize="11" Padding="9,3" Classes="seg" Classes.on="{Binding Enabled}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}" CommandParameter="{Binding}">
+                                            <Panel>
+                                                <TextBlock Text="Enabled" IsVisible="{Binding Enabled}" />
+                                                <TextBlock Text="Disabled" IsVisible="{Binding !Enabled}" />
+                                            </Panel>
+                                        </Button>
+                                        <Button Grid.Column="2" Content="Remove" FontSize="11" Padding="9,3" Background="Transparent" Foreground="#E5484D"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                                Command="{Binding $parent[ItemsControl].DataContext.RemoveMcpServerCommand}" CommandParameter="{Binding Id}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="9">
+                            <StackPanel Spacing="6">
+                                <TextBox Text="{Binding NewMcpName, Mode=TwoWay}" Watermark="Server name" FontSize="12" Padding="8,5" CornerRadius="6" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Classes="fieldLabel" Text="Run at" VerticalAlignment="Center" />
+                                    <Button Content="Host" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="host" Classes.on="{Binding NewMcpRunAtHost}" Classes="seg" />
+                                    <Button Content="Sandbox" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="sandbox" Classes.on="{Binding NewMcpRunAtSandbox}" Classes="seg" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Classes="fieldLabel" Text="Transport" VerticalAlignment="Center" />
+                                    <Button Content="stdio" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="stdio" Classes.on="{Binding NewMcpIsStdio}" Classes="seg" />
+                                    <Button Content="http" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="http" Classes.on="{Binding NewMcpIsHttp}" Classes="seg" />
+                                </StackPanel>
+                                <StackPanel Spacing="6" IsVisible="{Binding NewMcpIsStdio}">
+                                    <TextBox Text="{Binding NewMcpCommand, Mode=TwoWay}" Watermark="command (e.g. npx)" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                    <TextBox Text="{Binding NewMcpArgs, Mode=TwoWay}" Watermark="args (space-separated)" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                </StackPanel>
+                                <TextBox IsVisible="{Binding NewMcpIsHttp}" Text="{Binding NewMcpUrl, Mode=TwoWay}" Watermark="https://server/mcp" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                <Button Content="Add server" Command="{Binding AddMcpServerCommand}" HorizontalAlignment="Left" Classes="seg" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="{Binding McpStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- GITHUB -->
+                    <StackPanel Spacing="12" IsVisible="{Binding CatGitHub}">
+                        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="GitHub" />
+                            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                                          Description="Link a GitHub account so a sandboxed agent can `git push`. Connect creates a small GitHub app (two clicks, no token to copy); pushes then mint a token scoped to the one repository, valid ~1 hour."
+                                          Security="The app's private key is stored only on this host and never enters the sandbox. Agents never see a durable token — the broker hands git a short-lived, repo-scoped credential at push time, and every use is recorded in the session's credential audit." />
+                            <Button Grid.Column="3" Content="Status" Command="{Binding LoadCredentialStatusCommand}" Classes="seg" />
+                            <Button Grid.Column="4" Content="Connect GitHub" Command="{Binding ConnectGitHubCommand}" Classes="seg" />
+                        </Grid>
+                        <TextBlock Text="{Binding CredentialStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- SANDBOX IMAGE -->
+                    <StackPanel Spacing="12" IsVisible="{Binding CatSandbox}">
+                        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Sandbox image" />
+                            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                                          Description="The daemon bakes packages and agent CLIs into one baseline VM image, so every sandboxed session starts complete (node, tools, agents) instead of a bare image. Edit and Save &amp; rebuild to regenerate it."
+                                          Security="These packages run inside the isolated VM, not on your host. Anything you add here becomes available to sandboxed agents — keep it to tools you trust." />
+                            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadSandboxImageCommand}" Classes="seg" />
+                            <Button Grid.Column="4" Content="Rebuild" Command="{Binding RebuildSandboxImageCommand}" Classes="seg" />
+                        </Grid>
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="fieldLabel" Text="Base image" />
+                            <TextBox Text="{Binding SandboxImageBase, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <CheckBox IsChecked="{Binding SandboxImageNode, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Install node + npm" />
+                                <ctl:InfoHint Description="Adds Node.js and npm to the image. Needed for npx-based MCP servers and node-based agents." />
+                            </StackPanel>
+                            <TextBlock Classes="fieldLabel" Text="apt packages" />
+                            <TextBox Text="{Binding SandboxImageApt, Mode=TwoWay}" Watermark="git ripgrep curl…" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                            <TextBlock Classes="fieldLabel" Text="npm globals" />
+                            <TextBox Text="{Binding SandboxImageNpm, Mode=TwoWay}" Watermark="node MCP servers, tools…" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                            <TextBlock Classes="fieldLabel" Text="pip packages" />
+                            <TextBox Text="{Binding SandboxImagePip, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                            <Button Content="Save &amp; rebuild" Command="{Binding SaveSandboxImageCommand}" HorizontalAlignment="Left" Classes="seg" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding SandboxImageStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- KEYBOARD -->
+                    <StackPanel Spacing="10" IsVisible="{Binding CatKeyboard}">
+                        <TextBlock Classes="sectionTitle" Text="Keyboard shortcuts" />
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="Ctrl+T  New tab · Ctrl+W  Close tab · Ctrl+Tab  Next tab" Foreground="{DynamicResource FgDim}" FontSize="12" />
+                            <TextBlock Text="Ctrl+Enter  Send · Alt+↑/↓  Prompt history" Foreground="{DynamicResource FgDim}" FontSize="12" />
+                            <TextBlock Text="Ctrl+F  Search · F3/Shift+F3  Next/prev match" Foreground="{DynamicResource FgDim}" FontSize="12" />
+                            <TextBlock Text="F8/F7  Next/prev prompt · Ctrl+F8/F7  Next/prev change" Foreground="{DynamicResource FgDim}" FontSize="12" />
+                            <TextBlock Text="Ctrl+K  Command palette" Foreground="{DynamicResource FgDim}" FontSize="12" />
+                        </StackPanel>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

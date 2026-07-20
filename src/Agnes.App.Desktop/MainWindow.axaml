@@ -206,196 +206,10 @@
                         </Button.Flyout>
                     </Button>
 
-                    <!-- Settings: accessibility + keyboard reference -->
-                    <Button Content="⚙" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                    <!-- Settings: opens a first-class, searchable Settings tab -->
+                    <Button Content="⚙" Command="{Binding OpenSettingsCommand}" Background="Transparent" Foreground="{DynamicResource FgDim}"
                             BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings">
-                        <Button.Flyout>
-                            <Flyout Placement="Bottom">
-                                <StackPanel Width="320" Spacing="10">
-                                    <TextBlock Text="Appearance" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" />
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <Button Content="System" Command="{Binding SetThemeCommand}" CommandParameter="System"
-                                                Classes.on="{Binding IsSystemTheme}" Classes="seg" />
-                                        <Button Content="Light" Command="{Binding SetThemeCommand}" CommandParameter="Light"
-                                                Classes.on="{Binding IsLightTheme}" Classes="seg" />
-                                        <Button Content="Dark" Command="{Binding SetThemeCommand}" CommandParameter="Dark"
-                                                Classes.on="{Binding IsDarkTheme}" Classes="seg" />
-                                    </StackPanel>
-                                    <TextBlock Text="UI scale" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <Button Content="Small" Command="{Binding SetScaleCommand}" CommandParameter="small"
-                                                Classes.on="{Binding IsScaleSmall}" Classes="seg" />
-                                        <Button Content="Default" Command="{Binding SetScaleCommand}" CommandParameter="default"
-                                                Classes.on="{Binding IsScaleDefault}" Classes="seg" />
-                                        <Button Content="Large" Command="{Binding SetScaleCommand}" CommandParameter="large"
-                                                Classes.on="{Binding IsScaleLarge}" Classes="seg" />
-                                    </StackPanel>
-                                    <Border Height="1" Background="{DynamicResource Line}" />
-                                    <TextBlock Text="Accessibility" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" />
-                                    <CheckBox IsChecked="{Binding ReducedMotion, Mode=TwoWay}" Foreground="{DynamicResource Fg}"
-                                              Content="Reduce motion" AutomationProperties.Name="Reduce motion"
-                                              ToolTip.Tip="Minimise non-essential animation" />
-                                    <Border Height="1" Background="{DynamicResource Line}" />
-                                    <TextBlock Text="Keyboard" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" />
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="Ctrl+T  New tab · Ctrl+W  Close tab · Ctrl+Tab  Next tab" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                        <TextBlock Text="Ctrl+Enter  Send · Alt+↑/↓  Prompt history" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                        <TextBlock Text="Ctrl+F  Search · F3/Shift+F3  Next/prev match" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                        <TextBlock Text="F8/F7  Next/prev prompt · Ctrl+F8/F7  Next/prev change" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                    </StackPanel>
-                                    <Border Height="1" Background="{DynamicResource Line}" />
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="Paired devices" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
-                                        <Button Grid.Column="1" Content="Refresh" Command="{Binding LoadDevicesCommand}" Classes="seg" />
-                                    </Grid>
-                                    <ItemsControl ItemsSource="{Binding Devices}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Grid ColumnDefinitions="*,Auto" Margin="0,3">
-                                                    <StackPanel Grid.Column="0">
-                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                                        <TextBlock Text="{Binding PairedAt, StringFormat='paired {0:yyyy-MM-dd}'}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-                                                    </StackPanel>
-                                                    <Button Grid.Column="1" Content="Revoke" FontSize="11" Padding="9,3"
-                                                            Background="Transparent" Foreground="#E5484D"
-                                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
-                                                            Command="{Binding $parent[ItemsControl].DataContext.RevokeDeviceCommand}"
-                                                            CommandParameter="{Binding Id}" />
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    <TextBlock Text="{Binding DevicesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
-
-                                    <Border Height="1" Background="{DynamicResource Line}" />
-
-                                    <!-- MCP servers: configured here, run on the host or inside the sandbox -->
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Text="MCP servers" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
-                                        <Button Grid.Column="1" Content="Refresh" Command="{Binding LoadMcpServersCommand}" Classes="seg" />
-                                    </Grid>
-
-                                    <!-- gating posture for the MCP tools Agnes forwards -->
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <TextBlock Text="Tools" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
-                                        <Button Content="Ask first" Command="{Binding SetMcpApprovalCommand}" CommandParameter="Ask"
-                                                Classes.on="{Binding McpApprovalAsk}" Classes="seg"
-                                                ToolTip.Tip="Attended sessions approve each MCP tool as usual; autonomous sessions don't get host MCP servers forwarded" />
-                                        <Button Content="Trust" Command="{Binding SetMcpApprovalCommand}" CommandParameter="Trust"
-                                                Classes.on="{Binding McpApprovalTrust}" Classes="seg"
-                                                ToolTip.Tip="Also forward host MCP servers to autonomous sessions (calls are still recorded in the MCP audit trail)" />
-                                    </StackPanel>
-
-                                    <ItemsControl ItemsSource="{Binding McpServers}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,3" ColumnSpacing="6">
-                                                    <StackPanel Grid.Column="0">
-                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                                        <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
-                                                            <Run Text="{Binding Transport}" /><Run Text=" · run at " /><Run Text="{Binding RunAt}" />
-                                                        </TextBlock>
-                                                    </StackPanel>
-                                                    <Button Grid.Column="1" FontSize="11" Padding="9,3" Classes="seg"
-                                                            Classes.on="{Binding Enabled}"
-                                                            Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}"
-                                                            CommandParameter="{Binding}"
-                                                            ToolTip.Tip="Enable or disable this server">
-                                                        <Panel>
-                                                            <TextBlock Text="Enabled" IsVisible="{Binding Enabled}" />
-                                                            <TextBlock Text="Disabled" IsVisible="{Binding !Enabled}" />
-                                                        </Panel>
-                                                    </Button>
-                                                    <Button Grid.Column="2" Content="Remove" FontSize="11" Padding="9,3"
-                                                            Background="Transparent" Foreground="#E5484D"
-                                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
-                                                            Command="{Binding $parent[ItemsControl].DataContext.RemoveMcpServerCommand}"
-                                                            CommandParameter="{Binding Id}" />
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-
-                                    <!-- add a server -->
-                                    <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                            CornerRadius="8" Padding="9" Margin="0,2,0,0">
-                                        <StackPanel Spacing="6">
-                                            <TextBox Text="{Binding NewMcpName, Mode=TwoWay}" Watermark="Server name"
-                                                     FontSize="12" Padding="8,5" CornerRadius="6" />
-                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <TextBlock Text="Run at" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
-                                                <Button Content="Host" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="host"
-                                                        Classes.on="{Binding NewMcpRunAtHost}" Classes="seg" />
-                                                <Button Content="Sandbox" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="sandbox"
-                                                        Classes.on="{Binding NewMcpRunAtSandbox}" Classes="seg" />
-                                            </StackPanel>
-                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <TextBlock Text="Transport" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
-                                                <Button Content="stdio" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="stdio"
-                                                        Classes.on="{Binding NewMcpIsStdio}" Classes="seg" />
-                                                <Button Content="http" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="http"
-                                                        Classes.on="{Binding NewMcpIsHttp}" Classes="seg" />
-                                            </StackPanel>
-                                            <StackPanel Spacing="6" IsVisible="{Binding NewMcpIsStdio}">
-                                                <TextBox Text="{Binding NewMcpCommand, Mode=TwoWay}" Watermark="command (e.g. npx)"
-                                                         FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                                                <TextBox Text="{Binding NewMcpArgs, Mode=TwoWay}" Watermark="args (space-separated)"
-                                                         FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                                            </StackPanel>
-                                            <TextBox IsVisible="{Binding NewMcpIsHttp}" Text="{Binding NewMcpUrl, Mode=TwoWay}"
-                                                     Watermark="https://server/mcp" FontSize="12" Padding="8,5" CornerRadius="6"
-                                                     FontFamily="{StaticResource MonoFont}" />
-                                            <Button Content="Add server" Command="{Binding AddMcpServerCommand}" HorizontalAlignment="Left"
-                                                    Classes="seg" />
-                                        </StackPanel>
-                                    </Border>
-
-                                    <TextBlock Text="{Binding McpStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
-
-                                    <Border Height="1" Background="{DynamicResource Line}" />
-
-                                    <!-- GitHub: link an account so sandboxed agents can push with scoped, host-held tokens -->
-                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                                        <TextBlock Grid.Column="0" Text="GitHub" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
-                                        <Button Grid.Column="1" Content="Status" Command="{Binding LoadCredentialStatusCommand}" Classes="seg" />
-                                        <Button Grid.Column="2" Content="Connect GitHub" Command="{Binding ConnectGitHubCommand}" Classes="seg"
-                                                ToolTip.Tip="Create + install a GitHub app in two clicks; sandboxed pushes then mint scoped, ~1h tokens" />
-                                    </Grid>
-                                    <TextBlock Text="{Binding CredentialStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
-
-                                    <Border Height="1" Background="{DynamicResource Line}" />
-
-                                    <!-- Sandbox image: the daemon bakes packages + agent CLIs into a baseline VM image -->
-                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                                        <TextBlock Grid.Column="0" Text="Sandbox image" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
-                                        <Button Grid.Column="1" Content="Refresh" Command="{Binding LoadSandboxImageCommand}" Classes="seg" />
-                                        <Button Grid.Column="2" Content="Rebuild" Command="{Binding RebuildSandboxImageCommand}" Classes="seg" />
-                                    </Grid>
-
-                                    <StackPanel Spacing="6">
-                                        <TextBlock Text="Base image" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                        <TextBox Text="{Binding SandboxImageBase, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
-                                                 FontFamily="{StaticResource MonoFont}" />
-                                        <CheckBox IsChecked="{Binding SandboxImageNode, Mode=TwoWay}" Foreground="{DynamicResource Fg}"
-                                                  Content="Install node + npm" ToolTip.Tip="Needed for npx MCP servers and node-based agents" />
-                                        <TextBlock Text="apt packages" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                        <TextBox Text="{Binding SandboxImageApt, Mode=TwoWay}" Watermark="git ripgrep curl…" FontSize="12" Padding="8,5"
-                                                 CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                                        <TextBlock Text="npm globals" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                        <TextBox Text="{Binding SandboxImageNpm, Mode=TwoWay}" Watermark="node MCP servers, tools…" FontSize="12" Padding="8,5"
-                                                 CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                                        <TextBlock Text="pip packages" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                        <TextBox Text="{Binding SandboxImagePip, Mode=TwoWay}" FontSize="12" Padding="8,5"
-                                                 CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                                        <Button Content="Save &amp; rebuild" Command="{Binding SaveSandboxImageCommand}" HorizontalAlignment="Left" Classes="seg" />
-                                    </StackPanel>
-
-                                    <TextBlock Text="{Binding SandboxImageStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Flyout>
-                        </Button.Flyout>
-                    </Button>
+                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings" />
                     <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
                             BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="7" Padding="10,5" FontSize="12"
@@ -440,6 +254,12 @@
         </Border>
 
         <dc:DockControl Grid.Row="1" Layout="{Binding Layout}" />
+
+        <!-- Settings tab content: the Settings tab lives in the dock strip, but the dock can't host a
+             second document type, so we render its content here over the dock while it's active. The
+             top inset keeps the dock's tab strip visible (the Settings tab still shows + is clickable). -->
+        <ContentControl Grid.Row="1" ZIndex="20" Margin="0,29,0,0" IsVisible="{Binding IsSettingsActive}"
+                        Content="{Binding ActiveSettings}" />
 
         <!-- Command palette (Ctrl+K): jump to a session or run an action -->
         <Border Grid.Row="0" Grid.RowSpan="2" ZIndex="100" IsVisible="{Binding IsPaletteOpen}"

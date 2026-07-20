@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             x:Class="Agnes.App.Desktop.Controls.InfoHint">
+    <!-- A small ⓘ that opens a popover explaining a setting: what it does + a security callout. The
+         inner content's DataContext is set to this control (code-behind), so {Binding Description}
+         and {Binding Security} resolve to the control's own properties inside the flyout popup. -->
+    <Button Background="Transparent" BorderThickness="0" Padding="1" Width="18" Height="18"
+            VerticalAlignment="Center" Cursor="Hand" AutomationProperties.Name="More information"
+            ToolTip.Tip="More information">
+        <TextBlock Text="&#x24D8;" FontSize="12" Foreground="{DynamicResource FgFaint}"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <Button.Flyout>
+            <Flyout Placement="Bottom">
+                <StackPanel MaxWidth="320" Spacing="8">
+                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Fg}" FontSize="12" LineHeight="17" />
+                    <Border IsVisible="{Binding Security, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                            Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Line}"
+                            BorderThickness="1" CornerRadius="6" Padding="9,7">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="&#x1F512; Security" FontWeight="SemiBold" FontSize="11"
+                                       Foreground="{DynamicResource Fg}" />
+                            <TextBlock Text="{Binding Security}" TextWrapping="Wrap" FontSize="11"
+                                       LineHeight="16" Foreground="{DynamicResource FgDim}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Flyout>
+        </Button.Flyout>
+    </Button>
+</UserControl>
