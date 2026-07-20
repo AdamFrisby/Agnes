@@ -48,6 +48,10 @@ internal static class IncusGuest
           - [ chmod, '0755', /run/agnes ]
           - [ mkdir, -p, "{{o.GuestHome}}" ]
           - [ chown, "{{o.GuestUserId}}:{{o.GuestGroupId}}", "{{o.GuestHome}}" ]
+          # Always create the working directory so `incus exec --cwd /work` can't fail (127) when the
+          # host working directory isn't bind-mounted (an unset/invalid dir); the mount overlays it
+          # when present. Without this the agent never starts and the first prompt breaks its pipe.
+          - [ mkdir, -p, /work ]
           - [ touch, /run/agnes/ready ]
         """;
 

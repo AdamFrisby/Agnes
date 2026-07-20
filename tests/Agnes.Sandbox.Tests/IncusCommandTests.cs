@@ -24,6 +24,15 @@ public class IncusCommandTests
     }
 
     [Fact]
+    public void Cloud_init_always_creates_the_work_directory()
+    {
+        // /work must exist even without a bind-mount, or `incus exec --cwd /work` fails (127) and
+        // the agent never starts (breaking the first prompt's stdin pipe).
+        var cloudInit = IncusGuest.CloudInit(Options);
+        Assert.Contains("mkdir, -p, /work", cloudInit);
+    }
+
+    [Fact]
     public void Build_publish_and_image_verbs()
     {
         Assert.Equal(["incus", "--project", "agnes", "publish", "agnes-abc", "--alias", "agnes-baseline", "--reuse"],
