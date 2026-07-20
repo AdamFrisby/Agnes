@@ -8,30 +8,32 @@ using Agnes.Sandbox.Credentials;
 
 namespace Agnes.Host.Hosting;
 
-/// <summary>What the Connect-GitHub flow persists: enough to mint installation tokens forever.</summary>
+/// <summary>A linked GitHub account — enough to mint installation tokens for it forever.</summary>
 /// <param name="AppId">The GitHub App's numeric id (JWT issuer).</param>
 /// <param name="Slug">The App's URL slug (used to build the install link).</param>
-/// <param name="InstallationId">The installation on the user's account (0 until they install).</param>
+/// <param name="InstallationId">The installation on the account (0 until the user installs).</param>
 /// <param name="PrivateKeyPem">The App private key (PEM) — signs the JWT. Stored 0600 on the host.</param>
-public sealed record GitHubAppConfig(string AppId, string Slug, long InstallationId, string PrivateKeyPem);
+/// <param name="Account">The account login this App belongs to (e.g. "AdamFrisby" or a work org) — used to route by repo owner.</param>
+public sealed record GitHubAppConfig(string AppId, string Slug, long InstallationId, string PrivateKeyPem, string Account = "");
 
 /// <summary>
-/// Mints short-lived, repo-scoped GitHub App installation tokens on demand — the scoped-ephemeral
-/// credential the broker hands a sandbox at push time. A JWT signed with the App's private key
-/// (RS256) authenticates as the App; that mints an installation access token limited to the one repo
-/// and <c>contents:write</c>, expiring in ~1h. Tokens are cached per-repo until just before expiry.
-/// The private key never leaves the host.
+/// Mints short-lived, repo-scoped GitHub App installation tokens on demand across one or more linked
+/// accounts — the scoped-ephemeral credential the broker hands a sandbox at push time. It routes by
+/// the repo's owner: a push to <c>work-org/svc</c> mints from the App linked to "work-org", a push to
+/// <c>me/app</c> from the App linked to "me", so different projects push as different accounts with no
+/// per-session wiring. A JWT signed with the account's App key mints a token limited to the one repo +
+/// <c>contents:write</c>, ~1h TTL, cached per (account, repo). Private keys never leave the host.
 /// </summary>
 public sealed class GitHubAppCredentialSource : ICredentialSource
 {
     private const string Api = "https://api.github.com";
-    private readonly GitHubAppConfig _config;
+    private readonly Func<IReadOnlyList<GitHubAppConfig>> _accounts;
     private readonly HttpClient _http;
     private readonly ConcurrentDictionary<string, GitCredential> _cache = new(StringComparer.OrdinalIgnoreCase);
 
-    public GitHubAppCredentialSource(GitHubAppConfig config, HttpClient http)
+    public GitHubAppCredentialSource(Func<IReadOnlyList<GitHubAppConfig>> accounts, HttpClient http)
     {
-        _config = config;
+        _accounts = accounts;
         _http = http;
     }
 
@@ -39,23 +41,33 @@ public sealed class GitHubAppCredentialSource : ICredentialSource
 
     public async Task<GitCredential?> ResolveAsync(CredentialRequest request, CancellationToken cancellationToken = default)
     {
-        if (!Handles(request.Host) || request.Repo is null || _config.InstallationId == 0)
+        if (!Handles(request.Host) || request.Repo is null)
         {
             return null;
         }
 
-        if (_cache.TryGetValue(request.Repo, out var cached)
+        var installed = _accounts().Where(a => a.InstallationId != 0).ToList();
+        if (installed.Count == 0)
+        {
+            return null;
+        }
+
+        var slash = request.Repo.IndexOf('/');
+        var owner = slash >= 0 ? request.Repo[..slash] : string.Empty;
+        var repoName = slash >= 0 ? request.Repo[(slash + 1)..] : request.Repo;
+
+        // Route by repo owner; fall back to the first linked account if none matches.
+        var config = installed.FirstOrDefault(a => string.Equals(a.Account, owner, StringComparison.OrdinalIgnoreCase)) ?? installed[0];
+
+        var cacheKey = $"{config.AppId}/{request.Repo}";
+        if (_cache.TryGetValue(cacheKey, out var cached)
             && cached.ExpiresAt is { } exp && exp > DateTimeOffset.UtcNow.AddMinutes(5))
         {
             return cached;
         }
 
-        // The installation is on one account, so `repositories` takes the short repo name (no owner).
-        var slash = request.Repo.IndexOf('/');
-        var repoName = slash >= 0 ? request.Repo[(slash + 1)..] : request.Repo;
-
         using var httpRequest = new HttpRequestMessage(
-            HttpMethod.Post, $"{Api}/app/installations/{_config.InstallationId}/access_tokens")
+            HttpMethod.Post, $"{Api}/app/installations/{config.InstallationId}/access_tokens")
         {
             Content = JsonContent.Create(new
             {
@@ -63,7 +75,7 @@ public sealed class GitHubAppCredentialSource : ICredentialSource
                 permissions = new { contents = "write" },
             }),
         };
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", CreateJwt());
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", CreateJwt(config));
         httpRequest.Headers.Accept.ParseAdd("application/vnd.github+json");
         httpRequest.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
         httpRequest.Headers.UserAgent.ParseAdd("Agnes");
@@ -85,12 +97,12 @@ public sealed class GitHubAppCredentialSource : ICredentialSource
             ? parsed
             : DateTimeOffset.UtcNow.AddMinutes(55);
         var credential = new GitCredential("x-access-token", token, expiresAt);
-        _cache[request.Repo] = credential;
+        _cache[cacheKey] = credential;
         return credential;
     }
 
-    /// <summary>A short-lived (≤10 min) RS256 JWT authenticating as the App — used only to mint tokens.</summary>
-    private string CreateJwt()
+    /// <summary>A short-lived (≤10 min) RS256 JWT authenticating as the account's App — mints tokens only.</summary>
+    private static string CreateJwt(GitHubAppConfig config)
     {
         var now = DateTimeOffset.UtcNow;
         var header = Base64Url("""{"alg":"RS256","typ":"JWT"}"""u8.ToArray());
@@ -98,12 +110,12 @@ public sealed class GitHubAppCredentialSource : ICredentialSource
         {
             ["iat"] = now.AddSeconds(-60).ToUnixTimeSeconds(),
             ["exp"] = now.AddMinutes(9).ToUnixTimeSeconds(),
-            ["iss"] = _config.AppId,
+            ["iss"] = config.AppId,
         }));
 
         var signingInput = $"{header}.{payload}";
         using var rsa = RSA.Create();
-        rsa.ImportFromPem(_config.PrivateKeyPem);
+        rsa.ImportFromPem(config.PrivateKeyPem);
         var signature = rsa.SignData(Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         return $"{signingInput}.{Base64Url(signature)}";
     }

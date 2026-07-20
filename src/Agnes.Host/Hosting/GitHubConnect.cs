@@ -7,53 +7,120 @@ using Microsoft.Extensions.Logging;
 
 namespace Agnes.Host.Hosting;
 
-/// <summary>Persists the linked GitHub App (id, slug, installation, private key) 0600 on the host.</summary>
+/// <summary>Persists the linked GitHub accounts (one App each) 0600 on the host — supports several.</summary>
 public sealed class GitHubAppStore
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private readonly object _gate = new();
     private readonly string _path;
+    private List<GitHubAppConfig> _apps = new();
 
     public GitHubAppStore(string? path = null)
-        => _path = path ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "github-app.json");
-
-    public GitHubAppConfig? Load()
     {
-        try
+        _path = path ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "github-app.json");
+        Load();
+    }
+
+    public IReadOnlyList<GitHubAppConfig> List()
+    {
+        lock (_gate)
         {
-            return File.Exists(_path) ? JsonSerializer.Deserialize<GitHubAppConfig>(File.ReadAllText(_path), Options) : null;
-        }
-        catch
-        {
-            return null;
+            return _apps.ToArray();
         }
     }
 
+    public GitHubAppConfig? Get(string account)
+    {
+        lock (_gate)
+        {
+            return _apps.FirstOrDefault(a => string.Equals(a.Account, account, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    /// <summary>The most-recently-created App still awaiting installation (installation id 0).</summary>
+    public GitHubAppConfig? PendingInstall()
+    {
+        lock (_gate)
+        {
+            return _apps.LastOrDefault(a => a.InstallationId == 0);
+        }
+    }
+
+    /// <summary>Inserts or updates an account by App id.</summary>
     public void Save(GitHubAppConfig config)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        File.WriteAllText(_path, JsonSerializer.Serialize(config, Options));
-        if (!OperatingSystem.IsWindows())
+        lock (_gate)
         {
-            try
+            var index = _apps.FindIndex(a => a.AppId == config.AppId);
+            if (index >= 0)
             {
-                File.SetUnixFileMode(_path, UnixFileMode.UserRead | UnixFileMode.UserWrite); // 0600 — holds the private key
+                _apps[index] = config;
             }
-            catch
+            else
             {
-                // best effort
+                _apps.Add(config);
             }
+
+            Persist();
         }
     }
 
-    public void Delete()
+    public bool Remove(string account)
+    {
+        lock (_gate)
+        {
+            var removed = _apps.RemoveAll(a => string.Equals(a.Account, account, StringComparison.OrdinalIgnoreCase)) > 0;
+            if (removed)
+            {
+                Persist();
+            }
+
+            return removed;
+        }
+    }
+
+    private void Load()
     {
         try
         {
-            File.Delete(_path);
+            if (File.Exists(_path))
+            {
+                var text = File.ReadAllText(_path).TrimStart();
+                _apps = text.StartsWith('[')
+                    ? JsonSerializer.Deserialize<List<GitHubAppConfig>>(text, Options) ?? new List<GitHubAppConfig>()
+                    // Migrate the earlier single-App format to a one-element list.
+                    : JsonSerializer.Deserialize<GitHubAppConfig>(text, Options) is { } single ? new List<GitHubAppConfig> { single } : new List<GitHubAppConfig>();
+            }
         }
         catch
         {
-            // already gone
+            _apps = new List<GitHubAppConfig>();
+        }
+    }
+
+    private void Persist()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+            var tmp = _path + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(_apps, Options));
+            File.Move(tmp, _path, overwrite: true);
+            if (!OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    File.SetUnixFileMode(_path, UnixFileMode.UserRead | UnixFileMode.UserWrite); // 0600 — holds private keys
+                }
+                catch
+                {
+                    // best effort
+                }
+            }
+        }
+        catch
+        {
+            // best effort
         }
     }
 }
@@ -84,22 +151,23 @@ public sealed class GitHubConnectFlow
         _http = http;
         _logger = logger;
 
-        // Re-register the minting source on startup if an App is already linked + installed.
-        if (_store.Load() is { InstallationId: > 0 } existing && !string.IsNullOrWhiteSpace(existing.PrivateKeyPem))
-        {
-            _sources.Set(new GitHubAppCredentialSource(existing, _http));
-        }
+        // One minting source spans every linked account (it reads the store live), so accounts added
+        // later by a subsequent Connect are picked up without re-registering.
+        _sources.Set(new GitHubAppCredentialSource(() => _store.List(), _http));
     }
 
     public GitHubConnectStatus Status()
     {
-        var app = _store.Load();
-        if (app is null)
+        var apps = _store.List();
+        var installed = apps.Where(a => a.InstallationId > 0).ToArray();
+        if (installed.Length > 0)
         {
-            return new GitHubConnectStatus("not-connected", null, false, null);
+            return new GitHubConnectStatus("connected", installed[0].Slug, true, string.Join(", ", installed.Select(a => a.Account)));
         }
 
-        return new GitHubConnectStatus(app.InstallationId > 0 ? "connected" : "app-created", app.Slug, app.InstallationId > 0, null);
+        return apps.Count > 0
+            ? new GitHubConnectStatus("app-created", apps[^1].Slug, false, null)
+            : new GitHubConnectStatus("not-connected", null, false, null);
     }
 
     /// <summary>Begins a connect: returns the loopback URL the desktop opens in a browser.</summary>
@@ -158,17 +226,15 @@ public sealed class GitHubConnectFlow
     {
         if (!string.IsNullOrEmpty(installationId) && long.TryParse(installationId, out var id))
         {
-            var app = _store.Load();
-            if (app is null)
+            var pending = _store.PendingInstall();
+            if (pending is null)
             {
                 return Page("Something went wrong", "No app was created before installation. Please try Connect again.");
             }
 
-            var updated = app with { InstallationId = id };
-            _store.Save(updated);
-            _sources.Set(new GitHubAppCredentialSource(updated, _http));
-            _logger.LogInformation("GitHub App installed (installation {Id}); credential source is live.", id);
-            return Page("GitHub connected ✓", "Agnes can now mint short-lived, repo-scoped push tokens. You can close this tab.");
+            _store.Save(pending with { InstallationId = id }); // the live source picks this up
+            _logger.LogInformation("GitHub App installed for {Account} (installation {Id}).", pending.Account, id);
+            return Page("GitHub connected ✓", $"Agnes can now push as {pending.Account} with short-lived, repo-scoped tokens. You can close this tab.");
         }
 
         if (string.IsNullOrEmpty(code) || state is null || !_pending.TryRemove(state, out var baseUrl))
@@ -224,7 +290,10 @@ public sealed class GitHubConnectFlow
             var appId = root.GetProperty("id").GetInt64().ToString(System.Globalization.CultureInfo.InvariantCulture);
             var slug = root.GetProperty("slug").GetString();
             var pem = root.GetProperty("pem").GetString();
-            return slug is null || pem is null ? null : new GitHubAppConfig(appId, slug, 0, pem);
+            var account = root.TryGetProperty("owner", out var owner) && owner.TryGetProperty("login", out var login)
+                ? login.GetString() ?? string.Empty
+                : string.Empty;
+            return slug is null || pem is null ? null : new GitHubAppConfig(appId, slug, 0, pem, account);
         }
         catch
         {
