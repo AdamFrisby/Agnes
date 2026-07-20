@@ -14,6 +14,7 @@ Agnes runs each CLI in its **[Agent Client Protocol](https://agentclientprotocol
 - **Many clients, one session** — each connects and gets a snapshot + live tail; reconnects replay from a cursor.
 - **Native, reflowable rendering** at each client's own size and form factor.
 - **Ask-first permissions** — the agent requests approval per tool call (surfaced in the UI); an autonomous mode is opt-in per session, and agents can be isolated in per-session Incus VMs.
+- **MCP servers**, managed from the UI, can run on the host or be forwarded into a sandbox; sandbox images can also be baked ahead of time so a session's tools are ready the moment it starts.
 
 ## Architecture at a glance
 
