@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
+using Agnes.Host.Projects;
 using Agnes.Sandbox;
 using Microsoft.Extensions.Logging;
 
@@ -29,7 +31,8 @@ public sealed class SandboxImageManager
     private readonly string _path;
     private readonly ILogger<SandboxImageManager> _logger;
     private readonly object _gate = new();
-    private Task? _bake;
+    private readonly ConcurrentDictionary<string, Task> _bakesByAlias = new();       // per-alias single-flight
+    private readonly ConcurrentDictionary<string, SandboxImageStatus> _statusByAlias = new();
     private volatile SandboxImageStatus _status = new(SandboxImageState.Absent, "Not built yet.", null);
 
     public SandboxImageManager(ISandboxImageBuilder builder, string dataFilePath, ILogger<SandboxImageManager> logger)
@@ -48,6 +51,37 @@ public sealed class SandboxImageManager
 
     /// <summary>Whether an adapter's CLI is baked into the current image (for sandboxed availability).</summary>
     public bool ImageHasAgent(string adapterId) => Load().Agents.Any(a => a.AdapterId == adapterId);
+
+    /// <summary>The image alias a project's sessions launch from (unique per project).</summary>
+    public static string ProjectAlias(Project project) => $"agnes-proj-{project.Id}";
+
+    /// <summary>Whether an adapter's CLI is in a project's sandbox manifest (sandboxed availability).</summary>
+    public bool ImageHasAgent(Project project, string adapterId) => project.Sandbox.Agents.Any(a => a.AdapterId == adapterId);
+
+    /// <summary>The bake status for a specific image alias.</summary>
+    public SandboxImageStatus StatusFor(string alias)
+        => _statusByAlias.TryGetValue(alias, out var status) ? status : new SandboxImageStatus(SandboxImageState.Absent, "Not built yet.", null);
+
+    /// <summary>
+    /// Ensures a project's sandbox image is baked (from its own manifest, to its own alias) and returns
+    /// the alias its sessions launch from. Concurrent callers for the same project share one bake.
+    /// </summary>
+    public async Task<string> EnsureForProjectAsync(Project project, CancellationToken cancellationToken = default)
+    {
+        var alias = ProjectAlias(project);
+        if (await _builder.ImageExistsAsync(alias, cancellationToken).ConfigureAwait(false))
+        {
+            SetStatus(alias, new SandboxImageStatus(SandboxImageState.Ready, $"{alias} ready.", DateTimeOffset.UtcNow));
+            return alias;
+        }
+
+        await BakeAsync(project.Sandbox with { Alias = alias }, cancellationToken).ConfigureAwait(false);
+        return alias;
+    }
+
+    /// <summary>Rebuilds a project's image from its manifest (used when the project's sandbox is saved).</summary>
+    public Task RebuildForProjectAsync(Project project, CancellationToken cancellationToken = default)
+        => BakeAsync(project.Sandbox with { Alias = ProjectAlias(project) }, cancellationToken);
 
     /// <summary>Bakes the baseline image if it isn't present. Concurrent callers share one bake.</summary>
     public async Task EnsureAsync(CancellationToken cancellationToken = default)
@@ -75,32 +109,42 @@ public sealed class SandboxImageManager
     {
         lock (_gate)
         {
-            if (_bake is { IsCompleted: false })
+            if (_bakesByAlias.TryGetValue(manifest.Alias, out var running) && !running.IsCompleted)
             {
-                return _bake; // single-flight — join the in-progress bake
+                return running; // single-flight per alias — join the in-progress bake
             }
 
-            _bake = RunBakeAsync(manifest, cancellationToken);
-            return _bake;
+            var bake = RunBakeAsync(manifest, cancellationToken);
+            _bakesByAlias[manifest.Alias] = bake;
+            return bake;
         }
     }
 
     private async Task RunBakeAsync(SandboxImageManifest manifest, CancellationToken cancellationToken)
     {
-        _status = new SandboxImageStatus(SandboxImageState.Building, $"Building {manifest.Alias}…", DateTimeOffset.UtcNow);
+        SetStatus(manifest.Alias, new SandboxImageStatus(SandboxImageState.Building, $"Building {manifest.Alias}…", DateTimeOffset.UtcNow));
         try
         {
+            // Update only the message, preserving the current state — Progress<T> posts asynchronously,
+            // so a late progress callback must not clobber the final Ready/Failed state.
             var progress = new Progress<string>(line =>
-                _status = _status with { Message = line, UpdatedAt = DateTimeOffset.UtcNow });
+                SetStatus(manifest.Alias, StatusFor(manifest.Alias) with { Message = line, UpdatedAt = DateTimeOffset.UtcNow }));
             await _builder.BuildImageAsync(manifest, progress, cancellationToken).ConfigureAwait(false);
-            _status = new SandboxImageStatus(SandboxImageState.Ready, $"{manifest.Alias} ready.", DateTimeOffset.UtcNow);
+            SetStatus(manifest.Alias, new SandboxImageStatus(SandboxImageState.Ready, $"{manifest.Alias} ready.", DateTimeOffset.UtcNow));
         }
         catch (Exception ex)
         {
-            _status = new SandboxImageStatus(SandboxImageState.Failed, ex.Message, DateTimeOffset.UtcNow);
+            SetStatus(manifest.Alias, new SandboxImageStatus(SandboxImageState.Failed, ex.Message, DateTimeOffset.UtcNow));
             _logger.LogError(ex, "Sandbox image bake failed");
             throw;
         }
+    }
+
+    // Track per-alias status and mirror the most recent into the legacy global status.
+    private void SetStatus(string alias, SandboxImageStatus status)
+    {
+        _statusByAlias[alias] = status;
+        _status = status;
     }
 
     private SandboxImageManifest Load()

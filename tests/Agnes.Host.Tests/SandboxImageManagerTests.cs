@@ -49,6 +49,30 @@ public class SandboxImageManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task Ensure_for_project_bakes_the_projects_manifest_to_its_own_alias()
+    {
+        var builder = new FakeImageBuilder { Exists = false };
+        var mgr = Manager(builder);
+        var project = new Agnes.Host.Projects.Project
+        {
+            Id = "abc",
+            Name = "Work",
+            Sandbox = new SandboxImageManifest { Node = false, AptPackages = ["git"] },
+        };
+
+        var alias = await mgr.EnsureForProjectAsync(project);
+
+        Assert.Equal("agnes-proj-abc", alias);
+        Assert.Equal(1, builder.Builds);
+        Assert.Equal("agnes-proj-abc", builder.LastManifest!.Alias);  // baked to the project's own alias
+        Assert.False(builder.LastManifest.Node);                       // from the project's manifest
+        Assert.Equal(SandboxImageState.Ready, mgr.StatusFor(alias).State);
+
+        await mgr.EnsureForProjectAsync(project); // now exists → no rebuild
+        Assert.Equal(1, builder.Builds);
+    }
+
+    [Fact]
     public async Task Ensure_skips_the_bake_when_the_image_is_present()
     {
         var builder = new FakeImageBuilder { Exists = true };

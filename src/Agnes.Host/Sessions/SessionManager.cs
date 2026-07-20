@@ -116,7 +116,9 @@ public sealed class SessionManager : IAsyncDisposable
             // When agents run in a sandbox, availability reflects the baked image (host PATH is
             // irrelevant — the agent runs in the VM, not on the host).
             .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version,
-                Available: _images is not null ? _images.ImageHasAgent(a.Descriptor.Id) : a.IsAvailable()))
+                Available: _images is not null
+                    ? (_projects is not null ? _images.ImageHasAgent(_projects.Default(), a.Descriptor.Id) : _images.ImageHasAgent(a.Descriptor.Id))
+                    : a.IsAvailable()))
             .ToArray();
 
     public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", CancellationToken cancellationToken = default)
@@ -140,12 +142,13 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         // Resolve this session's project from the working directory's repo (auto-created + editable);
-        // later steps read the project's sandbox / MCP / credential config from _projectBySession.
+        // the sandbox / MCP / credential steps below use the project's own config.
+        Projects.Project? project = null;
         if (_projects is not null)
         {
             var remote = await _git.GetRemoteUrlAsync(effectiveDirectory, cancellationToken).ConfigureAwait(false);
             var repoKey = GitRemote.TryParse(remote, out var remoteHost, out var remoteRepo) ? $"{remoteHost}/{remoteRepo}" : string.Empty;
-            var project = _projects.Resolve(repoKey);
+            project = _projects.Resolve(repoKey);
             _projectBySession[sessionId] = project;
             _logger.LogInformation("Session {SessionId} uses project '{Project}' ({Scope}).",
                 sessionId, project.Name, repoKey.Length == 0 ? "default" : repoKey);
@@ -158,12 +161,20 @@ public sealed class SessionManager : IAsyncDisposable
         string? mcpConfigPath = null;
         if (_sandboxes is not null)
         {
-            // Ensure the baseline image exists (bake it if missing) before launching from it.
+            // Ensure the image exists (bake if missing) before launching from it — the resolved
+            // project's own sandbox image when we have a project, else the legacy global baseline.
             var image = string.Empty;
             if (_images is not null)
             {
-                await _images.EnsureAsync(cancellationToken).ConfigureAwait(false);
-                image = _images.Alias;
+                if (project is not null)
+                {
+                    image = await _images.EnsureForProjectAsync(project, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _images.EnsureAsync(cancellationToken).ConfigureAwait(false);
+                    image = _images.Alias;
+                }
             }
 
             sandbox = await _sandboxes.CreateAsync(
