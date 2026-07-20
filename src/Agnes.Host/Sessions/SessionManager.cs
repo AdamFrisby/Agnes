@@ -25,6 +25,8 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly McpForwardRegistry? _forward;
     private readonly McpForwardListener? _forwardListener;
     private readonly SandboxImageManager? _images;
+    private readonly Projects.ProjectStore? _projects;
+    private readonly ConcurrentDictionary<string, Projects.Project> _projectBySession = new();
     private readonly CredentialBrokerRegistry? _credentialBroker;
     private readonly CredentialBrokerListener? _credentialListener;
     private readonly ConcurrentDictionary<string, string> _forwardTokenBySession = new();
@@ -48,7 +50,8 @@ public sealed class SessionManager : IAsyncDisposable
         McpForwardListener? forwardListener = null,
         SandboxImageManager? images = null,
         CredentialBrokerRegistry? credentialBroker = null,
-        CredentialBrokerListener? credentialListener = null)
+        CredentialBrokerListener? credentialListener = null,
+        Projects.ProjectStore? projects = null)
     {
         _adapters = adapters.ToDictionary(a => a.Descriptor.Id);
         _store = store;
@@ -62,6 +65,7 @@ public sealed class SessionManager : IAsyncDisposable
         _forward = forward;
         _forwardListener = forwardListener;
         _images = images;
+        _projects = projects;
         _credentialBroker = credentialBroker;
         _credentialListener = credentialListener;
         if (_forwardListener is not null)
@@ -133,6 +137,18 @@ public sealed class SessionManager : IAsyncDisposable
                 _worktrees[sessionId] = (workingDirectory, worktree);
                 _logger.LogInformation("Session {SessionId} isolated in worktree {Worktree}", sessionId, worktree);
             }
+        }
+
+        // Resolve this session's project from the working directory's repo (auto-created + editable);
+        // later steps read the project's sandbox / MCP / credential config from _projectBySession.
+        if (_projects is not null)
+        {
+            var remote = await _git.GetRemoteUrlAsync(effectiveDirectory, cancellationToken).ConfigureAwait(false);
+            var repoKey = GitRemote.TryParse(remote, out var remoteHost, out var remoteRepo) ? $"{remoteHost}/{remoteRepo}" : string.Empty;
+            var project = _projects.Resolve(repoKey);
+            _projectBySession[sessionId] = project;
+            _logger.LogInformation("Session {SessionId} uses project '{Project}' ({Scope}).",
+                sessionId, project.Name, repoKey.Length == 0 ? "default" : repoKey);
         }
 
         // Optionally provision a sandbox and run the agent inside it. Credentials and MCP config

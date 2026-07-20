@@ -56,6 +56,12 @@ var mcpFile = builder.Configuration["Agnes:McpFile"]
 builder.Services.AddSingleton(sp => new McpRegistry(
     mcpFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpRegistry>()));
 
+// ---- projects: per-repo bundles (sandbox + MCP + GitHub account + defaults) a session inherits ----
+var projectsFile = builder.Configuration["Agnes:ProjectsFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "projects.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ProjectStore(
+    projectsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ProjectStore>()));
+
 // ---- event store: SQLite if a path is configured, else in-memory ----
 var databasePath = builder.Configuration["Agnes:Database"];
 if (string.IsNullOrWhiteSpace(databasePath))
