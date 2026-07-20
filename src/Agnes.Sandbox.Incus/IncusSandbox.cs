@@ -11,11 +11,11 @@ namespace Agnes.Sandbox.Incus;
 internal sealed class IncusSandbox : ISandbox, IPausableSandbox
 {
     private readonly IncusOptions _options;
-    private readonly IncusCliRunner _cli;
+    private readonly IIncusCliRunner _cli;
     private readonly ILogger _logger;
     private SandboxState _state = SandboxState.Running;
 
-    public IncusSandbox(string id, IncusOptions options, IncusCliRunner cli, ILogger logger)
+    public IncusSandbox(string id, IncusOptions options, IIncusCliRunner cli, ILogger logger)
     {
         Id = id;
         _options = options;

@@ -24,6 +24,24 @@ public class IncusCommandTests
     }
 
     [Fact]
+    public void Build_publish_and_image_verbs()
+    {
+        Assert.Equal(["incus", "--project", "agnes", "publish", "agnes-abc", "--alias", "agnes-baseline", "--reuse"],
+            IncusCommandBuilder.BuildPublish(Options, "agnes-abc", "agnes-baseline"));
+        Assert.Equal(["incus", "--project", "agnes", "image", "info", "agnes-baseline"],
+            IncusCommandBuilder.BuildImageInfo(Options, "agnes-baseline"));
+        Assert.Equal(["incus", "--project", "agnes", "image", "delete", "agnes-baseline"],
+            IncusCommandBuilder.BuildImageDelete(Options, "agnes-baseline"));
+    }
+
+    [Fact]
+    public void Build_file_push_file_copies_a_host_binary_into_the_guest()
+    {
+        var argv = IncusCommandBuilder.BuildFilePushFile(Options, "agnes-abc", "/usr/local/bin/claude", "/usr/local/bin/claude", "0755");
+        Assert.Equal(["incus", "--project", "agnes", "file", "push", "/usr/local/bin/claude", "agnes-abc/usr/local/bin/claude", "--mode=0755", "--create-dirs"], argv);
+    }
+
+    [Fact]
     public void Build_exec_wraps_with_cwd_and_argv_separator()
     {
         var argv = IncusCommandBuilder.BuildExec(Options, "agnes-abc", ["claude", "--print"], "/work", asUser: false);

@@ -121,6 +121,38 @@ internal static class IncusCommandBuilder
             $"--gid={gid.ToString(CultureInfo.InvariantCulture)}");
     }
 
+    /// <summary>Pushes a host file (not stdin) into the guest — used for binary agent CLIs.</summary>
+    internal static IReadOnlyList<string> BuildFilePushFile(IncusOptions o, string instance, string hostPath, string guestPath, string mode)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateAbsoluteHostPath(hostPath);
+        IncusInputValidation.ValidateAbsoluteGuestPath(guestPath);
+        return Prefix(o, "file", "push", hostPath, $"{instance}{guestPath}", $"--mode={mode}", "--create-dirs");
+    }
+
+    // ---- image baking ----
+
+    /// <summary>Publishes a (stopped) instance as an image under an alias.</summary>
+    internal static IReadOnlyList<string> BuildPublish(IncusOptions o, string instance, string alias)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateIdentifier(alias, nameof(alias), allowDotUnderscore: true);
+        return Prefix(o, "publish", instance, "--alias", alias, "--reuse");
+    }
+
+    /// <summary>Info for an image alias — exit code 0 iff it exists (used for the existence check).</summary>
+    internal static IReadOnlyList<string> BuildImageInfo(IncusOptions o, string alias)
+    {
+        IncusInputValidation.ValidateIdentifier(alias, nameof(alias), allowDotUnderscore: true);
+        return Prefix(o, "image", "info", alias);
+    }
+
+    internal static IReadOnlyList<string> BuildImageDelete(IncusOptions o, string alias)
+    {
+        IncusInputValidation.ValidateIdentifier(alias, nameof(alias), allowDotUnderscore: true);
+        return Prefix(o, "image", "delete", alias);
+    }
+
     /// <summary>Exec a command inside the instance as the given uid/gid.</summary>
     internal static IReadOnlyList<string> BuildExec(IncusOptions o, string instance, IReadOnlyList<string> command, string? workingDirectory, bool asUser)
     {

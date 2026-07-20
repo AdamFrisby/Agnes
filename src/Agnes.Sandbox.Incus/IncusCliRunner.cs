@@ -4,8 +4,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Agnes.Sandbox.Incus;
 
+/// <summary>Runs <c>incus</c> invocations. Abstracted so the provider's orchestration is testable.</summary>
+internal interface IIncusCliRunner
+{
+    Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(
+        IReadOnlyList<string> argv, string? stdin = null,
+        Action<string>? stdoutChunk = null, Action<string>? stderrChunk = null,
+        CancellationToken cancellationToken = default);
+
+    Task RunCheckedAsync(string what, IReadOnlyList<string> argv, string? stdin = null, CancellationToken cancellationToken = default);
+}
+
 /// <summary>Runs one <c>incus</c> invocation (argv only), optionally piping stdin and streaming output.</summary>
-internal sealed class IncusCliRunner
+internal sealed class IncusCliRunner : IIncusCliRunner
 {
     private readonly ILogger _logger;
 

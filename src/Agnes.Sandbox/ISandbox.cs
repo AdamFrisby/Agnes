@@ -39,6 +39,19 @@ public interface ISandbox : ISandboxCommand, IAsyncDisposable
     SandboxInfo Info { get; }
 }
 
+/// <summary>
+/// A provider that can bake a baseline image (preinstall packages + agent CLIs), so per-session
+/// sandboxes launch from a complete image. Optional capability on <see cref="ISandboxProvider"/>.
+/// </summary>
+public interface ISandboxImageBuilder
+{
+    /// <summary>Whether an image alias already exists.</summary>
+    Task<bool> ImageExistsAsync(string alias, CancellationToken cancellationToken = default);
+
+    /// <summary>Bakes and publishes the manifest's image (replacing any existing alias).</summary>
+    Task BuildImageAsync(SandboxImageManifest manifest, IProgress<string>? progress = null, CancellationToken cancellationToken = default);
+}
+
 /// <summary>A sandbox that can be paused (RAM→disk) and resumed. Optional capability.</summary>
 public interface IPausableSandbox
 {

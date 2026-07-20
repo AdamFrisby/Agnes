@@ -11,19 +11,25 @@ namespace Agnes.Sandbox.Incus;
 /// wait for the guest ready marker. VMs are managed via <c>user.agnes.*</c> config keys and persist
 /// until explicitly deleted.
 /// </summary>
-public sealed class IncusSandboxProvider : ISandboxProvider
+public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilder
 {
     public const string ProviderId = "incus";
 
     private readonly IncusOptions _options;
-    private readonly IncusCliRunner _cli;
+    private readonly IIncusCliRunner _cli;
     private readonly ILogger<IncusSandboxProvider> _logger;
 
     public IncusSandboxProvider(IncusOptions options, ILoggerFactory loggerFactory)
+        : this(options, loggerFactory, null)
+    {
+    }
+
+    // Test seam: inject a fake runner to exercise orchestration (bake sequence) without real incus.
+    internal IncusSandboxProvider(IncusOptions options, ILoggerFactory loggerFactory, IIncusCliRunner? cli)
     {
         _options = options;
         _logger = loggerFactory.CreateLogger<IncusSandboxProvider>();
-        _cli = new IncusCliRunner(_logger);
+        _cli = cli ?? new IncusCliRunner(_logger);
     }
 
     public string Name => ProviderId;
@@ -51,6 +57,142 @@ public sealed class IncusSandboxProvider : ISandboxProvider
         await WaitForGuestReadyAsync(name, cancellationToken).ConfigureAwait(false);
 
         return new IncusSandbox(name, _options, _cli, _logger);
+    }
+
+    // ---- ISandboxImageBuilder: bake a baseline image ----
+
+    public async Task<bool> ImageExistsAsync(string alias, CancellationToken cancellationToken = default)
+    {
+        var (code, _, _) = await _cli.RunAsync(
+            IncusCommandBuilder.BuildImageInfo(_options, alias), cancellationToken: cancellationToken).ConfigureAwait(false);
+        return code == 0;
+    }
+
+    public async Task BuildImageAsync(SandboxImageManifest manifest, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var name = CreateInstanceName();
+        _logger.LogInformation("Baking sandbox image {Alias} in {Name} from {Base}", manifest.Alias, name, manifest.BaseImage);
+        try
+        {
+            progress?.Report($"Provisioning bake VM from {manifest.BaseImage}…");
+            await _cli.RunCheckedAsync("bake init", IncusCommandBuilder.BuildInit(_options, manifest.BaseImage, name, new SandboxResourceLimits()), cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _cli.RunCheckedAsync("bake nic", IncusCommandBuilder.BuildNicAdd(_options, name, _options.Bridge), cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _cli.RunCheckedAsync("bake cloud-init", IncusCommandBuilder.BuildConfigSetStdin(_options, name, "user.user-data"), IncusGuest.CloudInit(_options), cancellationToken).ConfigureAwait(false);
+            await _cli.RunCheckedAsync("bake start", IncusCommandBuilder.BuildStart(_options, name), cancellationToken: cancellationToken).ConfigureAwait(false);
+            await WaitForGuestReadyAsync(name, cancellationToken).ConfigureAwait(false);
+
+            // apt (+ node, + python3-pip when pip packages are requested)
+            var apt = new List<string>(manifest.AptPackages.Where(IsSafePackage));
+            if (manifest.Node)
+            {
+                apt.Add("nodejs");
+                apt.Add("npm");
+            }
+
+            if (manifest.PipPackages.Count > 0)
+            {
+                apt.Add("python3-pip");
+            }
+
+            if (apt.Count > 0)
+            {
+                await RunStepAsync(name, "apt update", ["apt-get", "update"], progress, cancellationToken).ConfigureAwait(false);
+                await RunStepAsync(name, "apt install", ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", .. apt], progress, cancellationToken).ConfigureAwait(false);
+            }
+
+            var npm = manifest.NpmGlobals.Where(IsSafePackage).ToList();
+            npm.AddRange(manifest.Agents.Where(a => a.Source.StartsWith("npm:", StringComparison.Ordinal))
+                .Select(a => a.Source["npm:".Length..]).Where(IsSafePackage));
+            if (npm.Count > 0)
+            {
+                await RunStepAsync(name, "npm install", ["npm", "install", "-g", .. npm], progress, cancellationToken).ConfigureAwait(false);
+            }
+
+            var pip = manifest.PipPackages.Where(IsSafePackage).ToList();
+            if (pip.Count > 0)
+            {
+                await RunStepAsync(name, "pip install", ["pip3", "install", "--break-system-packages", .. pip], progress, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Copy self-contained agent binaries from the host into the guest PATH.
+            foreach (var agent in manifest.Agents.Where(a => a.Source.StartsWith("copy:", StringComparison.Ordinal)))
+            {
+                var binary = agent.Source["copy:".Length..];
+                if (!IsSafeBinaryName(binary))
+                {
+                    progress?.Report($"Skipping agent {agent.AdapterId}: unsupported binary name '{binary}'");
+                    continue;
+                }
+
+                var hostPath = ResolveHostBinary(binary);
+                if (hostPath is null)
+                {
+                    progress?.Report($"Skipping agent {agent.AdapterId}: '{binary}' not found on the host PATH");
+                    continue;
+                }
+
+                progress?.Report($"Copying {binary} into the image…");
+                await _cli.RunCheckedAsync($"push {binary}",
+                    IncusCommandBuilder.BuildFilePushFile(_options, name, hostPath, $"/usr/local/bin/{binary}", "0755"),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            // Reset cloud-init so it re-runs per launch on clones, then publish the stopped VM.
+            await RunStepAsync(name, "cloud-init clean", ["cloud-init", "clean", "--logs"], progress, cancellationToken).ConfigureAwait(false);
+            progress?.Report("Stopping and publishing the image…");
+            await _cli.RunCheckedAsync("bake stop", IncusCommandBuilder.BuildStop(_options, name, (int)_options.VmStopTimeout.TotalSeconds, stateful: false), cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _cli.RunCheckedAsync("bake publish", IncusCommandBuilder.BuildPublish(_options, name, manifest.Alias), cancellationToken: cancellationToken).ConfigureAwait(false);
+            progress?.Report($"Image {manifest.Alias} is ready.");
+            _logger.LogInformation("Baked sandbox image {Alias}", manifest.Alias);
+        }
+        finally
+        {
+            // Always remove the throwaway bake VM (best-effort).
+            try
+            {
+                await _cli.RunAsync(IncusCommandBuilder.BuildDelete(_options, name), cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not delete bake VM {Name}", name);
+            }
+        }
+    }
+
+    private async Task RunStepAsync(string instance, string what, IReadOnlyList<string> command, IProgress<string>? progress, CancellationToken cancellationToken)
+    {
+        progress?.Report(what + "…");
+        void Sink(string line) => progress?.Report(line);
+        var (code, _, stderr) = await _cli.RunAsync(
+            IncusCommandBuilder.BuildExec(_options, instance, command, workingDirectory: null, asUser: false),
+            stdoutChunk: Sink, stderrChunk: Sink, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (code != 0)
+        {
+            throw new InvalidOperationException($"Bake step '{what}' failed ({code}): {stderr.Trim()}");
+        }
+    }
+
+    // A package name must not look like a flag or carry control chars (argv is never shell-parsed,
+    // but a leading '-' would be read as an apt/npm option).
+    private static bool IsSafePackage(string name)
+        => !string.IsNullOrWhiteSpace(name) && !name.StartsWith('-') && !name.Any(char.IsControl);
+
+    private static bool IsSafeBinaryName(string name)
+        => name.Length is > 0 and <= 64 && name.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.');
+
+    private static string? ResolveHostBinary(string binary)
+    {
+        var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var candidate = Path.Combine(dir, binary);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     public async Task<IReadOnlyList<SandboxInfo>> ListManagedAsync(CancellationToken cancellationToken = default)
