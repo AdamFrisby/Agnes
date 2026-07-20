@@ -196,7 +196,7 @@ public sealed class SessionManager : IAsyncDisposable
                 files.AddRange(credential.Files);
             }
 
-            mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, env, files);
+            mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, project, env, files);
             await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, env, files, cancellationToken).ConfigureAwait(false);
 
             if (env.Count > 0 || files.Count > 0)
@@ -214,7 +214,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
         else
         {
-            mcpConfigPath = await MaterializeHostMcpAsync(adapterId, cancellationToken).ConfigureAwait(false);
+            mcpConfigPath = await MaterializeHostMcpAsync(adapterId, project, cancellationToken).ConfigureAwait(false);
         }
 
         var agent = await adapter.StartSessionAsync(
@@ -259,22 +259,35 @@ public sealed class SessionManager : IAsyncDisposable
     /// servers run in-VM directly; RunAt=Host servers are rewritten to launch the forward shim (which
     /// reaches the real host server through the proxy). Returns the config path for the CLI flag, or null.
     /// </summary>
-    private string? AddSandboxMcp(string adapterId, ISandbox sandbox, string sessionId,
-        bool skipPermissions, string mcpApproval, Dictionary<string, string> env, List<SandboxCredentialFile> files)
+    // The MCP servers applicable to a session at a given run-location — from its project when we have
+    // one (so two projects can expose different servers), else the host's global registry (legacy).
+    private IReadOnlyList<McpServerInfo> ApplicableMcp(Projects.Project? project, McpRunAt runAt)
     {
-        if (_mcp is null || McpTargetFor(adapterId) is not { } target)
+        if (project is not null)
+        {
+            var want = runAt == McpRunAt.Sandbox ? "sandbox" : "host";
+            return project.McpServers.Where(s => s.Enabled && string.Equals(s.RunAt, want, StringComparison.OrdinalIgnoreCase)).ToArray();
+        }
+
+        return _mcp?.Applicable(runAt) ?? [];
+    }
+
+    private string? AddSandboxMcp(string adapterId, ISandbox sandbox, string sessionId,
+        bool skipPermissions, string mcpApproval, Projects.Project? project, Dictionary<string, string> env, List<SandboxCredentialFile> files)
+    {
+        if (McpTargetFor(adapterId) is not { } target)
         {
             return null;
         }
 
-        var entries = new List<McpServerInfo>(_mcp.Applicable(McpRunAt.Sandbox));
+        var entries = new List<McpServerInfo>(ApplicableMcp(project, McpRunAt.Sandbox));
 
         // An autonomous session doesn't prompt per tool, so host servers are only forwarded to it
         // when the user has chosen to trust them (the "Ask vs Trust" preference). Attended sessions
         // always get forwarding — the agent's own permission protocol gates each tool call.
         var forwardAllowed = !skipPermissions || string.Equals(mcpApproval, "Trust", StringComparison.OrdinalIgnoreCase);
         var hostServers = _forward is not null && _forwardListener is not null && forwardAllowed
-            ? _mcp.Applicable(McpRunAt.Host)
+            ? ApplicableMcp(project, McpRunAt.Host)
             : [];
         if (hostServers.Count > 0)
         {
@@ -344,14 +357,14 @@ public sealed class SessionManager : IAsyncDisposable
     }
 
     /// <summary>Writes a host (non-sandbox) session's RunAt=Host MCP config to a temp file for the CLI flag.</summary>
-    private async Task<string?> MaterializeHostMcpAsync(string adapterId, CancellationToken cancellationToken)
+    private async Task<string?> MaterializeHostMcpAsync(string adapterId, Projects.Project? project, CancellationToken cancellationToken)
     {
-        if (_mcp is null || McpTargetFor(adapterId) is not { UsesFlag: true })
+        if (McpTargetFor(adapterId) is not { UsesFlag: true })
         {
             return null; // only the config-flag (Claude) host path is wired; host-Codex/ACP deferred
         }
 
-        var servers = _mcp.Applicable(McpRunAt.Host);
+        var servers = ApplicableMcp(project, McpRunAt.Host);
         if (servers.Count == 0)
         {
             return null;

@@ -135,6 +135,40 @@ public class SandboxWiringTests
     }
 
     [Fact]
+    public async Task Sandbox_session_uses_its_projects_mcp_servers()
+    {
+        var projectsFile = Path.Combine(Path.GetTempPath(), $"agnes-proj-{Guid.NewGuid():n}.json");
+        try
+        {
+            var projects = new Agnes.Host.Projects.ProjectStore(projectsFile);
+            projects.Save(projects.Default() with
+            {
+                McpServers =
+                [
+                    new Agnes.Protocol.McpServerInfo("id1", "proj-files", "sandbox", true, "stdio", "npx", ["-y", "mcp"], new Dictionary<string, string>(), null, null),
+                ],
+            });
+
+            var adapter = new ScriptedAgentAdapter("codex");
+            var sandboxes = new FakeSandboxProvider();
+            await using var manager = new SessionManager(
+                [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                sandboxes, [new FakeCredentialProvider()], projects: projects);
+
+            await manager.OpenSessionAsync("codex", "/tmp/project"); // no repo → the default project
+
+            var configFile = sandboxes.Last.Materialised.SelectMany(c => c.Files)
+                .FirstOrDefault(f => f.HomeRelativePath == ".codex/config.toml");
+            Assert.NotNull(configFile);
+            Assert.Contains("proj-files", configFile!.Contents); // the project's MCP server (no global registry present)
+        }
+        finally
+        {
+            if (File.Exists(projectsFile)) File.Delete(projectsFile);
+        }
+    }
+
+    [Fact]
     public async Task Sandbox_session_materialises_mcp_config_for_run_at_sandbox_servers()
     {
         var mcpFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
