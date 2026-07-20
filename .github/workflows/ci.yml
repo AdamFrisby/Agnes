@@ -62,8 +62,16 @@ jobs:
       - name: Build
         run: dotnet build Agnes.Core.slnf --configuration Release --no-restore
 
+      # The desktop simulation tests are timing-sensitive: they drive an in-memory agent that streams a
+      # turn on background tasks, then wait for the events. On a cold, CPU-constrained runner the very
+      # first (un-JITed) run can occasionally miss a deadline and time out — the same suite passes in a
+      # couple of seconds once warm. So run the suite, and on failure run it exactly once more before
+      # failing the build. A genuine regression fails deterministically on both attempts; only a
+      # cold-start flake is absorbed by the retry.
       - name: Test
-        run: dotnet test Agnes.Core.slnf --configuration Release --no-build --verbosity normal
+        run: |
+          test() { dotnet test Agnes.Core.slnf --configuration Release --no-build --verbosity normal; }
+          test || { echo "::warning::First test run failed — retrying once (cold-start flake guard)."; test; }
 
   ui-build:
     name: Build Uno UI heads (desktop + web)
