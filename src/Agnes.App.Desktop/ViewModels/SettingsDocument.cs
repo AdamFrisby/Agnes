@@ -17,6 +17,10 @@ public sealed class SettingsDocument : Document
         Id = "settings";
         Title = "Settings";
         CanClose = true;
+        // Its content is rendered by the main window's overlay (Dock can't host this second document
+        // type). Keep it in the main window's dock so that overlay is always the right place — a
+        // floated Settings tab would land in a HostWindow with no overlay and render blank.
+        CanFloat = false;
     }
 
     public MainWindowViewModel Owner { get; }
