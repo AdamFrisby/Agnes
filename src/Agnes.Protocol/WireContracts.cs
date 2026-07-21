@@ -128,6 +128,21 @@ public sealed record SandboxImageAgentDto(string AdapterId, string Source);
 /// <summary>Bake status: State is "absent" | "building" | "ready" | "failed".</summary>
 public sealed record SandboxImageStatusDto(string State, string Message, DateTimeOffset? UpdatedAt);
 
+/// <summary>A managed sandbox VM in the Settings › Sandboxes list. State is "running" | "stopped";
+/// Live means its session is currently open/attached in the daemon.</summary>
+public sealed record SandboxRecordDto(
+    string SessionId,
+    string VmName,
+    string Provider,
+    string AdapterId,
+    string WorkingDirectory,
+    string? ProjectName,
+    string Title,
+    string State,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset LastUsedAt,
+    bool Live);
+
 /// <summary>The manifest plus its current bake status.</summary>
 public sealed record SandboxImageView(SandboxImageDto Manifest, SandboxImageStatusDto Status);
 

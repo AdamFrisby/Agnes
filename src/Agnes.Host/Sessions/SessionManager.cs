@@ -26,6 +26,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly McpForwardListener? _forwardListener;
     private readonly SandboxImageManager? _images;
     private readonly Projects.ProjectStore? _projects;
+    private readonly SandboxRegistry? _sandboxRegistry;
     private readonly ConcurrentDictionary<string, Projects.Project> _projectBySession = new();
     private readonly CredentialBrokerRegistry? _credentialBroker;
     private readonly CredentialBrokerListener? _credentialListener;
@@ -51,7 +52,8 @@ public sealed class SessionManager : IAsyncDisposable
         SandboxImageManager? images = null,
         CredentialBrokerRegistry? credentialBroker = null,
         CredentialBrokerListener? credentialListener = null,
-        Projects.ProjectStore? projects = null)
+        Projects.ProjectStore? projects = null,
+        SandboxRegistry? sandboxRegistry = null)
     {
         _adapters = adapters.ToDictionary(a => a.Descriptor.Id);
         _store = store;
@@ -66,6 +68,7 @@ public sealed class SessionManager : IAsyncDisposable
         _forwardListener = forwardListener;
         _images = images;
         _projects = projects;
+        _sandboxRegistry = sandboxRegistry;
         _credentialBroker = credentialBroker;
         _credentialListener = credentialListener;
         if (_forwardListener is not null)
@@ -131,6 +134,18 @@ public sealed class SessionManager : IAsyncDisposable
         {
             _logger.LogWarning("Session {SessionId}: checkout of {Repo} failed: {Message}", sessionId, repo, message);
         }
+    }
+
+    /// <summary>A human label for a sandbox in the list — the project name, else the working-dir folder.</summary>
+    private static string SandboxTitle(Projects.Project? project, string workingDirectory)
+    {
+        if (project is { IsDefault: false, Name.Length: > 0 })
+        {
+            return project.Name;
+        }
+
+        var name = Path.GetFileName(workingDirectory.TrimEnd('/', '\\'));
+        return string.IsNullOrWhiteSpace(name) ? "session" : name;
     }
 
     /// <summary>Parses a checkout spec ("owner/repo", an https URL, or an ssh URL) into host + "owner/repo" + a clean https clone URL.</summary>
@@ -270,6 +285,12 @@ public sealed class SessionManager : IAsyncDisposable
             sandbox = await _sandboxes.CreateAsync(
                 new SandboxSpec { HostWorkingDirectory = effectiveDirectory, ImageReference = image }, cancellationToken).ConfigureAwait(false);
             _sandboxBySession[sessionId] = sandbox;
+
+            // Record the sandbox so it stays visible/manageable (resume/delete) even after a restart.
+            var now = DateTimeOffset.UtcNow;
+            _sandboxRegistry?.Upsert(new SandboxRecord(
+                sessionId, sandbox.Id, sandbox.Info.Provider, adapterId, effectiveDirectory,
+                project?.Name, SandboxTitle(project, effectiveDirectory), "running", now, now));
 
             var env = new Dictionary<string, string>();
             var files = new List<SandboxCredentialFile>();
@@ -587,6 +608,8 @@ public sealed class SessionManager : IAsyncDisposable
         {
             await sandbox.DeleteAsync().ConfigureAwait(false);
         }
+
+        _sandboxRegistry?.Remove(sessionId);
     }
 
     /// <summary>
@@ -604,9 +627,17 @@ public sealed class SessionManager : IAsyncDisposable
         if (_sandboxBySession.TryGetValue(sessionId, out var sandbox) && sandbox is IStoppableSandbox stoppable)
         {
             await stoppable.StopAsync().ConfigureAwait(false);
+            _sandboxRegistry?.SetState(sessionId, "stopped", DateTimeOffset.UtcNow);
             _logger.LogInformation("Session {SessionId}: sandbox shut down on close (kept for resume).", sessionId);
         }
     }
+
+    /// <summary>All sandboxes the host tracks (running + stopped, this run + prior runs), for the list.</summary>
+    public IReadOnlyList<SandboxRecordDto> ListSandboxes()
+        => _sandboxRegistry?.List().Select(r => new SandboxRecordDto(
+               r.SessionId, r.VmName, r.Provider, r.AdapterId, r.WorkingDirectory, r.ProjectName, r.Title,
+               r.State, r.CreatedAt, r.LastUsedAt, _sessions.ContainsKey(r.SessionId))).ToArray()
+           ?? [];
 
     public SandboxStatus? GetSandboxStatus(string sessionId)
         => _sandboxBySession.TryGetValue(sessionId, out var sandbox) ? MapSandbox(sandbox) : null;

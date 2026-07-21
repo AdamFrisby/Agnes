@@ -176,6 +176,48 @@
                         <TextBlock Text="{Binding DevicesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
                     </StackPanel>
 
+                    <!-- SANDBOXES (managed VMs on the host) -->
+                    <StackPanel Spacing="12" IsVisible="{Binding CatSandboxes}">
+                        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Sandboxes" />
+                            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                                          Description="The sandbox VMs Agnes has created. Closing a session tab shuts its VM down (freeing CPU + RAM) but keeps it here so you can resume or delete it. A running VM uses host CPU/RAM; a stopped one only uses disk."
+                                          Security="These are real VMs on the connected host. Delete destroys a sandbox and everything in it, permanently." />
+                            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadSandboxesCommand}" Classes="seg" />
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Sandboxes}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                            CornerRadius="10" Padding="12,10" Margin="0,0,0,8">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Grid.Column="0" Spacing="3">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+                                                    <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
+                                                            BorderThickness="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding State}" FontSize="10" Foreground="{DynamicResource FgDim}" />
+                                                    </Border>
+                                                    <TextBlock Text="· live" FontSize="10" Foreground="{DynamicResource Good}" VerticalAlignment="Center" IsVisible="{Binding Live}" />
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding WorkingDirectory}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                           FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding VmName, StringFormat='VM: {0}'}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                           FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <Button Content="Delete" Command="{Binding $parent[ItemsControl].DataContext.DeleteSandboxRecordCommand}"
+                                                        CommandParameter="{Binding}" Background="Transparent" Foreground="#E5484D"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{Binding SandboxesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                    </StackPanel>
+
                     <!-- PROJECTS (per-repo, on the host) -->
                     <StackPanel Spacing="12" IsVisible="{Binding CatProjects}">
                         <Grid ColumnDefinitions="Auto,Auto,*,Auto">

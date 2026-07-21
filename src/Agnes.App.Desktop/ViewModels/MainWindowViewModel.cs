@@ -100,6 +100,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SetSettingsCategoryCommand = new RelayCommand<string>(v => { if (v is not null) { SettingsCategory = v; } });
         LinkGitHubNowCommand = new RelayCommand(LinkGitHubNow);
         DismissGitHubLinkPromptCommand = new RelayCommand(() => ShowGitHubLinkPrompt = false);
+        LoadSandboxesCommand = new AsyncRelayCommand(LoadSandboxesAsync);
+        DeleteSandboxRecordCommand = new AsyncRelayCommand<SandboxRecordDto>(DeleteSandboxRecordAsync);
         LoadProjectsCommand = new AsyncRelayCommand(LoadProjectsAsync);
         SelectProjectCommand = new RelayCommand<ProjectDto>(SelectProject);
         SaveProjectCommand = new AsyncRelayCommand(SaveProjectAsync);
@@ -113,6 +115,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // The connected host
             new SettingsCategoryVm("github", "GitHub accounts", "⑂", "github git push credential token connect app scope repo installation secret account"),
             new SettingsCategoryVm("devices", "Devices", "🔑", "paired devices pairing token revoke auth access per-device"),
+            new SettingsCategoryVm("sandboxes", "Sandboxes", "📦", "sandbox vm incus running stopped resume restart delete reap orphan cleanup lifecycle"),
             // Per-project
             new SettingsCategoryVm("projects", "Projects", "📁", "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
         ];
@@ -457,6 +460,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatKeyboard => SettingsCategory == "keyboard";
     public bool CatGitHub => SettingsCategory == "github";
     public bool CatDevices => SettingsCategory == "devices";
+    public bool CatSandboxes => SettingsCategory == "sandboxes";
     public bool CatProjects => SettingsCategory == "projects";
 
     /// <summary>The connected host these host-scoped settings apply to (e.g. GitHub, Devices, Projects).</summary>
@@ -475,11 +479,75 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatKeyboard));
         OnPropertyChanged(nameof(CatGitHub));
         OnPropertyChanged(nameof(CatDevices));
+        OnPropertyChanged(nameof(CatSandboxes));
         OnPropertyChanged(nameof(CatProjects));
         OnPropertyChanged(nameof(ActiveHostName));
         if (value == "projects" && SelectedProject is null)
         {
             _ = LoadProjectsAsync();
+        }
+        else if (value == "sandboxes")
+        {
+            _ = LoadSandboxesAsync();
+        }
+    }
+
+    // ---- Sandboxes: the host's managed VMs (stop-on-close · resume · delete) ----
+    public IAsyncRelayCommand LoadSandboxesCommand { get; }
+    public IAsyncRelayCommand<SandboxRecordDto> DeleteSandboxRecordCommand { get; }
+
+    public System.Collections.ObjectModel.ObservableCollection<SandboxRecordDto> Sandboxes { get; } = [];
+    public bool HasSandboxes => Sandboxes.Count > 0;
+
+    [ObservableProperty] private string _sandboxesStatus = "Open a session on a host to manage its sandboxes.";
+
+    private async Task LoadSandboxesAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => { Sandboxes.Clear(); OnPropertyChanged(nameof(HasSandboxes)); SandboxesStatus = "Open a session on a host to manage its sandboxes."; });
+            return;
+        }
+
+        try
+        {
+            var list = await SandboxManagement.ListAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() =>
+            {
+                Sandboxes.Clear();
+                foreach (var s in list) { Sandboxes.Add(s); }
+                OnPropertyChanged(nameof(HasSandboxes));
+                SandboxesStatus = list.Count == 0
+                    ? "No sandboxes yet — sandboxed sessions appear here (stopped ones stay until you delete them)."
+                    : $"{list.Count} sandbox(es) on {ActiveHostName}.";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SandboxesStatus = "Couldn't load sandboxes: " + ex.Message);
+        }
+    }
+
+    private async Task DeleteSandboxRecordAsync(SandboxRecordDto? sandbox)
+    {
+        var target = ActiveHttpHost();
+        if (target is null || sandbox is null) { return; }
+
+        try
+        {
+            var list = await SandboxManagement.DeleteAsync(target.Value.Url, target.Value.Token, sandbox.SessionId);
+            _dispatcher.Post(() =>
+            {
+                Sandboxes.Clear();
+                foreach (var s in list) { Sandboxes.Add(s); }
+                OnPropertyChanged(nameof(HasSandboxes));
+                SandboxesStatus = $"Deleted the sandbox for '{sandbox.Title}'.";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SandboxesStatus = "Couldn't delete: " + ex.Message);
         }
     }
 

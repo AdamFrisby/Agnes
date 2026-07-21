@@ -65,6 +65,12 @@ var projectsFile = builder.Configuration["Agnes:ProjectsFile"]
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ProjectStore(
     projectsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ProjectStore>()));
 
+// ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
+var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandboxes.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Sessions.SandboxRegistry(
+    sandboxesFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxRegistry>()));
+
 // ---- event store: SQLite if a path is configured, else in-memory ----
 var databasePath = builder.Configuration["Agnes:Database"];
 if (string.IsNullOrWhiteSpace(databasePath))
@@ -365,6 +371,22 @@ app.MapPost("/sandbox/image/rebuild", (HttpContext ctx) =>
     if (images is null) return Results.NotFound();
     _ = images.RebuildAsync();
     return Results.Ok(SandboxImageMapping.Status(images.Status));
+});
+
+// ---- managed sandboxes: list / delete / resume / reap (Settings › Sandboxes) ----
+var sessionMgr = app.Services.GetService<Agnes.Host.Sessions.SessionManager>();
+
+app.MapGet("/sandboxes", (HttpContext ctx) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : sessionMgr is null ? Results.NotFound()
+    : Results.Ok(sessionMgr.ListSandboxes()));
+
+app.MapDelete("/sandboxes/{sessionId}", async (HttpContext ctx, string sessionId) =>
+{
+    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (sessionMgr is null) return Results.NotFound();
+    await sessionMgr.DeleteSandboxAsync(sessionId);
+    return Results.Ok(sessionMgr.ListSandboxes());
 });
 
 // ---- credentials: link GitHub (App-manifest flow) so sandboxes can push with scoped tokens ----
