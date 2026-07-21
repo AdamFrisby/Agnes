@@ -291,9 +291,18 @@ public sealed class SessionViewModel : ObservableObject
             {
                 CancelCommand.RaiseCanExecuteChanged();
                 RaiseActivity();
+                Raise(nameof(SendGestureHint));
             }
         }
     }
+
+    /// <summary>
+    /// Composer hint that spells out what Ctrl+Enter does right now — it sends when idle but QUEUES while a
+    /// turn is running, so the same gesture must not silently mean two different things.
+    /// </summary>
+    public string SendGestureHint => IsTurnActive
+        ? "Ctrl+Enter queues after this turn · Ctrl+Shift+Enter sends now"
+        : "Ctrl+Enter to send";
 
     /// <summary>High-level session state, derived from what's in flight.</summary>
     public SessionActivity Activity =>

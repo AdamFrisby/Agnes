@@ -133,7 +133,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ActivateTabByIndexCommand = new RelayCommand<string>(ActivateTabByIndex);
         TogglePaletteCommand = new RelayCommand(() => IsPaletteOpen = !IsPaletteOpen);
         RunPaletteItemCommand = new RelayCommand<PaletteItem>(RunPaletteItem);
-        RunTopPaletteItemCommand = new RelayCommand(() => RunPaletteItem(PaletteItems.FirstOrDefault()));
+        RunTopPaletteItemCommand = new RelayCommand(RunSelectedPaletteItem);
+        MovePaletteSelectionCommand = new RelayCommand<string>(MovePaletteSelection);
         ClosePaletteCommand = new RelayCommand(() => IsPaletteOpen = false);
         OpenUpdateCommand = new RelayCommand(OpenUpdate);
         SetScaleCommand = new RelayCommand<string>(s =>
@@ -1375,6 +1376,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public ObservableCollection<PaletteItem> PaletteItems { get; } = [];
     public IRelayCommand TogglePaletteCommand { get; private set; } = null!;
     public IRelayCommand<PaletteItem> RunPaletteItemCommand { get; private set; } = null!;
+    public IRelayCommand<string> MovePaletteSelectionCommand { get; private set; } = null!;
+
+    /// <summary>Keyboard-highlighted palette row; Up/Down move it and Enter runs it (defect #9).</summary>
+    [ObservableProperty]
+    private int _selectedPaletteIndex;
 
     partial void OnPaletteQueryChanged(string value) => RebuildPalette();
 
@@ -1404,6 +1410,30 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             PaletteItems.Add(item);
         }
+
+        // Keep a valid highlight after every filter so Enter always has a target and the list shows selection.
+        SelectedPaletteIndex = PaletteItems.Count > 0 ? 0 : -1;
+    }
+
+    private void MovePaletteSelection(string? direction)
+    {
+        if (PaletteItems.Count == 0)
+        {
+            return;
+        }
+
+        var delta = direction == "up" ? -1 : 1;
+        var next = SelectedPaletteIndex + delta;
+        // Clamp (no wrap) so Up at the top and Down at the bottom simply stay put.
+        SelectedPaletteIndex = Math.Clamp(next, 0, PaletteItems.Count - 1);
+    }
+
+    private void RunSelectedPaletteItem()
+    {
+        var item = SelectedPaletteIndex >= 0 && SelectedPaletteIndex < PaletteItems.Count
+            ? PaletteItems[SelectedPaletteIndex]
+            : PaletteItems.FirstOrDefault();
+        RunPaletteItem(item);
     }
 
     private void RunPaletteItem(PaletteItem? item)

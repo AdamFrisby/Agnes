@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Linq;
 using Agnes.App.Desktop.ViewModels;
@@ -14,6 +15,11 @@ public partial class MainWindow : Window
     private bool _toolbarWired;
     private int _relocateAttempts;
 
+    // The smallest content size (in unscaled DIPs) we keep the UI at before letting it scroll. Matches the
+    // window's MinWidth/MinHeight so at scale 1 the content fills exactly and never scrolls.
+    private const double MinContentWidth = 720;
+    private const double MinContentHeight = 480;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -22,8 +28,13 @@ public partial class MainWindow : Window
             if (DataContext is MainWindowViewModel vm)
             {
                 vm.PropertyChanged += OnViewModelPropertyChanged;
+                UpdateScaleRoot();
             }
         };
+        // Re-pin the scaled root whenever the window resizes; FontScale changes are handled in
+        // OnViewModelPropertyChanged. Loaded gives us a valid ClientSize for the first pass.
+        SizeChanged += (_, _) => UpdateScaleRoot();
+        Loaded += (_, _) => UpdateScaleRoot();
 
         // Merge the toolbar into the Dock document tab strip so tabs + toolbar share one row. Dock's
         // DocumentTabStrip exposes LeftContent/RightContent slots on either side of the tabs; we move the
@@ -103,6 +114,49 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(MainWindowViewModel.IsPaletteOpen)
             && sender is MainWindowViewModel { IsPaletteOpen: true }
             && this.FindControl<TextBox>("PaletteBox") is { } box)
+        {
+            Dispatcher.UIThread.Post(() => box.Focus());
+        }
+        else if (e.PropertyName == nameof(MainWindowViewModel.FontScale))
+        {
+            UpdateScaleRoot();
+        }
+    }
+
+    // Pin the scaled content to (client / scale), floored at the minimum content size. When the scaled
+    // content exceeds the viewport (large scale on a small window), the wrapping ScrollViewer lets the user
+    // reach it instead of it being clipped; otherwise the content fills the window exactly.
+    private void UpdateScaleRoot()
+    {
+        if (this.FindControl<Control>("ScaleRoot") is not { } root)
+        {
+            return;
+        }
+
+        var scale = (DataContext as MainWindowViewModel)?.FontScale ?? 1.0;
+        if (scale <= 0)
+        {
+            scale = 1.0;
+        }
+
+        var w = Math.Max(ClientSize.Width / scale, MinContentWidth);
+        var h = Math.Max(ClientSize.Height / scale, MinContentHeight);
+        if (Math.Abs(root.Width - w) > 0.5)
+        {
+            root.Width = w;
+        }
+
+        if (Math.Abs(root.Height - h) > 0.5)
+        {
+            root.Height = h;
+        }
+    }
+
+    // Focus the global-search box as soon as its flyout opens, so typing starts immediately (the bar that
+    // opens it only looks like an input — the real one lives in the popover).
+    private void OnGlobalSearchAttached(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is TextBox box)
         {
             Dispatcher.UIThread.Post(() => box.Focus());
         }

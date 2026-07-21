@@ -73,6 +73,24 @@
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml" />
+        <!-- Keyboard focus is otherwise invisible on the app's many chromeless (BorderThickness=0,
+             transparent) buttons and list rows. A global focus adorner draws an accent outline in the
+             adorner layer on KEYBOARD focus only (Avalonia shows it for focus-visible, not pointer),
+             overriding nothing the control sets locally. -->
+        <Style Selector="Button">
+            <Setter Property="FocusAdorner">
+                <FocusAdornerTemplate>
+                    <Border BorderBrush="{DynamicResource Accent}" BorderThickness="2" CornerRadius="6" Margin="-2" />
+                </FocusAdornerTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="ListBoxItem">
+            <Setter Property="FocusAdorner">
+                <FocusAdornerTemplate>
+                    <Border BorderBrush="{DynamicResource Accent}" BorderThickness="2" CornerRadius="6" Margin="-1" />
+                </FocusAdornerTemplate>
+            </Setter>
+        </Style>
         <!-- Recycle document views per data item (by reference), so each document — and each document
              TYPE — gets its own view. Fixes Dock handing a newly-activated document of a different type
              the previously-built view (a SettingsTabView tab showed a SessionTabView). Applies to every

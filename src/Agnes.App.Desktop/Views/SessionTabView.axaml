@@ -29,11 +29,16 @@
             <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
             <Setter Property="FontStyle" Value="Italic" />
         </Style>
-        <!-- Per-message "⋯" actions: hidden until the pointer is over that message (Opacity keeps layout stable). -->
+        <!-- Per-message "⋯" actions: hidden until the pointer is over the message OR keyboard focus is
+             within it (Opacity keeps layout stable). Touch/mouse users also get the same actions via the
+             bubble's right-click / long-press ContextFlyout, so the menu is reachable without hover. -->
         <Style Selector="Border.msg Button.rowmenu">
             <Setter Property="Opacity" Value="0" />
         </Style>
         <Style Selector="Border.msg:pointerover Button.rowmenu">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="Border.msg:focus-within Button.rowmenu">
             <Setter Property="Opacity" Value="1" />
         </Style>
         <!-- Compact tool rows are chromeless; a faint hover fill keeps them discoverable as clickable. -->
@@ -100,15 +105,21 @@
         <Border Grid.Row="0" IsVisible="{Binding ShowStatusBar}" Background="{DynamicResource Panel}"
                 BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="16,7">
             <StackPanel Spacing="0">
-                <Grid ColumnDefinitions="Auto,*,Auto">
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <!-- Left cluster is a flexible, clipped column so long host/agent names or many tags can
+                     never push the action buttons (right, Auto) off-screen; the metadata yields first. -->
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                                HorizontalAlignment="Left" ClipToBounds="True">
                         <Border Classes="dot" Classes.on="{Binding IsConnected}" Width="8" Height="8"
                                 CornerRadius="4" VerticalAlignment="Center" />
                         <TextBlock Text="★" Foreground="{DynamicResource Accent}" FontSize="12" VerticalAlignment="Center"
                                    IsVisible="{Binding Pinned}" ToolTip.Tip="Pinned" />
-                        <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" MaxWidth="240" TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding HostName}" />
                         <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" IsVisible="{Binding IsLive}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding AgentName}" Foreground="{DynamicResource FgDim}" FontSize="12" IsVisible="{Binding IsLive}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding AgentName}" Foreground="{DynamicResource FgDim}" FontSize="12" IsVisible="{Binding IsLive}"
+                                   VerticalAlignment="Center" MaxWidth="200" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding ConnectionText}" Foreground="{DynamicResource FgFaint}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
                         <Border Classes="chip" Classes.attention="{Binding NeedsAttention}" IsVisible="{Binding IsLive}"
                                 BorderThickness="1" CornerRadius="9" Padding="8,2" VerticalAlignment="Center" Margin="2,0,0,0">
@@ -135,7 +146,7 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                         <Button Command="{Binding Session.ToggleToolsCommand}" IsVisible="{Binding Session.HasTools}"
                                 Content="Tool output" Background="Transparent" Foreground="{DynamicResource FgDim}"
                                 BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
@@ -163,12 +174,51 @@
                         <TextBlock Text="{Binding UsageSummary}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                    VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
                                    IsVisible="{Binding UsageSummary, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
-                        <!-- Autonomous: agent runs tools without asking -->
-                        <Border IsVisible="{Binding Session.IsAutonomous}" Background="{DynamicResource AccentSoft}"
+                        <!-- Autonomous: agent runs tools without asking. Clickable so it isn't just a passive
+                             badge — the flyout explains it and surfaces the live lever (switch the agent's
+                             mode to one that pauses for approval, or stop the current turn). Defect #3. -->
+                        <Button IsVisible="{Binding Session.IsAutonomous}" Background="{DynamicResource AccentSoft}"
                                 BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="6" Padding="9,3"
-                                VerticalAlignment="Center" ToolTip.Tip="This session runs tool calls without asking for approval.">
+                                VerticalAlignment="Center" AutomationProperties.Name="Autonomy"
+                                ToolTip.Tip="This session runs tool calls without asking. Click to change how it asks.">
                             <TextBlock Text="⚡ autonomous" Foreground="{DynamicResource Accent}" FontSize="11" FontWeight="SemiBold" />
-                        </Border>
+                            <Button.Flyout>
+                                <Flyout Placement="Bottom">
+                                    <StackPanel Width="300" Spacing="10" DataContext="{Binding Session}">
+                                        <TextBlock Text="Running autonomously" Foreground="{DynamicResource Fg}"
+                                                   FontWeight="SemiBold" FontSize="13" />
+                                        <TextBlock Text="The agent runs tool calls without asking for approval."
+                                                   Foreground="{DynamicResource FgDim}" FontSize="12" TextWrapping="Wrap" />
+                                        <!-- Live lever: switch the agent to a mode that pauses for approval. -->
+                                        <StackPanel Spacing="6" IsVisible="{Binding HasModes}">
+                                            <TextBlock Text="Switch mode (takes effect immediately)"
+                                                       Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                            <ItemsControl ItemsSource="{Binding Modes}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Button Content="{Binding Name}"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.SetModeCommand}"
+                                                                CommandParameter="{Binding}" Margin="0,0,6,6"
+                                                                Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                                CornerRadius="7" Padding="10,4" FontSize="12"
+                                                                AutomationProperties.Name="Switch mode" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <TextBlock Text="{Binding CurrentModeName, StringFormat='Current mode: {0}'}"
+                                                       Foreground="{DynamicResource Accent}" FontSize="11" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <TextBlock IsVisible="{Binding !HasModes}"
+                                                   Text="This agent doesn't expose live modes. Use Stop to halt the current turn, or Fork to start a fresh session that asks for approval."
+                                                   Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
 
                         <!-- Sandbox: isolation status + lifecycle -->
                         <Button IsVisible="{Binding Session.HasSandbox}" Background="Transparent" Foreground="{DynamicResource FgDim}"
@@ -762,6 +812,16 @@
 
                                     <DataTemplate DataType="tr:MessageBubbleItem">
                                         <Border Classes="msg" Classes.user="{Binding IsUser}" CornerRadius="12" Padding="14,10" Margin="0,6">
+                                            <!-- Right-click / long-press anywhere on the bubble → the same per-message
+                                                 actions, so touch and mouse reach them without the hover-only ⋯. -->
+                                            <Border.ContextFlyout>
+                                                <MenuFlyout>
+                                                    <MenuItem Header="Copy message" Click="OnCopyMessage" />
+                                                    <MenuItem Header="View from here"
+                                                              Command="{Binding $parent[ItemsControl].DataContext.RewindToCommand}"
+                                                              CommandParameter="{Binding}" />
+                                                </MenuFlyout>
+                                            </Border.ContextFlyout>
                                             <StackPanel>
                                                 <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,3">
                                                     <TextBlock Grid.Column="0" Text="{Binding Speaker}" FontSize="11"
@@ -1087,8 +1147,9 @@
                                 </WrapPanel>
 
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                                    <TextBox Grid.Column="0" x:Name="Composer" Text="{Binding PromptText, Mode=TwoWay}"
-                                             Watermark="Message the agent…    (Ctrl+Enter to send · drag files or paste an image/file to attach)"
+                                    <StackPanel Grid.Column="0" Spacing="4">
+                                    <TextBox x:Name="Composer" Text="{Binding PromptText, Mode=TwoWay}"
+                                             Watermark="Message the agent…    (drag files or paste an image/file to attach)"
                                              AcceptsReturn="True" TextWrapping="Wrap"
                                              MinHeight="88" MaxHeight="280" VerticalContentAlignment="Top"
                                              ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -1103,6 +1164,11 @@
                                             <KeyBinding Gesture="Alt+Down" Command="{Binding RecallNextCommand}" />
                                         </TextBox.KeyBindings>
                                     </TextBox>
+                                    <!-- Live hint: Ctrl+Enter sends when idle but QUEUES while a turn runs, so
+                                         the gesture's current meaning is always spelled out (defect #5). -->
+                                    <TextBlock Text="{Binding SendGestureHint}" Foreground="{DynamicResource FgFaint}"
+                                               FontSize="10" Margin="2,0,0,0" />
+                                    </StackPanel>
 
                                     <StackPanel Grid.Column="1" VerticalAlignment="Top" Spacing="6" Width="92">
                                         <!-- Idle: Send -->

@@ -57,12 +57,18 @@
         </Style>
     </Window.Styles>
 
-    <!-- Whole-UI zoom (accessibility / density) via a layout transform. -->
+    <!-- Whole-UI zoom (accessibility / density) via a layout transform. The scaled tree is wrapped in a
+         ScrollViewer so that when a large scale on a small window pushes content past the viewport, it can
+         be scrolled to rather than being silently clipped. ScaleRoot's size is pinned to (client / scale)
+         with a floor in code-behind (see MainWindow.axaml.cs), so content fills the window when it fits and
+         scrolls when it doesn't. -->
+    <ScrollViewer x:Name="ScaleScroller"
+                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
     <LayoutTransformControl>
         <LayoutTransformControl.LayoutTransform>
             <ScaleTransform ScaleX="{Binding FontScale}" ScaleY="{Binding FontScale}" />
         </LayoutTransformControl.LayoutTransform>
-    <Grid RowDefinitions="Auto,*">
+    <Grid x:Name="ScaleRoot" RowDefinitions="Auto,*">
 
         <!-- Top bar (fallback): LeftBar/RightBar are relocated into the Dock tab strip at runtime and this
              whole row is collapsed once that succeeds (see MainWindow.axaml.cs). -->
@@ -89,7 +95,10 @@
                     <Button.Flyout>
                         <Flyout Placement="Bottom">
                             <StackPanel Width="420" Spacing="8">
+                                <!-- Auto-focus the real search box the moment the popover opens, so clicking
+                                     the bar and typing is one motion, not two separate inputs (defect #9). -->
                                 <TextBox Text="{Binding GlobalSearchQuery, Mode=TwoWay}" Watermark="Search across all sessions…"
+                                         AttachedToVisualTree="OnGlobalSearchAttached"
                                          Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                                          BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
                                          AutomationProperties.Name="Search query across sessions" />
@@ -286,30 +295,45 @@
                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                              BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8">
                         <TextBox.KeyBindings>
+                            <!-- Focus stays in the box for typing; Up/Down move the highlighted row and Enter
+                                 runs it, so the palette is fully keyboard-navigable (defect #9). -->
+                            <KeyBinding Gesture="Down" Command="{Binding MovePaletteSelectionCommand}" CommandParameter="down" />
+                            <KeyBinding Gesture="Up" Command="{Binding MovePaletteSelectionCommand}" CommandParameter="up" />
                             <KeyBinding Gesture="Enter" Command="{Binding RunTopPaletteItemCommand}" />
                             <KeyBinding Gesture="Escape" Command="{Binding ClosePaletteCommand}" />
                         </TextBox.KeyBindings>
                     </TextBox>
-                    <ScrollViewer MaxHeight="380" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding PaletteItems}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Command="{Binding $parent[ItemsControl].DataContext.RunPaletteItemCommand}"
-                                            CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                            HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                                            Padding="10,7" CornerRadius="7" Cursor="Hand">
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="13" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Hint}" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
-                                        </Grid>
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                    <ListBox MaxHeight="380" ItemsSource="{Binding PaletteItems}"
+                             SelectedIndex="{Binding SelectedPaletteIndex, Mode=TwoWay}"
+                             Background="Transparent" BorderThickness="0"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.Styles>
+                            <Style Selector="ListBoxItem">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="CornerRadius" Value="7" />
+                            </Style>
+                            <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+                                <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+                            </Style>
+                        </ListBox.Styles>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Button Command="{Binding $parent[ItemsControl].DataContext.RunPaletteItemCommand}"
+                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                        Padding="10,7" CornerRadius="7" Cursor="Hand">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="13" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Hint}" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </StackPanel>
             </Border>
         </Border>
     </Grid>
     </LayoutTransformControl>
+    </ScrollViewer>
 </Window>
