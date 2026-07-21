@@ -1328,18 +1328,29 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         var workingDirectory = string.IsNullOrWhiteSpace(doc.WorkingDirectory) ? DefaultWorkingDirectory : doc.WorkingDirectory.Trim();
         RememberWorkingDirectory(workingDirectory);
-        var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode);
-        var view = await doc.Host.SubscribeAsync(info.SessionId);
-        var title = ProjectTitle(info.WorkingDirectory, displayName);
-        _dispatcher.Post(() =>
+        try
         {
-            doc.AgentName = displayName;
-            doc.AttachSession(CreateSession(doc.Host!, view, title));
-            doc.Title = title;
-            doc.Descriptor = new SessionDescriptor(
-                doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, title);
-            SaveState();
-        });
+            _dispatcher.Post(() => doc.StatusText = $"Starting {displayName}…");
+            var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode);
+            var view = await doc.Host.SubscribeAsync(info.SessionId);
+            var title = ProjectTitle(info.WorkingDirectory, displayName);
+            _dispatcher.Post(() =>
+            {
+                doc.AgentName = displayName;
+                doc.AttachSession(CreateSession(doc.Host!, view, title));
+                doc.Title = title;
+                doc.Descriptor = new SessionDescriptor(
+                    doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, title);
+                SaveState();
+            });
+        }
+        catch (Exception ex)
+        {
+            // A server-side failure opening the session (e.g. the sandbox image bake failing) must not
+            // crash the whole app — surface it on the tab and leave the agent picker up so the user can
+            // fix the cause and retry.
+            _dispatcher.Post(() => doc.StatusText = "Couldn't start session: " + ex.Message);
+        }
     }
 
     // A tab is named for the project it works on (its working-directory folder), not the agent —

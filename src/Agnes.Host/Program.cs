@@ -9,7 +9,10 @@ using Agnes.Protocol;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSignalR();
+// Surface the real server-side exception message to the client (this is a local, single-user host, so
+// there's no third party to leak internals to) — otherwise hub failures arrive as an opaque
+// "An unexpected error occurred" and can't be diagnosed from the UI.
+builder.Services.AddSignalR(o => o.EnableDetailedErrors = true);
 
 // CORS for a browser-hosted frontend (Uno WASM) reaching the hub cross-origin. The web client
 // served from this same origin needs no CORS; only configure origins when it's hosted elsewhere.
