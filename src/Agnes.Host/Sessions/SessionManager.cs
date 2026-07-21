@@ -82,6 +82,9 @@ public sealed class SessionManager : IAsyncDisposable
 
     // The broker asks whether a sandboxed push may proceed: "Trust" grants auto-allow; "Ask" surfaces
     // a permission card in the session and waits for the user.
+    // Ask-once-per-repository consent (prompts once per repo, remembers the decision for the session).
+    private readonly GitConsentCache _gitConsent = new();
+
     private async Task<bool> OnGitCredentialAuthorizeAsync(CredentialGrant grant, CredentialRequest request)
     {
         if (grant.SessionId is null || !_sessions.TryGetValue(grant.SessionId, out var session))
@@ -89,8 +92,8 @@ public sealed class SessionManager : IAsyncDisposable
             return false;
         }
 
-        return string.Equals(grant.Mode, "Trust", StringComparison.OrdinalIgnoreCase)
-            || await session.RequestGitPermissionAsync(request.Host, request.Repo).ConfigureAwait(false);
+        return await _gitConsent.DecideAsync(grant.SessionId, request.Host, request.Repo, grant.Mode,
+            () => session.RequestGitPermissionAsync(request.Host, request.Repo)).ConfigureAwait(false);
     }
 
     // A sandboxed agent obtained (or was denied) a brokered credential — record it in the session log.
@@ -331,20 +334,29 @@ public sealed class SessionManager : IAsyncDisposable
         if (_credentialBroker is null || _credentialListener is null
             || string.IsNullOrWhiteSpace(gitCredentialMode) || string.Equals(gitCredentialMode, "Off", StringComparison.OrdinalIgnoreCase))
         {
-            return;
+            return; // explicit opt-out: no credential helper in the sandbox at all.
         }
 
+        // Which host to broker for: the working dir's origin if it has one, else GitHub (so the helper
+        // is present even before anything is cloned — e.g. the agent clones a private repo into an empty
+        // working dir). We deliberately DON'T scope the grant to the origin repo: git asks for a
+        // credential the same way for clone/fetch/push and for any repo, so the grant covers the whole
+        // host ("*") and each distinct repo is gated once by the ask-once-per-repo consent below.
         var remote = await _git.GetRemoteUrlAsync(hostWorkingDirectory, cancellationToken).ConfigureAwait(false);
-        if (!GitRemote.TryParse(remote, out var host, out var repo))
+        var host = GitRemote.TryParse(remote, out var remoteHost, out _) ? remoteHost : "github.com";
+
+        // Nothing to broker if no account is linked for this host — skip the helper (the first-run link
+        // prompt handles onboarding) rather than install a helper that can only ever fail.
+        if (!_credentialListener.HasSourceFor(host))
         {
-            _logger.LogInformation("Session {SessionId}: git credentials requested but no parseable origin remote; skipping.", sessionId);
+            _logger.LogInformation("Session {SessionId}: no linked credential source for {Host}; git helper not installed.", sessionId, host);
             return;
         }
 
         var (userName, userEmail) = await _git.GetIdentityAsync(hostWorkingDirectory, cancellationToken).ConfigureAwait(false);
 
         var mode = string.Equals(gitCredentialMode, "Trust", StringComparison.OrdinalIgnoreCase) ? "Trust" : "Ask";
-        var token = _credentialBroker.Register(new CredentialGrant(sessionId, host, repo, mode));
+        var token = _credentialBroker.Register(new CredentialGrant(sessionId, host, "*", mode));
         _credentialTokenBySession[sessionId] = token;
 
         env["AGNES_GIT_HOST"] = _credentialListener.AdvertiseHost;
@@ -353,7 +365,7 @@ public sealed class SessionManager : IAsyncDisposable
 
         files.Add(new SandboxCredentialFile(GitCredentialHelper.HelperHomeRelativePath, GitCredentialHelper.Script));
         files.Add(new SandboxCredentialFile(".gitconfig", GitCredentialHelper.GitConfig(sandbox.HomeDirectory, userName, userEmail)));
-        _logger.LogInformation("Session {SessionId}: git push to {Repo} on {Host} brokered ({Mode}).", sessionId, repo, host, mode);
+        _logger.LogInformation("Session {SessionId}: GitHub access on {Host} brokered ({Mode}, per-repo consent).", sessionId, host, mode);
     }
 
     /// <summary>Writes a host (non-sandbox) session's RunAt=Host MCP config to a temp file for the CLI flag.</summary>
@@ -481,6 +493,8 @@ public sealed class SessionManager : IAsyncDisposable
         {
             _credentialBroker?.Unregister(credentialToken);
         }
+
+        _gitConsent.Forget(sessionId); // drop this session's per-repo git consents.
 
         if (_sandboxBySession.TryRemove(sessionId, out var sandbox))
         {

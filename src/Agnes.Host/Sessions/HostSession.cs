@@ -104,11 +104,11 @@ internal sealed class HostSession : IAsyncDisposable
         var target = string.IsNullOrEmpty(repo) ? host : $"{repo}";
         var options = new[]
         {
-            new PermissionOption("allow", "Allow push", PermissionOptionKind.AllowOnce),
+            new PermissionOption("allow", "Allow", PermissionOptionKind.AllowOnce),
             new PermissionOption("deny", "Deny", PermissionOptionKind.RejectOnce),
         };
         await AppendAndPublishAsync(new PermissionRequestedEvent(requestId, string.Empty,
-            $"Allow the sandboxed agent to push to {target}?", options)).ConfigureAwait(false);
+            $"Allow the sandboxed agent to use your GitHub account for {target}? (clone, fetch and push — asked once for this repository)", options)).ConfigureAwait(false);
 
         bool allowed;
         try

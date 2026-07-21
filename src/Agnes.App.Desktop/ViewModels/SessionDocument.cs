@@ -118,7 +118,7 @@ public sealed partial class SessionDocument : Document
     [NotifyPropertyChangedFor(nameof(GitCredOff))]
     [NotifyPropertyChangedFor(nameof(GitCredAsk))]
     [NotifyPropertyChangedFor(nameof(GitCredTrust))]
-    private string _gitCredentialMode = "Off";
+    private string _gitCredentialMode = "Ask";
 
     public bool GitCredOff => GitCredentialMode == "Off";
     public bool GitCredAsk => GitCredentialMode == "Ask";

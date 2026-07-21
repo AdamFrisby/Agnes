@@ -404,12 +404,12 @@
                             <TextBlock Grid.Column="0" Text="⑂" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" Text="Git push" />
-                                    <ctl:InfoHint Description="Whether a sandboxed agent may git push. Off: it can't push. Ask: it may push, but you approve each push with a card. Trust: it may push without asking. In every mode the credential is a scoped, short-lived, repo-specific token held on the host."
-                                                  Security="The token never enters the sandbox and is scoped to this repo, so even in Trust mode a push can't reach your other repos." />
+                                    <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" Text="GitHub access" />
+                                    <ctl:InfoHint Description="Whether a sandboxed agent may use your linked GitHub account to clone, fetch and push. Off: no credentials. Ask: allowed, but you approve each repository once (the first time the agent touches it). Trust: allowed for every repo without asking. The credential is a scoped, short-lived, per-repo token minted on the host."
+                                                  Security="The token never enters the sandbox and is scoped to the specific repo requested, so access to one repo can't reach your others. Cloning/pushing only works for repos your linked account can access." />
                                 </StackPanel>
                                 <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
-                                           Text="Whether the agent may push, via a scoped credential brokered by the host." />
+                                           Text="Let the agent clone/push private repos — approved once per repository." />
                             </StackPanel>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                 <Button Content="Off" Command="{Binding SetGitCredentialModeCommand}" CommandParameter="Off"

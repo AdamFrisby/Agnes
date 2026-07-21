@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Agnes.Abstractions;
 using Agnes.Host.Hosting;
+using Agnes.Host.Sessions;
 using Agnes.Sandbox.Credentials;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -113,6 +114,63 @@ public class CredentialBrokerTests
         var reply = await AskAsync(listener.Port, new { token, protocol = "https", host = "github.com", path = "a/b.git" });
 
         Assert.Equal("no credential", reply.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public void Has_source_for_reflects_linked_accounts()
+    {
+        var grants = new CredentialBrokerRegistry();
+        var linked = new CredentialBrokerListener(grants, Sources(), IPAddress.Loopback, 0, "127.0.0.1", NullLogger<CredentialBrokerListener>.Instance);
+        var unlinked = new CredentialBrokerListener(grants, new CredentialSourceRegistry(), IPAddress.Loopback, 0, "127.0.0.1", NullLogger<CredentialBrokerListener>.Instance);
+
+        Assert.True(linked.HasSourceFor("github.com"));
+        Assert.False(unlinked.HasSourceFor("github.com"));
+    }
+
+    [Fact]
+    public async Task Broad_grant_serves_any_repo_on_the_host()
+    {
+        // The ask-once-per-repo model registers a host-wide "*" grant, so cloning ANY private repo the
+        // account can access works — the listener issues a credential for whatever repo git names.
+        var grants = new CredentialBrokerRegistry();
+        var token = grants.Register(new CredentialGrant("s1", "github.com", "*", "Trust"));
+        await using var listener = new CredentialBrokerListener(grants, Sources(), IPAddress.Loopback, 0, "127.0.0.1", NullLogger<CredentialBrokerListener>.Instance);
+        listener.Start();
+
+        foreach (var repo in new[] { "AdamFrisby/Agnes", "someone/entirely-different" })
+        {
+            var reply = await AskAsync(listener.Port, new { token, protocol = "https", host = "github.com", path = repo + ".git" });
+            Assert.Equal("secret-token", reply.GetProperty("password").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task Consent_is_asked_once_per_repo_and_remembered()
+    {
+        var cache = new GitConsentCache();
+        var asks = new List<string?>();
+        Task<bool> Ask(string? repo) { asks.Add(repo); return Task.FromResult(true); }
+
+        // First touch of each repo prompts; subsequent touches of the same repo don't.
+        Assert.True(await cache.DecideAsync("s1", "github.com", "a/b", "Ask", () => Ask("a/b")));
+        Assert.True(await cache.DecideAsync("s1", "github.com", "a/b", "Ask", () => Ask("a/b")));
+        Assert.True(await cache.DecideAsync("s1", "github.com", "c/d", "Ask", () => Ask("c/d")));
+        Assert.Equal(new[] { "a/b", "c/d" }, asks); // asked once per distinct repo
+
+        // A denial is remembered too (no re-nagging).
+        Assert.False(await cache.DecideAsync("s2", "github.com", "x/y", "Ask", () => Task.FromResult(false)));
+        var reAsked = false;
+        Assert.False(await cache.DecideAsync("s2", "github.com", "x/y", "Ask", () => { reAsked = true; return Task.FromResult(true); }));
+        Assert.False(reAsked);
+
+        // Trust never prompts; Forget makes a re-opened session ask again.
+        var trustAsked = false;
+        Assert.True(await cache.DecideAsync("s3", "github.com", "a/b", "Trust", () => { trustAsked = true; return Task.FromResult(false); }));
+        Assert.False(trustAsked);
+
+        cache.Forget("s1");
+        Assert.True(await cache.DecideAsync("s1", "github.com", "a/b", "Ask", () => Ask("a/b")));
+        Assert.Equal(new[] { "a/b", "c/d", "a/b" }, asks); // s1/a/b prompts again after Forget
     }
 
     [Fact]

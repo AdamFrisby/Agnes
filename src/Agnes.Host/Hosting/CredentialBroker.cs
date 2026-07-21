@@ -152,6 +152,10 @@ public sealed class CredentialBrokerListener : IAsyncDisposable
     /// <summary>The bound port (may be ephemeral when constructed with port 0).</summary>
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
+    /// <summary>Whether a credential source (a linked account) can serve this host — i.e. it's worth
+    /// wiring the git helper into a sandbox. False means no GitHub account is linked yet.</summary>
+    public bool HasSourceFor(string host) => _sources.For(host) is not null;
+
     public void Start()
     {
         _listener.Start();
