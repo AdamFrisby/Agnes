@@ -46,15 +46,34 @@ public sealed class SimulatedHost : IAgnesHost
         " }\n";
 
     private const string LongAnswer =
-        "The Agent Client Protocol (ACP) is an open, JSON-RPC 2.0 standard that lets any coding " +
-        "agent talk to any editor over stdio, much like the Language Server Protocol did for " +
-        "language tooling. Instead of each editor hand-rolling an integration per agent, ACP " +
-        "defines a small set of methods — initialize, session/new, session/prompt — and a stream " +
-        "of session/update notifications carrying structured events: message and thought chunks, " +
-        "tool calls with status, plans, and permission requests. Because the stream is structured " +
-        "rather than a fixed terminal grid, a client can persist unlimited scrollback, render each " +
-        "event natively at its own size, and reconnect without losing context — which is exactly " +
-        "what Agnes builds on to serve many clients from one host.";
+        """
+        ## Agent Client Protocol (ACP)
+
+        **ACP** is an open, JSON-RPC 2.0 standard that lets any coding agent talk to any editor over
+        stdio — much like the *Language Server Protocol* did for language tooling.
+
+        Instead of each editor hand-rolling an integration per agent, ACP defines a small set of methods:
+
+        - `initialize` — negotiate capabilities
+        - `session/new` — start a session
+        - `session/prompt` — send a turn
+
+        Progress streams back as `session/update` notifications carrying structured events:
+
+        | Event | Carries |
+        | --- | --- |
+        | message chunk | streamed assistant text |
+        | tool call | status + results |
+        | permission | an approval request |
+
+        ```json
+        { "method": "session/prompt", "params": { "sessionId": "s1", "text": "hello" } }
+        ```
+
+        Because the stream is *structured* rather than a fixed terminal grid, a client can persist
+        unlimited scrollback, render each event natively, and reconnect without losing context — which
+        is exactly what Agnes builds on to serve many clients from one host.
+        """;
 
     private readonly ConcurrentDictionary<string, SimSession> _sessions = new();
     private int _counter;

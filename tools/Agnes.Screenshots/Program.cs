@@ -71,9 +71,21 @@ public static class Program
         first.SelectAgentChoiceCommand.Execute(first.Agents!.First(a => a.AdapterId == "opencode"));
         first.StartSessionCommand.Execute(null);
         Pump(() => first.Session is not null);
-        Prompt(first, "In one sentence, what is the Agent Client Protocol?");
-        Pump(() => first.Session!.Items.OfType<MessageBubbleItem>().Count(m => !m.IsUser && !m.IsThought) >= 2);
+        Prompt(first, "Explain the Agent Client Protocol in detail."); // triggers the Markdown-rich answer
+        Pump(() => first.Session!.Items.OfType<MessageBubbleItem>().Any(m => m.IsLong)); // wait for the full answer
+        Settle(200);
         Capture(window, "03-conversation.png");
+
+        // 3md) Open the full message in the preview pane to verify Markdown (tables, code, lists) renders there too.
+        var longMsg = first.Session!.Items.OfType<MessageBubbleItem>().FirstOrDefault(m => m.IsLong);
+        if (longMsg is not null)
+        {
+            first.Session!.ShowMessagePreviewCommand.Execute(longMsg);
+            Settle(350);
+            Capture(window, "03md-markdown-preview.png");
+            first.Session!.ClosePreviewCommand.Execute(null);
+            Settle(60);
+        }
 
         // 3t) The same conversation in the light theme (theme applies live).
         vm.Theme = "Light";

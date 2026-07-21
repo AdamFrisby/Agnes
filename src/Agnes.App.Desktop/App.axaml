@@ -5,6 +5,8 @@
              xmlns:dc="using:Dock.Avalonia.Controls"
              xmlns:cr="using:Avalonia.Controls.Recycling"
              xmlns:app="using:Agnes.App.Desktop"
+             xmlns:ae="using:AvaloniaEdit"
+             xmlns:ctb="using:ColorTextBlock.Avalonia"
              x:Class="Agnes.App.Desktop.App">
 
     <Application.Resources>
@@ -77,6 +79,16 @@
              DockControl, including floated HostWindows. -->
         <Style Selector="dc|DockControl">
             <Setter Property="(cr:ControlRecyclingDataTemplate.ControlRecycling)" Value="{StaticResource DockRecycler}" />
+        </Style>
+        <!-- Markdown rendering (Markdown.Avalonia) defaults its monospace font to Consolas — absent on
+             Linux/macOS and fatal to glyph creation. Point both surfaces at the app's mono stack (which
+             ends in a generic 'monospace' fallback that resolves everywhere): inline `code` renders via
+             ColorTextBlock's CTextBlock, and fenced code highlighting via AvaloniaEdit's TextEditor. -->
+        <Style Selector="ctb|CCode">
+            <Setter Property="MonospaceFontFamily" Value="{StaticResource MonoFont}" />
+        </Style>
+        <Style Selector="ae|TextEditor">
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
         </Style>
     </Application.Styles>
 

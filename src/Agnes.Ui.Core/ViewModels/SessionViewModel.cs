@@ -116,7 +116,7 @@ public sealed class SessionViewModel : ObservableObject
         {
             if (m is { IsLong: true })
             {
-                Preview($"{m.Speaker} message", m.Text);
+                Preview($"{m.Speaker} message", m.Text, markdown: true);
             }
         });
 
@@ -894,7 +894,7 @@ public sealed class SessionViewModel : ObservableObject
         }
     }
 
-    private void Preview(string title, string body) => SelectedPreview = new PreviewViewModel(title, body);
+    private void Preview(string title, string body, bool markdown = false) => SelectedPreview = new PreviewViewModel(title, body, markdown);
 
     // ---- search + deep-linking ----
 

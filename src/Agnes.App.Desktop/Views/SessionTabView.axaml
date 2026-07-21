@@ -4,6 +4,7 @@
              xmlns:vm="using:Agnes.Ui.Core.ViewModels"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
              Background="{DynamicResource Bg}"
              FontFamily="{StaticResource UiFont}"
@@ -765,8 +766,10 @@
                                                             ToolTip.Tip="View the conversation as of this point"
                                                             AutomationProperties.Name="Rewind to here" />
                                                 </Grid>
-                                                <TextBlock Text="{Binding CondensedText}" Classes.thought="{Binding IsThought}"
-                                                           Foreground="{DynamicResource Fg}" TextWrapping="Wrap" />
+                                                <!-- Real messages render as Markdown; thoughts stay plain italic. -->
+                                                <mdxaml:MarkdownScrollViewer Markdown="{Binding CondensedText}" IsVisible="{Binding !IsThought}" />
+                                                <TextBlock Text="{Binding CondensedText}" Classes="thought" IsVisible="{Binding IsThought}"
+                                                           TextWrapping="Wrap" />
                                                 <Button Content="Read full message ›" IsVisible="{Binding IsLong}"
                                                         Command="{Binding $parent[ItemsControl].DataContext.ShowMessagePreviewCommand}"
                                                         CommandParameter="{Binding}" HorizontalAlignment="Left" Margin="0,6,0,0"
@@ -1230,9 +1233,13 @@
                                 </ItemsControl>
                             </ScrollViewer>
 
-                            <!-- Plain text preview -->
+                            <!-- Markdown preview (chat messages: tables, code, lists, …) -->
+                            <mdxaml:MarkdownScrollViewer Grid.Row="1" Padding="16" Markdown="{Binding SelectedPreview.Body}"
+                                                         IsVisible="{Binding SelectedPreview.IsMarkdown}" />
+
+                            <!-- Plain, verbatim text preview (tool output, logs) -->
                             <ScrollViewer Grid.Row="1" Padding="16" VerticalScrollBarVisibility="Auto"
-                                          IsVisible="{Binding SelectedPreview.IsText}">
+                                          IsVisible="{Binding SelectedPreview.IsPlainText}">
                                 <TextBlock Text="{Binding SelectedPreview.Body}" Foreground="{DynamicResource Fg}"
                                            FontSize="13" TextWrapping="Wrap" />
                             </ScrollViewer>

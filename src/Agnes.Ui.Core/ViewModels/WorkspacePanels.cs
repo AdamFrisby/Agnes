@@ -12,7 +12,7 @@ public sealed class PreviewViewModel : ObservableObject
 {
     private bool _split;
 
-    public PreviewViewModel(string title, string body)
+    public PreviewViewModel(string title, string body, bool markdown = false)
     {
         Title = title;
         Body = body;
@@ -23,6 +23,8 @@ public sealed class PreviewViewModel : ObservableObject
             HunkCount = Diff.Count(l => l.Kind == DiffLineKind.Hunk);
         }
 
+        // Chat messages render as Markdown; tool/file output is shown verbatim (it's often code or logs).
+        IsMarkdown = markdown && Diff is null;
         ToggleSplitCommand = new RelayCommand(() => IsSplit = !IsSplit);
     }
 
@@ -35,6 +37,12 @@ public sealed class PreviewViewModel : ObservableObject
     public int HunkCount { get; }
     public bool IsDiff => Diff is not null;
     public bool IsText => Diff is null;
+
+    /// <summary>The text body is Markdown (a chat message) → render it formatted, not as plain text.</summary>
+    public bool IsMarkdown { get; }
+
+    /// <summary>Plain, verbatim text preview (tool output, logs) — text that is not Markdown.</summary>
+    public bool IsPlainText => IsText && !IsMarkdown;
 
     /// <summary>Unified vs side-by-side rendering of a diff.</summary>
     public bool IsSplit
