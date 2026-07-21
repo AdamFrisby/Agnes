@@ -87,6 +87,12 @@
         <Style Selector="ctb|CCode">
             <Setter Property="MonospaceFontFamily" Value="{StaticResource MonoFont}" />
         </Style>
+        <!-- Markdown body renders via ColorTextBlock; pin it to the app UI font at normal weight so chat
+             text isn't heavier/bolder than the rest of the app (only **bold** spans should be bold). -->
+        <Style Selector="ctb|CTextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+            <Setter Property="FontWeight" Value="Normal" />
+        </Style>
         <Style Selector="ae|TextEditor">
             <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
         </Style>

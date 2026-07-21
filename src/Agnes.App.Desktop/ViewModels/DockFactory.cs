@@ -26,7 +26,7 @@ public sealed class DockFactory : Factory
             Id = "Documents",
             Title = "Documents",
             IsCollapsable = false,
-            CanCreateDocument = true,
+            CanCreateDocument = false, // the top bar's "New tab" is the single add affordance (no duplicate + on the strip).
             VisibleDockables = CreateList<IDockable>(),
             DocumentFactory = () => NewDocumentFactory?.Invoke(),
         };

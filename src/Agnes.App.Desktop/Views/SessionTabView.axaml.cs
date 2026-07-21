@@ -299,6 +299,16 @@ public partial class SessionTabView : UserControl
         }
     }
 
+    // Copy the whole message's raw text (Markdown) to the clipboard, from the per-message "⋯" menu.
+    private async void OnCopyMessage(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: Agnes.Ui.Core.Transcript.MessageBubbleItem message }
+            && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(message.Text);
+        }
+    }
+
     // Collapses a side column to 0 when hidden (remembering any dragged width) and restores it
     // when shown — so panels appear only when needed, and the GridSplitter keeps its width.
     private static void Apply(ColumnDefinition panel, ColumnDefinition splitter, bool show, ref double remembered)

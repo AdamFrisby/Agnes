@@ -29,6 +29,13 @@
             <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
             <Setter Property="FontStyle" Value="Italic" />
         </Style>
+        <!-- Per-message "⋯" actions: hidden until the pointer is over that message (Opacity keeps layout stable). -->
+        <Style Selector="Border.msg Button.rowmenu">
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+        <Style Selector="Border.msg:pointerover Button.rowmenu">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
         <!-- Compact tool rows are chromeless; a faint hover fill keeps them discoverable as clickable. -->
         <Style Selector="Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource Panel}" />
@@ -754,27 +761,30 @@
                             <ListBox.DataTemplates>
 
                                     <DataTemplate DataType="tr:MessageBubbleItem">
-                                        <Border Classes.user="{Binding IsUser}" CornerRadius="12" Padding="14,10" Margin="0,6">
+                                        <Border Classes="msg" Classes.user="{Binding IsUser}" CornerRadius="12" Padding="14,10" Margin="0,6">
                                             <StackPanel>
                                                 <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,3">
                                                     <TextBlock Grid.Column="0" Text="{Binding Speaker}" FontSize="11"
-                                                               Foreground="{DynamicResource FgFaint}" />
-                                                    <Button Grid.Column="1" Content="⤾ from here"
-                                                            Command="{Binding $parent[ItemsControl].DataContext.RewindToCommand}"
-                                                            CommandParameter="{Binding}" Background="Transparent" Foreground="{DynamicResource FgFaint}"
-                                                            BorderThickness="0" Padding="0" FontSize="10" Cursor="Hand"
-                                                            ToolTip.Tip="View the conversation as of this point"
-                                                            AutomationProperties.Name="Rewind to here" />
+                                                               Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
+                                                    <!-- Per-message actions; only visible on hover (see Border.msg styles). -->
+                                                    <Button Grid.Column="1" Classes="rowmenu" Content="⋯" Background="Transparent"
+                                                            Foreground="{DynamicResource FgDim}" BorderThickness="0" Padding="6,0" FontSize="15"
+                                                            Cursor="Hand" VerticalAlignment="Center" AutomationProperties.Name="Message actions">
+                                                        <Button.Flyout>
+                                                            <MenuFlyout>
+                                                                <MenuItem Header="Copy message" Click="OnCopyMessage" />
+                                                                <MenuItem Header="View from here"
+                                                                          Command="{Binding $parent[ItemsControl].DataContext.RewindToCommand}"
+                                                                          CommandParameter="{Binding}" />
+                                                            </MenuFlyout>
+                                                        </Button.Flyout>
+                                                    </Button>
                                                 </Grid>
-                                                <!-- Real messages render as Markdown; thoughts stay plain italic. -->
-                                                <mdxaml:MarkdownScrollViewer Markdown="{Binding CondensedText}" IsVisible="{Binding !IsThought}" />
-                                                <TextBlock Text="{Binding CondensedText}" Classes="thought" IsVisible="{Binding IsThought}"
-                                                           TextWrapping="Wrap" />
-                                                <Button Content="Read full message ›" IsVisible="{Binding IsLong}"
-                                                        Command="{Binding $parent[ItemsControl].DataContext.ShowMessagePreviewCommand}"
-                                                        CommandParameter="{Binding}" HorizontalAlignment="Left" Margin="0,6,0,0"
-                                                        Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
-                                                        Padding="0" FontSize="12" Cursor="Hand" />
+                                                <!-- Full message rendered as selectable Markdown; thoughts stay plain italic. -->
+                                                <mdxaml:MarkdownScrollViewer Markdown="{Binding Text}" IsVisible="{Binding !IsThought}"
+                                                                             SelectionEnabled="True" />
+                                                <SelectableTextBlock Text="{Binding Text}" Classes="thought" IsVisible="{Binding IsThought}"
+                                                                     TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>

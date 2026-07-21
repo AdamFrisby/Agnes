@@ -71,8 +71,6 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                     <Border Width="10" Height="10" CornerRadius="5" Background="{DynamicResource Accent}" VerticalAlignment="Center" />
                     <TextBlock Text="Agnes" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
-                    <TextBlock Text="simulated host" FontSize="11" Foreground="{DynamicResource FgFaint}"
-                               VerticalAlignment="Center" />
                 </StackPanel>
 
                 <!-- Search across all open sessions -->
