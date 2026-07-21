@@ -782,9 +782,9 @@
                                                 </Grid>
                                                 <!-- Full message rendered as selectable Markdown; thoughts stay plain italic. -->
                                                 <mdxaml:MarkdownScrollViewer Markdown="{Binding Text}" IsVisible="{Binding !IsThought}"
-                                                                             SelectionEnabled="True" />
+                                                                             SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True" />
                                                 <SelectableTextBlock Text="{Binding Text}" Classes="thought" IsVisible="{Binding IsThought}"
-                                                                     TextWrapping="Wrap" />
+                                                                     TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
@@ -1247,13 +1247,14 @@
 
                             <!-- Markdown preview (chat messages: tables, code, lists, …) -->
                             <mdxaml:MarkdownScrollViewer Grid.Row="1" Padding="16" Markdown="{Binding SelectedPreview.Body}"
-                                                         IsVisible="{Binding SelectedPreview.IsMarkdown}" />
+                                                         IsVisible="{Binding SelectedPreview.IsMarkdown}"
+                                                         SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True" />
 
                             <!-- Plain, verbatim text preview (tool output, logs) -->
                             <ScrollViewer Grid.Row="1" Padding="16" VerticalScrollBarVisibility="Auto"
                                           IsVisible="{Binding SelectedPreview.IsPlainText}">
-                                <TextBlock Text="{Binding SelectedPreview.Body}" Foreground="{DynamicResource Fg}"
-                                           FontSize="13" TextWrapping="Wrap" />
+                                <SelectableTextBlock Text="{Binding SelectedPreview.Body}" Foreground="{DynamicResource Fg}"
+                                           FontSize="13" TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                             </ScrollViewer>
                         </Grid>
                     </Border>
