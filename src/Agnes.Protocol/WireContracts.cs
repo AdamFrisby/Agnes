@@ -9,8 +9,25 @@ public sealed record HostInfo(string HostId, string DisplayName, string Version)
 /// <summary>Request to pair a new device using the host's current pairing code.</summary>
 public sealed record PairRequest(string Code, string DeviceName);
 
-/// <summary>A successful pairing — the per-device token to store and connect with (shown once).</summary>
+/// <summary>A successful pairing — the per-device token to store and connect with (shown once).
+/// Shared by every bootstrap method (pairing code, GitHub SSO, keypair).</summary>
 public sealed record PairResponse(string DeviceId, string DeviceName, string Token);
+
+/// <summary>Which bootstrap auth methods a host offers (advertised at <c>GET /auth/methods</c>) so a
+/// client shows only the enabled ones. <see cref="GitHubClientId"/> is a public OAuth client id for the
+/// device flow — never a secret.</summary>
+public sealed record AuthMethods(bool Pairing, bool GitHub, string? GitHubClientId, bool Keypair);
+
+/// <summary>Exchange a GitHub user access token (obtained by the client via the device flow) for an Agnes
+/// device token. The host verifies the identity against its allowlist and discards the GitHub token.</summary>
+public sealed record GitHubExchangeRequest(string Token, string DeviceName);
+
+/// <summary>A one-time challenge nonce for keypair auth (from <c>GET /auth/keypair/challenge</c>).</summary>
+public sealed record KeypairChallenge(string Nonce);
+
+/// <summary>Prove possession of an authorized key: the base64 SPKI public key, the challenge nonce, and
+/// the P-256/SHA-256 signature over the nonce bytes (base64), plus a device name.</summary>
+public sealed record KeypairAuthRequest(string PublicKey, string Nonce, string Signature, string DeviceName);
 
 /// <summary>
 /// Structured usage a host may report for a session: context-window consumption and/or
@@ -78,7 +95,7 @@ public sealed record ProjectDto(
     string? Repo = null);
 
 /// <summary>A device paired with a host (metadata only — never the token).</summary>
-public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt);
+public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt, string? Subject = null);
 
 /// <summary>
 /// An MCP server registered on a host. <see cref="RunAt"/> is "host" (runs on the Agnes host; used

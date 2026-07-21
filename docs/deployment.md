@@ -107,6 +107,44 @@ Manage devices with a valid token:
 For headless / automation, set `Agnes:PairingToken` to a fixed bootstrap token;
 it's always accepted and skips the pairing handshake.
 
+The pairing code is ~40 bits with rotate-after-5-failures — fine on localhost or a
+private overlay, but a thin guard on the open internet. For an internet-facing host,
+prefer **GitHub sign-in** below and turn the pairing code off:
+
+```json
+{ "Agnes": { "Auth": { "Pairing": { "Enabled": false } } } }
+```
+
+## GitHub sign-in (SSO)
+
+Strong auth by GitHub identity + an allowlist — no shared secret, and it works on
+every client (desktop/mobile/web) because it uses GitHub's **device flow** (no
+callback URL). Clients discover it automatically via `GET /auth/methods`.
+
+1. Register a **GitHub OAuth App** (Settings → Developer settings → OAuth Apps) and
+   tick **Enable Device Flow**. Copy its **Client ID** (public — not a secret; no
+   client secret is needed for the device flow).
+2. Configure the host:
+
+   ```json
+   {
+     "Agnes": { "Auth": { "GitHub": {
+       "Enabled": true,
+       "ClientId": "Iv1.abc123…",
+       "AllowedUsers": [ "your-login" ],
+       "AllowedOrgs":  [ "your-org", "your-org/your-team" ]
+     } } }
+   }
+   ```
+
+   A user may connect if their login is in `AllowedUsers` **or** they're an active
+   member of a listed org (or `org/team`). Leave both empty and sign-in stays off.
+3. On a client, **+ Add host** → enter the URL → **Sign in with GitHub**: authorize
+   the shown code at `github.com/login/device`; the host verifies your identity,
+   checks the allowlist, and issues the same per-device token pairing would. The
+   GitHub token is used only to verify and is never stored. (Org/team checks need
+   the `read:org` scope, which the flow requests.)
+
 ## CORS
 
 The web client served from the **same origin** as the host needs no CORS. Only
@@ -124,6 +162,8 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 |-----|---------|
 | `DisplayName` | Host name shown to clients (defaults to the machine name). |
 | `PairingToken` | Optional fixed bootstrap token (headless). |
+| `Auth:Pairing:Enabled` | Turn the pairing-code bootstrap off (default on) — e.g. GitHub-only. |
+| `Auth:GitHub:{Enabled,ClientId,AllowedUsers,AllowedOrgs}` | GitHub-SSO sign-in + allowlist (see above). |
 | `DevicesFile` | Where paired-device hashes are stored. |
 | `AllowedOrigins` / `AllowAllOrigins` | Cross-origin browser policy. |
 | `Database` | SQLite path for the event log (in-memory if empty). |

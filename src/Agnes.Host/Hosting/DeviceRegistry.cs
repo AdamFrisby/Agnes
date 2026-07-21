@@ -26,19 +26,59 @@ public sealed class DeviceRegistry
     private readonly string? _bootstrapToken;
     private readonly string _path;
     private readonly ILogger<DeviceRegistry>? _logger;
+    private readonly bool _pairingEnabled;
     private int _pairingFailures;
 
-    public DeviceRegistry(string? bootstrapToken, string dataFilePath, ILogger<DeviceRegistry>? logger = null)
+    public DeviceRegistry(string? bootstrapToken, string dataFilePath, ILogger<DeviceRegistry>? logger = null, bool pairingEnabled = true)
     {
         _bootstrapToken = string.IsNullOrWhiteSpace(bootstrapToken) ? null : bootstrapToken;
         _path = dataFilePath;
         _logger = logger;
-        PairingCode = GeneratePairingCode();
+        _pairingEnabled = pairingEnabled;
+        // Don't mint (or expose) a pairing code at all when the method is disabled for an internet-facing host.
+        PairingCode = pairingEnabled ? GeneratePairingCode() : string.Empty;
         Load();
     }
 
-    /// <summary>The one-time code a new device presents to pair. Rotates after too many bad attempts.</summary>
+    /// <summary>The one-time code a new device presents to pair. Rotates after too many bad attempts.
+    /// Empty when pairing is disabled.</summary>
     public string PairingCode { get; private set; }
+
+    /// <summary>Whether the pairing-code bootstrap is enabled (may be off in favour of GitHub SSO / keypair).</summary>
+    public bool PairingEnabled => _pairingEnabled;
+
+    /// <summary>
+    /// Mints a durable per-device token for a caller that authenticated by some other means (GitHub SSO,
+    /// keypair, …). <paramref name="subject"/> records who/what it belongs to for the device list/audit
+    /// (e.g. <c>github:alice</c>, <c>key:laptop</c>); <paramref name="kind"/> is the method.
+    /// </summary>
+    public PairingResult IssueDeviceToken(string? deviceName, string subject, string kind)
+    {
+        lock (_gate)
+        {
+            var result = IssueDeviceTokenLocked(deviceName, subject, kind);
+            Save();
+            _logger?.LogInformation("Issued device token for {Subject} via {Kind} ({Id})", subject, kind, result.DeviceId);
+            return result;
+        }
+    }
+
+    // Assumes _gate is held; callers persist + log.
+    private PairingResult IssueDeviceTokenLocked(string? deviceName, string subject, string kind)
+    {
+        var token = GenerateToken();
+        var record = new DeviceRecord
+        {
+            Id = Guid.NewGuid().ToString("n"),
+            Name = string.IsNullOrWhiteSpace(deviceName) ? "device" : deviceName.Trim(),
+            TokenHash = Hash(token),
+            Subject = subject,
+            Kind = kind,
+            PairedAt = DateTimeOffset.UtcNow,
+        };
+        _devices[record.TokenHash] = record;
+        return new PairingResult(record.Id, record.Name, token);
+    }
 
     /// <summary>Validates a bearer token (bootstrap or a paired device); records last-seen.</summary>
     public bool IsValid(string? token)
@@ -67,6 +107,11 @@ public sealed class DeviceRegistry
     {
         lock (_gate)
         {
+            if (!_pairingEnabled)
+            {
+                return null; // pairing-code bootstrap turned off (GitHub SSO / keypair only).
+            }
+
             if (string.IsNullOrWhiteSpace(code) || !FixedTimeEquals(code.Trim(), PairingCode))
             {
                 if (++_pairingFailures >= MaxPairingFailures)
@@ -80,27 +125,19 @@ public sealed class DeviceRegistry
             }
 
             _pairingFailures = 0;
-            var token = GenerateToken();
-            var record = new DeviceRecord
-            {
-                Id = Guid.NewGuid().ToString("n"),
-                Name = string.IsNullOrWhiteSpace(deviceName) ? "device" : deviceName.Trim(),
-                TokenHash = Hash(token),
-                PairedAt = DateTimeOffset.UtcNow,
-            };
-            _devices[record.TokenHash] = record;
+            var result = IssueDeviceTokenLocked(deviceName, subject: "pairing", kind: "pairing");
             // A pairing code is single-use: rotate it so the same code can't pair a second device.
             PairingCode = GeneratePairingCode();
             Save();
-            _logger?.LogInformation("Paired device {Name} ({Id}); new pairing code: {Code}", record.Name, record.Id, PairingCode);
-            return new PairingResult(record.Id, record.Name, token);
+            _logger?.LogInformation("Paired device {Name} ({Id}); new pairing code: {Code}", result.DeviceName, result.DeviceId, PairingCode);
+            return result;
         }
     }
 
     public IReadOnlyList<DeviceInfo> ListDevices()
         => _devices.Values
             .OrderByDescending(d => d.PairedAt)
-            .Select(d => new DeviceInfo(d.Id, d.Name, d.PairedAt, d.LastSeenAt))
+            .Select(d => new DeviceInfo(d.Id, d.Name, d.PairedAt, d.LastSeenAt, d.Subject))
             .ToArray();
 
     public bool Revoke(string deviceId)
@@ -196,6 +233,8 @@ public sealed class DeviceRegistry
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
         public string TokenHash { get; set; } = "";
+        public string? Subject { get; set; }   // who/what the token belongs to (github:login, key:label, pairing)
+        public string? Kind { get; set; }       // the bootstrap method that minted it
         public DateTimeOffset PairedAt { get; set; }
         public DateTimeOffset? LastSeenAt { get; set; }
     }

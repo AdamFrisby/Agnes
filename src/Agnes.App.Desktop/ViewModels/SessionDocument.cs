@@ -26,6 +26,7 @@ public sealed partial class SessionDocument : Document
         // Disabled until the URL field is more than the "https://" prefill, so Connect can't fire on junk.
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this),
             () => NewHostUrl.Trim().Length > "https://".Length);
+        SignInWithGitHubCommand = new AsyncRelayCommand(() => _controller.SignInWithGitHubAsync(this));
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
@@ -106,6 +107,33 @@ public sealed partial class SessionDocument : Document
     [ObservableProperty]
     private bool _showAddHost;
 
+    // ---- auth methods the chosen host offers (discovered from GET /auth/methods) ----
+    [ObservableProperty]
+    private bool _hostSupportsGitHub;
+
+    [ObservableProperty]
+    private bool _hostSupportsPairing = true;
+
+    [ObservableProperty]
+    private bool _isGitHubAuthorizing;
+
+    [ObservableProperty]
+    private string _gitHubUserCode = string.Empty;
+
+    [ObservableProperty]
+    private string _gitHubVerificationUri = string.Empty;
+
+    /// <summary>The host's public GitHub OAuth client id (from discovery), used to run the device flow.</summary>
+    public string? GitHubClientId { get; set; }
+
+    partial void OnShowAddHostChanged(bool value)
+    {
+        if (value)
+        {
+            _ = _controller.DiscoverAuthMethodsAsync(this);
+        }
+    }
+
     /// <summary>True while connecting to a chosen host, so the picker can disable + show progress (defect #8).</summary>
     [ObservableProperty]
     private bool _isConnectingHost;
@@ -161,7 +189,11 @@ public sealed partial class SessionDocument : Document
     [ObservableProperty]
     private string _newHostUrl = "https://";
 
-    partial void OnNewHostUrlChanged(string value) => AddHostCommand.NotifyCanExecuteChanged();
+    partial void OnNewHostUrlChanged(string value)
+    {
+        AddHostCommand.NotifyCanExecuteChanged();
+        _ = _controller.DiscoverAuthMethodsAsync(this); // refresh which sign-in methods this host offers
+    }
 
     [ObservableProperty]
     private string _newHostToken = string.Empty;
@@ -175,6 +207,7 @@ public sealed partial class SessionDocument : Document
     public SessionDescriptor? Descriptor { get; set; }
 
     public IAsyncRelayCommand AddHostCommand { get; }
+    public IAsyncRelayCommand SignInWithGitHubCommand { get; }
     public IRelayCommand ToggleAddHostCommand { get; }
     public IRelayCommand<string> SetGitCredentialModeCommand { get; }
     public IRelayCommand<string> SetPermissionModeCommand { get; }

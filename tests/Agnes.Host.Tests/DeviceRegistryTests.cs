@@ -83,4 +83,26 @@ public class DeviceRegistryTests : IDisposable
         var contents = File.ReadAllText(_file);
         Assert.DoesNotContain(result.Token, contents); // only the SHA-256 hash is persisted
     }
+
+    [Fact]
+    public void IssueDeviceToken_mints_a_working_token_with_a_subject()
+    {
+        var reg = New();
+        var result = reg.IssueDeviceToken("phone", subject: "github:alice", kind: "github");
+        Assert.True(reg.IsValid(result.Token));
+        Assert.Equal("github:alice", Assert.Single(reg.ListDevices()).Subject);
+    }
+
+    [Fact]
+    public void Pairing_can_be_disabled_while_other_bootstraps_still_work()
+    {
+        var reg = new DeviceRegistry(null, _file, pairingEnabled: false);
+        Assert.False(reg.PairingEnabled);
+        Assert.Equal(string.Empty, reg.PairingCode);       // no code is minted or exposed
+        Assert.Null(reg.TryPair("ANY-CODE", "x"));         // pairing is refused entirely
+
+        // ...but a stronger method (GitHub SSO / keypair) can still issue a usable token.
+        var token = reg.IssueDeviceToken("d", subject: "github:bob", kind: "github");
+        Assert.True(reg.IsValid(token.Token));
+    }
 }

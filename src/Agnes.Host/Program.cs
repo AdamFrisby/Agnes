@@ -51,7 +51,22 @@ var devicesFile = builder.Configuration["Agnes:DevicesFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "devices.json");
 builder.Services.AddSingleton(sp => new DeviceRegistry(
     builder.Configuration["Agnes:PairingToken"], devicesFile,
-    sp.GetRequiredService<ILoggerFactory>().CreateLogger<DeviceRegistry>()));
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<DeviceRegistry>(),
+    pairingEnabled: builder.Configuration.GetValue("Agnes:Auth:Pairing:Enabled", true)));
+
+// ---- GitHub SSO (OAuth device flow) — optional strong auth for internet-facing hosts ----
+var gitHubAuth = new GitHubAuthOptions
+{
+    Enabled = builder.Configuration.GetValue("Agnes:Auth:GitHub:Enabled", false),
+    ClientId = builder.Configuration["Agnes:Auth:GitHub:ClientId"],
+    AllowedUsers = builder.Configuration.GetSection("Agnes:Auth:GitHub:AllowedUsers").Get<string[]>() ?? [],
+    AllowedOrgs = builder.Configuration.GetSection("Agnes:Auth:GitHub:AllowedOrgs").Get<string[]>() ?? [],
+};
+builder.Services.AddSingleton(gitHubAuth);
+builder.Services.AddSingleton<IGitHubUserLookup>(_ => new GitHubUserLookup(new HttpClient()));
+builder.Services.AddSingleton(sp => new GitHubIdentity(
+    sp.GetRequiredService<IGitHubUserLookup>(), gitHubAuth,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<GitHubIdentity>()));
 
 // ---- MCP server registry (configured from the UI, persisted to ~/.agnes/mcp.json) ----
 var mcpFile = builder.Configuration["Agnes:McpFile"]
@@ -277,14 +292,47 @@ app.Use(async (context, next) =>
 
 app.MapHub<AgnesHub>(WireProtocol.HubPath);
 
-// ---- device pairing + management ----
+// ---- device auth + management ----
+// Advertise which bootstrap methods this host offers, so a client shows only the enabled ones. All
+// public info — the GitHub client id is an OAuth *public* client id, not a secret.
+app.MapGet("/auth/methods", (GitHubAuthOptions gh) =>
+    Results.Ok(new AuthMethods(
+        Pairing: tokens.PairingEnabled,
+        GitHub: gh.IsUsable,
+        GitHubClientId: gh.IsUsable ? gh.ClientId : null,
+        Keypair: false))); // keypair method arrives in a later batch.
+
 // Pair a new device with the current code; returns a durable per-device token (shown once).
 app.MapPost("/pair", (PairRequest request) =>
 {
+    if (!tokens.PairingEnabled)
+    {
+        return Results.Json(new { error = "Pairing-code sign-in is disabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
     var result = tokens.TryPair(request.Code, request.DeviceName);
     return result is null
         ? Results.Json(new { error = "Invalid or expired pairing code." }, statusCode: StatusCodes.Status401Unauthorized)
         : Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+});
+
+// Exchange a GitHub user access token (obtained by the client via the device flow) for an Agnes device
+// token, if the identity is on the host's allowlist. The GitHub token is verified then discarded.
+app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHubIdentity github, CancellationToken ct) =>
+{
+    if (!github.Options.IsUsable)
+    {
+        return Results.Json(new { error = "GitHub sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    var login = await github.VerifyAsync(request.Token, ct);
+    if (login is null)
+    {
+        return Results.Json(new { error = "This GitHub account isn't allowed to connect to this host." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "github:" + login, kind: "github");
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
 });
 
 // The host's IPv4 address on the sandbox bridge — where the MCP forward listener binds and what the
@@ -501,8 +549,23 @@ else
     app.MapGet("/", () => $"Agnes host — wire protocol v{WireProtocol.Version}. Hub at {WireProtocol.HubPath}.");
 }
 
-// Print the pairing code so a new device can pair. (Tokens are per-device and never logged.)
-app.Logger.LogInformation("Agnes pairing code: {Code}  — enter this on a new client to pair it.", tokens.PairingCode);
+// Print the enabled bootstrap methods so a new device knows how to connect. (Tokens are per-device and
+// never logged; the GitHub client id is a public OAuth id.)
+if (tokens.PairingEnabled)
+{
+    app.Logger.LogInformation("Agnes pairing code: {Code}  — enter this on a new client to pair it.", tokens.PairingCode);
+}
+
+if (gitHubAuth.IsUsable)
+{
+    app.Logger.LogInformation("GitHub sign-in enabled (client id {ClientId}); allowed: users [{Users}] orgs [{Orgs}].",
+        gitHubAuth.ClientId, string.Join(", ", gitHubAuth.AllowedUsers), string.Join(", ", gitHubAuth.AllowedOrgs));
+}
+
+if (!tokens.PairingEnabled && !gitHubAuth.IsUsable)
+{
+    app.Logger.LogWarning("No usable sign-in method is configured — set Agnes:Auth:GitHub or re-enable pairing, or no client can connect.");
+}
 
 app.Run();
 

@@ -1631,6 +1631,98 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         // else: SelectHostAsync already left a clear "couldn't reach …" message.
     }
 
+    public async Task DiscoverAuthMethodsAsync(SessionDocument doc)
+    {
+        var url = doc.NewHostUrl.Trim();
+        if (!IsValidHostUrl(url))
+        {
+            _dispatcher.Post(() =>
+            {
+                doc.HostSupportsGitHub = false;
+                doc.HostSupportsPairing = true; // default assumption until we can ask a real host
+                doc.GitHubClientId = null;
+            });
+            return;
+        }
+
+        var methods = await Agnes.Client.AuthDiscovery.GetMethodsAsync(url).ConfigureAwait(false);
+        _dispatcher.Post(() =>
+        {
+            doc.HostSupportsGitHub = methods.GitHub;
+            doc.HostSupportsPairing = methods.Pairing;
+            doc.GitHubClientId = methods.GitHubClientId;
+        });
+    }
+
+    public async Task SignInWithGitHubAsync(SessionDocument doc)
+    {
+        var url = doc.NewHostUrl.Trim();
+        if (!IsValidHostUrl(url))
+        {
+            _dispatcher.Post(() => doc.StatusText = "Enter a host address like https://your-host:5099 first.");
+            return;
+        }
+
+        try
+        {
+            var methods = await Agnes.Client.AuthDiscovery.GetMethodsAsync(url).ConfigureAwait(false);
+            if (!methods.GitHub || string.IsNullOrEmpty(methods.GitHubClientId))
+            {
+                _dispatcher.Post(() => doc.StatusText = "This host doesn't offer GitHub sign-in.");
+                return;
+            }
+
+            _dispatcher.Post(() => doc.StatusText = "Starting GitHub sign-in…");
+            var code = await Agnes.Client.GitHubDeviceLogin.StartAsync(methods.GitHubClientId).ConfigureAwait(false);
+            _dispatcher.Post(() =>
+            {
+                doc.GitHubUserCode = code.UserCode;
+                doc.GitHubVerificationUri = code.VerificationUri;
+                doc.IsGitHubAuthorizing = true;
+                doc.StatusText = string.Empty;
+            });
+            OpenExternalUrl(code.VerificationUri);
+
+            var deviceName = $"{Environment.MachineName} (desktop)";
+            var paired = await Agnes.Client.GitHubDeviceLogin
+                .CompleteAsync(url, methods.GitHubClientId, code, deviceName).ConfigureAwait(false);
+
+            // Same persist-on-successful-connect flow as AddHostAsync — never save a host we couldn't reach.
+            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token);
+            var connected = await SelectHostAsync(doc, host);
+            if (connected)
+            {
+                if (!_knownHosts.Any(h => h.Url == host.Url))
+                {
+                    _knownHosts.Add(host);
+                }
+
+                _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+                _dispatcher.Post(() => doc.ShowAddHost = false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => doc.StatusText = "GitHub sign-in failed: " + ex.Message);
+        }
+        finally
+        {
+            _dispatcher.Post(() => doc.IsGitHubAuthorizing = false);
+        }
+    }
+
+    private static void OpenExternalUrl(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+            // best-effort — the code + URL are also shown in the UI for manual entry.
+        }
+    }
+
     public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off")
     {
         if (doc.Host is null)

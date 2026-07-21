@@ -21,6 +21,12 @@ public interface ITabController
     Task<bool> SelectHostAsync(SessionDocument doc, KnownHost host);
     Task AddHostAsync(SessionDocument doc);
 
+    /// <summary>Query which sign-in methods the entered host offers (GET /auth/methods) and update the tab.</summary>
+    Task DiscoverAuthMethodsAsync(SessionDocument doc);
+
+    /// <summary>Run the GitHub device-flow sign-in for the entered host, then connect + persist on success.</summary>
+    Task SignInWithGitHubAsync(SessionDocument doc);
+
     /// <summary>Remove a saved host from the picker (and persistence), then refresh the tab's host list.</summary>
     Task ForgetHostAsync(SessionDocument doc, KnownHost host);
 
