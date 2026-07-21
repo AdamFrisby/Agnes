@@ -141,6 +141,16 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.CompletedTask;
     }
 
+    public Task StopSessionAsync(string sessionId)
+    {
+        if (_sandboxState.ContainsKey(sessionId))
+        {
+            _sandboxState[sessionId] = "Stopped";
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId)
         => Task.FromResult<SandboxStatus?>(_sandboxState.ContainsKey(sessionId) ? SandboxFor(sessionId) : null);
 

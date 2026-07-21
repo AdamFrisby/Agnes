@@ -60,6 +60,14 @@ public interface IPausableSandbox
     Task ResumeAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>A sandbox that can be shut down (freeing CPU + RAM; disk preserved) and cold-started again.
+/// Used for the explicit stop-on-close lifecycle. Optional capability.</summary>
+public interface IStoppableSandbox
+{
+    Task StopAsync(CancellationToken cancellationToken = default);
+    Task StartAsync(CancellationToken cancellationToken = default);
+}
+
 /// <summary>Status of a sandbox surfaced to clients.</summary>
 public sealed record SandboxInfo(string Provider, string Id, SandboxState State);
 

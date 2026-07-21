@@ -94,6 +94,7 @@ public sealed class RecordedHost : IAgnesHost
     public Task PauseSandboxAsync(string sessionId) => Task.CompletedTask;
     public Task ResumeSandboxAsync(string sessionId) => Task.CompletedTask;
     public Task DeleteSandboxAsync(string sessionId) => Task.CompletedTask;
+    public Task StopSessionAsync(string sessionId) => Task.CompletedTask;
     public Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId) => Task.FromResult<SandboxStatus?>(null);
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 

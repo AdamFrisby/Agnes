@@ -589,6 +589,25 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Explicit stop-on-close: end the running agent and shut the sandbox VM down (freeing CPU + RAM),
+    /// but KEEP the VM and the session record so it can be resumed later. Non-destructive — only
+    /// <see cref="DeleteSandboxAsync"/> actually destroys the sandbox.
+    /// </summary>
+    public async Task StopSessionAsync(string sessionId)
+    {
+        if (_sessions.TryRemove(sessionId, out var session))
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_sandboxBySession.TryGetValue(sessionId, out var sandbox) && sandbox is IStoppableSandbox stoppable)
+        {
+            await stoppable.StopAsync().ConfigureAwait(false);
+            _logger.LogInformation("Session {SessionId}: sandbox shut down on close (kept for resume).", sessionId);
+        }
+    }
+
     public SandboxStatus? GetSandboxStatus(string sessionId)
         => _sandboxBySession.TryGetValue(sessionId, out var sandbox) ? MapSandbox(sandbox) : null;
 

@@ -62,6 +62,15 @@ public sealed class DockFactory : Factory
     public override void OnDockableClosed(IDockable? dockable)
     {
         base.OnDockableClosed(dockable);
+
+        // Explicit stop-on-close: when a session tab is CLOSED (not floated/detached — that routes through
+        // OnDockableRemoved), end its agent and shut its sandbox VM down (kept for resume). Fire-and-forget
+        // so the UI close isn't blocked.
+        if (dockable is SessionDocument { Host: { } host, Descriptor.SessionId: { } sessionId })
+        {
+            _ = host.StopSessionAsync(sessionId);
+        }
+
         // Drop the closed document's cached view from the shared dock recycler so it doesn't leak.
         if (dockable is not null
             && Avalonia.Application.Current?.Resources.TryGetResource("DockRecycler", null, out var r) == true

@@ -141,6 +141,9 @@ public sealed class HostConnection : IAgnesHost
     public Task DeleteSandboxAsync(string sessionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.DeleteSandbox), sessionId);
 
+    public Task StopSessionAsync(string sessionId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.StopSession), sessionId);
+
     public Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId)
         => _hub.InvokeAsync<SandboxStatus?>(nameof(IAgnesServer.GetSandboxStatus), sessionId);
 

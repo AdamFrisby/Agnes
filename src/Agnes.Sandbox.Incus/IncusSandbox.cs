@@ -8,7 +8,7 @@ namespace Agnes.Sandbox.Incus;
 /// run-wrapper); credentials are materialised via <see cref="ExecAsync"/>. Agnes persists the VM:
 /// <see cref="DisposeAsync"/> does NOT delete — only <see cref="DeleteAsync"/> destroys it.
 /// </summary>
-internal sealed class IncusSandbox : ISandbox, IPausableSandbox
+internal sealed class IncusSandbox : ISandbox, IPausableSandbox, IStoppableSandbox
 {
     private readonly IncusOptions _options;
     private readonly IIncusCliRunner _cli;
@@ -93,6 +93,18 @@ internal sealed class IncusSandbox : ISandbox, IPausableSandbox
     public async Task ResumeAsync(CancellationToken cancellationToken = default)
     {
         await _cli.RunCheckedAsync("resume", IncusCommandBuilder.BuildStart(_options, Id), cancellationToken: cancellationToken).ConfigureAwait(false);
+        _state = SandboxState.Running;
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken = default)
+    {
+        await _cli.RunCheckedAsync("stop", IncusCommandBuilder.BuildStop(_options, Id, timeoutSeconds: 30, stateful: false), cancellationToken: cancellationToken).ConfigureAwait(false);
+        _state = SandboxState.Stopped;
+    }
+
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        await _cli.RunCheckedAsync("start", IncusCommandBuilder.BuildStart(_options, Id), cancellationToken: cancellationToken).ConfigureAwait(false);
         _state = SandboxState.Running;
     }
 

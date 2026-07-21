@@ -84,6 +84,9 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Deletes the session's sandbox.</summary>
     Task DeleteSandboxAsync(string sessionId);
 
+    /// <summary>Explicit stop-on-close: end the agent and shut the sandbox VM down (kept for resume).</summary>
+    Task StopSessionAsync(string sessionId);
+
     /// <summary>Current sandbox status of the session, or null if it runs on the host.</summary>
     Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId);
 }

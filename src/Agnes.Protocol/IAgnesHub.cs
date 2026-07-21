@@ -66,6 +66,9 @@ public interface IAgnesServer
     Task ResumeSandbox(string sessionId);
     Task DeleteSandbox(string sessionId);
 
+    /// <summary>Stop-on-close: end the agent and shut the sandbox VM down, but keep it for resume.</summary>
+    Task StopSession(string sessionId);
+
     /// <summary>Current sandbox status of the session, or null if it runs on the host.</summary>
     Task<SandboxStatus?> GetSandboxStatus(string sessionId);
 }
