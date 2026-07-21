@@ -116,6 +116,27 @@ public class CredentialBrokerTests
         Assert.Equal("no credential", reply.GetProperty("error").GetString());
     }
 
+    [Theory]
+    [InlineData("AdamFrisby/Agnes", "github.com", "AdamFrisby/Agnes", "https://github.com/AdamFrisby/Agnes.git")]
+    [InlineData("owner/repo.git", "github.com", "owner/repo", "https://github.com/owner/repo.git")]
+    [InlineData("https://github.com/AdamFrisby/Agnes.git", "github.com", "AdamFrisby/Agnes", "https://github.com/AdamFrisby/Agnes.git")]
+    [InlineData("https://github.com/AdamFrisby/Agnes", "github.com", "AdamFrisby/Agnes", "https://github.com/AdamFrisby/Agnes.git")]
+    [InlineData("git@github.com:AdamFrisby/Agnes.git", "github.com", "AdamFrisby/Agnes", "https://github.com/AdamFrisby/Agnes.git")]
+    public void Checkout_repo_spec_parses(string spec, string host, string repo, string cleanUrl)
+    {
+        Assert.True(Agnes.Host.Sessions.SessionManager.TryParseRepoSpec(spec, out var h, out var r, out var url));
+        Assert.Equal(host, h);
+        Assert.Equal(repo, r);
+        Assert.Equal(cleanUrl, url);
+    }
+
+    [Theory]
+    [InlineData("not-a-repo")]
+    [InlineData("too/many/parts/here")]
+    [InlineData("")]
+    public void Checkout_repo_spec_rejects_garbage(string spec)
+        => Assert.False(Agnes.Host.Sessions.SessionManager.TryParseRepoSpec(spec, out _, out _, out _));
+
     [Fact]
     public void Has_source_for_reflects_linked_accounts()
     {

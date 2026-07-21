@@ -109,6 +109,41 @@ public sealed class GitService
         return (string.IsNullOrEmpty(name) ? null : name, string.IsNullOrEmpty(email) ? null : email);
     }
 
+    /// <summary>Whether <paramref name="directory"/> already contains a git checkout.</summary>
+    public static bool IsGitRepo(string directory)
+        => !string.IsNullOrWhiteSpace(directory) && Directory.Exists(Path.Combine(directory, ".git"));
+
+    /// <summary>Whether it's safe to clone into <paramref name="directory"/> (missing or empty).</summary>
+    public static bool IsEmptyOrMissing(string directory)
+        => string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory) || !Directory.EnumerateFileSystemEntries(directory).Any();
+
+    /// <summary>
+    /// Clones a repo into <paramref name="targetDirectory"/> (created if needed). The network operation
+    /// uses <paramref name="authenticatedUrl"/> (which carries a short-lived token); afterwards the remote
+    /// is reset to the clean <paramref name="cleanUrl"/> so no credential is left in <c>.git/config</c>.
+    /// </summary>
+    public async Task<(bool Ok, string Message)> CloneAsync(
+        string cleanUrl, string authenticatedUrl, string targetDirectory, CancellationToken cancellationToken = default)
+    {
+        var parent = Path.GetDirectoryName(targetDirectory.TrimEnd('/', '\\'));
+        if (string.IsNullOrEmpty(parent))
+        {
+            return (false, "Invalid target directory.");
+        }
+
+        Directory.CreateDirectory(parent);
+        var clone = await RunAsync(parent, cancellationToken, "clone", authenticatedUrl, targetDirectory);
+        if (clone.ExitCode != 0)
+        {
+            // Redact the token from any echoed URL before surfacing the error.
+            var msg = (clone.StdErr + clone.StdOut).Trim().Replace(authenticatedUrl, cleanUrl, StringComparison.Ordinal);
+            return (false, msg.Length > 0 ? msg : "git clone failed.");
+        }
+
+        await RunAsync(targetDirectory, cancellationToken, "remote", "set-url", "origin", cleanUrl);
+        return (true, "Cloned.");
+    }
+
     private static async Task<(int ExitCode, string StdOut, string StdErr)> RunAsync(
         string workingDirectory, CancellationToken cancellationToken, params string[] args)
     {

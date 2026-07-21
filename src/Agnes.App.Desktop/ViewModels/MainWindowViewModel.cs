@@ -98,6 +98,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ConnectGitHubCommand = new AsyncRelayCommand(ConnectGitHubAsync);
         OpenSettingsCommand = new RelayCommand(OpenSettings);
         SetSettingsCategoryCommand = new RelayCommand<string>(v => { if (v is not null) { SettingsCategory = v; } });
+        LinkGitHubNowCommand = new RelayCommand(LinkGitHubNow);
+        DismissGitHubLinkPromptCommand = new RelayCommand(() => ShowGitHubLinkPrompt = false);
         LoadProjectsCommand = new AsyncRelayCommand(LoadProjectsAsync);
         SelectProjectCommand = new RelayCommand<ProjectDto>(SelectProject);
         SaveProjectCommand = new AsyncRelayCommand(SaveProjectAsync);
@@ -397,6 +399,54 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     // ---- Settings tab (a first-class document, opened by the gear) ----
     public IRelayCommand OpenSettingsCommand { get; }
+    public IRelayCommand LinkGitHubNowCommand { get; }
+    public IRelayCommand DismissGitHubLinkPromptCommand { get; }
+
+    /// <summary>One-time onboarding: shown the first time a sandboxed session opens with no GitHub linked.</summary>
+    [ObservableProperty]
+    private bool _showGitHubLinkPrompt;
+
+    private void LinkGitHubNow()
+    {
+        ShowGitHubLinkPrompt = false;
+        OpenSettings();
+        SettingsCategory = "github";
+        _ = ConnectGitHubAsync();
+    }
+
+    // First-run nudge: when a session opens on a real (HTTP) host with no linked GitHub account, offer to
+    // link once. The flag persists so it never nags again — GitHub can also be linked anytime in Settings.
+    private async Task MaybePromptGitHubLinkAsync(SessionDocument doc)
+    {
+        if (_settings.GitHubPromptShown)
+        {
+            return;
+        }
+
+        var host = doc.Host?.HostUrl;
+        if (string.IsNullOrEmpty(host) || !host.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            var status = await CredentialManagement.GetStatusAsync(host, doc.HostToken);
+            var linked = status is not null && (status.State == "connected" || !string.IsNullOrWhiteSpace(status.Account));
+            if (linked)
+            {
+                return;
+            }
+
+            _settings = _settings with { GitHubPromptShown = true };
+            _settingsStore.Save(_settings);
+            _dispatcher.Post(() => ShowGitHubLinkPrompt = true);
+        }
+        catch
+        {
+            // best-effort onboarding — never block a session open on it.
+        }
+    }
     public IRelayCommand<string> SetSettingsCategoryCommand { get; }
     public System.Collections.ObjectModel.ObservableCollection<SettingsCategoryVm> SettingsCategories { get; }
 
@@ -491,10 +541,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     [ObservableProperty] private string _projApt = string.Empty;
     [ObservableProperty] private string _projNpm = string.Empty;
     [ObservableProperty] private string _projPip = string.Empty;
-    [ObservableProperty] private string _projGitMode = "Off";
+    [ObservableProperty] private string _projGitMode = "Ask";
     [ObservableProperty] private bool _projSkipPermissions;
     [ObservableProperty] private string _projMcpApproval = "Ask";
     [ObservableProperty] private string _projAccount = string.Empty;
+    [ObservableProperty] private string _projRepo = string.Empty;
 
     public bool HasSelectedProject => SelectedProject is not null;
 
@@ -544,6 +595,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ProjSkipPermissions = project.Defaults.SkipPermissions;
         ProjMcpApproval = project.Defaults.McpApproval;
         ProjAccount = project.CredentialAccount ?? string.Empty;
+        ProjRepo = project.Repo ?? string.Empty;
         ProjectMcp.Clear();
         foreach (var m in project.McpServers) { ProjectMcp.Add(m); }
     }
@@ -561,6 +613,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             Sandbox = sandbox,
             McpServers = ProjectMcp.ToArray(),
             CredentialAccount = string.IsNullOrWhiteSpace(ProjAccount) ? null : ProjAccount,
+            Repo = string.IsNullOrWhiteSpace(ProjRepo) ? null : ProjRepo.Trim(),
             Defaults = new ProjectDefaultsDto(ProjSkipPermissions, ProjGitMode, ProjMcpApproval),
         };
 
@@ -1354,6 +1407,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                     doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, title);
                 SaveState();
             });
+            _ = MaybePromptGitHubLinkAsync(doc); // one-time "Link GitHub?" nudge if none is linked.
         }
         catch (Exception ex)
         {

@@ -271,22 +271,35 @@
                                 </Border>
 
                                 <Border Height="1" Background="{DynamicResource Line}" />
-                                <TextBlock Text="Defaults for new sessions" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-                                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="fieldLabel" Text="Git push" VerticalAlignment="Center" />
-                                    <ComboBox Grid.Row="0" Grid.Column="1" SelectedItem="{Binding ProjGitMode, Mode=TwoWay}" MinWidth="140" HorizontalAlignment="Left">
+                                <TextBlock Text="GitHub" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="fieldLabel" Text="Account" VerticalAlignment="Center" />
+                                    <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding GitHubAccounts}" SelectedItem="{Binding ProjAccount, Mode=TwoWay}" MinWidth="180" HorizontalAlignment="Left" />
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="fieldLabel" Text="Access" VerticalAlignment="Center" />
+                                    <ComboBox Grid.Row="1" Grid.Column="1" SelectedItem="{Binding ProjGitMode, Mode=TwoWay}" MinWidth="140" HorizontalAlignment="Left"
+                                              ToolTip.Tip="Off: no credentials. Ask: approve each repository once. Trust: allow every repo without asking.">
                                         <sys:String>Off</sys:String>
                                         <sys:String>Ask</sys:String>
                                         <sys:String>Trust</sys:String>
                                     </ComboBox>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="fieldLabel" Text="MCP tools" VerticalAlignment="Center" />
-                                    <ComboBox Grid.Row="1" Grid.Column="1" SelectedItem="{Binding ProjMcpApproval, Mode=TwoWay}" MinWidth="140" HorizontalAlignment="Left">
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="fieldLabel" Text="Checkout repo" VerticalAlignment="Top" Margin="0,6,0,0" />
+                                    <StackPanel Grid.Row="2" Grid.Column="1" Spacing="2">
+                                        <TextBox Text="{Binding ProjRepo, Mode=TwoWay}" Watermark="owner/repo or https://github.com/owner/repo (optional)"
+                                                 FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" MinWidth="300" HorizontalAlignment="Left" />
+                                        <TextBlock Text="Auto-cloned into the working directory before the agent launches (needs an account with access)."
+                                                   Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap" MaxWidth="360" HorizontalAlignment="Left" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Border Height="1" Background="{DynamicResource Line}" />
+                                <TextBlock Text="Defaults for new sessions" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="fieldLabel" Text="MCP tools" VerticalAlignment="Center" />
+                                    <ComboBox Grid.Row="0" Grid.Column="1" SelectedItem="{Binding ProjMcpApproval, Mode=TwoWay}" MinWidth="140" HorizontalAlignment="Left">
                                         <sys:String>Ask</sys:String>
                                         <sys:String>Trust</sys:String>
                                     </ComboBox>
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="fieldLabel" Text="GitHub account" VerticalAlignment="Center" />
-                                    <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding GitHubAccounts}" SelectedItem="{Binding ProjAccount, Mode=TwoWay}" MinWidth="180" HorizontalAlignment="Left" />
-                                    <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding ProjSkipPermissions, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Autonomous by default" />
+                                    <CheckBox Grid.Row="1" Grid.Column="1" IsChecked="{Binding ProjSkipPermissions, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Autonomous by default" />
                                 </Grid>
 
                                 <Button Content="Save project" Command="{Binding SaveProjectCommand}" HorizontalAlignment="Left" Classes="seg" />

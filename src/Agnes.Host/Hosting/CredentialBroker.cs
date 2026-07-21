@@ -156,6 +156,11 @@ public sealed class CredentialBrokerListener : IAsyncDisposable
     /// wiring the git helper into a sandbox. False means no GitHub account is linked yet.</summary>
     public bool HasSourceFor(string host) => _sources.For(host) is not null;
 
+    /// <summary>Mints a credential on the host for a repo (used for host-side auto-checkout — the token
+    /// never enters a sandbox). Null if no source handles the host.</summary>
+    public Task<GitCredential?> MintAsync(CredentialRequest request, CancellationToken cancellationToken = default)
+        => _sources.For(request.Host)?.ResolveAsync(request, cancellationToken) ?? Task.FromResult<GitCredential?>(null);
+
     public void Start()
     {
         _listener.Start();

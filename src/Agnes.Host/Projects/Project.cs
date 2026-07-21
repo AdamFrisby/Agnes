@@ -4,7 +4,7 @@ using Agnes.Sandbox;
 namespace Agnes.Host.Projects;
 
 /// <summary>The defaults a project suggests for a new session (the user can still override at open time).</summary>
-public sealed record ProjectDefaults(bool SkipPermissions = false, string GitCredentialMode = "Off", string McpApproval = "Ask");
+public sealed record ProjectDefaults(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask");
 
 /// <summary>
 /// A project: the host-side bundle of everything that shapes a session — its sandbox contents, MCP
@@ -30,6 +30,11 @@ public sealed record Project
 
     /// <summary>The linked GitHub account this project pushes as (null = the host's default account).</summary>
     public string? CredentialAccount { get; init; }
+
+    /// <summary>The repository to check out for this project's sessions — a clone URL or "owner/repo".
+    /// When set, opening a session auto-clones it into the working directory before the agent launches;
+    /// null = no auto-checkout (the session uses whatever the working directory already contains).</summary>
+    public string? Repo { get; init; }
 
     public ProjectDefaults Defaults { get; init; } = new();
 

@@ -13,7 +13,8 @@ public static class ProjectMapping
         SandboxImageMapping.ToDto(project.Sandbox),
         project.McpServers,
         project.CredentialAccount,
-        new ProjectDefaultsDto(project.Defaults.SkipPermissions, project.Defaults.GitCredentialMode, project.Defaults.McpApproval));
+        new ProjectDefaultsDto(project.Defaults.SkipPermissions, project.Defaults.GitCredentialMode, project.Defaults.McpApproval),
+        project.Repo);
 
     public static Project ToProject(ProjectDto dto) => new()
     {
@@ -23,6 +24,7 @@ public static class ProjectMapping
         Sandbox = SandboxImageMapping.ToManifest(dto.Sandbox),
         McpServers = dto.McpServers,
         CredentialAccount = dto.CredentialAccount,
+        Repo = dto.Repo,
         Defaults = new ProjectDefaults(dto.Defaults.SkipPermissions, dto.Defaults.GitCredentialMode, dto.Defaults.McpApproval),
     };
 }

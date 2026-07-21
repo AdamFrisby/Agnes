@@ -87,6 +87,13 @@ public static class Program
             Settle(60);
         }
 
+        // 3gh) First-run "Link GitHub?" onboarding banner.
+        vm.ShowGitHubLinkPrompt = true;
+        Settle(150);
+        Capture(window, "03gh-github-link-prompt.png");
+        vm.ShowGitHubLinkPrompt = false;
+        Settle(60);
+
         // 3t) The same conversation in the light theme (theme applies live).
         vm.Theme = "Light";
         Settle(200);

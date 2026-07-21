@@ -13,7 +13,8 @@ public sealed record AppSettings(
     string Theme = "System",
     double FontScale = 1.0,
     string WorkingDirectory = "",
-    string McpApproval = "Ask");
+    string McpApproval = "Ask",
+    bool GitHubPromptShown = false);
 
 /// <summary>Persists <see cref="AppSettings"/> to a JSON file (best-effort).</summary>
 public sealed class SettingsStore

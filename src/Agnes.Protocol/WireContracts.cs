@@ -61,7 +61,7 @@ public sealed record SessionInfo(
     string? Project = null);
 
 /// <summary>The per-session defaults a project suggests.</summary>
-public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Off", string McpApproval = "Ask");
+public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask");
 
 /// <summary>
 /// A project as the client sees it: the per-repo bundle of sandbox contents, MCP servers, GitHub
@@ -74,7 +74,8 @@ public sealed record ProjectDto(
     SandboxImageDto Sandbox,
     IReadOnlyList<McpServerInfo> McpServers,
     string? CredentialAccount,
-    ProjectDefaultsDto Defaults);
+    ProjectDefaultsDto Defaults,
+    string? Repo = null);
 
 /// <summary>A device paired with a host (metadata only — never the token).</summary>
 public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt);

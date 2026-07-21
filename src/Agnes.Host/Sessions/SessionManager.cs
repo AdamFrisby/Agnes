@@ -85,6 +85,89 @@ public sealed class SessionManager : IAsyncDisposable
     // Ask-once-per-repository consent (prompts once per repo, remembers the decision for the session).
     private readonly GitConsentCache _gitConsent = new();
 
+    /// <summary>
+    /// If the project declares a checkout repo and the working directory is empty, clone it on the host
+    /// (with a short-lived minted token, scrubbed from .git/config afterwards) before the agent launches,
+    /// so the session starts on a ready checkout. Returns the (possibly unchanged) working directory.
+    /// </summary>
+    private async Task EnsureProjectCheckoutAsync(Projects.Project? project, string workingDirectory, string sessionId, CancellationToken cancellationToken)
+    {
+        if (project is null || string.IsNullOrWhiteSpace(project.Repo) || _credentialListener is null)
+        {
+            return;
+        }
+
+        if (Git.GitService.IsGitRepo(workingDirectory))
+        {
+            return; // already a checkout — never clobber existing work.
+        }
+
+        if (!Git.GitService.IsEmptyOrMissing(workingDirectory))
+        {
+            _logger.LogInformation("Session {SessionId}: working dir isn't empty and isn't a repo; skipping auto-checkout.", sessionId);
+            return;
+        }
+
+        if (!TryParseRepoSpec(project.Repo!, out var host, out var repo, out var cleanUrl))
+        {
+            _logger.LogWarning("Session {SessionId}: project '{Project}' has an unparseable checkout repo '{Repo}'.", sessionId, project.Name, project.Repo);
+            return;
+        }
+
+        var cred = await _credentialListener.MintAsync(new CredentialRequest("https", host, repo, "get"), cancellationToken).ConfigureAwait(false);
+        if (cred is null)
+        {
+            _logger.LogWarning("Session {SessionId}: no linked account can check out {Repo}; leaving the working dir empty.", sessionId, repo);
+            return;
+        }
+
+        var authUrl = $"https://{Uri.EscapeDataString(cred.Username)}:{Uri.EscapeDataString(cred.Password)}@{host}/{repo}.git";
+        var (ok, message) = await _git.CloneAsync(cleanUrl, authUrl, workingDirectory, cancellationToken).ConfigureAwait(false);
+        if (ok)
+        {
+            _logger.LogInformation("Session {SessionId}: checked out {Repo} into the working directory.", sessionId, repo);
+        }
+        else
+        {
+            _logger.LogWarning("Session {SessionId}: checkout of {Repo} failed: {Message}", sessionId, repo, message);
+        }
+    }
+
+    /// <summary>Parses a checkout spec ("owner/repo", an https URL, or an ssh URL) into host + "owner/repo" + a clean https clone URL.</summary>
+    internal static bool TryParseRepoSpec(string spec, out string host, out string repo, out string cleanUrl)
+    {
+        host = "github.com";
+        repo = string.Empty;
+        cleanUrl = string.Empty;
+        spec = spec.Trim();
+
+        if (spec.Contains("://", StringComparison.Ordinal) || spec.Contains('@'))
+        {
+            if (!GitRemote.TryParse(spec, out host, out repo))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            var parts = spec.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2)
+            {
+                return false;
+            }
+
+            repo = $"{parts[0]}/{parts[1]}";
+        }
+
+        if (repo.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            repo = repo[..^4];
+        }
+
+        cleanUrl = $"https://{host}/{repo}.git";
+        return repo.Contains('/', StringComparison.Ordinal);
+    }
+
     private async Task<bool> OnGitCredentialAuthorizeAsync(CredentialGrant grant, CredentialRequest request)
     {
         if (grant.SessionId is null || !_sessions.TryGetValue(grant.SessionId, out var session))
@@ -156,6 +239,10 @@ public sealed class SessionManager : IAsyncDisposable
             _logger.LogInformation("Session {SessionId} uses project '{Project}' ({Scope}).",
                 sessionId, project.Name, repoKey.Length == 0 ? "default" : repoKey);
         }
+
+        // Auto-checkout: if the project declares a repo and the working dir is empty, clone it (host-side,
+        // scrubbed) before anything launches — so the agent starts on a ready checkout.
+        await EnsureProjectCheckoutAsync(project, effectiveDirectory, sessionId, cancellationToken).ConfigureAwait(false);
 
         // Optionally provision a sandbox and run the agent inside it. Credentials and MCP config
         // (RunAt=Sandbox servers, plus RunAt=Host servers wired to the forward shim) are materialized
