@@ -1077,7 +1077,19 @@ public sealed class SessionViewModel : ObservableObject
             Raise(nameof(HasAttachments));
         }
 
-        await _host.PromptAsync(SessionId, blocks);
+        try
+        {
+            await _host.PromptAsync(SessionId, blocks);
+        }
+        catch (Exception)
+        {
+            // A send can fail server-side — e.g. a restored sandboxed session whose VM is gone after a
+            // host restart ("cannot be resumed after a restart"), or a transient hub error. Never let it
+            // crash the app: end the turn and surface it as a stale banner (Fork/Duplicate starts fresh).
+            IsTurnActive = false;
+            _stale = true;
+            UpdateBanner();
+        }
     }
 
     // When a turn ends normally, send the next queued prompt.

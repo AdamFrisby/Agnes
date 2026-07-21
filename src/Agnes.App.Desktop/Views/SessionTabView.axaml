@@ -957,7 +957,9 @@
 
                         <Border Grid.Row="3" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
                                 BorderThickness="0,1,0,0" Padding="24,12">
-                            <StackPanel Spacing="8" MaxWidth="768" HorizontalAlignment="Center">
+                            <!-- Stretch (not Center) + MaxWidth: a fixed 768px block, centred — otherwise the
+                                 panel sizes to content and the composer visibly resizes as you type. -->
+                            <StackPanel Spacing="8" MaxWidth="768" HorizontalAlignment="Stretch">
 
                                 <!-- Queued prompts (added while a turn runs; sent in order as turns end) -->
                                 <StackPanel Spacing="4" IsVisible="{Binding HasQueue}">

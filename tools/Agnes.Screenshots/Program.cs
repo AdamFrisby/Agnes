@@ -76,6 +76,13 @@ public static class Program
         Settle(200);
         Capture(window, "03-conversation.png");
 
+        // 3z) Composer must NOT resize horizontally as you type — set a long draft and confirm stable width.
+        first.Session!.PromptText = "This is a fairly long draft typed into the composer to confirm the input box keeps a stable, fixed width and wraps, instead of growing horizontally as characters are added.";
+        Settle(150);
+        Capture(window, "03z-composer-typed.png");
+        first.Session!.PromptText = string.Empty;
+        Settle(60);
+
         // 3md) Open the full message in the preview pane to verify Markdown (tables, code, lists) renders there too.
         var longMsg = first.Session!.Items.OfType<MessageBubbleItem>().FirstOrDefault(m => m.IsLong);
         if (longMsg is not null)
