@@ -83,8 +83,9 @@ public partial class MainWindow : Window
 
         leftBar.DataContext = DataContext;
         rightBar.DataContext = DataContext;
-        leftBar.Margin = new Avalonia.Thickness(10, 0, 8, 0);
-        rightBar.Margin = new Avalonia.Thickness(8, 0, 10, 0);
+        // A little vertical breathing room above/below the search box and the right-hand buttons.
+        leftBar.Margin = new Avalonia.Thickness(10, 7, 8, 7);
+        rightBar.Margin = new Avalonia.Thickness(8, 7, 10, 7);
         strip.LeftContent = leftBar;
         strip.RightContent = rightBar;
 
