@@ -1,8 +1,10 @@
 # Agnes
 
-**A remote interface to coding CLIs.** Run one **host** where your coding agents live (Claude Code and OpenCode today); connect from **many clients** — a full-featured desktop app plus web and mobile (Android). Think `claude` in `tmux` + `ssh`, but without tmux's limits: no fixed character grid, unlimited server-side scrollback, and each client renders at its own size.
+**A remote interface to coding CLIs.** Run one **host** where your coding agents live (Claude Code, OpenCode, and Codex today); connect from **many clients** — a full-featured desktop app plus web and mobile (Android). Think `claude` in `tmux` + `ssh`, but without tmux's limits: no fixed character grid, unlimited server-side scrollback, and each client renders at its own size.
 
 > Status: **alpha**. Working today: event-sourced sessions with restart-resume, per-device pairing auth over TLS, an Avalonia desktop client, a browser (WASM) client served by the host, and optional per-session Incus VM sandboxing. See [`docs/architecture.md`](docs/architecture.md) and [`docs/deployment.md`](docs/deployment.md).
+
+![Agnes desktop — a live agent session rendered as structured, reflowable events](screenshots/03-conversation.png)
 
 ## Why
 
@@ -15,6 +17,29 @@ Agnes runs each CLI in its **[Agent Client Protocol](https://agentclientprotocol
 - **Native, reflowable rendering** at each client's own size and form factor.
 - **Ask-first permissions** — the agent requests approval per tool call (surfaced in the UI); an autonomous mode is opt-in per session, and agents can be isolated in per-session Incus VMs.
 - **MCP servers**, managed from the UI, can run on the host or be forwarded into a sandbox; sandbox images can also be baked ahead of time so a session's tools are ready the moment it starts.
+
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><img src="screenshots/04-multicolumn.png" alt="Multi-column workspace"><br><sub><b>Multi-column workspace</b> — plan, files &amp; tools (left), chat (middle), and a full diff (right), all resizable.</sub></td>
+<td width="50%"><img src="screenshots/05-permission.png" alt="Ask-first permission request"><br><sub><b>Ask-first permissions</b> — a rich approval card per tool call: what it touches, whether it's reversible, and why.</sub></td>
+</tr>
+<tr>
+<td><img src="screenshots/01-host-picker.png" alt="Host picker"><br><sub><b>Connect to a host</b> — per-device pairing; the host is a per-tab choice, so one window can span several.</sub></td>
+<td><img src="screenshots/02-agent-picker.png" alt="Agent picker"><br><sub><b>Pick an agent</b> — agents not installed on the host are greyed out.</sub></td>
+</tr>
+<tr>
+<td><img src="screenshots/04s-sandbox-running.png" alt="Sandboxed session"><br><sub><b>Per-session sandboxing</b> — isolate an agent in an Incus VM; pause, resume, or delete it from the status bar.</sub></td>
+<td><img src="screenshots/03p-command-palette.png" alt="Command palette"><br><sub><b>Command palette</b> (Ctrl+K) — keyboard-navigable jump to a session or action.</sub></td>
+</tr>
+<tr>
+<td><img src="screenshots/03a-autonomous-session.png" alt="Autonomous session"><br><sub><b>Autonomous mode</b> — opt-in per session; the ⚡ chip surfaces it and switches the agent's live mode.</sub></td>
+<td><img src="screenshots/03t-light-theme.png" alt="Light theme"><br><sub><b>Light &amp; dark themes</b> — applied live, without restarting a session.</sub></td>
+</tr>
+</table>
+
+The [`screenshots/`](screenshots) folder has the full set — rewind-to-here, split diff, sub-agent tree, raw event log, prompt queue, in-session search, session management, multi-window detach, and restore-on-relaunch. They're generated from the real UI (against an offline simulated host) with `dotnet run --project tools/Agnes.Screenshots`.
 
 ## Architecture at a glance
 
@@ -73,8 +98,9 @@ The transcript renders reflowable ACP events (messages, tool calls, plans, permi
 
 - **Claude Code** — via its ACP bridge, and via a native stream-json adapter (`claude`).
 - **OpenCode** — via native ACP (`opencode acp`).
+- **Codex** — via its native app-server (persistent JSON-RPC over stdio).
 
-Adapters are thin plugins over the shared ACP client (or the native stream adapter), so more agents slot in the same way.
+Adapters are thin plugins over the shared ACP client (or a native adapter), so more agents slot in the same way.
 
 ## License
 
