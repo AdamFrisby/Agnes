@@ -495,3 +495,6 @@ agnes.db-*
 # Playwright MCP scratch
 .playwright-mcp/
 scratch-shots/
+
+# Native app bundles produced by build.sh / build.ps1
+/builds/

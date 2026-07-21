@@ -87,6 +87,35 @@ dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-desktop      # 
 dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-browserwasm  # web
 ```
 
+## Package native apps
+
+`build.sh` (Linux/macOS) and `build.ps1` (Windows) publish distributable artifacts into `builds/` (git-ignored):
+
+```bash
+./build.sh                      # everything below
+./build.sh linux windows        # only those desktop targets
+./build.sh android web          # only the mobile / web heads
+./build.sh --client-only mac    # just the desktop app, skip the host daemon
+```
+```powershell
+./build.ps1                     # same, on Windows
+./build.ps1 -ClientOnly linux
+```
+
+Output layout:
+
+```
+builds/
+  windows/  Agnes.exe          + host/Agnes.Host.exe        # win-x64
+  linux/    Agnes              + host/Agnes.Host            # linux-x64
+  mac/arm64 Agnes              + host/Agnes.Host            # osx-arm64 (Apple Silicon)
+  mac/x64   Agnes              + host/Agnes.Host            # osx-x64 (Intel)
+  android/  *.apk  (signed + unsigned)                      # needs the `android` workload
+  web/      static WebAssembly site (serve the folder)      # needs the `wasm-tools` workload
+```
+
+The desktop client and host are **self-contained, single-file** native executables — no .NET install needed on the target — and are not trimmed (Avalonia and the host use reflection). Desktop targets cross-publish from any OS; Android/web are built only when their workloads are installed, and skipped with a note otherwise. macOS binaries are produced unsigned (no notarization).
+
 ## Run the walking skeleton
 
 1. **Host** — from `src/Agnes.Host`, `dotnet run` (or `docker compose up`, see [`docs/deployment.md`](docs/deployment.md)). It logs an `Agnes pairing code`. (Claude Code's ACP bridge launches on demand via `npx @zed-industries/claude-code-acp`; configure commands in `appsettings.json`.)
