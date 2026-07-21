@@ -102,6 +102,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         DismissGitHubLinkPromptCommand = new RelayCommand(() => ShowGitHubLinkPrompt = false);
         LoadSandboxesCommand = new AsyncRelayCommand(LoadSandboxesAsync);
         DeleteSandboxRecordCommand = new AsyncRelayCommand<SandboxRecordDto>(DeleteSandboxRecordAsync);
+        ResumeSandboxRecordCommand = new AsyncRelayCommand<SandboxRecordDto>(ResumeSandboxRecordAsync);
+        FindOrphansCommand = new AsyncRelayCommand(FindOrphansAsync);
+        ReapOrphansCommand = new AsyncRelayCommand(ReapOrphansAsync);
         LoadProjectsCommand = new AsyncRelayCommand(LoadProjectsAsync);
         SelectProjectCommand = new RelayCommand<ProjectDto>(SelectProject);
         SaveProjectCommand = new AsyncRelayCommand(SaveProjectAsync);
@@ -495,11 +498,65 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     // ---- Sandboxes: the host's managed VMs (stop-on-close · resume · delete) ----
     public IAsyncRelayCommand LoadSandboxesCommand { get; }
     public IAsyncRelayCommand<SandboxRecordDto> DeleteSandboxRecordCommand { get; }
+    public IAsyncRelayCommand<SandboxRecordDto> ResumeSandboxRecordCommand { get; }
+    public IAsyncRelayCommand FindOrphansCommand { get; }
+    public IAsyncRelayCommand ReapOrphansCommand { get; }
 
     public System.Collections.ObjectModel.ObservableCollection<SandboxRecordDto> Sandboxes { get; } = [];
     public bool HasSandboxes => Sandboxes.Count > 0;
 
+    public System.Collections.ObjectModel.ObservableCollection<string> OrphanVmNames { get; } = [];
+    public bool HasOrphans => OrphanVmNames.Count > 0;
+    public string ReapOrphansLabel => $"Delete {OrphanVmNames.Count} orphaned VM(s)";
+
     [ObservableProperty] private string _sandboxesStatus = "Open a session on a host to manage its sandboxes.";
+
+    private async Task FindOrphansAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null) { return; }
+
+        try
+        {
+            var orphans = await SandboxManagement.OrphansAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() =>
+            {
+                OrphanVmNames.Clear();
+                foreach (var o in orphans) { OrphanVmNames.Add(o); }
+                OnPropertyChanged(nameof(HasOrphans));
+                OnPropertyChanged(nameof(ReapOrphansLabel));
+                SandboxesStatus = orphans.Count == 0
+                    ? "No orphaned VMs — nothing to reap."
+                    : $"Found {orphans.Count} orphaned VM(s) no session tracks. Review, then delete if you're sure.";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SandboxesStatus = "Couldn't scan for orphans: " + ex.Message);
+        }
+    }
+
+    private async Task ReapOrphansAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null) { return; }
+
+        try
+        {
+            var reaped = await SandboxManagement.ReapAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() =>
+            {
+                OrphanVmNames.Clear();
+                OnPropertyChanged(nameof(HasOrphans));
+                SandboxesStatus = $"Reaped {reaped} orphaned VM(s).";
+            });
+            await LoadSandboxesAsync();
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SandboxesStatus = "Couldn't reap: " + ex.Message);
+        }
+    }
 
     private async Task LoadSandboxesAsync()
     {
@@ -526,6 +583,53 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         catch (Exception ex)
         {
             _dispatcher.Post(() => SandboxesStatus = "Couldn't load sandboxes: " + ex.Message);
+        }
+    }
+
+    private async Task ResumeSandboxRecordAsync(SandboxRecordDto? sandbox)
+    {
+        var target = ActiveHttpHost();
+        if (target is null || sandbox is null) { return; }
+
+        // Already live → just jump to its open tab if we have one.
+        if (sandbox.Live && OpenTabs().FirstOrDefault(d => d.Session?.SessionId == sandbox.SessionId) is { } open)
+        {
+            _factory.SetActiveDockable(open);
+            return;
+        }
+
+        try
+        {
+            _dispatcher.Post(() => SandboxesStatus = $"Resuming '{sandbox.Title}'… (the VM cold-starts, a few seconds)");
+            var info = await SandboxManagement.ResumeAsync(target.Value.Url, target.Value.Token, sandbox.SessionId);
+            if (info is null)
+            {
+                _dispatcher.Post(() => SandboxesStatus = "Resume failed — the host returned no session.");
+                return;
+            }
+
+            _dispatcher.Post(() =>
+            {
+                // Open a tab attached to the resumed session (reuses the reconnect flow).
+                var descriptor = new SessionDescriptor(ActiveHostName, target.Value.Url, target.Value.Token, info.SessionId, info.AdapterId, sandbox.Title);
+                var doc = new SessionDocument(this)
+                {
+                    Title = sandbox.Title,
+                    CanClose = true,
+                    Descriptor = descriptor,
+                    HostName = ActiveHostName,
+                    AgentName = sandbox.Title,
+                };
+                AddDocument(doc);
+                _ = ReconnectAsync(doc, descriptor);
+                SaveState();
+                SandboxesStatus = $"Resumed '{sandbox.Title}'.";
+            });
+            await LoadSandboxesAsync();
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SandboxesStatus = "Couldn't resume: " + ex.Message);
         }
     }
 

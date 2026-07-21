@@ -65,6 +65,12 @@ public class SandboxWiringTests
 
         public Task<IReadOnlyList<SandboxInfo>> ListManagedAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<SandboxInfo>>([]);
+
+        public Task<ISandbox> AttachAsync(string vmName, SandboxSpec spec, bool start, CancellationToken cancellationToken = default)
+        {
+            Last = new FakeSandbox();
+            return Task.FromResult<ISandbox>(Last);
+        }
     }
 
     private sealed class FakeCredentialProvider : IAgentCredentialProvider

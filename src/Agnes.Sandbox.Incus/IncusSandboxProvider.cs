@@ -59,6 +59,21 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         return new IncusSandbox(name, _options, _cli, _logger);
     }
 
+    public async Task<ISandbox> AttachAsync(string vmName, SandboxSpec spec, bool start, CancellationToken cancellationToken = default)
+    {
+        var sandbox = new IncusSandbox(vmName, _options, _cli, _logger);
+        if (start)
+        {
+            // Tolerant start (RunAsync, not RunChecked) so an already-running VM doesn't throw; then wait
+            // for the guest to come up before we re-attach the agent.
+            _logger.LogInformation("Reconnecting to Incus sandbox {Name} (start)", vmName);
+            await _cli.RunAsync(IncusCommandBuilder.BuildStart(_options, vmName), cancellationToken: cancellationToken).ConfigureAwait(false);
+            await WaitForGuestReadyAsync(vmName, cancellationToken).ConfigureAwait(false);
+        }
+
+        return sandbox;
+    }
+
     // ---- ISandboxImageBuilder: bake a baseline image ----
 
     public async Task<bool> ImageExistsAsync(string alias, CancellationToken cancellationToken = default)

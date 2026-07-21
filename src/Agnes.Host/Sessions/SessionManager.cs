@@ -290,37 +290,11 @@ public sealed class SessionManager : IAsyncDisposable
             var now = DateTimeOffset.UtcNow;
             _sandboxRegistry?.Upsert(new SandboxRecord(
                 sessionId, sandbox.Id, sandbox.Info.Provider, adapterId, effectiveDirectory,
-                project?.Name, SandboxTitle(project, effectiveDirectory), "running", now, now));
+                project?.Name, SandboxTitle(project, effectiveDirectory), "running", now, now,
+                skipPermissions, mcpApproval, gitCredentialMode));
 
-            var env = new Dictionary<string, string>();
-            var files = new List<SandboxCredentialFile>();
-
-            var credentialProvider = _credentialProviders.FirstOrDefault(p => p.Handles(adapterId));
-            if (credentialProvider is not null)
-            {
-                var credential = await credentialProvider.GetAsync(adapterId, cancellationToken).ConfigureAwait(false);
-                foreach (var (k, v) in credential.EnvironmentVariables)
-                {
-                    env[k] = v;
-                }
-
-                files.AddRange(credential.Files);
-            }
-
-            mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, project, env, files);
-            await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, env, files, cancellationToken).ConfigureAwait(false);
-
-            if (env.Count > 0 || files.Count > 0)
-            {
-                await sandbox.MaterializeCredentialAsync(
-                    new SandboxCredential { EnvironmentVariables = env, Files = files }, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (credentialProvider is not null)
-            {
-                _rotationPusher?.RegisterActiveSandbox(sandbox);
-            }
-
+            mcpConfigPath = await ProvisionSandboxContentsAsync(
+                sandbox, sessionId, adapterId, effectiveDirectory, project, skipPermissions, mcpApproval, gitCredentialMode, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Session {SessionId} runs in sandbox {SandboxId}", sessionId, sandbox.Id);
         }
         else
@@ -608,6 +582,12 @@ public sealed class SessionManager : IAsyncDisposable
         {
             await sandbox.DeleteAsync().ConfigureAwait(false);
         }
+        else if (_sandboxes is not null && _sandboxRegistry?.Get(sessionId) is { } record)
+        {
+            // No in-memory handle (e.g. a sandbox from a prior daemon run) — reconnect by name and destroy it.
+            var attached = await _sandboxes.AttachAsync(record.VmName, new SandboxSpec(), start: false).ConfigureAwait(false);
+            await attached.DeleteAsync().ConfigureAwait(false);
+        }
 
         _sandboxRegistry?.Remove(sessionId);
     }
@@ -632,12 +612,172 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
+    /// <summary>Materializes a sandbox's credentials + MCP config + git-credential wiring (env + files)
+    /// and pushes them in, returning the MCP config path. Shared by open and resume — on resume the VM's
+    /// tmpfs was lost when it stopped, so everything is re-materialized.</summary>
+    private async Task<string?> ProvisionSandboxContentsAsync(
+        ISandbox sandbox, string sessionId, string adapterId, string effectiveDirectory, Projects.Project? project,
+        bool skipPermissions, string mcpApproval, string gitCredentialMode, CancellationToken cancellationToken)
+    {
+        var env = new Dictionary<string, string>();
+        var files = new List<SandboxCredentialFile>();
+
+        var credentialProvider = _credentialProviders.FirstOrDefault(p => p.Handles(adapterId));
+        if (credentialProvider is not null)
+        {
+            var credential = await credentialProvider.GetAsync(adapterId, cancellationToken).ConfigureAwait(false);
+            foreach (var (k, v) in credential.EnvironmentVariables)
+            {
+                env[k] = v;
+            }
+
+            files.AddRange(credential.Files);
+        }
+
+        var mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, project, env, files);
+        await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, env, files, cancellationToken).ConfigureAwait(false);
+
+        if (env.Count > 0 || files.Count > 0)
+        {
+            await sandbox.MaterializeCredentialAsync(
+                new SandboxCredential { EnvironmentVariables = env, Files = files }, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (credentialProvider is not null)
+        {
+            _rotationPusher?.RegisterActiveSandbox(sandbox);
+        }
+
+        return mcpConfigPath;
+    }
+
+    /// <summary>
+    /// Resume a stopped/closed sandboxed session: reconnect to its VM (by name — works even after a host
+    /// restart), cold-start it, re-materialize the agent's credentials/MCP, and re-launch the agent under
+    /// the SAME session id (so its transcript continues). Returns the reopened session's info.
+    /// </summary>
+    public async Task<SessionInfo> ResumeSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        if (_sessions.TryGetValue(sessionId, out var already))
+        {
+            // Already live — nothing to resume.
+            var liveHead = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
+            return new SessionInfo(sessionId, already.AdapterId, "/work", liveHead, already.Modes, already.CurrentModeId,
+                _sandboxBySession.TryGetValue(sessionId, out var s) ? MapSandbox(s) : null, false, null);
+        }
+
+        var record = _sandboxRegistry?.Get(sessionId)
+            ?? throw new InvalidOperationException($"No sandbox recorded for session '{sessionId}'.");
+        if (_sandboxes is null)
+        {
+            throw new InvalidOperationException("Sandboxing is not configured on this host.");
+        }
+
+        if (!_adapters.TryGetValue(record.AdapterId, out var adapter))
+        {
+            throw new InvalidOperationException($"Adapter '{record.AdapterId}' is no longer registered.");
+        }
+
+        var effectiveDirectory = record.WorkingDirectory;
+        var project = await ResolveProjectForAsync(sessionId, effectiveDirectory, cancellationToken).ConfigureAwait(false);
+
+        // Reconnect to the existing VM (this run's handle if we still have it, else by name) and start it.
+        var sandbox = await _sandboxes.AttachAsync(
+            record.VmName, new SandboxSpec { HostWorkingDirectory = effectiveDirectory }, start: true, cancellationToken).ConfigureAwait(false);
+        _sandboxBySession[sessionId] = sandbox;
+
+        var mcpConfigPath = await ProvisionSandboxContentsAsync(
+            sandbox, sessionId, record.AdapterId, effectiveDirectory, project,
+            record.SkipPermissions, record.McpApproval, record.GitCredentialMode, cancellationToken).ConfigureAwait(false);
+
+        var agent = await adapter.StartSessionAsync(
+            new AgentSessionOptions
+            {
+                WorkingDirectory = "/work",
+                Sandbox = sandbox,
+                SkipPermissions = record.SkipPermissions,
+                McpConfigPath = mcpConfigPath,
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var session = new HostSession(
+            sessionId, record.AdapterId, effectiveDirectory, agent, _store, _broadcaster,
+            _loggerFactory.CreateLogger<HostSession>());
+        _sessions[sessionId] = session;
+        _sandboxRegistry?.SetState(sessionId, "running", DateTimeOffset.UtcNow);
+        _logger.LogInformation("Resumed session {SessionId} in sandbox {SandboxId}", sessionId, sandbox.Id);
+
+        var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        return new SessionInfo(sessionId, record.AdapterId, "/work", head, agent.Modes, agent.CurrentModeId,
+            MapSandbox(sandbox), record.SkipPermissions, project?.Name);
+    }
+
+    /// <summary>Re-resolves the project for a working directory (same rule as open).</summary>
+    private async Task<Projects.Project?> ResolveProjectForAsync(string sessionId, string workingDirectory, CancellationToken cancellationToken)
+    {
+        if (_projects is null)
+        {
+            return null;
+        }
+
+        var remote = await _git.GetRemoteUrlAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        var repoKey = GitRemote.TryParse(remote, out var host, out var repo) ? $"{host}/{repo}" : string.Empty;
+        var project = _projects.Resolve(repoKey);
+        _projectBySession[sessionId] = project;
+        return project;
+    }
+
     /// <summary>All sandboxes the host tracks (running + stopped, this run + prior runs), for the list.</summary>
     public IReadOnlyList<SandboxRecordDto> ListSandboxes()
         => _sandboxRegistry?.List().Select(r => new SandboxRecordDto(
                r.SessionId, r.VmName, r.Provider, r.AdapterId, r.WorkingDirectory, r.ProjectName, r.Title,
                r.State, r.CreatedAt, r.LastUsedAt, _sessions.ContainsKey(r.SessionId))).ToArray()
            ?? [];
+
+    /// <summary>Agnes-owned VMs on the host that no tracked session references (orphans from prior runs or
+    /// crashes). Never deleted automatically — surfaced for a manual reap.</summary>
+    public async Task<IReadOnlyList<string>> ListOrphanVmNamesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_sandboxes is null)
+        {
+            return [];
+        }
+
+        var tracked = _sandboxRegistry?.TrackedVmNames() ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var managed = await _sandboxes.ListManagedAsync(cancellationToken).ConfigureAwait(false);
+        return managed
+            .Where(m => m.Id.StartsWith("agnes-", StringComparison.OrdinalIgnoreCase) && !tracked.Contains(m.Id))
+            .Select(m => m.Id)
+            .ToArray();
+    }
+
+    /// <summary>Deletes the orphaned Agnes VMs (manual action). Returns how many were reaped.</summary>
+    public async Task<int> ReapOrphanSandboxesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_sandboxes is null)
+        {
+            return 0;
+        }
+
+        var orphans = await ListOrphanVmNamesAsync(cancellationToken).ConfigureAwait(false);
+        var reaped = 0;
+        foreach (var name in orphans)
+        {
+            try
+            {
+                var sandbox = await _sandboxes.AttachAsync(name, new SandboxSpec(), start: false, cancellationToken).ConfigureAwait(false);
+                await sandbox.DeleteAsync(cancellationToken).ConfigureAwait(false);
+                reaped++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to reap orphan sandbox {Name}", name);
+            }
+        }
+
+        _logger.LogInformation("Reaped {Count} orphaned sandbox(es).", reaped);
+        return reaped;
+    }
 
     public SandboxStatus? GetSandboxStatus(string sessionId)
         => _sandboxBySession.TryGetValue(sessionId, out var sandbox) ? MapSandbox(sandbox) : null;

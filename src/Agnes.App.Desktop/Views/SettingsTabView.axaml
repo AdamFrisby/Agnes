@@ -206,6 +206,9 @@
                                                            FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <Button Content="Resume" Command="{Binding $parent[ItemsControl].DataContext.ResumeSandboxRecordCommand}"
+                                                        CommandParameter="{Binding}" Classes="seg" IsVisible="{Binding !Live}"
+                                                        ToolTip.Tip="Cold-start the VM and reopen this session in a tab" />
                                                 <Button Content="Delete" Command="{Binding $parent[ItemsControl].DataContext.DeleteSandboxRecordCommand}"
                                                         CommandParameter="{Binding}" Background="Transparent" Foreground="#E5484D"
                                                         BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
@@ -216,6 +219,24 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <TextBlock Text="{Binding SandboxesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+
+                        <!-- Manual orphan reaper (never automatic) -->
+                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Find orphaned VMs" Command="{Binding FindOrphansCommand}" Classes="seg"
+                                    ToolTip.Tip="Scan the host for Agnes VMs no session tracks (e.g. left from a prior daemon run). Nothing is deleted until you confirm." />
+                            <Button Content="{Binding ReapOrphansLabel}" Command="{Binding ReapOrphansCommand}" IsVisible="{Binding HasOrphans}"
+                                    Background="Transparent" Foreground="#E5484D" BorderBrush="{DynamicResource Line}"
+                                    BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding OrphanVmNames}" IsVisible="{Binding HasOrphans}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                               FontFamily="{StaticResource MonoFont}" Margin="2,1,0,0" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
 
                     <!-- PROJECTS (per-repo, on the host) -->

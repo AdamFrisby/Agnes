@@ -13,6 +13,11 @@ public interface ISandboxProvider
 
     /// <summary>Sandboxes this provider owns (for reconnect / cleanup).</summary>
     Task<IReadOnlyList<SandboxInfo>> ListManagedAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Reconnects to an existing sandbox VM by name — to resume a closed session, including
+    /// after a daemon restart when the in-memory handle is gone. When <paramref name="start"/> is true
+    /// the VM is (cold-)started and waited-ready.</summary>
+    Task<ISandbox> AttachAsync(string vmName, SandboxSpec spec, bool start, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

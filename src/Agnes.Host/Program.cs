@@ -389,6 +389,30 @@ app.MapDelete("/sandboxes/{sessionId}", async (HttpContext ctx, string sessionId
     return Results.Ok(sessionMgr.ListSandboxes());
 });
 
+app.MapPost("/sandboxes/{sessionId}/resume", async (HttpContext ctx, string sessionId) =>
+{
+    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (sessionMgr is null) return Results.NotFound();
+    try
+    {
+        return Results.Ok(await sessionMgr.ResumeSessionAsync(sessionId));
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+});
+
+app.MapGet("/sandboxes/orphans", async (HttpContext ctx) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : sessionMgr is null ? Results.NotFound()
+    : Results.Ok(await sessionMgr.ListOrphanVmNamesAsync()));
+
+app.MapPost("/sandboxes/reap", async (HttpContext ctx) =>
+    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    : sessionMgr is null ? Results.NotFound()
+    : Results.Ok(await sessionMgr.ReapOrphanSandboxesAsync()));
+
 // ---- credentials: link GitHub (App-manifest flow) so sandboxes can push with scoped tokens ----
 var ghConnect = app.Services.GetService<Agnes.Host.Hosting.GitHubConnectFlow>();
 

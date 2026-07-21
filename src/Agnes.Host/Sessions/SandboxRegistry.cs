@@ -15,7 +15,11 @@ public sealed record SandboxRecord(
     string Title,
     string State,            // "running" | "stopped"
     DateTimeOffset CreatedAt,
-    DateTimeOffset LastUsedAt);
+    DateTimeOffset LastUsedAt,
+    // The session's open-time options, persisted so a resume restores it faithfully.
+    bool SkipPermissions = false,
+    string McpApproval = "Ask",
+    string GitCredentialMode = "Ask");
 
 /// <summary>
 /// Persists the sandboxes Agnes owns (<c>~/.agnes/sandboxes.json</c>) so closed/stopped VMs stay visible

@@ -40,6 +40,54 @@ public static class SandboxManagement
         }
     }
 
+    public static async Task<SessionInfo?> ResumeAsync(
+        string hostUrl, string token, string sessionId, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            using var response = await client.PostAsync(
+                hostUrl.TrimEnd('/') + "/sandboxes/" + Uri.EscapeDataString(sessionId) + "/resume", null, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<SessionInfo>(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
+    public static async Task<IReadOnlyList<string>> OrphansAsync(
+        string hostUrl, string token, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            return await client.GetFromJsonAsync<IReadOnlyList<string>>(
+                hostUrl.TrimEnd('/') + "/sandboxes/orphans", cancellationToken).ConfigureAwait(false) ?? [];
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
+    public static async Task<int> ReapAsync(
+        string hostUrl, string token, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            using var response = await client.PostAsync(hostUrl.TrimEnd('/') + "/sandboxes/reap", null, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<int>(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
     private static (HttpClient Client, bool Owned) Client(HttpClient? provided, string token)
     {
         var client = provided ?? new HttpClient();
