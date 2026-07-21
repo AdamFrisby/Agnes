@@ -365,7 +365,14 @@
                                     <CheckBox Grid.Row="1" Grid.Column="1" IsChecked="{Binding ProjSkipPermissions, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Autonomous by default" />
                                 </Grid>
 
-                                <Button Content="Save project" Command="{Binding SaveProjectCommand}" HorizontalAlignment="Left" Classes="seg" />
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button Content="Save project" Command="{Binding SaveProjectCommand}"
+                                            HorizontalAlignment="Left" Classes="seg" IsEnabled="{Binding !IsSavingProject}" />
+                                    <ProgressBar IsIndeterminate="True" Width="90" Height="4" VerticalAlignment="Center"
+                                                 IsVisible="{Binding IsSavingProject}"
+                                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                                </StackPanel>
+
                             </StackPanel>
                         </Grid>
                     </StackPanel>

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Threading;
 using Agnes.App.Desktop.Persistence;
 using Agnes.Client;
 using Agnes.Protocol;
@@ -22,7 +23,9 @@ public sealed partial class SessionDocument : Document
     {
         _controller = controller;
         _workingDirectory = controller.DefaultWorkingDirectory;
-        AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this));
+        // Disabled until the URL field is more than the "https://" prefill, so Connect can't fire on junk.
+        AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this),
+            () => NewHostUrl.Trim().Length > "https://".Length);
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
@@ -42,6 +45,13 @@ public sealed partial class SessionDocument : Document
         DuplicateCommand = new AsyncRelayCommand(() => _controller.DuplicateAsync(this));
         ForkCommand = new AsyncRelayCommand(() => _controller.ForkAsync(this));
         MoveToWindowCommand = new RelayCommand(() => _controller.FloatTab(this));
+        // Stop waiting on a slow/opaque session open and drop back to the agent picker (defect #8/#10).
+        CancelStartCommand = new RelayCommand(() =>
+        {
+            StartCts?.Cancel();
+            Stage = TabStage.PickAgent;
+            StatusText = "Cancelled — choose an agent to try again.";
+        });
     }
 
     /// <summary>The host directory a new session will run in (the project folder).</summary>
@@ -96,6 +106,13 @@ public sealed partial class SessionDocument : Document
     [ObservableProperty]
     private bool _showAddHost;
 
+    /// <summary>True while connecting to a chosen host, so the picker can disable + show progress (defect #8).</summary>
+    [ObservableProperty]
+    private bool _isConnectingHost;
+
+    /// <summary>Cancels an in-flight session open; the "Starting" screen's Cancel uses it.</summary>
+    public CancellationTokenSource? StartCts { get; set; }
+
     [ObservableProperty]
     private bool _pinned;
 
@@ -144,6 +161,8 @@ public sealed partial class SessionDocument : Document
     [ObservableProperty]
     private string _newHostUrl = "https://";
 
+    partial void OnNewHostUrlChanged(string value) => AddHostCommand.NotifyCanExecuteChanged();
+
     [ObservableProperty]
     private string _newHostToken = string.Empty;
 
@@ -174,6 +193,7 @@ public sealed partial class SessionDocument : Document
     public IAsyncRelayCommand DuplicateCommand { get; }
     public IAsyncRelayCommand ForkCommand { get; }
     public IRelayCommand MoveToWindowCommand { get; }
+    public IRelayCommand CancelStartCommand { get; }
 
     private void CommitRename()
     {
@@ -282,7 +302,11 @@ public sealed partial class SessionDocument : Document
     public void ShowHosts(IEnumerable<KnownHost> hosts)
     {
         Hosts = new ObservableCollection<HostChoice>(hosts.Select(h =>
-            new HostChoice(h.Name, h.Url, new AsyncRelayCommand(() => _controller.SelectHostAsync(this, h)))));
+            new HostChoice(h.Name, h.Url,
+                new AsyncRelayCommand(() => _controller.SelectHostAsync(this, h)),
+                _controller.IsForgettableHost(h.Url)
+                    ? new AsyncRelayCommand(() => _controller.ForgetHostAsync(this, h))
+                    : null)));
         Stage = TabStage.PickHost;
         StatusText = string.Empty;
     }

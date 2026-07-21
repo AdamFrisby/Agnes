@@ -18,8 +18,14 @@ public enum TabStage
 /// <summary>Actions a tab delegates back to the workspace (host is a per-tab choice).</summary>
 public interface ITabController
 {
-    Task SelectHostAsync(SessionDocument doc, KnownHost host);
+    Task<bool> SelectHostAsync(SessionDocument doc, KnownHost host);
     Task AddHostAsync(SessionDocument doc);
+
+    /// <summary>Remove a saved host from the picker (and persistence), then refresh the tab's host list.</summary>
+    Task ForgetHostAsync(SessionDocument doc, KnownHost host);
+
+    /// <summary>Whether a host can be removed by the user (built-in Simulated/Recorded hosts can't).</summary>
+    bool IsForgettableHost(string url);
     Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off");
     void BackToHosts(SessionDocument doc);
 
@@ -65,16 +71,22 @@ public sealed class GlobalHit
 /// <summary>A host option on the new-tab host picker.</summary>
 public sealed class HostChoice
 {
-    public HostChoice(string name, string url, ICommand select)
+    public HostChoice(string name, string url, ICommand select, ICommand? forget = null)
     {
         Name = name;
         Url = url;
         Select = select;
+        Forget = forget;
     }
 
     public string Name { get; }
     public string Url { get; }
     public ICommand Select { get; }
+
+    /// <summary>Removes this host from the picker; null for built-in hosts that can't be removed.</summary>
+    public ICommand? Forget { get; }
+
+    public bool CanForget => Forget is not null;
 }
 
 /// <summary>An entry in the command palette (Ctrl+K): a session to jump to or a global action.</summary>

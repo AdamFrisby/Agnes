@@ -773,10 +773,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         foreach (var m in project.McpServers) { ProjectMcp.Add(m); }
     }
 
+    /// <summary>True while a project save + sandbox-image rebuild is in flight, so the UI can disable Save
+    /// and show progress instead of looking idle during a multi-minute operation (defect #8).</summary>
+    [ObservableProperty]
+    private bool _isSavingProject;
+
     private async Task SaveProjectAsync()
     {
         var target = ActiveHttpHost();
-        if (target is null || SelectedProject is null) { return; }
+        if (target is null || SelectedProject is null || IsSavingProject) { return; }
 
         static IReadOnlyList<string> Split(string s) => s.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var sandbox = SelectedProject.Sandbox with { Node = ProjNode, AptPackages = Split(ProjApt), NpmGlobals = Split(ProjNpm), PipPackages = Split(ProjPip) };
@@ -792,6 +797,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
+            IsSavingProject = true;
+            ProjectsStatus = $"Saving '{dto.Name}' — rebuilding its sandbox image, this can take a minute…";
             await ProjectManagement.SaveAsync(target.Value.Url, target.Value.Token, dto);
             _dispatcher.Post(() => ProjectsStatus = $"Saved '{dto.Name}' — its sandbox image is rebuilding.");
             await LoadProjectsAsync();
@@ -799,6 +806,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         catch (Exception ex)
         {
             _dispatcher.Post(() => ProjectsStatus = "Couldn't save: " + ex.Message);
+        }
+        finally
+        {
+            _dispatcher.Post(() => IsSavingProject = false);
         }
     }
 
@@ -1516,7 +1527,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     // ---- ITabController ----
 
-    public async Task SelectHostAsync(SessionDocument doc, KnownHost host)
+    public async Task<bool> SelectHostAsync(SessionDocument doc, KnownHost host)
     {
         try
         {
@@ -1524,6 +1535,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             {
                 doc.HostName = host.Name;
                 doc.HostToken = host.Token;
+                doc.IsConnectingHost = true;
                 doc.StatusText = $"Connecting to {host.Name}…";
             });
 
@@ -1533,45 +1545,90 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
             var agents = await agnesHost.ListAgentsAsync();
             _dispatcher.Post(() => doc.ShowAgents(agents));
+            return true;
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => doc.StatusText = "Error: " + ex.Message);
+            _dispatcher.Post(() => doc.StatusText = $"Couldn't reach {host.Name} — {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            _dispatcher.Post(() => doc.IsConnectingHost = false);
         }
     }
+
+    public bool IsForgettableHost(string url)
+        => url != SimulatedHost.Url && url != RecordedHost.Url;
+
+    public Task ForgetHostAsync(SessionDocument doc, KnownHost host)
+    {
+        if (!IsForgettableHost(host.Url))
+        {
+            return Task.CompletedTask;
+        }
+
+        _knownHosts.RemoveAll(h => h.Url == host.Url);
+        _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+        doc.ShowHosts(_knownHosts); // refresh the picker so the removed host is gone immediately
+        return Task.CompletedTask;
+    }
+
+    private static bool IsValidHostUrl(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var u)
+           && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps)
+           && !string.IsNullOrEmpty(u.Host);
 
     public async Task AddHostAsync(SessionDocument doc)
     {
         var url = doc.NewHostUrl.Trim();
-        if (string.IsNullOrWhiteSpace(url))
+        if (!IsValidHostUrl(url))
         {
+            _dispatcher.Post(() => doc.StatusText = "Enter a host address like https://your-host:5099");
             return;
         }
 
         // The field takes a pairing code: exchange it for a durable per-device token. If pairing
-        // doesn't apply (e.g. a pre-issued bootstrap token was pasted), fall back to using it directly.
+        // doesn't apply (e.g. a pre-issued bootstrap token was pasted), fall back to using it directly —
+        // but remember the pairing failure so a mistyped/expired code produces a clear message rather than
+        // silently saving a broken host.
         var codeOrToken = doc.NewHostToken.Trim();
         var token = codeOrToken;
+        var pairingFailed = false;
         if (!string.IsNullOrEmpty(codeOrToken))
         {
             try
             {
-                doc.StatusText = "Pairing…";
+                _dispatcher.Post(() => doc.StatusText = "Pairing…");
                 var deviceName = $"{Environment.MachineName} (desktop)";
                 var paired = await Agnes.Client.DevicePairing.PairAsync(url, codeOrToken, deviceName);
                 token = paired.Token;
             }
             catch
             {
-                // Not a valid pairing code — treat the entry as a direct token.
+                pairingFailed = true; // fall back to trying the entry as a direct token below.
             }
         }
 
+        // Persist ONLY after a successful connection, so a wrong URL / expired code never gets saved.
         var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, token);
-        _knownHosts.Add(host);
-        _hostStore.Save(_knownHosts.Where(h => h.Url != SimulatedHost.Url && h.Url != RecordedHost.Url).ToList());
-        _dispatcher.Post(() => doc.ShowAddHost = false);
-        await SelectHostAsync(doc, host);
+        var connected = await SelectHostAsync(doc, host);
+        if (connected)
+        {
+            if (!_knownHosts.Any(h => h.Url == host.Url))
+            {
+                _knownHosts.Add(host);
+            }
+
+            _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+            _dispatcher.Post(() => doc.ShowAddHost = false);
+        }
+        else if (pairingFailed)
+        {
+            _dispatcher.Post(() => doc.StatusText =
+                "Pairing failed — the code may be wrong or expired. Get a fresh code from the host, or paste a host token.");
+        }
+        // else: SelectHostAsync already left a clear "couldn't reach …" message.
     }
 
     public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off")
@@ -1586,8 +1643,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         // Move to the "Starting" screen (progress bar + status) — opening can take a while when the host
         // has to bake the sandbox image. A background poll of the host's bake status feeds live progress
-        // text; it's cancelled as soon as the open finishes (or fails).
+        // text; it's cancelled as soon as the open finishes (or fails). A second token lets the user Cancel
+        // the wait from the Starting screen so a slow/opaque open never traps them (defect #8/#10).
         using var startingDone = new CancellationTokenSource();
+        using var startCts = new CancellationTokenSource();
+        doc.StartCts = startCts;
         _dispatcher.Post(() =>
         {
             doc.StatusText = $"Starting {displayName}…";
@@ -1602,6 +1662,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var title = ProjectTitle(info.WorkingDirectory, displayName);
             _dispatcher.Post(() =>
             {
+                if (startCts.IsCancellationRequested)
+                {
+                    return; // the user cancelled the wait; don't yank them back into a session.
+                }
+
                 doc.AgentName = displayName;
                 doc.AttachSession(CreateSession(doc.Host!, view, title));
                 doc.Title = title;
@@ -1615,9 +1680,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             // A server-side failure opening the session (e.g. the sandbox image bake failing) must not
             // crash the whole app — surface it on the tab and drop back to the picker so the user can
-            // fix the cause and retry.
+            // fix the cause and retry. If the user already cancelled, leave their "Cancelled" state be.
             _dispatcher.Post(() =>
             {
+                if (startCts.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 doc.StatusText = "Couldn't start session: " + ex.Message;
                 doc.Stage = TabStage.PickAgent;
             });
@@ -1626,6 +1696,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             startingDone.Cancel();
             await progress.ConfigureAwait(false);
+            doc.StartCts = null;
         }
     }
 

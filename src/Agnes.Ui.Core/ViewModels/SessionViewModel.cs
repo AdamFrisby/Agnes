@@ -164,6 +164,10 @@ public sealed class SessionViewModel : ObservableObject
         }
     }
 
+    /// <summary>True when the transcript has nothing to show yet, so the view can offer a "start" cue
+    /// instead of a blank pane (defect #10). Kept in sync wherever <see cref="DisplayItems"/> is raised.</summary>
+    public bool IsTranscriptEmpty => !DisplayItems.Any();
+
     // ---- agent / subagent tree ----
 
     /// <summary>The session's agents: the main agent with any subagents nested beneath it.</summary>
@@ -201,6 +205,7 @@ public sealed class SessionViewModel : ObservableObject
         }
 
         Raise(nameof(DisplayItems));
+        Raise(nameof(IsTranscriptEmpty));
     }
 
     /// <summary>
@@ -508,6 +513,7 @@ public sealed class SessionViewModel : ObservableObject
             _rewindIndex = index;
             Raise(nameof(IsRewound));
             Raise(nameof(DisplayItems));
+            Raise(nameof(IsTranscriptEmpty));
         }
     }
 
@@ -516,6 +522,7 @@ public sealed class SessionViewModel : ObservableObject
         _rewindIndex = -1;
         Raise(nameof(IsRewound));
         Raise(nameof(DisplayItems));
+        Raise(nameof(IsTranscriptEmpty));
     }
 
     // ---- git (host working directory) ----
@@ -783,6 +790,7 @@ public sealed class SessionViewModel : ObservableObject
         if (_selectedAgentId is not null)
         {
             Raise(nameof(DisplayItems));
+            Raise(nameof(IsTranscriptEmpty));
         }
     }
 

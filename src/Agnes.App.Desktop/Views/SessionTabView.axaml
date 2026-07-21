@@ -355,19 +355,35 @@
                     <TextBlock Text="New session" FontSize="22" FontWeight="SemiBold"
                                Foreground="{DynamicResource Fg}" HorizontalAlignment="Center" />
                     <TextBlock Text="Choose a host" Foreground="{DynamicResource FgDim}" HorizontalAlignment="Center" />
-                    <ScrollViewer MaxHeight="380" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <!-- While connecting, disable the picker and show progress so it doesn't look frozen (defect #8). -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center"
+                                IsVisible="{Binding IsConnectingHost}">
+                        <ProgressBar IsIndeterminate="True" Width="120" Height="4"
+                                     Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ScrollViewer MaxHeight="380" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  IsEnabled="{Binding !IsConnectingHost}">
                     <ItemsControl ItemsSource="{Binding Hosts}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Button Command="{Binding Select}" HorizontalAlignment="Stretch"
-                                        HorizontalContentAlignment="Left" Margin="0,4" CornerRadius="10"
-                                        Padding="14,12" Background="{DynamicResource Panel}"
-                                        BorderBrush="{DynamicResource Line}" BorderThickness="1">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding Url}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
-                                    </StackPanel>
-                                </Button>
+                                <Grid Margin="0,4">
+                                    <Button Command="{Binding Select}" HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left" CornerRadius="10"
+                                            Padding="14,12" Background="{DynamicResource Panel}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                        <StackPanel Margin="0,0,22,0">
+                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Url}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                        </StackPanel>
+                                    </Button>
+                                    <!-- Remove a saved host (built-in hosts have no Forget command → hidden). Defect #7. -->
+                                    <Button Command="{Binding Forget}" IsVisible="{Binding CanForget}" Content="✕"
+                                            HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0"
+                                            Background="Transparent" Foreground="{DynamicResource FgFaint}" BorderThickness="0"
+                                            Padding="7,3" FontSize="12" Cursor="Hand"
+                                            ToolTip.Tip="Remove this host" AutomationProperties.Name="Remove host" />
+                                </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -538,6 +554,11 @@
                     <TextBlock Text="The host may be building the sandbox image — installing tools and the agent CLIs into a fresh VM. This can take a few minutes the first time; it's cached afterwards."
                                Foreground="{DynamicResource FgFaint}" FontSize="11" HorizontalAlignment="Center"
                                TextAlignment="Center" TextWrapping="Wrap" MaxWidth="360" />
+                    <!-- Never trap the user on an opaque wait: Cancel drops back to the agent picker (defect #8/#10). -->
+                    <Button Content="Cancel" Command="{Binding CancelStartCommand}" HorizontalAlignment="Center"
+                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="16,5" FontSize="12"
+                            AutomationProperties.Name="Cancel starting the session" />
                 </StackPanel>
             </Border>
 
@@ -776,6 +797,16 @@
                              rows on screen. Full-width (scrollbar at the window edge) with each row
                              centred at the 768px reading width. Selection is disabled — the rows carry
                              their own buttons. -->
+                        <!-- Empty state: a fresh session shows a cue instead of a blank column (defect #10). -->
+                        <StackPanel Grid.Row="1" IsHitTestVisible="False" IsVisible="{Binding IsTranscriptEmpty}"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6" MaxWidth="420">
+                            <TextBlock Text="No messages yet" Foreground="{DynamicResource FgDim}" FontSize="14"
+                                       FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            <TextBlock Text="Send a message below to start the conversation."
+                                       Foreground="{DynamicResource FgFaint}" FontSize="12"
+                                       HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
+
                         <ListBox Grid.Row="1" x:Name="Transcript" ItemsSource="{Binding DisplayItems}"
                                  IsVisible="{Binding !IsInspectorOpen}"
                                  Background="Transparent" BorderThickness="0"
