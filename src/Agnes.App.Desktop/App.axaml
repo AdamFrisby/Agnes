@@ -12,7 +12,7 @@
     <Application.Resources>
         <ResourceDictionary>
             <!-- Theme-invariant resources -->
-            <FontFamily x:Key="UiFont">Inter, Segoe UI, San Francisco, Ubuntu, sans-serif</FontFamily>
+            <FontFamily x:Key="UiFont">Segoe UI, SF Pro Text, Helvetica Neue, Noto Sans, DejaVu Sans, sans-serif</FontFamily>
             <FontFamily x:Key="MonoFont">Cascadia Code, Cascadia Mono, JetBrains Mono, Consolas, Menlo, monospace</FontFamily>
 
             <!-- One shared dock content recycler (see the DockControl style below); the factory evicts a
@@ -88,7 +88,9 @@
             <Setter Property="MonospaceFontFamily" Value="{StaticResource MonoFont}" />
         </Style>
         <!-- Markdown body renders via ColorTextBlock; pin it to the app UI font at normal weight so chat
-             text isn't heavier/bolder than the rest of the app (only **bold** spans should be bold). -->
+             text matches the rest of the app and only **bold** spans (CBold, which keeps its own Bold)
+             render heavy. The uniform-bold chat was really the bundled Inter font (see Program.cs) — this
+             just keeps the markdown surface aligned with the UI font. -->
         <Style Selector="ctb|CTextBlock">
             <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
             <Setter Property="FontWeight" Value="Normal" />
