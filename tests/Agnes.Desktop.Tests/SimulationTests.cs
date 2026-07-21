@@ -214,7 +214,8 @@ public class MainWindowRestoreTests
         await WaitAsync(() => tab.Hosts is { Count: > 0 });
         tab.Hosts!.First().Select.Execute(null); // simulated host
         await WaitAsync(() => tab.Agents is { Count: > 0 });
-        tab.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
+        tab.SelectAgentChoiceCommand.Execute(tab.Agents!.First(a => a.AdapterId == "opencode"));
+        tab.StartSessionCommand.Execute(null);
         await WaitAsync(() => tab.Session is not null);
     }
 

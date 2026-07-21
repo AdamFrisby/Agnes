@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using Agnes.App.Desktop.Persistence;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Agnes.App.Desktop.ViewModels;
 
@@ -8,6 +9,9 @@ public enum TabStage
 {
     PickHost,
     PickAgent,
+
+    /// <summary>Opening the session (may take a while — e.g. baking the sandbox image).</summary>
+    Starting,
     Live,
 }
 
@@ -76,23 +80,26 @@ public sealed class HostChoice
 /// <summary>An entry in the command palette (Ctrl+K): a session to jump to or a global action.</summary>
 public sealed record PaletteItem(string Label, string Hint, System.Action Invoke);
 
-/// <summary>An agent option on the new-tab agent picker.</summary>
-public sealed class AgentChoice
+/// <summary>An agent option on the new-tab agent picker. Selectable — picking it highlights the row;
+/// the session only opens when the user presses "Start session" (no surprise auto-progress).</summary>
+public sealed partial class AgentChoice : ObservableObject
 {
-    public AgentChoice(string displayName, string adapterId, ICommand open, bool available = true)
+    public AgentChoice(string displayName, string adapterId, bool available = true)
     {
         DisplayName = displayName;
         AdapterId = adapterId;
-        Open = open;
         Available = available;
     }
 
     public string DisplayName { get; }
     public string AdapterId { get; }
-    public ICommand Open { get; }
 
     /// <summary>Whether the agent's CLI is installed on the host. Unavailable agents can't be opened.</summary>
     public bool Available { get; }
+
+    /// <summary>Highlighted as the chosen agent (one at a time across the list).</summary>
+    [ObservableProperty]
+    private bool _isSelected;
 
     public string StatusText => Available ? AdapterId : $"{AdapterId} · not installed on host";
 }

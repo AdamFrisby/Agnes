@@ -68,7 +68,8 @@ public static class Program
         Settle(60);
 
         // 3) A live conversation (note the status bar: connection + usage)
-        first.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
+        first.SelectAgentChoiceCommand.Execute(first.Agents!.First(a => a.AdapterId == "opencode"));
+        first.StartSessionCommand.Execute(null);
         Pump(() => first.Session is not null);
         Prompt(first, "In one sentence, what is the Agent Client Protocol?");
         Pump(() => first.Session!.Items.OfType<MessageBubbleItem>().Count(m => !m.IsUser && !m.IsThought) >= 2);
@@ -88,7 +89,8 @@ public static class Program
         autoTab.Hosts!.First().Select.Execute(null);
         Pump(() => autoTab.Agents is { Count: > 0 });
         autoTab.SkipPermissions = true;
-        autoTab.Agents!.First(a => a.AdapterId == "opencode").Open.Execute(null);
+        autoTab.SelectAgentChoiceCommand.Execute(autoTab.Agents!.First(a => a.AdapterId == "opencode"));
+        autoTab.StartSessionCommand.Execute(null);
         Pump(() => autoTab.Session is { IsAutonomous: true });
         Capture(window, "03a-autonomous-session.png");
 
@@ -230,7 +232,8 @@ public static class Program
         Pump(() => rec.Hosts is { Count: > 1 });
         rec.Hosts!.First(h => h.Url.StartsWith("rec:")).Select.Execute(null);
         Pump(() => rec.Agents is { Count: > 0 });
-        rec.Agents!.First(a => a.DisplayName.Contains("file")).Open.Execute(null);
+        rec.SelectAgentChoiceCommand.Execute(rec.Agents!.First(a => a.DisplayName.Contains("file")));
+        rec.StartSessionCommand.Execute(null);
         Pump(() => rec.Session is not null);
         Pump(() => rec.Session!.Items.OfType<ToolCallItem>().Any()
                    && rec.Session!.Items.OfType<MessageBubbleItem>().Any(m => !m.IsUser && !m.IsThought), 15000);
@@ -288,7 +291,8 @@ public static class Program
         Pump(() => doc.Hosts is { Count: > 0 });
         doc.Hosts!.First().Select.Execute(null); // simulated host
         Pump(() => doc.Agents is { Count: > 0 });
-        doc.Agents!.First(a => a.AdapterId == adapterId).Open.Execute(null);
+        doc.SelectAgentChoiceCommand.Execute(doc.Agents!.First(a => a.AdapterId == adapterId));
+        doc.StartSessionCommand.Execute(null);
         Pump(() => doc.Session is not null);
         return doc;
     }

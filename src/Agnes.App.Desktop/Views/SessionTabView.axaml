@@ -60,6 +60,14 @@
             <Setter Property="Foreground" Value="{DynamicResource Accent}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
+        <!-- agent picker cards: accent border when chosen, dimmed when unavailable -->
+        <Style Selector="Button.agent.sel">
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+        </Style>
+        <Style Selector="Button.agent:disabled">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
         <Style Selector="TreeViewItem">
             <Setter Property="IsExpanded" Value="True" />
         </Style>
@@ -333,13 +341,18 @@
                 </StackPanel>
             </Border>
 
-            <!-- Stage 2: pick an agent -->
+            <!-- Stage 2: configure the session (working dir · permissions · git push · agent) -->
             <Border Padding="24" IsVisible="{Binding IsPickingAgent}">
-                <StackPanel MaxWidth="460" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel MaxWidth="500" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
                     <Button Command="{Binding BackCommand}" HorizontalAlignment="Left" Background="Transparent"
                             Foreground="{DynamicResource FgDim}" BorderThickness="0" Padding="0" FontSize="12" Content="‹ Hosts" />
-                    <TextBlock Text="Choose an agent" FontSize="22" FontWeight="SemiBold"
-                               Foreground="{DynamicResource Fg}" HorizontalAlignment="Center" />
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Configure session" FontSize="22" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Fg}" HorizontalAlignment="Center" />
+                        <TextBlock Text="Set the project and options, choose an agent, then start."
+                                   Foreground="{DynamicResource FgDim}" FontSize="12" HorizontalAlignment="Center" />
+                    </StackPanel>
 
                     <!-- Working directory (the project the agent works on, on the host) -->
                     <StackPanel Spacing="4">
@@ -360,36 +373,42 @@
                         </Grid>
                     </StackPanel>
 
-                    <!-- Permission mode for the new session -->
+                    <!-- Permissions: fixed label/description on the left; the segmented control on the right is the state -->
                     <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="10" Padding="14,10">
                         <Grid ColumnDefinitions="Auto,*,Auto" >
                             <TextBlock Grid.Column="0" Text="🛡" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold"
-                                               Text="{Binding PermissionModeTitle}" />
-                                    <ctl:InfoHint Description="Whether the agent asks before each tool call. Ask before each tool: you approve every file edit, command, and other tool use as it happens. Autonomous: the agent runs tools without asking."
+                                    <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" Text="Permissions" />
+                                    <ctl:InfoHint Description="Whether the agent asks before each tool call. Ask: you approve every file edit, command, and other tool use as it happens. Autonomous: the agent runs tools without asking."
                                                   Security="Autonomous mode lets the agent edit files and run commands with no approval. Use it only for work you trust, and prefer a sandbox so it can't touch anything outside the mounted project." />
                                 </StackPanel>
                                 <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
-                                           Text="{Binding PermissionModeHint}" />
+                                           Text="Whether the agent asks you before running each tool." />
                             </StackPanel>
-                            <ToggleSwitch Grid.Column="2" IsChecked="{Binding SkipPermissions, Mode=TwoWay}"
-                                          VerticalAlignment="Center" OnContent="" OffContent=""
-                                          AutomationProperties.Name="Run autonomously (skip permission prompts)" />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <Button Content="Ask" Command="{Binding SetPermissionModeCommand}" CommandParameter="Ask"
+                                        Classes.on="{Binding PermAsk}" Classes="seg" />
+                                <Button Content="Autonomous" Command="{Binding SetPermissionModeCommand}" CommandParameter="Autonomous"
+                                        Classes.on="{Binding PermAutonomous}" Classes="seg" />
+                            </StackPanel>
                         </Grid>
                     </Border>
 
-                    <!-- Git push for a sandboxed session: broker a scoped, host-held credential (Off / Ask / Trust) -->
+                    <!-- Git push for a sandboxed session: fixed label/description; the Off/Ask/Trust segment is the state -->
                     <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="10" Padding="14,10">
                         <Grid ColumnDefinitions="Auto,*,Auto">
                             <TextBlock Grid.Column="0" Text="⑂" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
-                                <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" Text="Git push" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" Text="Git push" />
+                                    <ctl:InfoHint Description="Whether a sandboxed agent may git push. Off: it can't push. Ask: it may push, but you approve each push with a card. Trust: it may push without asking. In every mode the credential is a scoped, short-lived, repo-specific token held on the host."
+                                                  Security="The token never enters the sandbox and is scoped to this repo, so even in Trust mode a push can't reach your other repos." />
+                                </StackPanel>
                                 <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
-                                           Text="{Binding GitCredentialHint}" />
+                                           Text="Whether the agent may push, via a scoped credential brokered by the host." />
                             </StackPanel>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                 <Button Content="Off" Command="{Binding SetGitCredentialModeCommand}" CommandParameter="Off"
@@ -402,25 +421,65 @@
                         </Grid>
                     </Border>
 
-                    <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding Agents}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button Command="{Binding Open}" HorizontalAlignment="Stretch"
-                                        HorizontalContentAlignment="Left" Margin="0,4" CornerRadius="10"
-                                        Padding="14,12" Background="{DynamicResource Panel}"
-                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                        ToolTip.Tip="{Binding StatusText}">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
-                                    </StackPanel>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    </ScrollViewer>
-                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" HorizontalAlignment="Center" />
+                    <!-- Agent: label + search (scales past a handful) + selectable list; opens only on Start -->
+                    <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock Grid.Column="0" Text="AGENT" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBox Grid.Column="1" Text="{Binding AgentFilter, Mode=TwoWay}" Watermark="Search agents…"
+                                     Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                     BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="9,5" FontSize="12" MaxWidth="220"
+                                     HorizontalAlignment="Right" AutomationProperties.Name="Search agents" />
+                        </Grid>
+                        <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Agents}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Classes="agent" Classes.sel="{Binding IsSelected}"
+                                            Command="{Binding $parent[ItemsControl].DataContext.SelectAgentChoiceCommand}"
+                                            CommandParameter="{Binding}" IsEnabled="{Binding Available}"
+                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="0,2" CornerRadius="8"
+                                            Padding="12,8" Background="{DynamicResource Panel}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                            ToolTip.Tip="{Binding StatusText}">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="13" />
+                                                <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                           FontFamily="{StaticResource MonoFont}" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="✓" Foreground="{DynamicResource Accent}" FontWeight="Bold"
+                                                       FontSize="14" VerticalAlignment="Center" IsVisible="{Binding IsSelected}" />
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+
+                    <!-- Explicit start: no surprise auto-progress when an agent is clicked -->
+                    <Button Content="Start session" Command="{Binding StartSessionCommand}" HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center" Background="{DynamicResource Accent}" Foreground="#1A1200"
+                            CornerRadius="8" Padding="12,9" FontWeight="SemiBold" FontSize="13"
+                            AutomationProperties.Name="Start session" />
+                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" HorizontalAlignment="Center" TextWrapping="Wrap" />
+                </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Stage 2b: starting — opening the session (the host may be baking the sandbox image) -->
+            <Border Padding="24" IsVisible="{Binding IsStarting}">
+                <StackPanel MaxWidth="420" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
+                    <TextBlock Text="Starting session" FontSize="20" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Fg}" HorizontalAlignment="Center" />
+                    <ProgressBar IsIndeterminate="True" Height="6" MinWidth="300"
+                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgDim}" FontSize="12"
+                               HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock Text="The host may be building the sandbox image — installing tools and the agent CLIs into a fresh VM. This can take a few minutes the first time; it's cached afterwards."
+                               Foreground="{DynamicResource FgFaint}" FontSize="11" HorizontalAlignment="Center"
+                               TextAlignment="Center" TextWrapping="Wrap" MaxWidth="360" />
                 </StackPanel>
             </Border>
 

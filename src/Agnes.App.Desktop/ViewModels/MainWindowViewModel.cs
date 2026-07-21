@@ -1328,9 +1328,20 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         var workingDirectory = string.IsNullOrWhiteSpace(doc.WorkingDirectory) ? DefaultWorkingDirectory : doc.WorkingDirectory.Trim();
         RememberWorkingDirectory(workingDirectory);
+
+        // Move to the "Starting" screen (progress bar + status) — opening can take a while when the host
+        // has to bake the sandbox image. A background poll of the host's bake status feeds live progress
+        // text; it's cancelled as soon as the open finishes (or fails).
+        using var startingDone = new CancellationTokenSource();
+        _dispatcher.Post(() =>
+        {
+            doc.StatusText = $"Starting {displayName}…";
+            doc.Stage = TabStage.Starting;
+        });
+        var progress = PollBakeStatusAsync(doc, startingDone.Token);
+
         try
         {
-            _dispatcher.Post(() => doc.StatusText = $"Starting {displayName}…");
             var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             var title = ProjectTitle(info.WorkingDirectory, displayName);
@@ -1347,9 +1358,50 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         catch (Exception ex)
         {
             // A server-side failure opening the session (e.g. the sandbox image bake failing) must not
-            // crash the whole app — surface it on the tab and leave the agent picker up so the user can
+            // crash the whole app — surface it on the tab and drop back to the picker so the user can
             // fix the cause and retry.
-            _dispatcher.Post(() => doc.StatusText = "Couldn't start session: " + ex.Message);
+            _dispatcher.Post(() =>
+            {
+                doc.StatusText = "Couldn't start session: " + ex.Message;
+                doc.Stage = TabStage.PickAgent;
+            });
+        }
+        finally
+        {
+            startingDone.Cancel();
+            await progress.ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>While a session is opening, poll the host's sandbox-image bake status and surface its
+    /// latest message on the tab (so a long "building the image" step reads as progress, not a hang).</summary>
+    private async Task PollBakeStatusAsync(SessionDocument doc, CancellationToken cancellationToken)
+    {
+        var url = doc.Host?.HostUrl;
+        if (string.IsNullOrEmpty(url) || !url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            return; // no HTTP host (e.g. the simulated host) — nothing to poll.
+        }
+
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                var status = await SandboxImageManagement.GetStatusAsync(url, doc.HostToken, cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (status is { State: "building" } && !string.IsNullOrWhiteSpace(status.Message) && doc.Stage == TabStage.Starting)
+                {
+                    _dispatcher.Post(() => doc.StatusText = "Building sandbox image · " + status.Message);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // expected when the open finishes
+        }
+        catch
+        {
+            // status polling is best-effort; never let it disrupt the open.
         }
     }
 

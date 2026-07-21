@@ -26,6 +26,9 @@ public sealed partial class SessionDocument : Document
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
+        SetPermissionModeCommand = new RelayCommand<string>(v => SkipPermissions = v == "Autonomous");
+        SelectAgentChoiceCommand = new RelayCommand<AgentChoice>(SelectAgentChoice);
+        StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => SelectedAgent is { Available: true });
 
         Tags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTags));
 
@@ -54,6 +57,21 @@ public sealed partial class SessionDocument : Document
     [ObservableProperty]
     private ObservableCollection<AgentChoice>? _agents;
 
+    /// <summary>The full agent list; <see cref="Agents"/> is this filtered by <see cref="AgentFilter"/>.</summary>
+    private IReadOnlyList<AgentChoice> _allAgents = [];
+
+    /// <summary>Search text that filters the agent list (so it scales past a handful of agents).</summary>
+    [ObservableProperty]
+    private string _agentFilter = string.Empty;
+
+    /// <summary>The highlighted agent; the session opens on Start, not on selection.</summary>
+    [ObservableProperty]
+    private AgentChoice? _selectedAgent;
+
+    partial void OnAgentFilterChanged(string value) => ApplyAgentFilter();
+
+    partial void OnSelectedAgentChanged(AgentChoice? value) => StartSessionCommand.NotifyCanExecuteChanged();
+
     [ObservableProperty]
     private SessionViewModel? _session;
 
@@ -81,39 +99,30 @@ public sealed partial class SessionDocument : Document
     [ObservableProperty]
     private bool _pinned;
 
-    /// <summary>New-session choice: run the agent autonomously (skip per-tool approval). Default off.</summary>
+    /// <summary>New-session choice: run the agent autonomously (skip per-tool approval). Default off.
+    /// The label/description stay fixed — only the segmented control on the right reflects the state.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PermissionModeTitle))]
-    [NotifyPropertyChangedFor(nameof(PermissionModeHint))]
+    [NotifyPropertyChangedFor(nameof(PermAsk))]
+    [NotifyPropertyChangedFor(nameof(PermAutonomous))]
     private bool _skipPermissions;
 
-    public string PermissionModeTitle => SkipPermissions ? "Autonomous" : "Ask before each tool";
-
-    public string PermissionModeHint => SkipPermissions
-        ? "The agent runs tools without asking. Use only for trusted, sandboxed work."
-        : "You approve file edits, commands and other tool calls as they happen.";
+    public bool PermAsk => !SkipPermissions;
+    public bool PermAutonomous => SkipPermissions;
 
     /// <summary>
     /// New-session choice for a sandboxed session: whether the agent may `git push`, and how — "Off"
     /// (no credentials), "Ask" (a permission card per push), or "Trust" (auto-allow). Default "Off".
+    /// The label/description stay fixed — only the Off/Ask/Trust segmented control reflects the state.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(GitCredOff))]
     [NotifyPropertyChangedFor(nameof(GitCredAsk))]
     [NotifyPropertyChangedFor(nameof(GitCredTrust))]
-    [NotifyPropertyChangedFor(nameof(GitCredentialHint))]
     private string _gitCredentialMode = "Off";
 
     public bool GitCredOff => GitCredentialMode == "Off";
     public bool GitCredAsk => GitCredentialMode == "Ask";
     public bool GitCredTrust => GitCredentialMode == "Trust";
-
-    public string GitCredentialHint => GitCredentialMode switch
-    {
-        "Ask" => "The agent may push; you approve each push with a card. Credentials stay on the host.",
-        "Trust" => "The agent may push without asking. Credentials stay on the host; scoped to this repo.",
-        _ => "The agent can't push. Turn on to broker a scoped, host-held credential at push time.",
-    };
 
     [ObservableProperty]
     private bool _isRenaming;
@@ -149,6 +158,9 @@ public sealed partial class SessionDocument : Document
     public IAsyncRelayCommand AddHostCommand { get; }
     public IRelayCommand ToggleAddHostCommand { get; }
     public IRelayCommand<string> SetGitCredentialModeCommand { get; }
+    public IRelayCommand<string> SetPermissionModeCommand { get; }
+    public IRelayCommand<AgentChoice> SelectAgentChoiceCommand { get; }
+    public IAsyncRelayCommand StartSessionCommand { get; }
     public IRelayCommand BackCommand { get; }
 
     // ---- session management: rename / pin / tag / archive / duplicate / fork ----
@@ -199,6 +211,7 @@ public sealed partial class SessionDocument : Document
 
     public bool IsPickingHost => Stage == TabStage.PickHost;
     public bool IsPickingAgent => Stage == TabStage.PickAgent;
+    public bool IsStarting => Stage == TabStage.Starting;
     public bool IsLive => Stage == TabStage.Live;
 
     /// <summary>Status bar shows once a host is connected (agent-pick and live stages).</summary>
@@ -208,8 +221,42 @@ public sealed partial class SessionDocument : Document
     {
         OnPropertyChanged(nameof(IsPickingHost));
         OnPropertyChanged(nameof(IsPickingAgent));
+        OnPropertyChanged(nameof(IsStarting));
         OnPropertyChanged(nameof(IsLive));
         OnPropertyChanged(nameof(ShowStatusBar));
+    }
+
+    // ---- agent picking: select (highlight) then Start (open) ----
+
+    private void SelectAgentChoice(AgentChoice? choice)
+    {
+        if (choice is null || !choice.Available)
+        {
+            return;
+        }
+
+        foreach (var a in _allAgents)
+        {
+            a.IsSelected = ReferenceEquals(a, choice);
+        }
+
+        SelectedAgent = choice;
+    }
+
+    private Task StartSessionAsync()
+        => SelectedAgent is { Available: true } a
+            ? _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode)
+            : Task.CompletedTask;
+
+    private void ApplyAgentFilter()
+    {
+        var q = AgentFilter?.Trim() ?? string.Empty;
+        var matches = q.Length == 0
+            ? _allAgents
+            : _allAgents.Where(a =>
+                a.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || a.AdapterId.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        Agents = new ObservableCollection<AgentChoice>(matches);
     }
 
     // ---- status-bar helpers ----
@@ -242,12 +289,12 @@ public sealed partial class SessionDocument : Document
 
     public void ShowAgents(IEnumerable<AgentInfo> agents)
     {
-        Agents = new ObservableCollection<AgentChoice>(agents.Select(a =>
-            new AgentChoice(a.DisplayName, a.AdapterId,
-                new AsyncRelayCommand(
-                    () => _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode),
-                    () => a.Available),
-                a.Available)));
+        _allAgents = agents.Select(a => new AgentChoice(a.DisplayName, a.AdapterId, a.Available)).ToList();
+        SelectedAgent = null;
+        AgentFilter = string.Empty;
+        // Preselect the first available agent so Start is reachable without a click, but never auto-open.
+        SelectAgentChoice(_allAgents.FirstOrDefault(a => a.Available));
+        ApplyAgentFilter();
         Stage = TabStage.PickAgent;
         StatusText = string.Empty;
     }
