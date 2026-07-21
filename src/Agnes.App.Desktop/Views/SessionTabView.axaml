@@ -422,6 +422,23 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+                        <!-- Keypair (SSH authorized_keys style) — shown when the host advertises it. -->
+                        <Button Content="Sign in with a key" Command="{Binding SignInWithKeyCommand}"
+                                IsVisible="{Binding HostSupportsKeypair}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="12,8" FontWeight="SemiBold" />
+                        <Border IsVisible="{Binding ShowKeyInfo}" Background="{DynamicResource PanelAlt}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="12,10">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="If the host rejects the key, add this line to its ~/.agnes/authorized_keys and retry:"
+                                           Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+                                <SelectableTextBlock Text="{Binding PublicKeyLine}" Foreground="{DynamicResource Fg}"
+                                                     FontFamily="{StaticResource MonoFont}" FontSize="10" TextWrapping="Wrap"
+                                                     ctl:SelectionContextMenu.Enable="True" />
+                            </StackPanel>
+                        </Border>
+
                         <TextBlock Text="— or use a pairing code —" Foreground="{DynamicResource FgFaint}" FontSize="10"
                                    HorizontalAlignment="Center" IsVisible="{Binding HostSupportsGitHub}" />
 

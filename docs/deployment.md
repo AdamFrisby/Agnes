@@ -145,6 +145,31 @@ callback URL). Clients discover it automatically via `GET /auth/methods`.
    GitHub token is used only to verify and is never stored. (Org/team checks need
    the `read:org` scope, which the flow requests.)
 
+## Keypair sign-in (offline)
+
+SSH-`authorized_keys` style: strong, no GitHub dependency. Each client holds a P-256
+keypair; you add its public key to the host. The client authenticates by signing a
+single-use challenge — no secret ever crosses the wire.
+
+```json
+{
+  "Agnes": { "Auth": { "Keypair": {
+    "Enabled": true,
+    "AuthorizedKeysFile": "~/.agnes/authorized_keys"
+  } } }
+}
+```
+
+`authorized_keys` has one **base64 SPKI** public key per line, with an optional label:
+
+```
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE…  alice-laptop
+```
+
+On a client, **+ Add host** → **Sign in with a key**: it generates a key on first use
+(`~/.agnes/client_key.p8`) and shows the exact line to paste into the host's
+`authorized_keys`; add it, retry, and you're connected.
+
 ## CORS
 
 The web client served from the **same origin** as the host needs no CORS. Only
@@ -164,6 +189,7 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 | `PairingToken` | Optional fixed bootstrap token (headless). |
 | `Auth:Pairing:Enabled` | Turn the pairing-code bootstrap off (default on) — e.g. GitHub-only. |
 | `Auth:GitHub:{Enabled,ClientId,AllowedUsers,AllowedOrgs}` | GitHub-SSO sign-in + allowlist (see above). |
+| `Auth:Keypair:{Enabled,AuthorizedKeysFile}` | Keypair (authorized_keys) sign-in (see above). |
 | `DevicesFile` | Where paired-device hashes are stored. |
 | `AllowedOrigins` / `AllowAllOrigins` | Cross-origin browser policy. |
 | `Database` | SQLite path for the event log (in-memory if empty). |

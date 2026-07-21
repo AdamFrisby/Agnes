@@ -68,6 +68,16 @@ builder.Services.AddSingleton(sp => new GitHubIdentity(
     sp.GetRequiredService<IGitHubUserLookup>(), gitHubAuth,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<GitHubIdentity>()));
 
+// ---- keypair auth (SSH authorized_keys style) — optional offline strong auth ----
+var keypairAuthOptions = new KeypairAuthOptions
+{
+    Enabled = builder.Configuration.GetValue("Agnes:Auth:Keypair:Enabled", false),
+    AuthorizedKeysFile = builder.Configuration["Agnes:Auth:Keypair:AuthorizedKeysFile"]
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "authorized_keys"),
+};
+builder.Services.AddSingleton(sp => new KeypairAuth(
+    keypairAuthOptions, sp.GetRequiredService<ILoggerFactory>().CreateLogger<KeypairAuth>()));
+
 // ---- MCP server registry (configured from the UI, persisted to ~/.agnes/mcp.json) ----
 var mcpFile = builder.Configuration["Agnes:McpFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "mcp.json");
@@ -295,12 +305,12 @@ app.MapHub<AgnesHub>(WireProtocol.HubPath);
 // ---- device auth + management ----
 // Advertise which bootstrap methods this host offers, so a client shows only the enabled ones. All
 // public info — the GitHub client id is an OAuth *public* client id, not a secret.
-app.MapGet("/auth/methods", (GitHubAuthOptions gh) =>
+app.MapGet("/auth/methods", (GitHubAuthOptions gh, KeypairAuth keypair) =>
     Results.Ok(new AuthMethods(
         Pairing: tokens.PairingEnabled,
         GitHub: gh.IsUsable,
         GitHubClientId: gh.IsUsable ? gh.ClientId : null,
-        Keypair: false))); // keypair method arrives in a later batch.
+        Keypair: keypair.IsUsable)));
 
 // Pair a new device with the current code; returns a durable per-device token (shown once).
 app.MapPost("/pair", (PairRequest request) =>
@@ -332,6 +342,30 @@ app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHu
     }
 
     var result = tokens.IssueDeviceToken(request.DeviceName, subject: "github:" + login, kind: "github");
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+});
+
+// Keypair auth: a single-use challenge nonce the client signs with its private key.
+app.MapGet("/auth/keypair/challenge", (KeypairAuth keypair) =>
+    keypair.IsUsable
+        ? Results.Ok(new KeypairChallenge(keypair.IssueChallenge()))
+        : Results.Json(new { error = "Keypair sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest));
+
+// Verify a signed challenge against the authorized keys and issue a device token.
+app.MapPost("/auth/keypair", (KeypairAuthRequest request, KeypairAuth keypair) =>
+{
+    if (!keypair.IsUsable)
+    {
+        return Results.Json(new { error = "Keypair sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    var label = keypair.Verify(request.PublicKey, request.Nonce, request.Signature);
+    if (label is null)
+    {
+        return Results.Json(new { error = "Key not authorized, or the signed challenge was invalid/expired." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "key:" + label, kind: "keypair");
     return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
 });
 
@@ -562,9 +596,15 @@ if (gitHubAuth.IsUsable)
         gitHubAuth.ClientId, string.Join(", ", gitHubAuth.AllowedUsers), string.Join(", ", gitHubAuth.AllowedOrgs));
 }
 
-if (!tokens.PairingEnabled && !gitHubAuth.IsUsable)
+var keypairUsable = app.Services.GetRequiredService<KeypairAuth>().IsUsable;
+if (keypairUsable)
 {
-    app.Logger.LogWarning("No usable sign-in method is configured — set Agnes:Auth:GitHub or re-enable pairing, or no client can connect.");
+    app.Logger.LogInformation("Keypair sign-in enabled (authorized_keys: {File}).", keypairAuthOptions.AuthorizedKeysFile);
+}
+
+if (!tokens.PairingEnabled && !gitHubAuth.IsUsable && !keypairUsable)
+{
+    app.Logger.LogWarning("No usable sign-in method is configured — set Agnes:Auth:GitHub / Keypair or re-enable pairing, or no client can connect.");
 }
 
 app.Run();

@@ -27,6 +27,9 @@ public interface ITabController
     /// <summary>Run the GitHub device-flow sign-in for the entered host, then connect + persist on success.</summary>
     Task SignInWithGitHubAsync(SessionDocument doc);
 
+    /// <summary>Sign in with the client's keypair (shows the public line to authorize), then connect on success.</summary>
+    Task SignInWithKeyAsync(SessionDocument doc);
+
     /// <summary>Remove a saved host from the picker (and persistence), then refresh the tab's host list.</summary>
     Task ForgetHostAsync(SessionDocument doc, KnownHost host);
 

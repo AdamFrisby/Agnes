@@ -27,6 +27,7 @@ public sealed partial class SessionDocument : Document
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this),
             () => NewHostUrl.Trim().Length > "https://".Length);
         SignInWithGitHubCommand = new AsyncRelayCommand(() => _controller.SignInWithGitHubAsync(this));
+        SignInWithKeyCommand = new AsyncRelayCommand(() => _controller.SignInWithKeyAsync(this));
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
@@ -123,6 +124,16 @@ public sealed partial class SessionDocument : Document
     [ObservableProperty]
     private string _gitHubVerificationUri = string.Empty;
 
+    [ObservableProperty]
+    private bool _hostSupportsKeypair;
+
+    /// <summary>The public-key line to add to the host's authorized_keys (shown for keypair sign-in).</summary>
+    [ObservableProperty]
+    private string _publicKeyLine = string.Empty;
+
+    [ObservableProperty]
+    private bool _showKeyInfo;
+
     /// <summary>The host's public GitHub OAuth client id (from discovery), used to run the device flow.</summary>
     public string? GitHubClientId { get; set; }
 
@@ -208,6 +219,7 @@ public sealed partial class SessionDocument : Document
 
     public IAsyncRelayCommand AddHostCommand { get; }
     public IAsyncRelayCommand SignInWithGitHubCommand { get; }
+    public IAsyncRelayCommand SignInWithKeyCommand { get; }
     public IRelayCommand ToggleAddHostCommand { get; }
     public IRelayCommand<string> SetGitCredentialModeCommand { get; }
     public IRelayCommand<string> SetPermissionModeCommand { get; }

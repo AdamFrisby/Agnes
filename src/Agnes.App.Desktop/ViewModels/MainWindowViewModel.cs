@@ -1639,6 +1639,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             _dispatcher.Post(() =>
             {
                 doc.HostSupportsGitHub = false;
+                doc.HostSupportsKeypair = false;
                 doc.HostSupportsPairing = true; // default assumption until we can ask a real host
                 doc.GitHubClientId = null;
             });
@@ -1649,9 +1650,56 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _dispatcher.Post(() =>
         {
             doc.HostSupportsGitHub = methods.GitHub;
+            doc.HostSupportsKeypair = methods.Keypair;
             doc.HostSupportsPairing = methods.Pairing;
             doc.GitHubClientId = methods.GitHubClientId;
         });
+    }
+
+    public async Task SignInWithKeyAsync(SessionDocument doc)
+    {
+        var url = doc.NewHostUrl.Trim();
+        if (!IsValidHostUrl(url))
+        {
+            _dispatcher.Post(() => doc.StatusText = "Enter a host address like https://your-host:5099 first.");
+            return;
+        }
+
+        try
+        {
+            // Surface the public-key line so the operator can authorize this device on the host.
+            using (var key = Agnes.Client.KeypairEnrollment.LoadOrCreateKey())
+            {
+                var line = Agnes.Client.KeypairEnrollment.PublicKeyLine(key);
+                _dispatcher.Post(() =>
+                {
+                    doc.PublicKeyLine = line;
+                    doc.ShowKeyInfo = true;
+                    doc.StatusText = "Signing in with your key…";
+                });
+            }
+
+            var deviceName = $"{Environment.MachineName} (desktop)";
+            var paired = await Agnes.Client.KeypairEnrollment.AuthenticateAsync(url, deviceName).ConfigureAwait(false);
+
+            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token);
+            var connected = await SelectHostAsync(doc, host);
+            if (connected)
+            {
+                if (!_knownHosts.Any(h => h.Url == host.Url))
+                {
+                    _knownHosts.Add(host);
+                }
+
+                _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+                _dispatcher.Post(() => doc.ShowAddHost = false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => doc.StatusText =
+                "Key sign-in failed: " + ex.Message + " Add the key line above to the host's authorized_keys, then retry.");
+        }
     }
 
     public async Task SignInWithGitHubAsync(SessionDocument doc)
