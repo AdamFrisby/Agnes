@@ -150,6 +150,19 @@ public partial class MainWindow : Window
         {
             root.Height = h;
         }
+
+        // Only let the wrapping ScrollViewer scroll when zoomed past 100% (the only case that can overflow
+        // the viewport). At <=100% the content is pinned to fit exactly, and keeping scrolling Disabled stops
+        // a child BringIntoView (e.g. the transcript auto-scrolling to the latest message) from dragging the
+        // whole UI — including the top chrome — off-screen.
+        if (this.FindControl<ScrollViewer>("ScaleScroller") is { } scroller)
+        {
+            var vis = scale > 1.001
+                ? Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+                : Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled;
+            scroller.HorizontalScrollBarVisibility = vis;
+            scroller.VerticalScrollBarVisibility = vis;
+        }
     }
 
     // Focus the global-search box as soon as its flyout opens, so typing starts immediately (the bar that

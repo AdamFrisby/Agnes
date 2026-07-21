@@ -62,8 +62,10 @@
          be scrolled to rather than being silently clipped. ScaleRoot's size is pinned to (client / scale)
          with a floor in code-behind (see MainWindow.axaml.cs), so content fills the window when it fits and
          scrolls when it doesn't. -->
+    <!-- Scrollbars stay Disabled at 100% (content is pinned to fit exactly) and only switch to Auto when
+         zoomed past 100%, so a child BringIntoView can never scroll the whole app at normal scale. -->
     <ScrollViewer x:Name="ScaleScroller"
-                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                  HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled">
     <LayoutTransformControl>
         <LayoutTransformControl.LayoutTransform>
             <ScaleTransform ScaleX="{Binding FontScale}" ScaleY="{Binding FontScale}" />
