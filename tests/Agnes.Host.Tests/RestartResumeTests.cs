@@ -14,7 +14,7 @@ public class RestartResumeTests
     }
 
     private static SessionManager NewManager(ScriptedAgentAdapter adapter, IEventStore store)
-        => new([adapter], store, new NullBroadcaster(), NullLoggerFactory.Instance);
+        => new(TestPluginRegistries.Agents(adapter), store, new NullBroadcaster(), NullLoggerFactory.Instance);
 
     [Fact]
     public async Task History_and_sessions_survive_a_restart_and_resume_on_prompt()

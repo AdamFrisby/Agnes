@@ -53,3 +53,13 @@ public sealed class ScriptedAgentAdapter : IAgentAdapter
         return Task.FromResult<IAgentSession>(Session);
     }
 }
+
+/// <summary>Test-only shorthand for building the small plugin registries SessionManager's constructor takes.</summary>
+public static class TestPluginRegistries
+{
+    public static IPluginRegistry<IAgentAdapter> Agents(params IAgentAdapter[] adapters)
+        => new PluginRegistry<IAgentAdapter>(adapters, a => a.Descriptor.Id);
+
+    public static IPluginRegistry<Agnes.Sandbox.ISandboxProvider> Sandboxes(params Agnes.Sandbox.ISandboxProvider[] providers)
+        => new PluginRegistry<Agnes.Sandbox.ISandboxProvider>(providers, p => p.Name);
+}

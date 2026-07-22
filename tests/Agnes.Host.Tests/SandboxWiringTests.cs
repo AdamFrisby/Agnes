@@ -92,8 +92,8 @@ public class SandboxWiringTests
         var sandboxes = new FakeSandboxProvider();
         var credentials = new FakeCredentialProvider();
         await using var manager = new SessionManager(
-            [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
-            sandboxes, [credentials]);
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [credentials]);
 
         var info = await manager.OpenSessionAsync("scripted", "/home/adam/project");
 
@@ -121,8 +121,8 @@ public class SandboxWiringTests
         var adapter = new ScriptedAgentAdapter();
         var sandboxes = new FakeSandboxProvider();
         await using var manager = new SessionManager(
-            [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
-            sandboxes, [new FakeCredentialProvider()]);
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()]);
 
         var info = await manager.OpenSessionAsync("scripted", "/tmp/work");
         var sandbox = sandboxes.Last;
@@ -158,8 +158,8 @@ public class SandboxWiringTests
             var adapter = new ScriptedAgentAdapter("codex");
             var sandboxes = new FakeSandboxProvider();
             await using var manager = new SessionManager(
-                [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
-                sandboxes, [new FakeCredentialProvider()], projects: projects);
+                TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()], projects: projects);
 
             await manager.OpenSessionAsync("codex", "/tmp/project"); // no repo → the default project
 
@@ -187,8 +187,8 @@ public class SandboxWiringTests
             var adapter = new ScriptedAgentAdapter("codex");
             var sandboxes = new FakeSandboxProvider();
             await using var manager = new SessionManager(
-                [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
-                sandboxes, [new FakeCredentialProvider()], null, mcp);
+                TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()], null, mcp);
 
             await manager.OpenSessionAsync("codex", "/tmp/project");
 
@@ -223,8 +223,8 @@ public class SandboxWiringTests
             var adapter = new ScriptedAgentAdapter("codex");
             var sandboxes = new FakeSandboxProvider();
             await using var manager = new SessionManager(
-                [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
-                sandboxes, [new FakeCredentialProvider()], null, mcp, forward, listener);
+                TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()], null, mcp, forward, listener);
 
             await manager.OpenSessionAsync("codex", "/tmp/project");
 
@@ -271,8 +271,8 @@ public class SandboxWiringTests
 
             var sandboxes = new FakeSandboxProvider();
             await using var manager = new SessionManager(
-                [new ScriptedAgentAdapter("codex")], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
-                sandboxes, [new FakeCredentialProvider()], null, mcp, forward, listener);
+                TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex")), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()], null, mcp, forward, listener);
 
             await manager.OpenSessionAsync("codex", "/tmp/project", skipPermissions: autonomous, mcpApproval: approval);
 
@@ -298,7 +298,7 @@ public class SandboxWiringTests
 
             var adapter = new ScriptedAgentAdapter("claude-code-native");
             await using var manager = new SessionManager(
-                [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance, mcp: mcp);
+                TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance, mcp: mcp);
 
             await manager.OpenSessionAsync("claude-code-native", "/tmp/work");
 
@@ -324,7 +324,7 @@ public class SandboxWiringTests
                 new SandboxImageManagerTests.FakeImageBuilder { Exists = true }, file,
                 NullLogger<Agnes.Host.Sessions.SandboxImageManager>.Instance);
             var manager = new SessionManager(
-                [new ScriptedAgentAdapter("codex"), new ScriptedAgentAdapter("opencode")],
+                TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex"), new ScriptedAgentAdapter("opencode")),
                 new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance, images: images);
 
             var agents = manager.ListAgents();
@@ -348,8 +348,8 @@ public class SandboxWiringTests
                 builder, file, NullLogger<Agnes.Host.Sessions.SandboxImageManager>.Instance);
             var sandboxes = new FakeSandboxProvider();
             await using var manager = new SessionManager(
-                [new ScriptedAgentAdapter("codex")], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
-                sandboxes, [new FakeCredentialProvider()], images: images);
+                TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex")), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()], images: images);
 
             await manager.OpenSessionAsync("codex", "/tmp/project");
 
@@ -367,7 +367,7 @@ public class SandboxWiringTests
     {
         var adapter = new ScriptedAgentAdapter();
         await using var manager = new SessionManager(
-            [adapter], new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance);
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance);
 
         var info = await manager.OpenSessionAsync("scripted", "/tmp/work");
 

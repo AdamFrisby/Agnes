@@ -36,7 +36,7 @@ public class SessionManagerTests
         var adapter = new ScriptedAgentAdapter();
         var store = new InMemoryEventStore();
         var broadcaster = new CollectingBroadcaster();
-        await using var manager = new SessionManager([adapter], store, broadcaster, NullLoggerFactory.Instance);
+        await using var manager = new SessionManager(TestPluginRegistries.Agents(adapter), store, broadcaster, NullLoggerFactory.Instance);
 
         adapter.Session.OnPrompt = (_, s) =>
         {
@@ -69,7 +69,7 @@ public class SessionManagerTests
         var adapter = new ScriptedAgentAdapter();
         var store = new InMemoryEventStore();
         var broadcaster = new CollectingBroadcaster();
-        await using var manager = new SessionManager([adapter], store, broadcaster, NullLoggerFactory.Instance);
+        await using var manager = new SessionManager(TestPluginRegistries.Agents(adapter), store, broadcaster, NullLoggerFactory.Instance);
 
         adapter.Session.OnPrompt = (_, s) =>
         {
@@ -97,7 +97,7 @@ public class SessionManagerTests
     {
         var adapter = new ScriptedAgentAdapter();
         await using var manager = new SessionManager(
-            [adapter], new InMemoryEventStore(), new CollectingBroadcaster(), NullLoggerFactory.Instance);
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new CollectingBroadcaster(), NullLoggerFactory.Instance);
 
         var agents = manager.ListAgents();
         var agent = Assert.Single(agents);
