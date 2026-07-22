@@ -25,7 +25,17 @@ public sealed class AgnesClient : IAsyncDisposable
         var key = hostUrl.TrimEnd('/');
         if (_hosts.TryGetValue(key, out var existing))
         {
-            return existing;
+            // Reuse a live connection, but never hand back a dead one: if the host restarted (or the
+            // connection dropped and auto-reconnect gave up), the pooled hub is Disconnected/Reconnecting
+            // and any call throws "the connection is not active". Drop it and reconnect fresh with the
+            // current token instead.
+            if (existing.State == AgnesConnectionState.Connected)
+            {
+                return existing;
+            }
+
+            _hosts.TryRemove(key, out _);
+            await existing.DisposeAsync();
         }
 
         var connection = new HostConnection(hostUrl, token, configureHttp);

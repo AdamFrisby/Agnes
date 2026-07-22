@@ -47,8 +47,11 @@ builder.Services.AddSingleton(new HostIdentity(
     Version: typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.1.0"));
 
 // ---- auth: per-device tokens + a pairing code (see DeviceRegistry) ----
-var devicesFile = builder.Configuration["Agnes:DevicesFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "devices.json");
+// NB: appsettings.json ships "DevicesFile": "" — an empty string isn't null, so `?? default` wouldn't
+// apply and the registry would try to persist to an empty path. Treat blank as unset.
+var devicesFile = builder.Configuration["Agnes:DevicesFile"] is { Length: > 0 } configuredDevicesFile
+    ? configuredDevicesFile
+    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "devices.json");
 builder.Services.AddSingleton(sp => new DeviceRegistry(
     builder.Configuration["Agnes:PairingToken"], devicesFile,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<DeviceRegistry>(),
