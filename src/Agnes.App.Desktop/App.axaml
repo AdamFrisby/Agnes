@@ -68,6 +68,11 @@
         <DataTemplate DataType="vm:SettingsDocument">
             <views:SettingsTabView />
         </DataTemplate>
+        <!-- A plugin custom screen: host its own view-model; a plugin ships a DataTemplate for that VM,
+             else the default presenter renders it. This is the head-specific view-resolution seam. -->
+        <DataTemplate DataType="vm:PluginScreenDocument">
+            <ContentControl Content="{Binding ScreenViewModel}" />
+        </DataTemplate>
     </Application.DataTemplates>
 
     <Application.Styles>

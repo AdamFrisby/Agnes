@@ -41,6 +41,47 @@ public interface IClientPluginModule
     void Register(ClientPluginCollector collector);
 }
 
+/// <summary>Well-known UI slot ids a plugin can contribute content into. A head that doesn't render a
+/// given slot simply ignores contributions to it.</summary>
+public static class UiSlots
+{
+    public const string ComposerActions = "composer.actions";
+    public const string ConversationBanner = "conversation.banner";
+    public const string SessionSidebar = "session.sidebar";
+}
+
+/// <summary>A contribution rendered into a named UI slot. <see cref="CreateContent"/> returns a view-model
+/// the head resolves to a view; content is platform-agnostic here (the head owns rendering).</summary>
+public interface IUiContribution
+{
+    string SlotId { get; }
+    int Order => 0;
+    object CreateContent();
+}
+
+/// <summary>Context handed to a conversation-item renderer for the item it may render.</summary>
+public sealed record ConversationItemContext(string ItemKind, object Item);
+
+/// <summary>Overrides or decorates how a transcript item of a given kind renders. The registry picks the
+/// lowest-<see cref="Order"/> renderer for a kind; returning null from <see cref="CreateView"/> falls back
+/// to the built-in renderer.</summary>
+public interface IConversationItemRenderer
+{
+    string ItemKind { get; }
+    int Order => 0;
+    object? CreateView(ConversationItemContext context);
+}
+
+/// <summary>A custom top-level screen a plugin contributes, opened as a tab/document like the built-in
+/// Settings screen. The head hosts <see cref="CreateViewModel"/> as a document and resolves its view.</summary>
+public interface ICustomScreenProvider
+{
+    string ScreenId { get; }
+    string Title { get; }
+    string? Icon { get; }
+    object CreateViewModel();
+}
+
 /// <summary>A client plugin-point: shows a notification on this device (the client half of the two-sided
 /// notifications feature — the host fires the trigger, a channel here displays it).</summary>
 public interface IClientNotificationChannel
@@ -66,11 +107,23 @@ public sealed class ClientPluginCollector
 {
     private readonly List<IClientNotificationChannel> _notificationChannels = [];
     private readonly List<IEventBinding> _eventBindings = [];
+    private readonly List<IUiContribution> _contributions = [];
+    private readonly List<IConversationItemRenderer> _renderers = [];
+    private readonly List<ICustomScreenProvider> _screens = [];
 
     public void AddNotificationChannel(IClientNotificationChannel channel) => _notificationChannels.Add(channel);
 
     /// <summary>Registers a plugin's event bindings (interceptors/observers) onto the client bus.</summary>
     public void AddEventBinding(IEventBinding binding) => _eventBindings.Add(binding);
+
+    /// <summary>Registers a contribution into a named UI slot.</summary>
+    public void AddUiContribution(IUiContribution contribution) => _contributions.Add(contribution);
+
+    /// <summary>Registers a renderer that overrides/decorates a conversation item kind.</summary>
+    public void AddConversationRenderer(IConversationItemRenderer renderer) => _renderers.Add(renderer);
+
+    /// <summary>Registers a custom screen a head can open as a tab/document.</summary>
+    public void AddCustomScreen(ICustomScreenProvider screen) => _screens.Add(screen);
 
     public ClientPluginSet Build()
     {
@@ -83,17 +136,41 @@ public sealed class ClientPluginCollector
 
         return new ClientPluginSet(
             new PluginRegistry<IClientNotificationChannel>(_notificationChannels, c => c.ChannelId),
-            bus);
+            bus,
+            [.. _contributions],
+            [.. _renderers],
+            [.. _screens]);
     }
 }
 
-/// <summary>The client's populated plugin registries and event bus.</summary>
-public sealed class ClientPluginSet(IPluginRegistry<IClientNotificationChannel> notificationChannels, IEventBus eventBus)
+/// <summary>The client's populated plugin registries, event bus, and UI extension contributions.</summary>
+public sealed class ClientPluginSet(
+    IPluginRegistry<IClientNotificationChannel> notificationChannels,
+    IEventBus eventBus,
+    IReadOnlyList<IUiContribution> contributions,
+    IReadOnlyList<IConversationItemRenderer> conversationRenderers,
+    IReadOnlyList<ICustomScreenProvider> customScreens)
 {
     public IPluginRegistry<IClientNotificationChannel> NotificationChannels { get; } = notificationChannels;
 
     /// <summary>The client event spine, with every plugin's bindings applied.</summary>
     public IEventBus EventBus { get; } = eventBus;
+
+    /// <summary>Every UI-slot contribution, across all plugins.</summary>
+    public IReadOnlyList<IUiContribution> Contributions { get; } = contributions;
+
+    /// <summary>Custom screens a head can open as tabs.</summary>
+    public IReadOnlyList<ICustomScreenProvider> CustomScreens { get; } = customScreens;
+
+    private readonly IReadOnlyList<IConversationItemRenderer> _conversationRenderers = conversationRenderers;
+
+    /// <summary>Contributions for one slot, in Order.</summary>
+    public IReadOnlyList<IUiContribution> SlotContributions(string slotId)
+        => Contributions.Where(c => c.SlotId == slotId).OrderBy(c => c.Order).ToArray();
+
+    /// <summary>The winning (lowest-Order) plugin renderer for an item kind, or null to use the built-in.</summary>
+    public IConversationItemRenderer? RendererFor(string itemKind)
+        => _conversationRenderers.Where(r => r.ItemKind == itemKind).OrderBy(r => r.Order).FirstOrDefault();
 
     /// <summary>Empty set — no client plugins (a valid state, e.g. a headless/minimal client).</summary>
     public static ClientPluginSet Empty { get; } = new ClientPluginCollector().Build();

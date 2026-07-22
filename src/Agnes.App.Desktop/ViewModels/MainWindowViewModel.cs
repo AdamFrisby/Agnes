@@ -1278,6 +1278,31 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         => _clientPlugins ??= DesktopClientPlugins.Build(Notifier,
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins"));
 
+    /// <summary>Custom screens contributed by client plugins, for a menu / command-palette to list and open.</summary>
+    public IReadOnlyList<ICustomScreenProvider> CustomScreens => EnsureClientPlugins().CustomScreens;
+
+    /// <summary>Opens a plugin's custom screen as a dock document — the same way <see cref="OpenSettings"/>
+    /// opens Settings, so a plugin screen can replace the conversation view in a tab.</summary>
+    public void OpenCustomScreen(ICustomScreenProvider provider)
+    {
+        if (_factory.DocumentDock is not { } dock)
+        {
+            return;
+        }
+
+        var existing = dock.VisibleDockables?.OfType<PluginScreenDocument>()
+            .FirstOrDefault(d => (string?)d.Id == provider.ScreenId);
+        if (existing is null)
+        {
+            existing = new PluginScreenDocument(provider);
+            _factory.AddDockable(dock, existing);
+        }
+
+        dock.ActiveDockable = existing;
+        _factory.SetActiveDockable(existing);
+        _factory.SetFocusedDockable(dock, existing);
+    }
+
     /// <summary>The directory to prefill for a new session — last used, else the user's home.</summary>
     public string DefaultWorkingDirectory =>
         string.IsNullOrWhiteSpace(_settings.WorkingDirectory)
