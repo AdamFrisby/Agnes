@@ -14,6 +14,18 @@ var builder = WebApplication.CreateBuilder(args);
 // "An unexpected error occurred" and can't be diagnosed from the UI.
 builder.Services.AddSignalR(o => o.EnableDetailedErrors = true);
 
+// ---- transport as a built-in plugin (AC13): how the host is reachable by clients ----
+// Direct (clients connect straight to this host's listener) is the only built-in and the default; a relay
+// or tunnel transport can be added as a plugin. This governs reachability/address advertisement only — the
+// SignalR hub binding below is unchanged.
+builder.Services.AddSingleton<ITransportProvider, DirectTransportProvider>();
+builder.Services.AddSingleton<PluginRegistry<ITransportProvider>>(sp =>
+    new PluginRegistry<ITransportProvider>(sp.GetServices<ITransportProvider>(), t => t.Id));
+builder.Services.AddSingleton<IPluginRegistry<ITransportProvider>>(sp => sp.GetRequiredService<PluginRegistry<ITransportProvider>>());
+builder.Services.AddSingleton<IMutablePluginRegistry<ITransportProvider>>(sp => sp.GetRequiredService<PluginRegistry<ITransportProvider>>());
+builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
+    new Agnes.Host.Plugins.PluginPointMerger<ITransportProvider>(sp.GetRequiredService<IMutablePluginRegistry<ITransportProvider>>(), t => t.Id));
+
 // CORS for a browser-hosted frontend (Uno WASM) reaching the hub cross-origin. The web client
 // served from this same origin needs no CORS; only configure origins when it's hosted elsewhere.
 //   Agnes:AllowedOrigins  — comma/space-separated allowlist (recommended for cross-origin).
@@ -755,6 +767,21 @@ if (!tokens.PairingEnabled && !gitHubAuth.IsUsable && !keypairUsable)
 {
     app.Logger.LogWarning("No usable sign-in method is configured — set Agnes:Auth:GitHub / Keypair or re-enable pairing, or no client can connect.");
 }
+
+// Resolve the configured transport from the plugin registry (default: direct) and advertise, once the
+// server is listening, the address(es) clients should use for it (AC13).
+var transportName = builder.Configuration["Agnes:Transport:Provider"] ?? "direct";
+var transports = app.Services.GetRequiredService<IPluginRegistry<ITransportProvider>>();
+var transport = transports.Find(transportName)
+    ?? throw new InvalidOperationException(
+        $"No transport provider named '{transportName}' is registered (have: {string.Join(", ", transports.All.Select(t => t.Id))}).");
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var bound = app.Urls.Count > 0 ? app.Urls.ToArray() : ["(host default binding)"];
+    var endpoint = transport.Describe(new HostExposureContext(bound));
+    app.Logger.LogInformation("Transport '{Transport}' ({Hint}): clients reach this host at {Addresses}.",
+        transport.DisplayName, endpoint.DisplayHint, string.Join(", ", endpoint.ClientAddresses));
+});
 
 app.Run();
 
