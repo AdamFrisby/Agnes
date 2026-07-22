@@ -66,6 +66,26 @@ public sealed record AgentInfo(
     string? Version,
     bool Available);
 
+/// <summary>
+/// Whether one plugin-point id is populated on this host, from <c>GetCapabilities()</c>. Lets a
+/// client learn "no voice provider configured" up front instead of discovering it via a failed
+/// call. <see cref="FailClosed"/> tells the client how to treat an unavailable capability: a
+/// fail-closed capability should block/hide the dependent action outright, a fail-open one should
+/// let the action proceed and degrade gracefully (e.g. a session just runs unsandboxed).
+/// </summary>
+public sealed record HostCapability(string Id, bool Available, bool FailClosed);
+
+/// <summary>Stable ids for the host-level capabilities <see cref="HostCapability"/> reports.</summary>
+public static class HostCapabilityIds
+{
+    /// <summary>At least one <c>IAgentAdapter</c> is registered — without this, no session can open.</summary>
+    public const string AgentAdapter = "agent-adapter";
+
+    /// <summary>An <c>ISandboxProvider</c> is configured. Absence degrades gracefully: sessions just
+    /// run on the host instead of in a per-session VM.</summary>
+    public const string SandboxProvider = "sandbox-provider";
+}
+
 /// <summary>Metadata about a live or resumable session.</summary>
 public sealed record SessionInfo(
     string SessionId,

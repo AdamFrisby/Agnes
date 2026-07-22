@@ -39,6 +39,11 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task<IReadOnlyList<AgentInfo>> ListAgentsAsync();
 
+    /// <summary>Which host-level plugin-point capabilities are populated on this host. Default empty
+    /// for hosts/fixtures that don't report capabilities — a client should treat an id absent from the
+    /// list the same as one explicitly reported unavailable.</summary>
+    Task<IReadOnlyList<HostCapability>> GetCapabilitiesAsync() => Task.FromResult<IReadOnlyList<HostCapability>>([]);
+
     Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true);
 
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>

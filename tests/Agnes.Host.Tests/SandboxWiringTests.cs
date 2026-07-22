@@ -1,6 +1,7 @@
 using Agnes.Abstractions;
 using Agnes.Host.Events;
 using Agnes.Host.Sessions;
+using Agnes.Protocol;
 using Agnes.Sandbox;
 using Agnes.Sandbox.Credentials;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -375,5 +376,44 @@ public class SandboxWiringTests
         Assert.NotNull(adapter.LastOptions);
         Assert.Null(adapter.LastOptions!.Sandbox);
         Assert.Equal("/tmp/work", adapter.LastOptions.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task GetCapabilities_reports_sandbox_provider_unavailable_when_none_configured()
+    {
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new ScriptedAgentAdapter()), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance);
+
+        var capabilities = manager.GetCapabilities();
+
+        var sandbox = Assert.Single(capabilities, c => c.Id == HostCapabilityIds.SandboxProvider);
+        Assert.False(sandbox.Available);
+        Assert.False(sandbox.FailClosed); // absence degrades gracefully — sessions just run unsandboxed
+    }
+
+    [Fact]
+    public async Task GetCapabilities_reports_sandbox_provider_available_when_one_is_registered()
+    {
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new ScriptedAgentAdapter()), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(new FakeSandboxProvider()));
+
+        var capabilities = manager.GetCapabilities();
+
+        var sandbox = Assert.Single(capabilities, c => c.Id == HostCapabilityIds.SandboxProvider);
+        Assert.True(sandbox.Available);
+    }
+
+    [Fact]
+    public async Task GetCapabilities_reports_agent_adapter_available_whenever_any_are_registered()
+    {
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new ScriptedAgentAdapter()), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance);
+
+        var capabilities = manager.GetCapabilities();
+
+        var agents = Assert.Single(capabilities, c => c.Id == HostCapabilityIds.AgentAdapter);
+        Assert.True(agents.Available);
+        Assert.True(agents.FailClosed); // no adapters at all would mean no session can ever open
     }
 }

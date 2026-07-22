@@ -26,6 +26,11 @@ public interface IAgnesServer
 
     Task<IReadOnlyList<AgentInfo>> ListAgents();
 
+    /// <summary>Which host-level plugin-point capabilities are actually populated on this host (see
+    /// <see cref="HostCapability"/>), so a client can hide/degrade a feature up front instead of
+    /// discovering its absence via a failed call.</summary>
+    Task<IReadOnlyList<HostCapability>> GetCapabilities();
+
     Task<SessionInfo> OpenSession(OpenSessionRequest request);
 
     /// <summary>Join a session's broadcast group and get a snapshot from <paramref name="sinceSequence"/>.</summary>

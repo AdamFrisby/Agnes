@@ -38,6 +38,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<IReadOnlyList<AgentInfo>> ListAgents()
         => Task.FromResult(_sessions.ListAgents());
 
+    public Task<IReadOnlyList<HostCapability>> GetCapabilities()
+        => Task.FromResult(_sessions.GetCapabilities());
+
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
         => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox);
 

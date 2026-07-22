@@ -84,6 +84,20 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
     }
 
     [Fact]
+    public async Task GetCapabilities_flows_over_the_wire_and_reports_no_sandbox_provider()
+    {
+        await using var client = new AgnesClient();
+        var host = await client.AddHostAsync("http://localhost", Token, UseTestServer());
+
+        var capabilities = await host.GetCapabilitiesAsync();
+
+        var agents = Assert.Single(capabilities, c => c.Id == Agnes.Protocol.HostCapabilityIds.AgentAdapter);
+        Assert.True(agents.Available); // the scripted adapter this fixture registers
+        var sandbox = Assert.Single(capabilities, c => c.Id == Agnes.Protocol.HostCapabilityIds.SandboxProvider);
+        Assert.False(sandbox.Available); // this fixture never configures Agnes:Sandbox:Provider
+    }
+
+    [Fact]
     public async Task Cancel_flows_over_the_wire_to_the_agent_session()
     {
         _factory.Adapter.Session.OnPrompt = (_, s) =>

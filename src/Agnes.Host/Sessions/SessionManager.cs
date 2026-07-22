@@ -225,6 +225,15 @@ public sealed class SessionManager : IAsyncDisposable
     /// <summary>Whether this host can isolate sessions in per-session sandbox VMs (a provider is configured).</summary>
     public bool SandboxAvailable => _sandboxes is not null;
 
+    /// <summary>Which host-level plugin-point capabilities are actually populated right now (AC2/AC3 of
+    /// .ideas/00-plugin-architecture.md) — queried live rather than cached, so it reflects the current
+    /// registry state if plugins are ever installed/enabled/disabled without a restart.</summary>
+    public IReadOnlyList<HostCapability> GetCapabilities() =>
+    [
+        new HostCapability(HostCapabilityIds.AgentAdapter, _adapters.All.Count > 0, FailClosed: true),
+        new HostCapability(HostCapabilityIds.SandboxProvider, SandboxAvailable, FailClosed: false),
+    ];
+
     public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, CancellationToken cancellationToken = default)
     {
         var adapter = _adapters.Find(adapterId);
