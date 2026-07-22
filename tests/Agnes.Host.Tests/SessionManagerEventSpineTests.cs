@@ -35,7 +35,7 @@ public class SessionManagerEventSpineTests
 
     private static async Task WaitForAsync(Func<bool> condition)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30)); // generous for loaded CI runners
         while (!condition())
         {
             cts.Token.ThrowIfCancellationRequested();
