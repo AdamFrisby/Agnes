@@ -222,7 +222,10 @@ public sealed class SessionManager : IAsyncDisposable
                     : a.IsAvailable()))
             .ToArray();
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", CancellationToken cancellationToken = default)
+    /// <summary>Whether this host can isolate sessions in per-session sandbox VMs (a provider is configured).</summary>
+    public bool SandboxAvailable => _sandboxes is not null;
+
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, CancellationToken cancellationToken = default)
     {
         if (!_adapters.TryGetValue(adapterId, out var adapter))
         {
@@ -264,7 +267,7 @@ public sealed class SessionManager : IAsyncDisposable
         // together in ONE bundle so the combined env write doesn't clobber the credential env file.
         ISandbox? sandbox = null;
         string? mcpConfigPath = null;
-        if (_sandboxes is not null)
+        if (_sandboxes is not null && useSandbox)
         {
             // Ensure the image exists (bake if missing) before launching from it — the resolved
             // project's own sandbox image when we have a project, else the legacy global baseline.

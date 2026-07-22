@@ -102,7 +102,7 @@ public sealed class SimulatedHost : IAgnesHost
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync()
         => Task.FromResult<IReadOnlyList<AgentInfo>>(Agents);
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off")
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true)
     {
         var id = $"sim-{Interlocked.Increment(ref _counter):x4}";
         var session = _sessions.GetOrAdd(id, _ => new SimSession(id, adapterId, workingDirectory));

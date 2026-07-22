@@ -3,8 +3,9 @@ using Agnes.Abstractions;
 
 namespace Agnes.Protocol;
 
-/// <summary>Identity of a host a client can connect to.</summary>
-public sealed record HostInfo(string HostId, string DisplayName, string Version);
+/// <summary>Identity of a host a client can connect to. <see cref="SandboxAvailable"/> tells the client
+/// whether the host can isolate sessions in per-session VMs (so the new-session screen can default it on).</summary>
+public sealed record HostInfo(string HostId, string DisplayName, string Version, bool SandboxAvailable = false);
 
 /// <summary>Request to pair a new device using the host's current pairing code.</summary>
 public sealed record PairRequest(string Code, string DeviceName);
@@ -176,7 +177,7 @@ public sealed record SessionSnapshot(
 /// </param>
 public sealed record OpenSessionRequest(
     string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false,
-    string McpApproval = "Ask", string GitCredentialMode = "Off");
+    string McpApproval = "Ask", string GitCredentialMode = "Off", bool UseSandbox = true);
 
 /// <summary>Stores a token credential source for a host (the low-setup fine-grained-PAT fallback).</summary>
 public sealed record StoreCredentialRequest(string Host, string Token, string? Username = null);

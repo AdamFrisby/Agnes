@@ -340,10 +340,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public IAsyncRelayCommand<string> RevokeDeviceCommand { get; }
 
     private (string Url, string Token)? ActiveHttpHost()
-        => _factory.DocumentDock?.ActiveDockable is SessionDocument { Host: { } host } doc
-           && host.HostUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-            ? (host.HostUrl, doc.HostToken)
-            : null;
+    {
+        static bool IsHttp(SessionDocument d) =>
+            d.Host is { } h && h.HostUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+
+        // Prefer the active session's host; but the Settings tab isn't a session, so fall back to ANY
+        // connected http host among the open tabs — otherwise opening Settings dead-ends the GitHub/device/
+        // sandbox management that needs a host.
+        if (_factory.DocumentDock?.ActiveDockable is SessionDocument active && IsHttp(active))
+        {
+            return (active.Host!.HostUrl, active.HostToken);
+        }
+
+        var any = AllDocuments().FirstOrDefault(IsHttp);
+        return any is not null ? (any.Host!.HostUrl, any.HostToken) : null;
+    }
 
     private async Task LoadDevicesAsync()
     {
@@ -1544,7 +1555,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             WireStatus(doc, agnesHost);
 
             var agents = await agnesHost.ListAgentsAsync();
-            _dispatcher.Post(() => doc.ShowAgents(agents));
+            // Learn whether this host can sandbox, so the new-session screen can default the toggle on.
+            var hostInfo = await agnesHost.GetHostInfoAsync();
+            _dispatcher.Post(() =>
+            {
+                doc.SandboxAvailable = hostInfo.SandboxAvailable;
+                doc.UseSandbox = hostInfo.SandboxAvailable; // default on when available
+                doc.ShowAgents(agents);
+            });
             return true;
         }
         catch (Exception ex)
@@ -1771,7 +1789,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
-    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off")
+    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true)
     {
         if (doc.Host is null)
         {
@@ -1797,7 +1815,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode);
+            var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode, useSandbox: useSandbox);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             var title = ProjectTitle(info.WorkingDirectory, displayName);
             _dispatcher.Post(() =>

@@ -88,8 +88,8 @@ public sealed class HostConnection : IAgnesHost
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync()
         => _hub.InvokeAsync<IReadOnlyList<AgentInfo>>(nameof(IAgnesServer.ListAgents));
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off")
-        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode));
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true)
+        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox));
 
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>
     public async Task<SessionView> SubscribeAsync(string sessionId, long since = 0)

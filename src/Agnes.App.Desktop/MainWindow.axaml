@@ -70,7 +70,7 @@
         <LayoutTransformControl.LayoutTransform>
             <ScaleTransform ScaleX="{Binding FontScale}" ScaleY="{Binding FontScale}" />
         </LayoutTransformControl.LayoutTransform>
-    <Grid x:Name="ScaleRoot" RowDefinitions="Auto,*">
+    <Grid x:Name="ScaleRoot" RowDefinitions="Auto,Auto,*">
 
         <!-- Top bar (fallback): LeftBar/RightBar are relocated into the Dock tab strip at runtime and this
              whole row is collapsed once that succeeds (see MainWindow.axaml.cs). -->
@@ -265,11 +265,11 @@
             </Grid>
         </Border>
 
-        <dc:DockControl x:Name="DockRoot" Grid.Row="1" Layout="{Binding Layout}" />
-
-        <!-- First-run nudge: link a GitHub account so sandboxed agents can clone/push private repos -->
-        <Border Grid.Row="1" ZIndex="90" IsVisible="{Binding ShowGitHubLinkPrompt}" VerticalAlignment="Top"
-                Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="0,0,0,1" Padding="16,10">
+        <!-- First-run nudge: link a GitHub account so sandboxed agents can clone/push private repos.
+             Its own row (Auto → 0 when hidden) so it sits above the tab strip instead of overlapping it,
+             with a solid background so it's readable. -->
+        <Border Grid.Row="1" IsVisible="{Binding ShowGitHubLinkPrompt}"
+                Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Accent}" BorderThickness="0,0,0,2" Padding="16,10">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                 <TextBlock Grid.Column="0" Text="🔗" FontSize="14" VerticalAlignment="Center" Margin="0,0,10,0" />
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -285,8 +285,10 @@
             </Grid>
         </Border>
 
+        <dc:DockControl x:Name="DockRoot" Grid.Row="2" Layout="{Binding Layout}" />
+
         <!-- Command palette (Ctrl+K): jump to a session or run an action -->
-        <Border Grid.Row="0" Grid.RowSpan="2" ZIndex="100" IsVisible="{Binding IsPaletteOpen}"
+        <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="100" IsVisible="{Binding IsPaletteOpen}"
                 Background="#88000000">
             <Border Width="540" MaxHeight="460" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,90,0,0"
                     Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"

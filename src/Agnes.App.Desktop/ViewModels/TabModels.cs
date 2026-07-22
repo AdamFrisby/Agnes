@@ -35,7 +35,7 @@ public interface ITabController
 
     /// <summary>Whether a host can be removed by the user (built-in Simulated/Recorded hosts can't).</summary>
     bool IsForgettableHost(string url);
-    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off");
+    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true);
     void BackToHosts(SessionDocument doc);
 
     /// <summary>Persist tab metadata (rename / pin / tag) after an in-tab change.</summary>

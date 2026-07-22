@@ -32,6 +32,7 @@ public sealed partial class SessionDocument : Document
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
         SetPermissionModeCommand = new RelayCommand<string>(v => SkipPermissions = v == "Autonomous");
+        SetSandboxModeCommand = new RelayCommand<string>(v => { if (v is not null && SandboxAvailable) { UseSandbox = v == "On"; } });
         SelectAgentChoiceCommand = new RelayCommand<AgentChoice>(SelectAgentChoice);
         StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => SelectedAgent is { Available: true });
 
@@ -180,6 +181,22 @@ public sealed partial class SessionDocument : Document
     public bool GitCredAsk => GitCredentialMode == "Ask";
     public bool GitCredTrust => GitCredentialMode == "Trust";
 
+    /// <summary>New-session choice: isolate the agent in a per-session sandbox VM. Defaults on when the
+    /// host supports it (<see cref="SandboxAvailable"/>); the control is disabled and off otherwise.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SandboxOn))]
+    [NotifyPropertyChangedFor(nameof(SandboxOff))]
+    private bool _useSandbox = true;
+
+    /// <summary>Whether the connected host can sandbox at all (from HostInfo).</summary>
+    [ObservableProperty]
+    private bool _sandboxAvailable;
+
+    public bool SandboxOn => UseSandbox;
+    public bool SandboxOff => !UseSandbox;
+
+    public IRelayCommand<string> SetSandboxModeCommand { get; }
+
     [ObservableProperty]
     private bool _isRenaming;
 
@@ -310,7 +327,7 @@ public sealed partial class SessionDocument : Document
 
     private Task StartSessionAsync()
         => SelectedAgent is { Available: true } a
-            ? _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode)
+            ? _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode, SandboxAvailable && UseSandbox)
             : Task.CompletedTask;
 
     private void ApplyAgentFilter()

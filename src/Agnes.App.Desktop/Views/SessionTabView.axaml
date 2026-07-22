@@ -493,6 +493,34 @@
                         </Grid>
                     </StackPanel>
 
+                    <!-- Sandbox: isolate the agent in a per-session VM. Defaults on when the host supports it. -->
+                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                            CornerRadius="10" Padding="14,10">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Grid.Column="0" Text="📦" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" Text="Sandbox" />
+                                    <ctl:InfoHint Description="Run the agent inside an isolated per-session VM, with only the chosen project directory mounted. On by default when the host supports it."
+                                                  Security="A sandbox contains what the agent can reach — it can't touch the rest of your machine, even in Autonomous mode. Strongly recommended." />
+                                </StackPanel>
+                                <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                           IsVisible="{Binding SandboxAvailable}"
+                                           Text="Isolate the agent in a per-session VM — only the project directory is mounted." />
+                                <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                           IsVisible="{Binding !SandboxAvailable}"
+                                           Text="Not available on this host — start it with a sandbox provider (Agnes:Sandbox:Provider=incus) to isolate sessions." />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                        IsEnabled="{Binding SandboxAvailable}">
+                                <Button Content="On" Command="{Binding SetSandboxModeCommand}" CommandParameter="On"
+                                        Classes.on="{Binding SandboxOn}" Classes="seg" />
+                                <Button Content="Off" Command="{Binding SetSandboxModeCommand}" CommandParameter="Off"
+                                        Classes.on="{Binding SandboxOff}" Classes="seg" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
                     <!-- Permissions: fixed label/description on the left; the segmented control on the right is the state -->
                     <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="10" Padding="14,10">

@@ -33,13 +33,13 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     }
 
     public Task<HostInfo> GetHostInfo()
-        => Task.FromResult(new HostInfo(_identity.HostId, _identity.DisplayName, _identity.Version));
+        => Task.FromResult(new HostInfo(_identity.HostId, _identity.DisplayName, _identity.Version, _sessions.SandboxAvailable));
 
     public Task<IReadOnlyList<AgentInfo>> ListAgents()
         => Task.FromResult(_sessions.ListAgents());
 
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
-        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode);
+        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox);
 
     public async Task<SessionSnapshot> Subscribe(string sessionId, long sinceSequence)
     {
