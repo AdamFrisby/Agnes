@@ -182,11 +182,29 @@ public static class CodexAppServer
         DisplayName = "Codex",
     };
 
-    public static CodexAppServerAdapter Create(ILoggerFactory loggerFactory, string? command = null, IReadOnlyList<string>? arguments = null)
-        => new(new CodexLaunchSpec
+    /// <summary>The config override that turns on Codex's structured "ask the user" questions
+    /// (<c>item/tool/requestUserInput</c>). The flag is "under development" upstream — opt-in only.</summary>
+    internal const string UserInputConfigArg = "features.default_mode_request_user_input=true";
+
+    /// <param name="enableUserInput">Prepend <c>-c features.default_mode_request_user_input=true</c> so the
+    /// app-server surfaces structured questions. Experimental — off by default.</param>
+    public static CodexAppServerAdapter Create(
+        ILoggerFactory loggerFactory,
+        string? command = null,
+        IReadOnlyList<string>? arguments = null,
+        bool enableUserInput = false)
+    {
+        var args = arguments ?? ["app-server"];
+        if (enableUserInput && !args.Any(a => a.Contains("default_mode_request_user_input", StringComparison.Ordinal)))
+        {
+            args = ["-c", UserInputConfigArg, .. args];
+        }
+
+        return new(new CodexLaunchSpec
         {
             Command = command ?? "codex",
-            Arguments = arguments ?? ["app-server"],
+            Arguments = args,
             Descriptor = Descriptor,
         }, loggerFactory);
+    }
 }
