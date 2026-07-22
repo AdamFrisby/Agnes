@@ -12,7 +12,7 @@ namespace Agnes.Host.Sessions;
 /// <summary>Orchestrates agent adapters and live sessions, backed by the event store.</summary>
 public sealed class SessionManager : IAsyncDisposable
 {
-    private readonly IReadOnlyDictionary<string, IAgentAdapter> _adapters;
+    private readonly IPluginRegistry<IAgentAdapter> _adapters;
     private readonly IEventStore _store;
     private readonly ISessionBroadcaster _broadcaster;
     private readonly ILoggerFactory _loggerFactory;
@@ -39,11 +39,11 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly SemaphoreSlim _attachGate = new(1, 1);
 
     public SessionManager(
-        IEnumerable<IAgentAdapter> adapters,
+        IPluginRegistry<IAgentAdapter> adapters,
         IEventStore store,
         ISessionBroadcaster broadcaster,
         ILoggerFactory loggerFactory,
-        ISandboxProvider? sandboxes = null,
+        IPluginRegistry<ISandboxProvider>? sandboxProviders = null,
         IEnumerable<IAgentCredentialProvider>? credentialProviders = null,
         ClaudeTokenRotationPusher? rotationPusher = null,
         McpRegistry? mcp = null,
@@ -55,12 +55,12 @@ public sealed class SessionManager : IAsyncDisposable
         Projects.ProjectStore? projects = null,
         SandboxRegistry? sandboxRegistry = null)
     {
-        _adapters = adapters.ToDictionary(a => a.Descriptor.Id);
+        _adapters = adapters;
         _store = store;
         _broadcaster = broadcaster;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<SessionManager>();
-        _sandboxes = sandboxes;
+        _sandboxes = sandboxProviders?.All.FirstOrDefault();
         _credentialProviders = credentialProviders?.ToArray() ?? [];
         _rotationPusher = rotationPusher;
         _mcp = mcp;
@@ -213,7 +213,7 @@ public sealed class SessionManager : IAsyncDisposable
     }
 
     public IReadOnlyList<AgentInfo> ListAgents()
-        => _adapters.Values
+        => _adapters.All
             // When agents run in a sandbox, availability reflects the baked image (host PATH is
             // irrelevant — the agent runs in the VM, not on the host).
             .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version,
@@ -227,7 +227,8 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, CancellationToken cancellationToken = default)
     {
-        if (!_adapters.TryGetValue(adapterId, out var adapter))
+        var adapter = _adapters.Find(adapterId);
+        if (adapter is null)
         {
             throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
         }
@@ -509,7 +510,8 @@ public sealed class SessionManager : IAsyncDisposable
                 return live;
             }
 
-            if (!_adapters.TryGetValue(record.AdapterId, out var adapter))
+            var adapter = _adapters.Find(record.AdapterId);
+            if (adapter is null)
             {
                 throw new InvalidOperationException($"Adapter '{record.AdapterId}' for session '{sessionId}' is no longer registered.");
             }
@@ -676,7 +678,8 @@ public sealed class SessionManager : IAsyncDisposable
             throw new InvalidOperationException("Sandboxing is not configured on this host.");
         }
 
-        if (!_adapters.TryGetValue(record.AdapterId, out var adapter))
+        var adapter = _adapters.Find(record.AdapterId);
+        if (adapter is null)
         {
             throw new InvalidOperationException($"Adapter '{record.AdapterId}' is no longer registered.");
         }

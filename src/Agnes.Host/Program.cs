@@ -165,6 +165,13 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Codex.CodexAppSe
     builder.Configuration["Agnes:Codex:Command"],
     builder.Configuration.GetSection("Agnes:Codex:Args").Get<string[]>()));
 
+// A typed, DI-resolvable registry over every IAgentAdapter above — the plugin-point pattern every
+// new provider interface in this backlog follows (see .ideas/00-plugin-architecture.md). Built once
+// all the AddSingleton<IAgentAdapter> registrations above have run; consumed by SessionManager
+// (Find-by-id instead of a hand-rolled dictionary) and by capability negotiation (GetCapabilities).
+builder.Services.AddSingleton<IPluginRegistry<IAgentAdapter>>(sp =>
+    new PluginRegistry<IAgentAdapter>(sp.GetServices<IAgentAdapter>(), a => a.Descriptor.Id));
+
 // ---- sandboxing (opt-in) ----
 // When Agnes:Sandbox:Provider=incus, agents run inside per-session Incus VMs with their
 // credentials materialised in. Off by default: no behaviour change unless configured.
@@ -237,6 +244,12 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
         sp.GetRequiredService<Agnes.Sandbox.ISandboxImageBuilder>(), imageManifestFile,
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxImageManager>()));
 }
+
+// A typed, DI-resolvable registry over every ISandboxProvider configured above (today: zero or one —
+// "Agnes:Sandbox:Provider" selects which backend is active). Registered unconditionally so the plugin
+// pattern (and capability negotiation) holds even when no sandbox backend is configured (AC2/AC3).
+builder.Services.AddSingleton<IPluginRegistry<Agnes.Sandbox.ISandboxProvider>>(sp =>
+    new PluginRegistry<Agnes.Sandbox.ISandboxProvider>(sp.GetServices<Agnes.Sandbox.ISandboxProvider>(), p => p.Name));
 
 // Credential sources + the Connect-GitHub flow are always available (a user can link GitHub before
 // they ever open a sandbox); the broker above only consumes what's registered here.
