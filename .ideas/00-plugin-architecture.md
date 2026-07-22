@@ -170,6 +170,7 @@ A small, host-owned catalog of capability ids is worth building once every plugi
 - **AC10** — Given a plugin update whose manifest declares a capability the currently-installed version didn't have, when the update is applied, then the user is re-prompted for consent to the new capability before the updated code runs — an update never silently grants new access.
 - **AC11** — A plugin that did not declare (or was not granted) the `credentials` capability cannot obtain a working `ICredentialBroker` (or equivalent scoped service) from its own `ConfigureServices` registration — verified by a test plugin that attempts to resolve one and confirms the resolution fails or returns nothing usable.
 - **AC12** — Given a client paired to a remote host, performing search/install/enable/disable/configure/uninstall from that client produces the same end state on the host as performing the same action from a client running locally on the host machine.
+- **AC13** - Review the existing systems and design, and migrate them to the plugin system as built-in plugins. Verify that there are no chunks of functionality remaining that could become plugins.
 
 ## Open questions
 
