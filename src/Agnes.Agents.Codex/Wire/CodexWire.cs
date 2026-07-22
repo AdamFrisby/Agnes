@@ -39,3 +39,9 @@ internal sealed record CodexTurnInterruptParams(string ThreadId);
 
 /// <summary>Reply to an <c>item/*/requestApproval</c> server request: "approved" or "denied".</summary>
 internal sealed record CodexApprovalResponse(string Decision);
+
+/// <summary>Reply to an <c>item/tool/requestUserInput</c> server request: per-question answers keyed by
+/// question id (each answer is an array of chosen strings — a single element for single-select).</summary>
+internal sealed record CodexRequestUserInputResult(IReadOnlyDictionary<string, CodexUserInputAnswer> Answers);
+
+internal sealed record CodexUserInputAnswer(IReadOnlyList<string> Answers);

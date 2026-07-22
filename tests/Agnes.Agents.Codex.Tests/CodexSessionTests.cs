@@ -121,4 +121,71 @@ public class CodexSessionTests
         Assert.Equal(StopReason.EndTurn, reason);
         Assert.Equal("approved", server.LastApprovalDecision);
     }
+
+    [Fact]
+    public async Task User_input_request_surfaces_as_a_question_and_the_answers_return_to_codex()
+    {
+        var (client, server) = FakeCodexAppServer.Create();
+        await using var _ = server;
+        await using var connection = new CodexConnection(client, client, NullLogger.Instance);
+
+        await connection.InitializeAsync(default);
+        var session = await connection.StartThreadAsync("/tmp", "on-request", "workspace-write", default);
+
+        server.OnTurn = async rpc =>
+        {
+            await server.RequestUserInputAsync(new
+            {
+                threadId = "th-1",
+                turnId = "tn-1",
+                itemId = "item-9",
+                questions = new object[]
+                {
+                    new
+                    {
+                        id = "db",
+                        header = "Database",
+                        question = "Which database should we use?",
+                        isOther = true,
+                        options = new object[]
+                        {
+                            new { label = "SQLite", description = "Embedded, zero-config" },
+                            new { label = "Postgres", description = "Client/server" },
+                        },
+                    },
+                },
+            });
+            await rpc.NotifyWithParameterObjectAsync("turn/completed", new
+            {
+                threadId = "th-1",
+                turn = new { id = "tn-1", status = "completed" },
+            });
+        };
+
+        var promptTask = session.PromptAsync([new TextContent("set up the db")]);
+
+        var question = await ReadUntilAsync<QuestionAskedEvent>(session, TimeSpan.FromSeconds(5));
+        Assert.Equal("item-9", question.ToolCallId);
+        var q = Assert.Single(question.Questions);
+        Assert.Equal("db", q.Id);
+        Assert.Equal("Database", q.Header);
+        Assert.True(q.AllowFreeText);
+        Assert.False(q.MultiSelect);
+        Assert.Equal(2, q.Options.Count);
+        Assert.Equal("SQLite", q.Options[0].Label);
+
+        await session.AnswerQuestionAsync(question.RequestId,
+            [new QuestionAnswer("db", ["Postgres"], "and add pgbouncer")]);
+
+        var reason = await promptTask;
+        Assert.Equal(StopReason.EndTurn, reason);
+
+        // The answers echoed back to Codex: {"db":{"answers":["Postgres","and add pgbouncer"]}}.
+        var answers = server.LastUserInputAnswers!.Value;
+        var picks = answers.GetProperty("db").GetProperty("answers").EnumerateArray().Select(e => e.GetString()!).ToArray();
+        Assert.Equal(["Postgres", "and add pgbouncer"], picks);
+
+        var resolved = await ReadUntilAsync<QuestionAnsweredEvent>(session, TimeSpan.FromSeconds(2));
+        Assert.Equal(question.RequestId, resolved.RequestId);
+    }
 }

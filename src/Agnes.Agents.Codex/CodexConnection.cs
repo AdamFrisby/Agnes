@@ -108,6 +108,17 @@ internal sealed class CodexConnection : ICodexRpc, IAsyncDisposable
         return Task.FromResult(new CodexApprovalResponse("denied"));
     }
 
+    private Task<CodexRequestUserInputResult> OnUserInputAsync(JsonElement p, CancellationToken cancellationToken)
+    {
+        if (_session is { } session)
+        {
+            return session.HandleUserInputAsync(p, cancellationToken);
+        }
+
+        // No session to route to — answer with nothing so the turn doesn't hang.
+        return Task.FromResult(new CodexRequestUserInputResult(new Dictionary<string, CodexUserInputAnswer>()));
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -158,5 +169,9 @@ internal sealed class CodexConnection : ICodexRpc, IAsyncDisposable
 
         [JsonRpcMethod("item/permissions/requestApproval", UseSingleObjectParameterDeserialization = true)]
         public Task<CodexApprovalResponse> PermissionsApproval(JsonElement p, CancellationToken ct) => connection.OnApprovalAsync(p, ct);
+
+        // Structured "ask the user" questions (behind the app-server's default_mode_request_user_input flag).
+        [JsonRpcMethod("item/tool/requestUserInput", UseSingleObjectParameterDeserialization = true)]
+        public Task<CodexRequestUserInputResult> RequestUserInput(JsonElement p, CancellationToken ct) => connection.OnUserInputAsync(p, ct);
     }
 }

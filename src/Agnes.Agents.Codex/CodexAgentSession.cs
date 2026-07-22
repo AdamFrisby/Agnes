@@ -27,6 +27,7 @@ internal sealed class CodexAgentSession : IAgentSession
     private readonly Channel<SessionEvent> _events =
         Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = true });
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingApprovals = new();
+    private readonly ConcurrentDictionary<string, PendingQuestion> _pendingQuestions = new();
     private TaskCompletionSource<StopReason>? _activeTurn;
 
     public CodexAgentSession(string threadId, ICodexRpc rpc, ILogger logger)
@@ -76,7 +77,127 @@ internal sealed class CodexAgentSession : IAgentSession
         return Task.CompletedTask;
     }
 
+    public Task AnswerQuestionAsync(string requestId, IReadOnlyList<QuestionAnswer> answers, CancellationToken cancellationToken = default)
+    {
+        if (_pendingQuestions.TryGetValue(requestId, out var pending))
+        {
+            pending.Completion.TrySetResult(answers);
+        }
+        else
+        {
+            _logger.LogWarning("Codex question answer for unknown request {RequestId}", requestId);
+        }
+
+        return Task.CompletedTask;
+    }
+
     // ---- called by the connection (on the serial dispatch thread) ----
+
+    /// <summary>
+    /// Handle an <c>item/tool/requestUserInput</c> server request: surface the questions to the user,
+    /// wait for their answers, and return them as the RPC result. Empty answers (dismissed) are echoed
+    /// back as empty selections so the turn doesn't hang.
+    /// </summary>
+    public async Task<CodexRequestUserInputResult> HandleUserInputAsync(JsonElement parameters, CancellationToken cancellationToken)
+    {
+        var requestId = Guid.NewGuid().ToString("n");
+        var toolCallId = GetString(parameters, "itemId") ?? string.Empty;
+        var (questions, order) = ParseQuestions(parameters);
+
+        // No parseable questions — answer empty rather than surfacing an empty card.
+        if (questions.Count == 0)
+        {
+            return new CodexRequestUserInputResult(new Dictionary<string, CodexUserInputAnswer>());
+        }
+
+        var tcs = new TaskCompletionSource<IReadOnlyList<QuestionAnswer>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingQuestions[requestId] = new PendingQuestion(tcs, order);
+
+        Emit(new QuestionAskedEvent(requestId, toolCallId, questions));
+
+        try
+        {
+            await using (cancellationToken.Register(() => tcs.TrySetResult(Array.Empty<QuestionAnswer>())))
+            {
+                var answers = await tcs.Task.ConfigureAwait(false);
+                Emit(new QuestionAnsweredEvent(requestId));
+                return BuildResult(answers, order);
+            }
+        }
+        finally
+        {
+            _pendingQuestions.TryRemove(requestId, out _);
+        }
+    }
+
+    /// <summary>Parse Codex's <c>questions[]</c> into Agnes questions, keeping each question's id so the
+    /// answer result can be keyed back. Codex answers are always arrays, so questions are single-select by
+    /// default (the array carries one label); <c>isOther</c> means free-text notes are accepted.</summary>
+    private static (IReadOnlyList<AgentQuestion> Questions, IReadOnlyList<string> Order) ParseQuestions(JsonElement p)
+    {
+        var questions = new List<AgentQuestion>();
+        var order = new List<string>();
+        if (!p.TryGetProperty("questions", out var qs) || qs.ValueKind != JsonValueKind.Array)
+        {
+            return (questions, order);
+        }
+
+        var index = 0;
+        foreach (var q in qs.EnumerateArray())
+        {
+            var id = GetString(q, "id") ?? $"q{index}";
+            var header = GetString(q, "header") ?? string.Empty;
+            var prompt = GetString(q, "question") ?? header;
+            var allowFreeText = q.TryGetProperty("isOther", out var other) && other.ValueKind == JsonValueKind.True;
+
+            var options = new List<QuestionChoice>();
+            if (q.TryGetProperty("options", out var opts) && opts.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var o in opts.EnumerateArray())
+                {
+                    var label = GetString(o, "label") ?? string.Empty;
+                    if (label.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    options.Add(new QuestionChoice(label, GetString(o, "description") ?? string.Empty));
+                }
+            }
+
+            questions.Add(new AgentQuestion(id, header, prompt, options, MultiSelect: false, AllowFreeText: allowFreeText || options.Count == 0));
+            order.Add(id);
+            index++;
+        }
+
+        return (questions, order);
+    }
+
+    /// <summary>Map the user's answers into Codex's result shape: <c>{answers:{[id]:{answers:string[]}}}</c>.
+    /// Free-text notes ride as an extra answer string (Codex's "Other" convention).</summary>
+    private static CodexRequestUserInputResult BuildResult(IReadOnlyList<QuestionAnswer> answers, IReadOnlyList<string> order)
+    {
+        var byId = answers.ToDictionary(a => a.QuestionId, a => a);
+        var result = new Dictionary<string, CodexUserInputAnswer>();
+        foreach (var id in order)
+        {
+            var picks = new List<string>();
+            if (byId.TryGetValue(id, out var a))
+            {
+                picks.AddRange(a.SelectedLabels);
+                if (!string.IsNullOrWhiteSpace(a.Notes))
+                {
+                    picks.Add(a.Notes.Trim());
+                }
+            }
+
+            result[id] = new CodexUserInputAnswer(picks);
+        }
+
+        return new CodexRequestUserInputResult(result);
+    }
+
+    private sealed record PendingQuestion(TaskCompletionSource<IReadOnlyList<QuestionAnswer>> Completion, IReadOnlyList<string> Order);
 
     public void HandleItemStarted(JsonElement notification)
     {

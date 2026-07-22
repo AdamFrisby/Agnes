@@ -19,6 +19,9 @@ internal sealed class FakeCodexAppServer : IAsyncDisposable
     /// <summary>The decision the client sent back for the last approval request (null if none).</summary>
     public string? LastApprovalDecision { get; private set; }
 
+    /// <summary>The <c>answers</c> object the client returned for the last user-input request (null if none).</summary>
+    public JsonElement? LastUserInputAnswers { get; private set; }
+
     public static (Stream Client, FakeCodexAppServer Server) Create()
     {
         var (a, b) = FullDuplexStream.CreatePair();
@@ -46,6 +49,14 @@ internal sealed class FakeCodexAppServer : IAsyncDisposable
         var response = await _rpc.InvokeWithParameterObjectAsync<JsonElement>(method, parameters).ConfigureAwait(false);
         LastApprovalDecision = response.GetProperty("decision").GetString();
         return LastApprovalDecision!;
+    }
+
+    /// <summary>Requests structured user input from the client and records the answers it returns.</summary>
+    public async Task<JsonElement> RequestUserInputAsync(object parameters)
+    {
+        var response = await _rpc.InvokeWithParameterObjectAsync<JsonElement>("item/tool/requestUserInput", parameters).ConfigureAwait(false);
+        LastUserInputAnswers = response.GetProperty("answers").Clone();
+        return LastUserInputAnswers!.Value;
     }
 
     public Task NotifyAsync(string method, object parameters) => _rpc.NotifyWithParameterObjectAsync(method, parameters);

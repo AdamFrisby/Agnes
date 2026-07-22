@@ -163,7 +163,8 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Native.ClaudeCod
 builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Codex.CodexAppServer.Create(
     sp.GetRequiredService<ILoggerFactory>(),
     builder.Configuration["Agnes:Codex:Command"],
-    builder.Configuration.GetSection("Agnes:Codex:Args").Get<string[]>()));
+    builder.Configuration.GetSection("Agnes:Codex:Args").Get<string[]>(),
+    builder.Configuration.GetValue("Agnes:Codex:EnableUserInput", false)));
 
 // A typed, DI-resolvable registry over every IAgentAdapter above — the plugin-point pattern every
 // new provider interface in this backlog follows (see .ideas/00-plugin-architecture.md). Built once
