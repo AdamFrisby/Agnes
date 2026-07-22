@@ -46,6 +46,15 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true);
 
+    /// <summary>Compute a fork plan (proposed target folder + sandbox-copy capability) for a session, or
+    /// null if the session/host doesn't support forking. Default null for hosts without the feature.</summary>
+    Task<ForkPlan?> ProposeForkAsync(string sessionId) => Task.FromResult<ForkPlan?>(null);
+
+    /// <summary>Fork a session: copy its working folder to <paramref name="targetDirectory"/> and open a new
+    /// session there, optionally CoW-cloning the sandbox.</summary>
+    Task<SessionInfo> ForkSessionAsync(string sourceSessionId, string targetDirectory, bool copySandbox = true)
+        => throw new NotSupportedException("This host does not support forking sessions.");
+
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>
     Task<SessionView> SubscribeAsync(string sessionId, long since = 0);
 
@@ -53,6 +62,10 @@ public interface IAgnesHost : IAsyncDisposable
 
     /// <summary>Cancels the in-flight turn for a session (Stop).</summary>
     Task CancelAsync(string sessionId);
+
+    /// <summary>Restart the agent process for a session (relaunch + resume). Default no-op for hosts without
+    /// the capability.</summary>
+    Task RestartAgentAsync(string sessionId) => Task.CompletedTask;
 
     /// <summary>Switches the session's mode (Ask / Code / …).</summary>
     Task SetModeAsync(string sessionId, string modeId);

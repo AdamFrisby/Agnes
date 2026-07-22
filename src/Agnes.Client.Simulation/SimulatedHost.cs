@@ -114,6 +114,28 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id), skipPermissions));
     }
 
+    public Task<ForkPlan?> ProposeForkAsync(string sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session))
+        {
+            return Task.FromResult<ForkPlan?>(null);
+        }
+
+        // Propose a numeral-incremented sibling (no filesystem probing offline — just increment).
+        var dir = session.Cwd;
+        var proposed = System.Text.RegularExpressions.Regex.IsMatch(dir, @"\d+$")
+            ? System.Text.RegularExpressions.Regex.Replace(dir, @"(\d+)$", m => (long.Parse(m.Value) + 1).ToString())
+            : dir + "2";
+        return Task.FromResult<ForkPlan?>(new ForkPlan(sessionId, dir, proposed, CanCopySandbox: true));
+    }
+
+    public Task<SessionInfo> ForkSessionAsync(string sourceSessionId, string targetDirectory, bool copySandbox = true)
+    {
+        // Offline: just open a fresh simulated session in the target directory.
+        var adapterId = _sessions.TryGetValue(sourceSessionId, out var src) ? src.AdapterId : "claude-code-native";
+        return OpenSessionAsync(adapterId, targetDirectory);
+    }
+
     // A simulated Incus sandbox so the desktop sandbox chip is demoable + screenshot-verifiable offline.
     private readonly ConcurrentDictionary<string, string> _sandboxState = new();
 

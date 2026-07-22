@@ -416,4 +416,56 @@ public class SandboxWiringTests
         Assert.True(agents.Available);
         Assert.True(agents.FailClosed); // no adapters at all would mean no session can ever open
     }
+
+    [Fact]
+    public async Task Restored_sandboxed_session_resumes_on_prompt_by_reattaching_its_vm()
+    {
+        var store = new InMemoryEventStore();
+        var regPath = Path.Combine(Path.GetTempPath(), "agnes-sbxreg-" + Guid.NewGuid().ToString("n") + ".json");
+        try
+        {
+            string sessionId;
+            await using (var manager = new SessionManager(
+                TestPluginRegistries.Agents(new ScriptedAgentAdapter()), store, new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(new FakeSandboxProvider()), [new FakeCredentialProvider()],
+                sandboxRegistry: new SandboxRegistry(regPath)))
+            {
+                var info = await manager.OpenSessionAsync("scripted", "/tmp/work");
+                sessionId = info.SessionId;
+                Assert.NotNull(info.Sandbox); // provisioned + persisted to the registry file
+            }
+
+            // ---- host "restart": a new manager over the same store + registry file, no live VM handles ----
+            var adapter2 = new ScriptedAgentAdapter();
+            adapter2.Session.OnPrompt = (_, s) => { s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
+            var sandboxes2 = new FakeSandboxProvider();
+            await using var resumed = new SessionManager(
+                TestPluginRegistries.Agents(adapter2), store, new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes2), [new FakeCredentialProvider()],
+                sandboxRegistry: new SandboxRegistry(regPath)); // loads the persisted VM record
+            await resumed.RestoreAsync();
+
+            // While dormant (not yet resumed), the snapshot still reports the sandbox from the registry so
+            // the client shows the chip (as stopped) rather than hiding it.
+            var dormant = await resumed.GetSnapshotAsync(sessionId, 0);
+            Assert.NotNull(dormant.Session.Sandbox);
+            Assert.Equal("Stopped", dormant.Session.Sandbox!.State);
+
+            // Prompting a restored sandboxed session now re-attaches its VM (by name) instead of erroring.
+            await resumed.PromptAsync(sessionId, [new TextContent("continue")]);
+
+            // After the resume the live status flips to running.
+            var live = resumed.GetSandboxStatus(sessionId);
+            Assert.NotNull(live);
+            Assert.Equal("Running", live!.State);
+
+            Assert.NotNull(adapter2.LastOptions);
+            Assert.NotNull(adapter2.LastOptions!.Sandbox); // relaunched INSIDE the re-attached sandbox
+            Assert.Equal("/work", adapter2.LastOptions.WorkingDirectory);
+        }
+        finally
+        {
+            try { File.Delete(regPath); } catch { /* best effort */ }
+        }
+    }
 }

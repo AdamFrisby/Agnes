@@ -53,6 +53,12 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
         => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox);
 
+    public Task<ForkPlan?> ProposeFork(string sessionId)
+        => Task.FromResult(_sessions.ProposeFork(sessionId));
+
+    public Task<SessionInfo> ForkSession(ForkSessionRequest request)
+        => _sessions.ForkSessionAsync(request.SourceSessionId, request.TargetDirectory, request.CopySandbox);
+
     public async Task<SessionSnapshot> Subscribe(string sessionId, long sinceSequence)
     {
         // Join the group BEFORE snapshotting so no event is missed; the client dedupes by
@@ -69,6 +75,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task Cancel(string sessionId)
         => _sessions.CancelAsync(sessionId);
+
+    public Task RestartAgent(string sessionId)
+        => _sessions.RestartAgentAsync(sessionId);
 
     public Task SetMode(string sessionId, string modeId)
         => _sessions.SetModeAsync(sessionId, modeId);

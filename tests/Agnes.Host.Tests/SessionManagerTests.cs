@@ -104,4 +104,52 @@ public class SessionManagerTests
         Assert.Equal("scripted", agent.AdapterId);
         Assert.True(agent.Available);
     }
+
+    [Fact]
+    public async Task Fork_copies_the_working_folder_and_opens_a_new_session_there()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new CollectingBroadcaster(), NullLoggerFactory.Instance);
+
+        var root = Path.Combine(Path.GetTempPath(), "agnes-forktest-" + Guid.NewGuid().ToString("n"));
+        var src = Path.Combine(root, "Repo1");
+        Directory.CreateDirectory(src);
+        await File.WriteAllTextAsync(Path.Combine(src, "note.txt"), "hello fork");
+
+        try
+        {
+            var source = await manager.OpenSessionAsync("scripted", src, useSandbox: false);
+
+            // The proposed target is a numeral-incremented, non-existing sibling.
+            var plan = manager.ProposeFork(source.SessionId);
+            Assert.NotNull(plan);
+            Assert.Equal(src, plan!.SourceDirectory);
+            Assert.Equal(Path.Combine(root, "Repo2"), plan.ProposedDirectory);
+            Assert.False(plan.CanCopySandbox); // no sandbox provider configured
+
+            var fork = await manager.ForkSessionAsync(source.SessionId, plan.ProposedDirectory, copySandbox: false);
+
+            Assert.NotEqual(source.SessionId, fork.SessionId);
+            Assert.Equal(plan.ProposedDirectory, fork.WorkingDirectory);
+            Assert.Equal("scripted", fork.AdapterId);
+            // The working folder was copied faithfully.
+            Assert.Equal("hello fork", await File.ReadAllTextAsync(Path.Combine(plan.ProposedDirectory, "note.txt")));
+            // Both sessions are live and independent.
+            Assert.NotNull(await manager.GetSnapshotAsync(fork.SessionId, 0));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public async Task ProposeFork_returns_null_for_an_unknown_session()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new CollectingBroadcaster(), NullLoggerFactory.Instance);
+        Assert.Null(manager.ProposeFork("does-not-exist"));
+    }
 }

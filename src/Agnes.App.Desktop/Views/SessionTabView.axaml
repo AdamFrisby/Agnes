@@ -321,11 +321,13 @@
                                               ToolTip.Tip="Ask the agent to summarise and free up its context window." />
                                     <MenuItem Header="Clear conversation" Command="{Binding Session.ClearContextCommand}"
                                               ToolTip.Tip="Ask the agent to start fresh (clears its context)." />
+                                    <MenuItem Header="Restart agent" Command="{Binding Session.RestartAgentCommand}"
+                                              ToolTip.Tip="Relaunch the agent process and resume the conversation — recovers a crashed or hung agent." />
                                     <Separator />
                                     <MenuItem Header="Open in new window" Command="{Binding MoveToWindowCommand}" />
                                     <Separator />
                                     <MenuItem Header="Duplicate (same session)" Command="{Binding DuplicateCommand}" />
-                                    <MenuItem Header="Fork (new session)" Command="{Binding ForkCommand}" />
+                                    <MenuItem Header="Fork (copy working folder)…" Command="{Binding ForkCommand}" />
                                     <Separator />
                                     <MenuItem Header="Archive" Command="{Binding ArchiveCommand}" />
                                 </MenuFlyout>

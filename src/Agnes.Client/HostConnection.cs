@@ -94,6 +94,12 @@ public sealed class HostConnection : IAgnesHost
     public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true)
         => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox));
 
+    public Task<ForkPlan?> ProposeForkAsync(string sessionId)
+        => _hub.InvokeAsync<ForkPlan?>(nameof(IAgnesServer.ProposeFork), sessionId);
+
+    public Task<SessionInfo> ForkSessionAsync(string sourceSessionId, string targetDirectory, bool copySandbox = true)
+        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.ForkSession), new ForkSessionRequest(sourceSessionId, targetDirectory, copySandbox));
+
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>
     public async Task<SessionView> SubscribeAsync(string sessionId, long since = 0)
     {
@@ -108,6 +114,9 @@ public sealed class HostConnection : IAgnesHost
 
     public Task CancelAsync(string sessionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.Cancel), sessionId);
+
+    public Task RestartAgentAsync(string sessionId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RestartAgent), sessionId);
 
     public Task SetModeAsync(string sessionId, string modeId)
         => _hub.InvokeAsync(nameof(IAgnesServer.SetMode), sessionId, modeId);

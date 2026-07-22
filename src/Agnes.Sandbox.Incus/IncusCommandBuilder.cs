@@ -73,6 +73,45 @@ internal static class IncusCommandBuilder
         return r;
     }
 
+    internal static IReadOnlyList<string> BuildDeviceRemove(IncusOptions o, string instance, string device)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateIdentifier(device, nameof(device), allowDotUnderscore: true);
+        return Prefix(o, "config", "device", "remove", instance, device);
+    }
+
+    // ---- copy-on-write clone (fork a session's VM) ----
+
+    /// <summary>Snapshots a (running) instance so a clone can be copied from a stable point-in-time.</summary>
+    internal static IReadOnlyList<string> BuildSnapshotCreate(IncusOptions o, string instance, string snapshot)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateIdentifier(snapshot, nameof(snapshot), allowDotUnderscore: false);
+        // A stateless snapshot (no --stateful): we only need the disk, and stateful needs guest agent support.
+        return Prefix(o, "snapshot", "create", instance, snapshot);
+    }
+
+    internal static IReadOnlyList<string> BuildSnapshotDelete(IncusOptions o, string instance, string snapshot)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateIdentifier(snapshot, nameof(snapshot), allowDotUnderscore: false);
+        return Prefix(o, "snapshot", "delete", instance, snapshot);
+    }
+
+    /// <summary>Copies <c>&lt;source&gt;/&lt;snapshot&gt;</c> into a new instance — an optimized (CoW) copy on ZFS/btrfs
+    /// pools. The destination inherits the source's config (limits, managed marker); its work mount is
+    /// swapped afterwards. Ported from CodeyBox's baseline copy path.</summary>
+    internal static IReadOnlyList<string> BuildCopyFromSnapshot(IncusOptions o, string source, string snapshot, string destination)
+    {
+        IncusInputValidation.ValidateInstanceName(source);
+        IncusInputValidation.ValidateIdentifier(snapshot, nameof(snapshot), allowDotUnderscore: false);
+        IncusInputValidation.ValidateInstanceName(destination);
+        var r = Prefix(o, "copy", $"{source}/{snapshot}", destination);
+        r.Add("--storage");
+        r.Add(o.StoragePoolName);
+        return r;
+    }
+
     /// <summary>Sets a config key with the value read from stdin (used for cloud-init user-data).</summary>
     internal static IReadOnlyList<string> BuildConfigSetStdin(IncusOptions o, string instance, string key)
     {

@@ -157,9 +157,15 @@ public class SessionManagementTests
         var tab = await OpenSessionAsync(vm);
         var sessionId = tab.Descriptor!.SessionId;
 
+        // Fork now opens a dialog (target folder + copy-sandbox choice), not an immediate session.
         await ((IAsyncRelayCommand)tab.ForkCommand).ExecuteAsync(null);
+        await WaitAsync(() => vm.ForkPrompt is not null);
+        Assert.Single(Tabs(vm)); // no fork tab until confirmed
+        Assert.False(string.IsNullOrWhiteSpace(vm.ForkPrompt!.TargetDirectory));
 
-        Assert.Equal(2, Tabs(vm).Count());
+        await vm.ForkPrompt.ConfirmCommand.ExecuteAsync(null);
+
+        await WaitAsync(() => vm.ForkPrompt is null && Tabs(vm).Count() == 2);
         var fork = Tabs(vm).Last();
         await WaitAsync(() => fork.Session is not null);
         Assert.NotEqual(sessionId, fork.Descriptor!.SessionId); // new session

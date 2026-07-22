@@ -80,6 +80,7 @@ public sealed class SessionViewModel : ObservableObject
         ShowAllToolsCommand = new RelayCommand(() => ShowAllTools = true);
         CompactCommand = new RelayCommand(() => SendControl("/compact"));
         ClearContextCommand = new RelayCommand(() => SendControl("/clear"));
+        RestartAgentCommand = new RelayCommand(() => { _ = RestartAgentAsync(); });
         // The tools panel shows only the last N until "show all"; keep the view + label in sync.
         ToolActivity.CollectionChanged += (_, _) =>
         {
@@ -318,6 +319,22 @@ public sealed class SessionViewModel : ObservableObject
     /// interprets (Claude honours /compact and /clear); harmless text otherwise.</summary>
     public System.Windows.Input.ICommand CompactCommand { get; }
     public System.Windows.Input.ICommand ClearContextCommand { get; }
+
+    /// <summary>Restart the agent process (relaunch + resume) — recovers a crashed/hung agent, and the
+    /// manual fallback after the host paused auto-restart on a crash loop.</summary>
+    public System.Windows.Input.ICommand RestartAgentCommand { get; }
+
+    private async Task RestartAgentAsync()
+    {
+        try
+        {
+            await _host.RestartAgentAsync(SessionId);
+        }
+        catch
+        {
+            // The host emits a NoticeEvent on failure; nothing to do here.
+        }
+    }
 
     private void SendControl(string command)
     {
@@ -914,9 +931,10 @@ public sealed class SessionViewModel : ObservableObject
     {
         if (Banner == SessionBanner.Interrupted && !string.IsNullOrWhiteSpace(_lastPrompt))
         {
-            _interrupted = false;
-            UpdateBanner();
-            await _host.PromptAsync(SessionId, [new TextContent(_lastPrompt)]);
+            // Resend through the normal path so the user gets immediate feedback (the Running/thinking
+            // indicator + Stop button) while the host resumes — which for a restored sandboxed session can
+            // take a while (cold-starting the VM + re-attaching) — and so a failure surfaces as a banner.
+            await SubmitAsync(_lastPrompt);
             return;
         }
 
@@ -1229,12 +1247,19 @@ public sealed class SessionViewModel : ObservableObject
         try
         {
             await _host.PromptAsync(SessionId, blocks);
+
+            // Prompting a dormant sandboxed session re-attaches (resumes) its VM server-side; refresh so the
+            // toolbar chip flips from "stopped" to "running" now that the sandbox is live again.
+            if (HasSandbox)
+            {
+                await RefreshSandboxAsync();
+            }
         }
         catch (Exception)
         {
-            // A send can fail server-side — e.g. a restored sandboxed session whose VM is gone after a
-            // host restart ("cannot be resumed after a restart"), or a transient hub error. Never let it
-            // crash the app: end the turn and surface it as a stale banner (Fork/Duplicate starts fresh).
+            // A send can fail server-side — e.g. a restored sandboxed session whose VM is truly gone, or a
+            // transient hub error. Never let it crash the app: end the turn and surface it as a stale
+            // banner (Fork/Duplicate starts fresh).
             IsTurnActive = false;
             _stale = true;
             UpdateBanner();

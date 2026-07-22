@@ -18,6 +18,7 @@ internal sealed class HostSession : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _pump;
+    private int _faultSignalled;
 
     // Host-originated permission requests (e.g. the credential broker asking to push) awaiting a
     // client's answer — kept apart from agent-originated ones, which are answered by the agent.
@@ -45,6 +46,15 @@ internal sealed class HostSession : IAsyncDisposable
     public string SessionId { get; }
     public string AdapterId { get; }
     public string WorkingDirectory { get; }
+
+    /// <summary>Invoked once if the agent's event stream ends while we did NOT ask it to stop — i.e. the
+    /// underlying CLI process died. The host uses this to auto-restart (and resume) the agent.</summary>
+    public Action? Faulted { get; set; }
+
+    /// <summary>Invoked with the agent's real session id when it reports one (a native CLI's <c>init</c>
+    /// line). Persisted to the catalogue so the agent can be resumed (<c>--resume</c>) reliably — captured
+    /// here, not by polling after a prompt, which races the init line and grabs the placeholder id.</summary>
+    public Action<string>? AgentSessionStarted { get; set; }
 
     /// <summary>The agent's own session id (used to resume it after a host restart).</summary>
     public string AgentSessionId => _agent.AgentSessionId;
@@ -137,16 +147,41 @@ internal sealed class HostSession : IAsyncDisposable
         {
             await foreach (var @event in _agent.Events.ReadAllAsync(_cts.Token).ConfigureAwait(false))
             {
+                if (@event is SessionStartedEvent started && !string.IsNullOrEmpty(started.AgentSessionId))
+                {
+                    AgentSessionStarted?.Invoke(started.AgentSessionId);
+                }
+
                 await AppendAndPublishAsync(@event).ConfigureAwait(false);
             }
+
+            // The agent's stream ended on its own. If we didn't ask it to stop (dispose cancels _cts),
+            // the CLI process died — signal a fault so the host can restart + resume it.
+            SignalFaultIfUnexpected();
         }
         catch (OperationCanceledException)
         {
-            // Session disposed.
+            // Session disposed — an intentional stop, not a fault.
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Event pump failed for session {SessionId}", SessionId);
+            SignalFaultIfUnexpected();
+        }
+    }
+
+    private void SignalFaultIfUnexpected()
+    {
+        if (_cts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        // Fire the callback at most once, off the pump so recovery can dispose this session freely.
+        if (Interlocked.Exchange(ref _faultSignalled, 1) == 0 && Faulted is { } faulted)
+        {
+            _logger.LogWarning("Agent stream ended unexpectedly for session {SessionId}; signalling fault", SessionId);
+            faulted();
         }
     }
 

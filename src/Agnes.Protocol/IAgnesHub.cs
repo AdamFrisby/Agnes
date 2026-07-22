@@ -33,6 +33,14 @@ public interface IAgnesServer
 
     Task<SessionInfo> OpenSession(OpenSessionRequest request);
 
+    /// <summary>Compute a fork plan (proposed target folder + sandbox-copy capability) for a session.
+    /// Returns null if the session is unknown.</summary>
+    Task<ForkPlan?> ProposeFork(string sessionId);
+
+    /// <summary>Fork a session: copy its working folder and open a new session there (optionally CoW-cloning
+    /// the sandbox). See <see cref="ForkSessionRequest"/>.</summary>
+    Task<SessionInfo> ForkSession(ForkSessionRequest request);
+
     /// <summary>Join a session's broadcast group and get a snapshot from <paramref name="sinceSequence"/>.</summary>
     Task<SessionSnapshot> Subscribe(string sessionId, long sinceSequence);
 
@@ -42,6 +50,10 @@ public interface IAgnesServer
 
     /// <summary>Cancels the in-flight turn for a session (maps to ACP <c>session/cancel</c>).</summary>
     Task Cancel(string sessionId);
+
+    /// <summary>Restart the agent process for a session (relaunch + resume its conversation) — recovery for
+    /// a crashed/hung agent, and the manual fallback after auto-restart has paused.</summary>
+    Task RestartAgent(string sessionId);
 
     /// <summary>Switches the session mode (maps to ACP <c>session/set_mode</c>).</summary>
     Task SetMode(string sessionId, string modeId);
