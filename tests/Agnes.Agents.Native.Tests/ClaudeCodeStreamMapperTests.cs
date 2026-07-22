@@ -73,8 +73,14 @@ public class ClaudeCodeStreamMapperTests
     [Fact]
     public void Result_ends_the_turn()
     {
+        // A clean result is just a turn-end.
         Assert.Equal(StopReason.EndTurn, Assert.IsType<TurnEndedEvent>(Assert.Single(Map("{\"type\":\"result\",\"is_error\":false}"))).Reason);
-        Assert.Equal(StopReason.Refusal, Assert.IsType<TurnEndedEvent>(Assert.Single(Map("{\"type\":\"result\",\"is_error\":true}"))).Reason);
+
+        // An errored result surfaces the error message, then ends the turn as a refusal.
+        var errored = Map("{\"type\":\"result\",\"is_error\":true,\"result\":\"API Error: 401 OAuth access token has been revoked\"}");
+        Assert.Collection(errored,
+            e => Assert.Equal("API Error: 401 OAuth access token has been revoked", Assert.IsType<AgentErrorEvent>(e).Message),
+            e => Assert.Equal(StopReason.Refusal, Assert.IsType<TurnEndedEvent>(e).Reason));
     }
 
     [Fact]

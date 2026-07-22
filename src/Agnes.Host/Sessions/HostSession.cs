@@ -59,6 +59,10 @@ internal sealed class HostSession : IAsyncDisposable
     /// <summary>Invoked when a turn ends — the host uses it to refresh the agent's auto-generated title.</summary>
     public Action? TurnCompleted { get; set; }
 
+    /// <summary>Invoked with the message of an agent error — the host uses it to auto-recover a revoked
+    /// Claude OAuth token (relaunch with freshly-materialized credentials).</summary>
+    public Action<string>? AgentError { get; set; }
+
     /// <summary>The agent's own session id (used to resume it after a host restart).</summary>
     public string AgentSessionId => _agent.AgentSessionId;
 
@@ -160,6 +164,10 @@ internal sealed class HostSession : IAsyncDisposable
                 if (@event is TurnEndedEvent)
                 {
                     TurnCompleted?.Invoke();
+                }
+                else if (@event is AgentErrorEvent error)
+                {
+                    AgentError?.Invoke(error.Message);
                 }
             }
 

@@ -85,6 +85,13 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
                 }
 
                 var isError = line.TryGetProperty("is_error", out var err) && err.ValueKind == JsonValueKind.True;
+                if (isError)
+                {
+                    // Surface the actual error (auth/rate-limit/etc.) — it used to be dropped, leaving only a
+                    // bland turn-end. The host also keys credential auto-recovery off this message.
+                    yield return new AgentErrorEvent(ResultErrorMessage(line));
+                }
+
                 yield return new TurnEndedEvent(isError ? StopReason.Refusal : StopReason.EndTurn);
                 break;
         }
@@ -337,6 +344,33 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
            && element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String
             ? p.GetString()
             : null;
+
+    /// <summary>Best-available human message from an errored result line: the <c>result</c> text, else a
+    /// nested <c>error.message</c>, else a generic fallback.</summary>
+    private static string ResultErrorMessage(JsonElement line)
+    {
+        if (GetString(line, "result") is { Length: > 0 } result)
+        {
+            return result;
+        }
+
+        if (line.TryGetProperty("error", out var error))
+        {
+            if (error.ValueKind == JsonValueKind.String && error.GetString() is { Length: > 0 } s)
+            {
+                return s;
+            }
+
+            if (GetString(error, "message") is { Length: > 0 } m)
+            {
+                return m;
+            }
+        }
+
+        return GetString(line, "subtype") is { Length: > 0 } subtype
+            ? $"The agent reported an error ({subtype})."
+            : "The agent reported an error.";
+    }
 
     private static long? GetLong(JsonElement element, string name)
         => element.ValueKind == JsonValueKind.Object

@@ -737,6 +737,9 @@ public sealed class SessionManager : IAsyncDisposable
             AgentSessionStarted = id => _ = UpdateAgentSessionIdAsync(sessionId, id),
             // After each turn, refresh the agent's auto-generated title (Claude's on-disk aiTitle).
             TurnCompleted = () => _ = MaybeUpdateTitleAsync(sessionId),
+            // A revoked/expired Claude OAuth token (e.g. after the host rotated it during a long idle):
+            // relaunch with freshly-materialized credentials so the new process picks up a valid token.
+            AgentError = message => _ = MaybeRecoverCredentialsAsync(sessionId, message),
         };
         _sessions[sessionId] = session;
         return session;
@@ -744,29 +747,66 @@ public sealed class SessionManager : IAsyncDisposable
 
     /// <summary>Auto-recovery: the agent's process died unexpectedly. Restart + resume it in place, unless it
     /// just did the same (a crash loop) — then pause and ask the user to restart manually.</summary>
-    private async Task RecoverAgentAsync(string sessionId)
+    private Task RecoverAgentAsync(string sessionId) => RecoverAsync(
+        sessionId,
+        starting: "The agent stopped unexpectedly — restarting and resuming the conversation…",
+        succeeded: "Agent restarted.",
+        debounced: "The agent crashed again right after restarting. Automatic restart is paused — use “Restart agent” to try once more.");
+
+    // Claude's revoked/expired OAuth token surfaces as an agent error. A running sandboxed claude can't
+    // refresh in place (its token is baked into the launch env), so relaunch it with freshly-materialized
+    // credentials — which pulls the current host token. Only for sandboxed native-Claude sessions.
+    private async Task MaybeRecoverCredentialsAsync(string sessionId, string message)
+    {
+        if (!IsAuthError(message)
+            || !_sessions.TryGetValue(sessionId, out var session)
+            || session.AdapterId != "claude-code-native"
+            || !_sandboxBySession.ContainsKey(sessionId))
+        {
+            return;
+        }
+
+        await RecoverAsync(
+            sessionId,
+            starting: "Claude's login token expired — refreshing credentials and reconnecting…",
+            succeeded: "Reconnected with refreshed credentials — resend your message to continue.",
+            debounced: "Still can’t authenticate after refreshing — the Claude login on the host may have expired. Sign in again there, then use “Restart agent”.").ConfigureAwait(false);
+    }
+
+    /// <summary>Whether an agent error message is a Claude auth/OAuth token failure worth auto-recovering.</summary>
+    private static bool IsAuthError(string message)
+    {
+        var m = message.ToLowerInvariant();
+        return m.Contains("oauth", StringComparison.Ordinal)
+            || m.Contains("token has been revoked", StringComparison.Ordinal)
+            || m.Contains("authentication_error", StringComparison.Ordinal)
+            || m.Contains("invalid bearer token", StringComparison.Ordinal)
+            || (m.Contains("401", StringComparison.Ordinal) && (m.Contains("auth", StringComparison.Ordinal) || m.Contains("token", StringComparison.Ordinal)));
+    }
+
+    // Shared recovery: tear down the current agent and relaunch + resume it (RelaunchAgentAsync
+    // re-provisions credentials), with a debounce so a persistent failure doesn't thrash.
+    private async Task RecoverAsync(string sessionId, string starting, string succeeded, string debounced)
     {
         await _attachGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_sessions.TryRemove(sessionId, out var dead))
+            if (_sessions.TryRemove(sessionId, out var stale))
             {
-                await dead.DisposeAsync().ConfigureAwait(false); // kills the dead process tree
+                await stale.DisposeAsync().ConfigureAwait(false); // kills the stale process tree
             }
 
             var now = DateTimeOffset.UtcNow;
             if (_lastRecoveryAt.TryGetValue(sessionId, out var last) && now - last < RecoveryDebounce)
             {
-                await AppendNoticeAsync(sessionId,
-                    "The agent crashed again right after restarting. Automatic restart is paused — use “Restart agent” to try once more.",
-                    isError: true).ConfigureAwait(false);
+                await AppendNoticeAsync(sessionId, debounced, isError: true).ConfigureAwait(false);
                 return;
             }
 
             _lastRecoveryAt[sessionId] = now;
-            await AppendNoticeAsync(sessionId, "The agent stopped unexpectedly — restarting and resuming the conversation…").ConfigureAwait(false);
+            await AppendNoticeAsync(sessionId, starting).ConfigureAwait(false);
             await RelaunchAgentAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
-            await AppendNoticeAsync(sessionId, "Agent restarted.").ConfigureAwait(false);
+            await AppendNoticeAsync(sessionId, succeeded).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
