@@ -29,6 +29,16 @@
             <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
             <Setter Property="FontStyle" Value="Italic" />
         </Style>
+        <!-- Pulsing dot for the "Thinking…" indicator. -->
+        <Style Selector="Border.pulse">
+            <Style.Animations>
+                <Animation Duration="0:0:1.2" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.35" /></KeyFrame>
+                    <KeyFrame Cue="50%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.35" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
         <!-- Per-message "⋯" actions: hidden until the pointer is over the message OR keyboard focus is
              within it (Opacity keeps layout stable). Touch/mouse users also get the same actions via the
              bubble's right-click / long-press ContextFlyout, so the menu is reachable without hover. -->
@@ -1040,6 +1050,32 @@
 
                             </ListBox.DataTemplates>
                         </ListBox>
+
+                        <!-- Sticky context: pin the last human/agent message above a run of tool calls when
+                             no message is on screen, so you keep the thread while scrolling (defect #6).
+                             Shown/populated from code-behind as the transcript scrolls. -->
+                        <Border Grid.Row="1" x:Name="StickyHeader" IsVisible="False" VerticalAlignment="Top" ZIndex="4"
+                                Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1"
+                                Padding="24,6" IsHitTestVisible="False">
+                            <StackPanel MaxWidth="768" HorizontalAlignment="Center" Spacing="1">
+                                <TextBlock x:Name="StickySpeaker" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                <TextBlock x:Name="StickyText" Foreground="{DynamicResource FgDim}" FontSize="12"
+                                           TextTrimming="CharacterEllipsis" MaxLines="1" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Thinking indicator: the agent is working even when it hasn't emitted output yet,
+                             so there's always a sign it's still going (vs. stopped) — defect #4. -->
+                        <Border Grid.Row="1" IsVisible="{Binding IsTurnActive}" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                                Margin="0,0,0,10" ZIndex="4" IsHitTestVisible="False"
+                                Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                CornerRadius="12" Padding="12,5" BoxShadow="0 4 12 -4 #40000000">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <Border Classes="pulse" Width="7" Height="7" CornerRadius="4"
+                                        Background="{DynamicResource Accent}" VerticalAlignment="Center" />
+                                <TextBlock Text="Thinking…" Foreground="{DynamicResource FgDim}" FontSize="12" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
 
                         <!-- Rewind (viewing history) banner -->
                         <Border Grid.Row="1" VerticalAlignment="Top" IsVisible="{Binding IsRewound}"

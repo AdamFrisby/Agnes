@@ -125,6 +125,9 @@ public sealed class SessionViewModel : ObservableObject
         _mainAgentNode = new AgentNode(null, title, isMain: true, SelectAgent) { IsSelected = true };
         AgentTree.Add(_mainAgentNode);
         _transcript.SubagentAdded += AddSubagent;
+        // The ListBox observes Items directly, but the empty-state flag is a computed bool — keep it in
+        // sync with the collection so "No messages yet" disappears the moment the first item arrives.
+        _transcript.Items.CollectionChanged += (_, _) => Raise(nameof(IsTranscriptEmpty));
 
         foreach (var @event in _view.Events)
         {

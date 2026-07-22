@@ -1,4 +1,7 @@
+using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Linq;
+using Agnes.Ui.Core.Transcript;
 using Agnes.Ui.Core.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
@@ -6,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace Agnes.App.Desktop.Views;
 
@@ -17,6 +21,8 @@ public partial class SessionTabView : UserControl
     private SessionViewModel? _session;
     private double _leftWidth = 288;
     private double _rightWidth = 540;
+    private ScrollViewer? _transcriptScroll;
+    private bool _stickToBottom = true;
 
     public SessionTabView()
     {
@@ -116,6 +122,7 @@ public partial class SessionTabView : UserControl
         {
             _session.PropertyChanged -= OnSessionPropertyChanged;
             _session.ScrollToRequested -= OnScrollToRequested;
+            _session.Items.CollectionChanged -= OnTranscriptItemsChanged;
         }
 
         _session = _workspace?.DataContext as SessionViewModel;
@@ -123,9 +130,127 @@ public partial class SessionTabView : UserControl
         {
             _session.PropertyChanged += OnSessionPropertyChanged;
             _session.ScrollToRequested += OnScrollToRequested;
+            _session.Items.CollectionChanged += OnTranscriptItemsChanged;
+            _stickToBottom = true;
+            // The ListBox's ScrollViewer only exists after the template realizes; defer the hook + a
+            // scroll-to-bottom so a freshly opened session starts pinned at the latest message.
+            Dispatcher.UIThread.Post(() => { EnsureScrollHooked(); ScrollToBottom(); }, DispatcherPriority.Background);
         }
 
         UpdateColumns();
+    }
+
+    private void EnsureScrollHooked()
+    {
+        if (_transcriptScroll is not null || _transcript is null)
+        {
+            return;
+        }
+
+        _transcriptScroll = _transcript.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+        if (_transcriptScroll is not null)
+        {
+            _transcriptScroll.ScrollChanged += OnTranscriptScrollChanged;
+        }
+    }
+
+    // Keep "stuck to bottom" true only while the user is at (or near) the end, so auto-scroll never
+    // fights a user who has scrolled up to read history.
+    private void OnTranscriptScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (_transcriptScroll is { } sv)
+        {
+            var distanceToBottom = sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height);
+            _stickToBottom = distanceToBottom < 48;
+            UpdateStickyHeader();
+        }
+    }
+
+    private void OnTranscriptItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        EnsureScrollHooked();
+        if (e.Action == NotifyCollectionChangedAction.Add && _stickToBottom)
+        {
+            Dispatcher.UIThread.Post(ScrollToBottom, DispatcherPriority.Background);
+        }
+
+        Dispatcher.UIThread.Post(UpdateStickyHeader, DispatcherPriority.Background);
+    }
+
+    private void ScrollToBottom()
+    {
+        if (_transcript is { ItemCount: > 0 } list)
+        {
+            list.ScrollIntoView(list.ItemCount - 1);
+        }
+    }
+
+    // Pin the last message above the viewport when a run of tool calls has pushed every message off-screen.
+    private void UpdateStickyHeader()
+    {
+        var header = this.FindControl<Border>("StickyHeader");
+        if (header is null || _session is null || _transcript is null || _transcriptScroll is null)
+        {
+            return;
+        }
+
+        var viewportHeight = _transcriptScroll.Viewport.Height;
+        var firstVisibleIndex = int.MaxValue;
+        var messageVisible = false;
+        foreach (var container in _transcript.GetRealizedContainers())
+        {
+            var index = _transcript.IndexFromContainer(container);
+            if (index < 0 || container.TranslatePoint(default, _transcriptScroll) is not { } p)
+            {
+                continue;
+            }
+
+            if (p.Y + container.Bounds.Height > 0 && p.Y < viewportHeight) // intersects the viewport
+            {
+                firstVisibleIndex = System.Math.Min(firstVisibleIndex, index);
+                messageVisible |= container.DataContext is MessageBubbleItem;
+            }
+        }
+
+        if (messageVisible || firstVisibleIndex is int.MaxValue or 0)
+        {
+            header.IsVisible = false;
+            return;
+        }
+
+        // Walk back to the last message before the first visible row. DisplayItems == Items unless a
+        // subagent filter / rewind is active (rare); only materialise then.
+        var items = _session.SelectedAgentId is null && !_session.IsRewound
+            ? (System.Collections.Generic.IReadOnlyList<TranscriptItem>)_session.Items
+            : _session.DisplayItems.ToList();
+
+        MessageBubbleItem? last = null;
+        for (var i = System.Math.Min(firstVisibleIndex, items.Count) - 1; i >= 0; i--)
+        {
+            if (items[i] is MessageBubbleItem mb) { last = mb; break; }
+        }
+
+        if (last is null)
+        {
+            header.IsVisible = false;
+            return;
+        }
+
+        if (this.FindControl<TextBlock>("StickySpeaker") is { } speaker) { speaker.Text = last.Speaker; }
+        if (this.FindControl<TextBlock>("StickyText") is { } text) { text.Text = FirstLine(last.Text); }
+        header.IsVisible = true;
+    }
+
+    private static string FirstLine(string s)
+    {
+        if (string.IsNullOrEmpty(s))
+        {
+            return string.Empty;
+        }
+
+        var newline = s.IndexOf('\n');
+        var line = newline >= 0 ? s[..newline] : s;
+        return line.Length > 200 ? line[..200] : line;
     }
 
     // Deep-link: scroll the transcript to the item carrying the given anchor id.

@@ -118,4 +118,38 @@ public class TranscriptBuilderTests
         var plan = Assert.Single(t.Items.OfType<PlanItemView>());
         Assert.Equal(2, plan.Entries.Count);
     }
+
+    [Fact]
+    public void Claude_Agent_tool_registers_a_subagent_and_still_shows_as_a_tool_row()
+    {
+        var t = new TranscriptBuilder();
+        SubagentStartedEvent? announced = null;
+        t.SubagentAdded += s => announced = s;
+
+        t.Apply(new ToolCallEvent("tc1", "Agent", ToolKind.Other, ToolCallStatus.InProgress,
+            [new TextContent("{\"description\":\"Deep dive Agnes\",\"subagent_type\":\"Explore\"}")]));
+
+        Assert.NotNull(announced);
+        Assert.Equal("Deep dive Agnes", announced!.Name);        // name comes from the tool input
+        Assert.Single(t.Items.OfType<ToolCallItem>());            // result still readable as a tool row
+    }
+
+    [Fact]
+    public void Claude_TaskCreate_and_TaskUpdate_build_the_plan_panel_without_noisy_tool_rows()
+    {
+        var t = new TranscriptBuilder();
+        t.Apply(new ToolCallEvent("t1", "TaskCreate", ToolKind.Other, ToolCallStatus.Completed,
+            [new TextContent("{\"subject\":\"Write docs\",\"description\":\"the readme\"}")]));
+        t.Apply(new ToolCallEvent("t2", "TaskCreate", ToolKind.Other, ToolCallStatus.Completed,
+            [new TextContent("{\"subject\":\"Add tests\"}")]));
+        t.Apply(new ToolCallEvent("t3", "TaskUpdate", ToolKind.Other, ToolCallStatus.Completed,
+            [new TextContent("{\"taskId\":\"1\",\"status\":\"completed\"}")]));
+
+        Assert.Empty(t.Items.OfType<ToolCallItem>());             // task tools don't clutter the transcript
+        var plan = Assert.Single(t.Items.OfType<PlanItemView>());
+        Assert.Equal(2, plan.Entries.Count);
+        Assert.Equal("Write docs", plan.Entries[0].Content);
+        Assert.Equal("completed", plan.Entries[0].Status);        // TaskUpdate(id=1) landed on the first task
+        Assert.Equal("pending", plan.Entries[1].Status);
+    }
 }
