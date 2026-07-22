@@ -45,6 +45,25 @@ Domain + plugin contracts, no external dependencies:
 - `AgentDescriptor` / `AgentCapabilities` — identity + negotiated capabilities.
 - `SessionEvent` — the normalized event model the whole system speaks (see below).
 - `ICliFallback` — raw PTY fallback contract.
+- `IPluginRegistry<TProvider>` / `PluginRegistry<TProvider>` — the general-purpose plugin-point pattern (below).
+
+### Plugin architecture
+
+Every plugin point in Agnes (agent adapters, sandbox providers, and any future provider kind — transports, auth methods, voice, …) follows one shape: a small interface implemented by each provider, plus an `IPluginRegistry<TProvider>` the host builds from every DI-registered implementation of that interface:
+
+```csharp
+public interface IPluginRegistry<TProvider> where TProvider : notnull
+{
+    IReadOnlyList<TProvider> All { get; }
+    TProvider? Find(string id);
+}
+```
+
+`PluginRegistry<TProvider>` is the default implementation — built from `IEnumerable<TProvider>` plus a per-call id-selector function, since different plugin-point interfaces name their id differently (`IAgentAdapter.Descriptor.Id`, `ISandboxProvider.Name`, …). `Agnes.Host`'s composition root (`Program.cs`) registers one `IPluginRegistry<T>` singleton per plugin point from `sp.GetServices<T>()`; consumers (`SessionManager`, `AgnesHub`) depend on the registry interface, never on a hand-rolled dictionary or a hardcoded list. Adding a new provider for an existing plugin point is exactly one `AddSingleton<T>()` registration — no changes to the registry, `SessionManager`, or the hub.
+
+Host-level **capability negotiation** builds on the same registries: `GetCapabilities()` (on `IAgnesServer`/`AgnesHub`, proxied through `Agnes.Client`'s `IAgnesHost.GetCapabilitiesAsync()`) reports which plugin-point ids are actually populated on this host, each tagged `FailClosed` (the request should hard-fail without it) or not (the caller should degrade gracefully — e.g. no sandbox provider just means sessions run on the host instead of in a VM). A client can check this up front instead of discovering an absent capability via a failed call.
+
+NuGet-distributed third-party plugins (packaging, signature verification, install/enable/disable lifecycle, and a management UI) are specified in `.ideas/00-plugin-architecture.md` but not yet built — today every plugin is a built-in shipped in-process with `Agnes.Host`.
 
 ### `Agnes.Acp`
 The workhorse: a generic **ACP-over-stdio client** built on **StreamJsonRpc** (Microsoft). It owns the child process lifecycle, JSON-RPC framing, capability negotiation, and the mapping between ACP messages and Agnes `SessionEvent`s. We hand-model the ACP message subset we use (rather than depend on low-reputation third-party ACP packages) — see [Dependencies](#dependencies).
