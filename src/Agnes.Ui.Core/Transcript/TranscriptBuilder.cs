@@ -14,6 +14,7 @@ public sealed class TranscriptBuilder
 {
     private readonly Dictionary<string, ToolCallItem> _tools = new();
     private readonly Dictionary<string, PermissionItem> _permissions = new();
+    private readonly Dictionary<string, QuestionItem> _questions = new();
     private MessageBubbleItem? _openBubble;
     private PlanItemView? _plan;
 
@@ -23,6 +24,11 @@ public sealed class TranscriptBuilder
     public PermissionItem? PendingPermission { get; private set; }
 
     public event Action? PendingPermissionChanged;
+
+    /// <summary>The unanswered structured-question set, if any.</summary>
+    public QuestionItem? PendingQuestion { get; private set; }
+
+    public event Action? PendingQuestionChanged;
 
     /// <summary>Raised when a subagent is announced (for the session's agent tree).</summary>
     public event Action<SubagentStartedEvent>? SubagentAdded;
@@ -111,6 +117,25 @@ public sealed class TranscriptBuilder
                 Items.Add(permission);
                 PendingPermission = permission;
                 PendingPermissionChanged?.Invoke();
+                break;
+
+            case QuestionAskedEvent q:
+                CloseBubble();
+                var question = new QuestionItem(q.RequestId, q.Questions) { AgentId = agentId };
+                _questions[q.RequestId] = question;
+                Items.Add(question);
+                PendingQuestion = question;
+                PendingQuestionChanged?.Invoke();
+                break;
+
+            case QuestionAnsweredEvent qa when _questions.TryGetValue(qa.RequestId, out var qItem):
+                qItem.Resolved = true;
+                if (PendingQuestion == qItem)
+                {
+                    PendingQuestion = null;
+                    PendingQuestionChanged?.Invoke();
+                }
+
                 break;
 
             case PermissionResolvedEvent rr when _permissions.TryGetValue(rr.RequestId, out var item):

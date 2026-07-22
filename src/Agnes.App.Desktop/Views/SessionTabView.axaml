@@ -1046,6 +1046,67 @@
                                         </Border>
                                     </DataTemplate>
 
+                                    <!-- Structured "ask the user" card (AskUserQuestion / requestUserInput). -->
+                                    <DataTemplate DataType="tr:QuestionItem">
+                                        <Border Margin="0,6" Padding="14,12" CornerRadius="10"
+                                                Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Accent}" BorderThickness="1">
+                                            <StackPanel Spacing="12">
+                                                <TextBlock Text="The agent needs your input" Foreground="{DynamicResource Accent}"
+                                                           FontWeight="SemiBold" FontSize="12" />
+                                                <ItemsControl ItemsSource="{Binding Questions}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Spacing="6" Margin="0,0,0,6">
+                                                                <Border Background="{DynamicResource AccentSoft}" CornerRadius="6" Padding="7,2"
+                                                                        HorizontalAlignment="Left" IsVisible="{Binding Header, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                                                                    <TextBlock Text="{Binding Header}" Foreground="{DynamicResource Accent}" FontSize="10" FontWeight="SemiBold" />
+                                                                </Border>
+                                                                <TextBlock Text="{Binding Prompt}" Foreground="{DynamicResource Fg}" FontSize="13" TextWrapping="Wrap" />
+                                                                <ItemsControl ItemsSource="{Binding Options}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <Panel Margin="0,2">
+                                                                                <RadioButton IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                                             GroupName="{Binding $parent[ItemsControl].DataContext.GroupName}"
+                                                                                             IsVisible="{Binding $parent[ItemsControl].DataContext.SingleSelect}">
+                                                                                    <StackPanel Spacing="1">
+                                                                                        <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+                                                                                    </StackPanel>
+                                                                                </RadioButton>
+                                                                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                                          IsVisible="{Binding $parent[ItemsControl].DataContext.MultiSelect}">
+                                                                                    <StackPanel Spacing="1">
+                                                                                        <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+                                                                                    </StackPanel>
+                                                                                </CheckBox>
+                                                                            </Panel>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                                <TextBox Text="{Binding Notes, Mode=TwoWay}" Watermark="Notes (optional)"
+                                                                         IsVisible="{Binding AllowFreeText}" AcceptsReturn="True" TextWrapping="Wrap"
+                                                                         Background="{DynamicResource Panel}" Foreground="{DynamicResource Fg}"
+                                                                         BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,5" FontSize="12" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding !Resolved}">
+                                                    <Button Content="Submit" Command="{Binding $parent[ItemsControl].DataContext.AnswerQuestionCommand}"
+                                                            CommandParameter="{Binding}" Background="{DynamicResource Accent}" Foreground="#1A1200"
+                                                            CornerRadius="7" Padding="16,6" FontWeight="SemiBold" />
+                                                    <Button Content="Dismiss" Command="{Binding $parent[ItemsControl].DataContext.DismissQuestionCommand}"
+                                                            CommandParameter="{Binding}" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="16,6" />
+                                                </StackPanel>
+                                                <TextBlock Text="✓ Answered" Foreground="{DynamicResource Good}" FontSize="11"
+                                                           IsVisible="{Binding Resolved}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+
                                     <DataTemplate DataType="tr:PermissionItem">
                                         <Border Margin="0,6" Padding="12,9" CornerRadius="8"
                                                 Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Accent}" BorderThickness="1">

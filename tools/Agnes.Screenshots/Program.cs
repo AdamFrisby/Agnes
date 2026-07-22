@@ -252,6 +252,12 @@ public static class Program
         Pump(() => perm.Session!.HasApprovals);
         Capture(window, "05b-approvals-audit.png");
 
+        // 5c) Structured "ask the user" card — a series of questions with options + notes.
+        var ask = OpenSession(vm, "opencode");
+        Prompt(ask, "Ask me a clarifying question before you start.");
+        Pump(() => ask.Session!.PendingQuestion is not null);
+        Capture(window, "05c-question-card.png");
+
         // 6) Recorded session — real captured OpenCode data replayed as an agent
         vm.NewTabCommand.Execute(null);
         var rec = LastTab(vm)!;

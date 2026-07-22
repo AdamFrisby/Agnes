@@ -245,3 +245,85 @@ public sealed class NoticeItem : TranscriptItem
     public string Text { get; }
     public bool IsError { get; }
 }
+
+/// <summary>A structured "ask the user" card: one or more questions, each with selectable options and
+/// optional free-text notes. The user picks answers and submits (or dismisses).</summary>
+public sealed class QuestionItem : TranscriptItem
+{
+    private bool _resolved;
+
+    public QuestionItem(string requestId, IReadOnlyList<AgentQuestion> questions)
+    {
+        RequestId = requestId;
+        Questions = questions.Select(q => new QuestionView(q)).ToList();
+    }
+
+    public string RequestId { get; }
+    public IReadOnlyList<QuestionView> Questions { get; }
+
+    public bool Resolved
+    {
+        get => _resolved;
+        set => Set(ref _resolved, value);
+    }
+
+    /// <summary>The answers to submit — chosen labels + any notes, per question.</summary>
+    public IReadOnlyList<QuestionAnswer> BuildAnswers()
+        => Questions.Select(q => new QuestionAnswer(
+            q.Id,
+            q.Options.Where(o => o.IsSelected).Select(o => o.Label).ToList(),
+            string.IsNullOrWhiteSpace(q.Notes) ? null : q.Notes.Trim())).ToList();
+}
+
+/// <summary>One question in a <see cref="QuestionItem"/> with its selectable options + notes.</summary>
+public sealed class QuestionView : ObservableObject
+{
+    private string _notes = string.Empty;
+
+    public QuestionView(AgentQuestion question)
+    {
+        Id = question.Id;
+        Header = question.Header;
+        Prompt = question.Prompt;
+        MultiSelect = question.MultiSelect;
+        AllowFreeText = question.AllowFreeText;
+        GroupName = "q-" + Guid.NewGuid().ToString("n"); // radio group for single-select
+        Options = question.Options.Select(o => new QuestionOptionView(o.Label, o.Description)).ToList();
+    }
+
+    public string Id { get; }
+    public string Header { get; }
+    public string Prompt { get; }
+    public bool MultiSelect { get; }
+    public bool SingleSelect => !MultiSelect;
+    public bool AllowFreeText { get; }
+    public string GroupName { get; }
+    public IReadOnlyList<QuestionOptionView> Options { get; }
+
+    public string Notes
+    {
+        get => _notes;
+        set => Set(ref _notes, value);
+    }
+}
+
+/// <summary>One selectable option within a <see cref="QuestionView"/>.</summary>
+public sealed class QuestionOptionView : ObservableObject
+{
+    private bool _isSelected;
+
+    public QuestionOptionView(string label, string description)
+    {
+        Label = label;
+        Description = description;
+    }
+
+    public string Label { get; }
+    public string Description { get; }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => Set(ref _isSelected, value);
+    }
+}

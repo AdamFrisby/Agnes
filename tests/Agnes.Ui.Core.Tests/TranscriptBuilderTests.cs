@@ -152,4 +152,36 @@ public class TranscriptBuilderTests
         Assert.Equal("completed", plan.Entries[0].Status);        // TaskUpdate(id=1) landed on the first task
         Assert.Equal("pending", plan.Entries[1].Status);
     }
+
+    [Fact]
+    public void QuestionAsked_becomes_a_pending_question_that_resolves_when_answered()
+    {
+        var t = new TranscriptBuilder();
+        var changes = 0;
+        t.PendingQuestionChanged += () => changes++;
+
+        t.Apply(new QuestionAskedEvent("r1", "tu1",
+        [
+            new AgentQuestion("db", "DB", "Which database?", [new QuestionChoice("SQLite", "local"), new QuestionChoice("Postgres", "server")]),
+            new AgentQuestion("f", "Features", "Which features?", [new QuestionChoice("Auth", "")], MultiSelect: true),
+        ]));
+
+        var item = Assert.Single(t.Items.OfType<QuestionItem>());
+        Assert.Same(item, t.PendingQuestion);
+        Assert.False(item.Resolved);
+        Assert.Equal(2, item.Questions.Count);
+        Assert.True(item.Questions[1].MultiSelect);
+
+        // Selecting + building answers reflects the choice and notes.
+        item.Questions[0].Options[0].IsSelected = true;
+        item.Questions[0].Notes = "zero-config please";
+        var answers = item.BuildAnswers();
+        Assert.Equal(["SQLite"], answers[0].SelectedLabels);
+        Assert.Equal("zero-config please", answers[0].Notes);
+
+        t.Apply(new QuestionAnsweredEvent("r1"));
+        Assert.True(item.Resolved);
+        Assert.Null(t.PendingQuestion);
+        Assert.Equal(2, changes); // raised on ask + on answer
+    }
 }

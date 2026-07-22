@@ -43,6 +43,9 @@ public interface IAgnesServer
 
     Task RespondPermission(PermissionResponseRequest response);
 
+    /// <summary>Submit the user's answers to an outstanding structured question set.</summary>
+    Task AnswerQuestion(QuestionAnswerRequest response);
+
     /// <summary>Git state of the session's working directory.</summary>
     Task<GitStatus> GetGitStatus(string sessionId);
 

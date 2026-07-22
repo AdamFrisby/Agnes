@@ -54,6 +54,11 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task RespondPermissionAsync(string sessionId, string requestId, string optionId);
 
+    /// <summary>Submit the user's answers to an outstanding structured question set. Default no-op for hosts
+    /// whose agents never ask questions.</summary>
+    Task AnswerQuestionAsync(string sessionId, string requestId, IReadOnlyList<Agnes.Abstractions.QuestionAnswer> answers)
+        => Task.CompletedTask;
+
     /// <summary>Git state of the session's working directory.</summary>
     Task<GitStatus> GetGitStatusAsync(string sessionId);
 

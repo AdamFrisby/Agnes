@@ -54,6 +54,8 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(ModeChangedEvent), "mode_changed")]
 [JsonDerivedType(typeof(PermissionRequestedEvent), "permission_requested")]
 [JsonDerivedType(typeof(PermissionResolvedEvent), "permission_resolved")]
+[JsonDerivedType(typeof(QuestionAskedEvent), "question_asked")]
+[JsonDerivedType(typeof(QuestionAnsweredEvent), "question_answered")]
 [JsonDerivedType(typeof(TerminalOutputEvent), "terminal_output")]
 [JsonDerivedType(typeof(TurnEndedEvent), "turn_ended")]
 [JsonDerivedType(typeof(UsageReportedEvent), "usage_reported")]
@@ -119,6 +121,16 @@ public sealed record PermissionResolvedEvent(
     string RequestId,
     string? OptionId,
     PermissionOutcome Outcome) : SessionEvent;
+
+/// <summary>The agent is asking the user a set of structured design/clarifying questions (AskUserQuestion
+/// on Claude, item/tool/requestUserInput on Codex). Answered via the client's structured question card.</summary>
+public sealed record QuestionAskedEvent(
+    string RequestId,
+    string ToolCallId,
+    IReadOnlyList<AgentQuestion> Questions) : SessionEvent;
+
+/// <summary>A pending question set was answered (or dismissed) — marks the card resolved.</summary>
+public sealed record QuestionAnsweredEvent(string RequestId) : SessionEvent;
 
 /// <summary>Raw output from the CLI-fallback terminal attached to this session.</summary>
 public sealed record TerminalOutputEvent(string TerminalId, string Data) : SessionEvent;

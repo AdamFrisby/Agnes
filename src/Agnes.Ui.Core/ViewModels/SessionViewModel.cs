@@ -133,6 +133,9 @@ public sealed class SessionViewModel : ObservableObject
         });
 
         _transcript.PendingPermissionChanged += () => { Raise(nameof(PendingPermission)); RaiseActivity(); };
+        _transcript.PendingQuestionChanged += () => { Raise(nameof(PendingQuestion)); RaiseActivity(); };
+        AnswerQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = AnswerQuestionAsync(item); });
+        DismissQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = DismissQuestionAsync(item); });
 
         _mainAgentNode = new AgentNode(null, title, isMain: true, SelectAgent) { IsSelected = true };
         AgentTree.Add(_mainAgentNode);
@@ -235,6 +238,26 @@ public sealed class SessionViewModel : ObservableObject
     public string HandoffReference => $"{_host.HostUrl}#{SessionId}";
     public ObservableCollection<TranscriptItem> Items => _transcript.Items;
     public PermissionItem? PendingPermission => _transcript.PendingPermission;
+    public QuestionItem? PendingQuestion => _transcript.PendingQuestion;
+
+    public System.Windows.Input.ICommand AnswerQuestionCommand { get; }
+    public System.Windows.Input.ICommand DismissQuestionCommand { get; }
+
+    private async Task AnswerQuestionAsync(QuestionItem? item)
+    {
+        if (item is not null)
+        {
+            await _host.AnswerQuestionAsync(SessionId, item.RequestId, item.BuildAnswers());
+        }
+    }
+
+    private async Task DismissQuestionAsync(QuestionItem? item)
+    {
+        if (item is not null)
+        {
+            await _host.AnswerQuestionAsync(SessionId, item.RequestId, []);
+        }
+    }
 
     // Left column
     public ObservableCollection<ToolEntry> ModifiedFiles { get; } = [];
@@ -374,7 +397,7 @@ public sealed class SessionViewModel : ObservableObject
     /// <summary>High-level session state, derived from what's in flight.</summary>
     public SessionActivity Activity =>
         _interrupted ? SessionActivity.Error
-        : PendingPermission is not null ? SessionActivity.NeedsInput
+        : PendingPermission is not null || PendingQuestion is not null ? SessionActivity.NeedsInput
         : IsTurnActive ? SessionActivity.Running
         : HasFiles ? SessionActivity.ReadyForReview
         : SessionActivity.Idle;

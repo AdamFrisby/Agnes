@@ -91,6 +91,9 @@ internal sealed class HostSession : IAsyncDisposable
         return _agent.RespondToPermissionAsync(requestId, optionId, _cts.Token);
     }
 
+    public Task AnswerQuestionAsync(string requestId, IReadOnlyList<QuestionAnswer> answers)
+        => _agent.AnswerQuestionAsync(requestId, answers, _cts.Token);
+
     /// <summary>
     /// Surfaces a permission card for a brokered git push and waits for the user's answer (times out to
     /// a deny so a never-answered push doesn't hang the broker forever). Returns true iff allowed.

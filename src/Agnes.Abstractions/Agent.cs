@@ -159,6 +159,11 @@ public interface IAgentSession : IAsyncDisposable
     /// <summary>Answers an outstanding <see cref="PermissionRequestedEvent"/>.</summary>
     Task RespondToPermissionAsync(string requestId, string optionId, CancellationToken cancellationToken = default);
 
+    /// <summary>Answers an outstanding <see cref="QuestionAskedEvent"/> with the user's structured selections;
+    /// an empty list means the user dismissed it. Default no-op for adapters that never ask questions.</summary>
+    Task AnswerQuestionAsync(string requestId, IReadOnlyList<QuestionAnswer> answers, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
     /// <summary>The modes the agent offers for this session (e.g. Ask / Code), if any.</summary>
     IReadOnlyList<SessionMode> Modes => [];
 

@@ -29,4 +29,9 @@ public interface INativeStreamMapper
     /// <see cref="PermissionRequestedEvent"/>.
     /// </summary>
     string? BuildPermissionResponse(string requestId, bool allow);
+
+    /// <summary>Builds the stdin JSON line answering a pending structured-question request (AskUserQuestion),
+    /// or null if the request id isn't a pending question / the CLI has no such mechanism.</summary>
+    string? BuildQuestionResponse(string requestId, IReadOnlyList<QuestionAnswer> answers)
+        => null;
 }

@@ -69,6 +69,15 @@ internal sealed class NativeAgentSession : IAgentSession
         }
     }
 
+    public async Task AnswerQuestionAsync(string requestId, IReadOnlyList<QuestionAnswer> answers, CancellationToken cancellationToken = default)
+    {
+        if (_mapper.BuildQuestionResponse(requestId, answers) is { } line)
+        {
+            await WriteLineAsync(line, cancellationToken).ConfigureAwait(false);
+            Emit(new QuestionAnsweredEvent(requestId));
+        }
+    }
+
     /// <summary>Serialises writes to the agent's stdin (user turns and control responses may race).</summary>
     private async Task WriteLineAsync(string line, CancellationToken cancellationToken)
     {

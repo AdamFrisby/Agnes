@@ -191,6 +191,12 @@ public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock>
 /// <summary>A client's answer to a permission request.</summary>
 public sealed record PermissionResponseRequest(string SessionId, string RequestId, string OptionId);
 
+/// <summary>The user's answers to a <see cref="Agnes.Abstractions.QuestionAskedEvent"/> — one entry per
+/// question (its id, the chosen option label(s), and optional free-text notes). Empty answers = dismissed.</summary>
+public sealed record QuestionAnswerRequest(string SessionId, string RequestId, IReadOnlyList<QuestionAnswerDto> Answers);
+
+public sealed record QuestionAnswerDto(string QuestionId, IReadOnlyList<string> SelectedLabels, string? Notes = null);
+
 /// <summary>Git state of a session's working directory.</summary>
 public sealed record GitStatus(
     bool IsRepository,

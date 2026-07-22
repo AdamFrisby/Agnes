@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Agnes.Abstractions;
 
 namespace Agnes.Agents.Native;
@@ -32,8 +34,19 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
                 {
                     var toolName = GetString(req, "tool_name") ?? "tool";
                     var toolUseId = GetString(req, "tool_use_id") ?? requestId;
-                    yield return new PermissionRequestedEvent(requestId, toolUseId,
-                        $"Allow {toolName}?", DefaultPermissionOptions);
+                    // AskUserQuestion rides the SAME can_use_tool channel, but its "answer" is structured
+                    // (options + notes) rather than allow/deny — surface it as a QuestionAskedEvent and stash
+                    // the original input so the answer can echo it back in updatedInput.
+                    if (toolName == "AskUserQuestion" && req.TryGetProperty("input", out var questionInput))
+                    {
+                        _questionInputs[requestId] = questionInput.GetRawText();
+                        yield return new QuestionAskedEvent(requestId, toolUseId, ParseQuestions(questionInput));
+                    }
+                    else
+                    {
+                        yield return new PermissionRequestedEvent(requestId, toolUseId,
+                            $"Allow {toolName}?", DefaultPermissionOptions);
+                    }
                 }
 
                 break;
@@ -164,6 +177,94 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
             ? (object)new { subtype = "success", request_id = requestId, response = new { behavior = "allow" } }
             : new { subtype = "success", request_id = requestId, response = new { behavior = "deny", message = "Denied by the user." } };
         return JsonSerializer.Serialize(new { type = "control_response", response }, Options);
+    }
+
+    // Pending AskUserQuestion inputs by request id, so the answer can echo the original questions back in
+    // updatedInput (the CLI re-validates updatedInput against the tool schema). Cross-thread: read loop
+    // adds, the answer call removes.
+    private readonly ConcurrentDictionary<string, string> _questionInputs = new();
+
+    private static IReadOnlyList<AgentQuestion> ParseQuestions(JsonElement input)
+    {
+        var questions = new List<AgentQuestion>();
+        if (input.TryGetProperty("questions", out var qs) && qs.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var q in qs.EnumerateArray())
+            {
+                var prompt = GetString(q, "question") ?? string.Empty;
+                var options = new List<QuestionChoice>();
+                if (q.TryGetProperty("options", out var os) && os.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var o in os.EnumerateArray())
+                    {
+                        options.Add(new QuestionChoice(GetString(o, "label") ?? string.Empty, GetString(o, "description") ?? string.Empty));
+                    }
+                }
+
+                var multi = q.TryGetProperty("multiSelect", out var m) && m.ValueKind == JsonValueKind.True;
+                // Claude keys its answers map by the question TEXT, so use the prompt as the id to round-trip.
+                questions.Add(new AgentQuestion(prompt, GetString(q, "header") ?? string.Empty, prompt, options, multi));
+            }
+        }
+
+        return questions;
+    }
+
+    /// <summary>
+    /// Builds the control_response for an AskUserQuestion. With answers it allows and echoes the original
+    /// input plus an <c>answers</c> map (question text → chosen label, or comma-joined for multi-select) and
+    /// <c>questionStates</c> (carries free-text notes in <c>textInputValue</c>). Empty answers = the user
+    /// dismissed it → deny with feedback. Returns null if the request id isn't a pending question.
+    /// </summary>
+    public string? BuildQuestionResponse(string requestId, IReadOnlyList<QuestionAnswer> answers)
+    {
+        if (!_questionInputs.TryRemove(requestId, out var inputJson))
+        {
+            return null;
+        }
+
+        JsonObject inner;
+        if (answers.Count == 0)
+        {
+            inner = new JsonObject
+            {
+                ["behavior"] = "deny",
+                ["message"] = "The user dismissed the questions.",
+                ["feedback"] = "The user dismissed the questions without answering.",
+            };
+        }
+        else
+        {
+            var updated = JsonNode.Parse(inputJson)?.AsObject() ?? new JsonObject();
+            var answersObj = new JsonObject();
+            var statesObj = new JsonObject();
+            foreach (var a in answers)
+            {
+                var joined = string.Join(", ", a.SelectedLabels);
+                answersObj[a.QuestionId] = joined;
+                statesObj[a.QuestionId] = new JsonObject
+                {
+                    ["selectedValue"] = a.SelectedLabels.Count == 1 ? a.SelectedLabels[0] : joined,
+                    ["textInputValue"] = a.Notes ?? string.Empty,
+                };
+            }
+
+            updated["answers"] = answersObj;
+            updated["questionStates"] = statesObj;
+            inner = new JsonObject { ["behavior"] = "allow", ["updatedInput"] = updated };
+        }
+
+        var response = new JsonObject
+        {
+            ["type"] = "control_response",
+            ["response"] = new JsonObject
+            {
+                ["subtype"] = "success",
+                ["request_id"] = requestId,
+                ["response"] = inner,
+            },
+        };
+        return response.ToJsonString(Options);
     }
 
     private static readonly PermissionOption[] DefaultPermissionOptions =

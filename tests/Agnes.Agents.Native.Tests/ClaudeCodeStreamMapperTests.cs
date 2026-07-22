@@ -164,4 +164,79 @@ public class ClaudeCodeStreamMapperTests
         Assert.Equal("req-9", response.GetProperty("request_id").GetString());
         Assert.Equal(behavior, response.GetProperty("response").GetProperty("behavior").GetString());
     }
+
+    private const string AskQuestion =
+        "{\"type\":\"control_request\",\"request_id\":\"r1\",\"request\":{\"subtype\":\"can_use_tool\","
+        + "\"tool_name\":\"AskUserQuestion\",\"tool_use_id\":\"tu1\",\"input\":{\"questions\":["
+        + "{\"question\":\"Which db?\",\"header\":\"DB\",\"multiSelect\":false,"
+        + "\"options\":[{\"label\":\"SQLite\",\"description\":\"local\"},{\"label\":\"Postgres\",\"description\":\"server\"}]}]}}}";
+
+    [Fact]
+    public void AskUserQuestion_control_request_becomes_a_question_event()
+    {
+        var mapper = new ClaudeCodeStreamMapper();
+        using var doc = JsonDocument.Parse(AskQuestion);
+        var q = Assert.IsType<QuestionAskedEvent>(Assert.Single(mapper.ToEvents(doc.RootElement)));
+
+        Assert.Equal("r1", q.RequestId);
+        var question = Assert.Single(q.Questions);
+        Assert.Equal("DB", question.Header);
+        Assert.Equal("Which db?", question.Prompt);
+        Assert.False(question.MultiSelect);
+        Assert.Equal(["SQLite", "Postgres"], question.Options.Select(o => o.Label));
+    }
+
+    [Fact]
+    public void A_non_question_tool_still_maps_to_a_permission_request()
+    {
+        var mapper = new ClaudeCodeStreamMapper();
+        var line = "{\"type\":\"control_request\",\"request_id\":\"r0\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"Bash\"}}";
+        using var doc = JsonDocument.Parse(line);
+        Assert.IsType<PermissionRequestedEvent>(Assert.Single(mapper.ToEvents(doc.RootElement)));
+    }
+
+    [Fact]
+    public void Answering_a_question_echoes_the_input_and_carries_selections_and_notes()
+    {
+        var mapper = new ClaudeCodeStreamMapper();
+        using (var doc = JsonDocument.Parse(AskQuestion)) { _ = mapper.ToEvents(doc.RootElement).ToList(); }
+
+        var line = mapper.BuildQuestionResponse("r1", [new QuestionAnswer("Which db?", ["SQLite"], "prefer zero-config")]);
+        Assert.NotNull(line);
+        using var resp = JsonDocument.Parse(line!);
+        var inner = resp.RootElement.GetProperty("response").GetProperty("response");
+        Assert.Equal("allow", inner.GetProperty("behavior").GetString());
+        var updated = inner.GetProperty("updatedInput");
+        Assert.True(updated.TryGetProperty("questions", out _)); // original questions echoed back
+        Assert.Equal("SQLite", updated.GetProperty("answers").GetProperty("Which db?").GetString());
+        Assert.Equal("prefer zero-config",
+            updated.GetProperty("questionStates").GetProperty("Which db?").GetProperty("textInputValue").GetString());
+
+        // The request is single-use — a second response is null.
+        Assert.Null(mapper.BuildQuestionResponse("r1", []));
+    }
+
+    [Fact]
+    public void Multi_select_answers_are_comma_joined()
+    {
+        var mapper = new ClaudeCodeStreamMapper();
+        var ask = AskQuestion.Replace("\"multiSelect\":false", "\"multiSelect\":true");
+        using (var doc = JsonDocument.Parse(ask)) { _ = mapper.ToEvents(doc.RootElement).ToList(); }
+
+        var line = mapper.BuildQuestionResponse("r1", [new QuestionAnswer("Which db?", ["SQLite", "Postgres"], null)]);
+        using var resp = JsonDocument.Parse(line!);
+        Assert.Equal("SQLite, Postgres", resp.RootElement.GetProperty("response").GetProperty("response")
+            .GetProperty("updatedInput").GetProperty("answers").GetProperty("Which db?").GetString());
+    }
+
+    [Fact]
+    public void Dismissing_a_question_denies()
+    {
+        var mapper = new ClaudeCodeStreamMapper();
+        using (var doc = JsonDocument.Parse(AskQuestion)) { _ = mapper.ToEvents(doc.RootElement).ToList(); }
+
+        var line = mapper.BuildQuestionResponse("r1", []);
+        using var resp = JsonDocument.Parse(line!);
+        Assert.Equal("deny", resp.RootElement.GetProperty("response").GetProperty("response").GetProperty("behavior").GetString());
+    }
 }

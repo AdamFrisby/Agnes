@@ -273,6 +273,23 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.CompletedTask;
     }
 
+    public Task AnswerQuestionAsync(string sessionId, string requestId, IReadOnlyList<QuestionAnswer> answers)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.Emit(new QuestionAnsweredEvent(requestId));
+            var summary = answers.Count == 0
+                ? "No problem — I'll use sensible defaults."
+                : "Got it — " + string.Join("; ", answers.Select(a =>
+                    $"{a.QuestionId}: {(a.SelectedLabels.Count > 0 ? string.Join(", ", a.SelectedLabels) : "(no choice)")}"
+                    + (string.IsNullOrWhiteSpace(a.Notes) ? "" : $" ({a.Notes})")));
+            session.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent(summary + " Proceeding.")));
+            session.Emit(new TurnEndedEvent(StopReason.EndTurn));
+        }
+
+        return Task.CompletedTask;
+    }
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     // ---- scripted behavior ----
@@ -295,6 +312,25 @@ public sealed class SimulatedHost : IAgnesHost
                     new PermissionOption("reject-once", "Reject", PermissionOptionKind.RejectOnce),
                 ]));
                 return; // wait for the client to answer (RespondPermissionAsync continues the turn)
+            }
+
+            if (Mentions(prompt, "question", "ask me", "clarify", "which "))
+            {
+                session.Emit(new QuestionAskedEvent("q-1", "tc-q",
+                [
+                    new AgentQuestion("db", "Database", "Which database should the sample app use?",
+                    [
+                        new QuestionChoice("SQLite", "Zero-config, file-based — great for local/dev."),
+                        new QuestionChoice("Postgres", "Full-featured, needs a running server."),
+                    ]),
+                    new AgentQuestion("features", "Features", "Which features should I scaffold?",
+                    [
+                        new QuestionChoice("Auth", "Login + sessions."),
+                        new QuestionChoice("REST API", "CRUD endpoints."),
+                        new QuestionChoice("Realtime", "WebSocket updates."),
+                    ], MultiSelect: true),
+                ]));
+                return; // wait for the client to answer (AnswerQuestionAsync continues the turn)
             }
 
             if (Mentions(prompt, "explain", "detail", "describe", "overview"))

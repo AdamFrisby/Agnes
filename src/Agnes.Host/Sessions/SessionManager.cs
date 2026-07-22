@@ -824,6 +824,14 @@ public sealed class SessionManager : IAsyncDisposable
     public async Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).RespondToPermissionAsync(requestId, optionId).ConfigureAwait(false);
 
+    public async Task AnswerQuestionAsync(string sessionId, string requestId, IReadOnlyList<Agnes.Protocol.QuestionAnswerDto> answers)
+    {
+        var mapped = answers
+            .Select(a => new Agnes.Abstractions.QuestionAnswer(a.QuestionId, a.SelectedLabels, a.Notes))
+            .ToList();
+        await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).AnswerQuestionAsync(requestId, mapped).ConfigureAwait(false);
+    }
+
     public async Task<SessionSnapshot> GetSnapshotAsync(string sessionId, long sinceSequence, CancellationToken cancellationToken = default)
     {
         // Served from the durable log — works for live and dormant (restored-but-not-yet-prompted) sessions.
