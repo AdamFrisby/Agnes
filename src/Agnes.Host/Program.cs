@@ -304,6 +304,15 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.GitHubConnectFlow(
     new HttpClient(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.GitHubConnectFlow>()));
 
+// ---- git forges as built-in plugins (AC13): GitHub today, GitLab/Bitbucket addable as plugins ----
+builder.Services.AddSingleton<IGitHostProvider, GitHubGitHostProvider>();
+builder.Services.AddSingleton<PluginRegistry<IGitHostProvider>>(sp =>
+    new PluginRegistry<IGitHostProvider>(sp.GetServices<IGitHostProvider>(), p => p.Id));
+builder.Services.AddSingleton<IPluginRegistry<IGitHostProvider>>(sp => sp.GetRequiredService<PluginRegistry<IGitHostProvider>>());
+builder.Services.AddSingleton<IMutablePluginRegistry<IGitHostProvider>>(sp => sp.GetRequiredService<PluginRegistry<IGitHostProvider>>());
+builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
+    new Agnes.Host.Plugins.PluginPointMerger<IGitHostProvider>(sp.GetRequiredService<IMutablePluginRegistry<IGitHostProvider>>(), p => p.Id));
+
 // ---- plugin installer: NuGet-packaged third-party plugins (see .ideas/00-plugin-architecture.md) ----
 // The scoped service a plugin gets when it declares (and is granted) the "credentials" capability.
 builder.Services.AddSingleton<ICredentialBroker>(sp =>
