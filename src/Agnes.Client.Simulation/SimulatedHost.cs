@@ -431,6 +431,10 @@ public sealed class SimulatedHost : IAgnesHost
             await Task.Delay(250, cancel).ConfigureAwait(false);
             session.Emit(new ThoughtChunkEvent(new TextContent("Reading the request and planning a response…")));
 
+            // Once the conversation is under way, surface a sample agent-generated title (as Claude's
+            // on-disk aiTitle does) so the session-name header + tab title are demoable offline.
+            session.EmitTitleOnce("wire-remote-terminal-ui");
+
             if (Mentions(prompt, "delete", "remove", "rm "))
             {
                 session.Emit(new ToolCallEvent("tc-danger", "build/", ToolKind.Delete, ToolCallStatus.Pending,
@@ -607,6 +611,24 @@ public sealed class SimulatedHost : IAgnesHost
                 _log.Add(stamped);
                 View.Apply(stamped);
             }
+        }
+
+        private bool _titled;
+
+        /// <summary>Emits a one-time agent title for the session (idempotent across turns).</summary>
+        public void EmitTitleOnce(string title)
+        {
+            lock (_gate)
+            {
+                if (_titled)
+                {
+                    return;
+                }
+
+                _titled = true;
+            }
+
+            Emit(new SessionTitleEvent(title));
         }
 
         // Representative per-session usage: a real Claude Code window is 200k tokens.

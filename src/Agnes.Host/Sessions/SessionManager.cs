@@ -37,6 +37,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, ISandbox> _sandboxBySession = new();
     private readonly ConcurrentDictionary<string, SessionRecord> _catalog = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastRecoveryAt = new();
+    private readonly ConcurrentDictionary<string, string> _titleBySession = new();
     private readonly SemaphoreSlim _attachGate = new(1, 1);
 
     /// <summary>If a just-restarted agent dies again within this window, stop auto-restarting and ask the
@@ -731,6 +732,8 @@ public sealed class SessionManager : IAsyncDisposable
             Faulted = () => _ = RecoverAgentAsync(sessionId),
             // Persist the agent's real session id the moment it reports one, so --resume works reliably.
             AgentSessionStarted = id => _ = UpdateAgentSessionIdAsync(sessionId, id),
+            // After each turn, refresh the agent's auto-generated title (Claude's on-disk aiTitle).
+            TurnCompleted = () => _ = MaybeUpdateTitleAsync(sessionId),
         };
         _sessions[sessionId] = session;
         return session;
@@ -806,6 +809,58 @@ public sealed class SessionManager : IAsyncDisposable
     {
         var stored = await _store.AppendAsync(sessionId, new NoticeEvent(message, isError)).ConfigureAwait(false);
         await _broadcaster.PublishAsync(sessionId, stored).ConfigureAwait(false);
+    }
+
+    // Native Claude's auto-generated title lives in its on-disk transcript (an "ai-title" line), not the
+    // stream. After a turn we read it and, when it changes, emit a SessionTitleEvent so clients can name
+    // the session. Claude-only for now (other agents keep the folder-derived name); best-effort — any
+    // failure (no file yet, exec error) just leaves the title unchanged.
+    private async Task MaybeUpdateTitleAsync(string sessionId)
+    {
+        try
+        {
+            if (!_sessions.TryGetValue(sessionId, out var session)
+                || session.AdapterId != "claude-code-native"
+                || !LooksResumable(session.AgentSessionId)) // the transcript is named by the real session id
+            {
+                return;
+            }
+
+            string? title;
+            if (_sandboxBySession.TryGetValue(sessionId, out var sandbox))
+            {
+                // Inside the sandbox the agent's cwd is /work; read just the ai-title lines over exec.
+                var path = $"{sandbox.HomeDirectory.TrimEnd('/')}/{ClaudeTitle.TranscriptRelativePath("/work", session.AgentSessionId)}";
+                var result = await sandbox.ExecAsync(
+                    new SandboxExec { Argv = ["sh", "-c", ClaudeTitle.TailTitleCommand(path)] }).ConfigureAwait(false);
+                title = result.ExitCode == 0 ? ClaudeTitle.ParseLatestTitle(result.Stdout) : null;
+            }
+            else
+            {
+                var home = Environment.GetEnvironmentVariable("HOME");
+                if (string.IsNullOrEmpty(home))
+                {
+                    return;
+                }
+
+                var path = Path.Combine(home, ClaudeTitle.TranscriptRelativePath(session.WorkingDirectory, session.AgentSessionId));
+                title = File.Exists(path) ? ClaudeTitle.ParseLatestTitle(await File.ReadAllTextAsync(path).ConfigureAwait(false)) : null;
+            }
+
+            if (string.IsNullOrWhiteSpace(title) || _titleBySession.TryGetValue(sessionId, out var last) && last == title)
+            {
+                return;
+            }
+
+            _titleBySession[sessionId] = title;
+            var stored = await _store.AppendAsync(sessionId, new SessionTitleEvent(title)).ConfigureAwait(false);
+            await _broadcaster.PublishAsync(sessionId, stored).ConfigureAwait(false);
+            _logger.LogInformation("Session {SessionId} titled '{Title}'", sessionId, title);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Title refresh failed for session {SessionId}", sessionId);
+        }
     }
 
     // ---- sandbox lifecycle ----

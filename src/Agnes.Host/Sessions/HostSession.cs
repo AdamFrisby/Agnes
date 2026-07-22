@@ -56,6 +56,9 @@ internal sealed class HostSession : IAsyncDisposable
     /// here, not by polling after a prompt, which races the init line and grabs the placeholder id.</summary>
     public Action<string>? AgentSessionStarted { get; set; }
 
+    /// <summary>Invoked when a turn ends — the host uses it to refresh the agent's auto-generated title.</summary>
+    public Action? TurnCompleted { get; set; }
+
     /// <summary>The agent's own session id (used to resume it after a host restart).</summary>
     public string AgentSessionId => _agent.AgentSessionId;
 
@@ -153,6 +156,11 @@ internal sealed class HostSession : IAsyncDisposable
                 }
 
                 await AppendAndPublishAsync(@event).ConfigureAwait(false);
+
+                if (@event is TurnEndedEvent)
+                {
+                    TurnCompleted?.Invoke();
+                }
             }
 
             // The agent's stream ended on its own. If we didn't ask it to stop (dispose cancels _cts),

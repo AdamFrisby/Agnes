@@ -690,6 +690,13 @@
                             Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0">
                         <ScrollViewer Padding="14,16" VerticalScrollBarVisibility="Auto">
                             <StackPanel Spacing="18">
+                                <!-- Session name: the agent's auto-generated title when it has one, else the folder -->
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="SESSION" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding DisplayTitle}" Foreground="{DynamicResource Fg}" FontSize="14"
+                                               FontWeight="SemiBold" TextWrapping="Wrap" />
+                                </StackPanel>
+
                                 <!-- Agent / subagent tree -->
                                 <StackPanel Spacing="6" IsVisible="{Binding HasSubagents}">
                                     <TextBlock Text="AGENTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />

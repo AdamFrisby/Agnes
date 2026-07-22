@@ -159,6 +159,44 @@ public sealed class SessionViewModel : ObservableObject
     public string Title { get; }
     public string SessionId => _view.SessionId;
 
+    private string? _agentTitle;
+
+    /// <summary>The agent's auto-generated name for the conversation (Claude's on-disk aiTitle), prettified;
+    /// null until the agent produces one. Used to name the session in the left panel and the tab.</summary>
+    public string? AgentTitle
+    {
+        get => _agentTitle;
+        private set
+        {
+            if (Set(ref _agentTitle, value))
+            {
+                Raise(nameof(HasAgentTitle));
+                Raise(nameof(DisplayTitle));
+                Raise(nameof(HasSidebarContent));
+                Raise(nameof(ShowLeftPanel));
+            }
+        }
+    }
+
+    public bool HasAgentTitle => !string.IsNullOrWhiteSpace(_agentTitle);
+
+    /// <summary>The best available session name: the agent's title if it has produced one, else the
+    /// folder-derived title. Shown at the top of the left panel.</summary>
+    public string DisplayTitle => HasAgentTitle ? _agentTitle! : Title;
+
+    /// <summary>Turns Claude's kebab-case aiTitle ("agnes-structured-questions") into a readable label
+    /// ("Agnes structured questions").</summary>
+    private static string PrettifyTitle(string raw)
+    {
+        var spaced = raw.Replace('-', ' ').Replace('_', ' ').Trim();
+        while (spaced.Contains("  ", StringComparison.Ordinal))
+        {
+            spaced = spaced.Replace("  ", " ");
+        }
+
+        return spaced.Length == 0 ? raw : char.ToUpperInvariant(spaced[0]) + spaced[1..];
+    }
+
     private int _rewindIndex = -1;
     private string? _selectedAgentId;
 
@@ -351,7 +389,7 @@ public sealed class SessionViewModel : ObservableObject
     public ObservableCollection<CredentialUseEntry> CredentialUses { get; } = [];
     public bool HasCredentialUses => CredentialUses.Count > 0;
 
-    public bool HasSidebarContent => Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents;
+    public bool HasSidebarContent => HasAgentTitle || Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
     public bool ShowRightPanel => SelectedPreview is not null;
 
@@ -859,6 +897,10 @@ public sealed class SessionViewModel : ObservableObject
                 _interrupted = true;
                 UpdateBanner();
                 NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId, Items.LastOrDefault()?.AnchorId));
+                break;
+
+            case SessionTitleEvent titleEvent when !string.IsNullOrWhiteSpace(titleEvent.Title):
+                AgentTitle = PrettifyTitle(titleEvent.Title);
                 break;
 
             case ModeChangedEvent mode:

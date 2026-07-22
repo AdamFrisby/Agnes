@@ -1857,8 +1857,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 }
 
                 doc.AgentName = displayName;
-                doc.AttachSession(CreateSession(doc.Host!, view, title));
+                // Set the folder-derived base title BEFORE attaching, so if the session already carries an
+                // agent title (replayed from the snapshot) AttachSession's title wins instead of being clobbered.
                 doc.Title = title;
+                doc.AttachSession(CreateSession(doc.Host!, view, title));
                 doc.Descriptor = new SessionDescriptor(
                     doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, title);
                 SaveState();

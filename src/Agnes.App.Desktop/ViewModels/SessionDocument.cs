@@ -407,12 +407,22 @@ public sealed partial class SessionDocument : Document
                 Usage = session.Usage;
                 UsageSummary = session.UsageSummary;
             }
+            else if (e.PropertyName is nameof(SessionViewModel.AgentTitle) && session.HasAgentTitle)
+            {
+                // The agent produced a name for the conversation — use it for the tab (the strip trims it
+                // to fit; the working folder stays available as the tab's tooltip).
+                Title = session.AgentTitle;
+            }
         };
         OnPropertyChanged(nameof(Activity));
         OnPropertyChanged(nameof(ActivityText));
         OnPropertyChanged(nameof(NeedsAttention));
         Usage = session.Usage;
         UsageSummary = session.UsageSummary;
+        if (session.HasAgentTitle)
+        {
+            Title = session.AgentTitle; // a replayed title on (re)attach
+        }
     }
 
     // ---- cross-session attention (delegates to the live session) ----

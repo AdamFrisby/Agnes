@@ -64,6 +64,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(NoticeEvent), "notice")]
 [JsonDerivedType(typeof(McpToolCallEvent), "mcp_tool_call")]
 [JsonDerivedType(typeof(GitCredentialEvent), "git_credential")]
+[JsonDerivedType(typeof(SessionTitleEvent), "session_title")]
 public abstract record SessionEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -154,6 +155,10 @@ public sealed record UsageReportedEvent(
 
 /// <summary>A host-level informational notice in the transcript (e.g. a session was reconnected).</summary>
 public sealed record NoticeEvent(string Message, bool IsError = false) : SessionEvent;
+
+/// <summary>The agent's auto-generated title/summary for the conversation (e.g. Claude's on-disk
+/// <c>aiTitle</c>), surfaced so clients can name the session instead of using the folder name.</summary>
+public sealed record SessionTitleEvent(string Title) : SessionEvent;
 
 /// <summary>
 /// A tool call the host observed a sandboxed agent make against a <b>forwarded</b> host MCP server
