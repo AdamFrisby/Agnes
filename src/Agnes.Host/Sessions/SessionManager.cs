@@ -1217,8 +1217,22 @@ public sealed class SessionManager : IAsyncDisposable
     public Task<Agnes.Protocol.GitStatus> GetGitStatusAsync(string sessionId)
         => _git.GetStatusAsync(WorkingDirectoryOf(sessionId));
 
-    public Task<Agnes.Protocol.GitCommitResult> GitCommitAsync(string sessionId, string message)
-        => _git.CommitAsync(WorkingDirectoryOf(sessionId), message);
+    public async Task<Agnes.Protocol.GitCommitResult> GitCommitAsync(string sessionId, string message)
+    {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeGitCommitEvent(sessionId, message)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return new Agnes.Protocol.GitCommitResult(false, before.CancelReason is { Length: > 0 } r ? $"Commit blocked: {r}" : "Commit was blocked by a plugin.");
+        }
+
+        var result = await _git.CommitAsync(WorkingDirectoryOf(sessionId), before.Message).ConfigureAwait(false);
+        if (result.Success)
+        {
+            await _bus.DispatchAsync(new Agnes.Abstractions.Events.GitCommittedEvent(sessionId, before.Message)).ConfigureAwait(false);
+        }
+
+        return result;
+    }
 
     public async Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
     {
