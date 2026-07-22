@@ -307,6 +307,9 @@ builder.Services.AddSingleton<IPluginInstaller>(sp => new Agnes.Host.Plugins.Plu
     sp.GetServices<Agnes.Host.Plugins.PluginCapabilityService>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.PluginInstaller>()));
 
+// The wire-facing adapter the SignalR hub delegates to (DTO mapping + consent-exception → typed outcome).
+builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginManagementService(sp.GetRequiredService<IPluginInstaller>()));
+
 
 var app = builder.Build();
 

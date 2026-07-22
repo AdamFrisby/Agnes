@@ -154,5 +154,30 @@ public sealed class HostConnection : IAgnesHost
     public Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId)
         => _hub.InvokeAsync<SandboxStatus?>(nameof(IAgnesServer.GetSandboxStatus), sessionId);
 
+    // ---- plugin management (see .ideas/00-plugin-architecture.md) ----
+    // Forwarded over the wire so a paired client drives the host's plugin lifecycle exactly as a local
+    // operator would (AC12). Overrides the "not available" defaults on IAgnesHost.
+
+    public Task<IReadOnlyList<PluginSearchResultDto>> SearchPluginsAsync(string query)
+        => _hub.InvokeAsync<IReadOnlyList<PluginSearchResultDto>>(nameof(IAgnesServer.SearchPlugins), query);
+
+    public Task<PluginInstallOutcome> InstallPluginAsync(InstallPluginRequest request)
+        => _hub.InvokeAsync<PluginInstallOutcome>(nameof(IAgnesServer.InstallPlugin), request);
+
+    public Task<PluginInstallOutcome> UpdatePluginAsync(string pluginId, IReadOnlyList<string> grantedCapabilities)
+        => _hub.InvokeAsync<PluginInstallOutcome>(nameof(IAgnesServer.UpdatePlugin), pluginId, grantedCapabilities);
+
+    public Task SetPluginEnabledAsync(string pluginId, bool enabled)
+        => _hub.InvokeAsync(nameof(IAgnesServer.SetPluginEnabled), pluginId, enabled);
+
+    public Task ConfigurePluginAsync(string pluginId, IReadOnlyDictionary<string, string> settings)
+        => _hub.InvokeAsync(nameof(IAgnesServer.ConfigurePlugin), pluginId, settings);
+
+    public Task UninstallPluginAsync(string pluginId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.UninstallPlugin), pluginId);
+
+    public Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPluginsAsync()
+        => _hub.InvokeAsync<IReadOnlyList<InstalledPluginDto>>(nameof(IAgnesServer.ListInstalledPlugins));
+
     public async ValueTask DisposeAsync() => await _hub.DisposeAsync();
 }

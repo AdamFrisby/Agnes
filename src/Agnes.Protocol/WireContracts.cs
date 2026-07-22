@@ -84,7 +84,35 @@ public static class HostCapabilityIds
     /// <summary>An <c>ISandboxProvider</c> is configured. Absence degrades gracefully: sessions just
     /// run on the host instead of in a per-session VM.</summary>
     public const string SandboxProvider = "sandbox-provider";
+
+    /// <summary>The NuGet-packaged plugin lifecycle (search/install/enable/…) is available on this
+    /// host. Absence degrades gracefully: a client just hides the Plugins screen.</summary>
+    public const string PluginManagement = "plugin-management";
 }
+
+/// <summary>A plugin package a Browse/search returned — the wire shape of
+/// <c>Agnes.Abstractions.PluginSearchResult</c>.</summary>
+public sealed record PluginSearchResultDto(
+    string PackageId, string DisplayName, string? Description, string Publisher,
+    IReadOnlyList<string> Versions, bool IsReviewed);
+
+/// <summary>An installed plugin as the client sees it — the wire shape of
+/// <c>Agnes.Abstractions.InstalledPlugin</c>.</summary>
+public sealed record InstalledPluginDto(
+    string PluginId, string Version, bool Enabled,
+    IReadOnlyList<string> GrantedCapabilities, bool UpdateAvailable);
+
+/// <summary>Install (or update) a plugin. <see cref="GrantedCapabilities"/> is the set of the package's
+/// declared capabilities the user consented to — the host refuses if the package declares one this list
+/// doesn't cover (the client is expected to have shown a consent prompt first).</summary>
+public sealed record InstallPluginRequest(string PackageId, string? Version, IReadOnlyList<string> GrantedCapabilities);
+
+/// <summary>The typed result of an install/update attempt. On <see cref="ConsentRequired"/>, the host
+/// refused because <see cref="MissingCapabilities"/> weren't granted — the client shows a consent prompt
+/// and retries with them included, rather than this being surfaced as a raw exception.</summary>
+public sealed record PluginInstallOutcome(
+    bool Success, InstalledPluginDto? Plugin, bool ConsentRequired,
+    IReadOnlyList<string> MissingCapabilities, string? Error);
 
 /// <summary>Metadata about a live or resumable session.</summary>
 public sealed record SessionInfo(

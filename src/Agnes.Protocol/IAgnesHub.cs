@@ -79,6 +79,32 @@ public interface IAgnesServer
 
     /// <summary>Current sandbox status of the session, or null if it runs on the host.</summary>
     Task<SandboxStatus?> GetSandboxStatus(string sessionId);
+
+    // ---- plugin management (see .ideas/00-plugin-architecture.md) ----
+    // Driven over the wire so a paired phone can install a plugin on a desktop host exactly as easily
+    // as someone sitting at that host (AC12). All six mirror IPluginInstaller.
+
+    /// <summary>Searches the configured NuGet source(s) for installable Agnes plugins.</summary>
+    Task<IReadOnlyList<PluginSearchResultDto>> SearchPlugins(string query);
+
+    /// <summary>Installs (downloads, verifies, loads) a plugin. Returns a typed outcome — a
+    /// consent-required refusal is a normal result the client acts on, not an exception.</summary>
+    Task<PluginInstallOutcome> InstallPlugin(InstallPluginRequest request);
+
+    /// <summary>Updates an installed plugin to the latest version; same consent semantics as install.</summary>
+    Task<PluginInstallOutcome> UpdatePlugin(string pluginId, IReadOnlyList<string> grantedCapabilities);
+
+    /// <summary>Enables or disables an installed plugin (unloads/reloads it; no host restart).</summary>
+    Task SetPluginEnabled(string pluginId, bool enabled);
+
+    /// <summary>Applies the plugin's flat settings (from the Configure panel) and reloads it if enabled.</summary>
+    Task ConfigurePlugin(string pluginId, IReadOnlyDictionary<string, string> settings);
+
+    /// <summary>Uninstalls a plugin and removes its files.</summary>
+    Task UninstallPlugin(string pluginId);
+
+    /// <summary>Every installed plugin and its state.</summary>
+    Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPlugins();
 }
 
 /// <summary>

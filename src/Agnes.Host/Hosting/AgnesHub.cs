@@ -1,3 +1,4 @@
+using Agnes.Host.Plugins;
 using Agnes.Host.Sessions;
 using Agnes.Protocol;
 using Microsoft.AspNetCore.SignalR;
@@ -11,13 +12,15 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly ScheduledTaskManager _schedule;
     private readonly HostIdentity _identity;
     private readonly DeviceRegistry _tokens;
+    private readonly PluginManagementService _plugins;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins)
     {
         _sessions = sessions;
         _schedule = schedule;
         _identity = identity;
         _tokens = tokens;
+        _plugins = plugins;
     }
 
     public override async Task OnConnectedAsync()
@@ -39,7 +42,13 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         => Task.FromResult(_sessions.ListAgents());
 
     public Task<IReadOnlyList<HostCapability>> GetCapabilities()
-        => Task.FromResult(_sessions.GetCapabilities());
+    {
+        var caps = _sessions.GetCapabilities().ToList();
+        // Plugin management is always available on a host built with the installer wired up (it is,
+        // unconditionally, in Program.cs). Fail-open: a client without it just hides the Plugins screen.
+        caps.Add(new HostCapability(HostCapabilityIds.PluginManagement, Available: true, FailClosed: false));
+        return Task.FromResult<IReadOnlyList<HostCapability>>(caps);
+    }
 
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
         => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox);
@@ -101,4 +110,25 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task<SandboxStatus?> GetSandboxStatus(string sessionId)
         => Task.FromResult(_sessions.GetSandboxStatus(sessionId));
+
+    public Task<IReadOnlyList<PluginSearchResultDto>> SearchPlugins(string query)
+        => _plugins.SearchAsync(query);
+
+    public Task<PluginInstallOutcome> InstallPlugin(InstallPluginRequest request)
+        => _plugins.InstallAsync(request);
+
+    public Task<PluginInstallOutcome> UpdatePlugin(string pluginId, IReadOnlyList<string> grantedCapabilities)
+        => _plugins.UpdateAsync(pluginId, grantedCapabilities);
+
+    public Task SetPluginEnabled(string pluginId, bool enabled)
+        => _plugins.SetEnabledAsync(pluginId, enabled);
+
+    public Task ConfigurePlugin(string pluginId, IReadOnlyDictionary<string, string> settings)
+        => _plugins.ConfigureAsync(pluginId, settings);
+
+    public Task UninstallPlugin(string pluginId)
+        => _plugins.UninstallAsync(pluginId);
+
+    public Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPlugins()
+        => _plugins.ListInstalledAsync();
 }

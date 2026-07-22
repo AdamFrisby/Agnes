@@ -99,6 +99,35 @@ public interface IAgnesHost : IAsyncDisposable
 
     /// <summary>Current sandbox status of the session, or null if it runs on the host.</summary>
     Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId);
+
+    // ---- plugin management (see .ideas/00-plugin-architecture.md) ----
+    // Defaulted so hosts/fixtures that predate plugin management don't have to implement them.
+
+    /// <summary>Searches the host's configured NuGet source(s) for installable plugins.</summary>
+    Task<IReadOnlyList<PluginSearchResultDto>> SearchPluginsAsync(string query)
+        => Task.FromResult<IReadOnlyList<PluginSearchResultDto>>([]);
+
+    /// <summary>Installs a plugin on the host; returns a typed outcome (a consent-required refusal is a
+    /// normal result to act on, not an exception).</summary>
+    Task<PluginInstallOutcome> InstallPluginAsync(InstallPluginRequest request)
+        => Task.FromResult(new PluginInstallOutcome(false, null, false, [], "Plugin management is not available on this host."));
+
+    /// <summary>Updates an installed plugin to its latest version; same consent semantics as install.</summary>
+    Task<PluginInstallOutcome> UpdatePluginAsync(string pluginId, IReadOnlyList<string> grantedCapabilities)
+        => Task.FromResult(new PluginInstallOutcome(false, null, false, [], "Plugin management is not available on this host."));
+
+    /// <summary>Enables or disables an installed plugin.</summary>
+    Task SetPluginEnabledAsync(string pluginId, bool enabled) => Task.CompletedTask;
+
+    /// <summary>Applies the plugin's flat settings and reloads it if enabled.</summary>
+    Task ConfigurePluginAsync(string pluginId, IReadOnlyDictionary<string, string> settings) => Task.CompletedTask;
+
+    /// <summary>Uninstalls a plugin and removes its files.</summary>
+    Task UninstallPluginAsync(string pluginId) => Task.CompletedTask;
+
+    /// <summary>Every plugin installed on the host and its state.</summary>
+    Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPluginsAsync()
+        => Task.FromResult<IReadOnlyList<InstalledPluginDto>>([]);
 }
 
 /// <summary>Creates/looks up host connections. Swap the implementation to simulate a server.</summary>
