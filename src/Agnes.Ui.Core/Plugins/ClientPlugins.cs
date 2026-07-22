@@ -111,6 +111,11 @@ public sealed class ClientPluginCollector
     private readonly List<IConversationItemRenderer> _renderers = [];
     private readonly List<ICustomScreenProvider> _screens = [];
 
+    /// <summary>The client event bus, exposed during registration so a plugin can dispatch and handle its
+    /// OWN event types (defined in the plugin's own assembly over <c>IAgnesEvent</c>), not only bind to
+    /// core-defined events. The same bus is carried onto the built <see cref="ClientPluginSet"/>.</summary>
+    public IEventBus Bus { get; } = new EventBus();
+
     public void AddNotificationChannel(IClientNotificationChannel channel) => _notificationChannels.Add(channel);
 
     /// <summary>Registers a plugin's event bindings (interceptors/observers) onto the client bus.</summary>
@@ -127,16 +132,15 @@ public sealed class ClientPluginCollector
 
     public ClientPluginSet Build()
     {
-        var bus = new EventBus();
         var registrations = new List<IDisposable>(); // the client bus lives for the app's lifetime
         foreach (var binding in _eventBindings)
         {
-            binding.Bind(bus, registrations);
+            binding.Bind(Bus, registrations);
         }
 
         return new ClientPluginSet(
             new PluginRegistry<IClientNotificationChannel>(_notificationChannels, c => c.ChannelId),
-            bus,
+            Bus,
             [.. _contributions],
             [.. _renderers],
             [.. _screens]);

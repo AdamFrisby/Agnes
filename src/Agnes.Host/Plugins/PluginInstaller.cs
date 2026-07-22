@@ -366,6 +366,16 @@ public sealed class PluginInstaller : IPluginInstaller
             var module = (IAgnesPluginModule)Activator.CreateInstance(moduleType)!;
             var services = new ServiceCollection();
             services.AddSingleton(new PluginSettings(settings));
+
+            // The event bus is always available to a plugin (a coordination primitive, not a gated
+            // resource), so a plugin can dispatch and handle its OWN event types on the same bus — not only
+            // bind to core-defined events. The event contracts live in Agnes.Abstractions, which the plugin
+            // already references, so a plugin defines `class MyEvent : IAgnesEvent` in its own assembly.
+            if (_hostServices.GetService<Agnes.Abstractions.Events.IEventBus>() is { } hostBus)
+            {
+                services.AddSingleton(hostBus);
+            }
+
             foreach (var capabilityService in _capabilityServices.Where(c => grantedCapabilities.Contains(c.CapabilityId)))
             {
                 capabilityService.Register(services, _hostServices);

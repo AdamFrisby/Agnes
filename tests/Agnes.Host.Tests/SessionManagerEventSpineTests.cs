@@ -102,4 +102,89 @@ public class SessionManagerEventSpineTests
         Assert.NotNull(received);
         Assert.Equal("hello", Assert.IsType<TextContent>(received!.Single()).Text);
     }
+
+    // ---- session lifecycle (open / stop / fork) ----
+
+    private sealed class Cancel<TEvent>(string reason) : IEventInterceptor<TEvent> where TEvent : CancelableEvent
+    {
+        public ValueTask InterceptAsync(TEvent evt, CancellationToken ct = default) { evt.Cancel(reason); return ValueTask.CompletedTask; }
+    }
+
+    private sealed class Record<TEvent>(Action<TEvent> body) : IEventObserver<TEvent> where TEvent : IAgnesEvent
+    {
+        public ValueTask ObserveAsync(TEvent evt, CancellationToken ct = default) { body(evt); return ValueTask.CompletedTask; }
+    }
+
+    [Fact]
+    public async Task An_interceptor_can_veto_opening_a_session()
+    {
+        var (manager, _, bus) = NewManager();
+        await using var _d = manager;
+        bus.Intercept(new Cancel<BeforeSessionOpenEvent>("policy"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false));
+    }
+
+    [Fact]
+    public async Task Opening_a_session_emits_a_SessionOpened_observe_event()
+    {
+        var (manager, _, bus) = NewManager();
+        await using var _d = manager;
+        var opened = new List<string>();
+        bus.Observe(new Record<SessionOpenedEvent>(e => opened.Add(e.SessionId)));
+
+        var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
+
+        Assert.Contains(info.SessionId, opened);
+    }
+
+    [Fact]
+    public async Task Vetoing_a_stop_leaves_the_session_running_and_emits_no_stopped_event()
+    {
+        var (manager, _, bus) = NewManager();
+        await using var _d = manager;
+        var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
+        var stopped = new List<string>();
+        bus.Observe(new Record<SessionStoppedEvent>(e => stopped.Add(e.SessionId)));
+        bus.Intercept(new Cancel<BeforeSessionStopEvent>("keep"));
+
+        await manager.StopSessionAsync(info.SessionId);
+
+        Assert.Empty(stopped); // the stop was vetoed
+    }
+
+    [Fact]
+    public async Task A_non_vetoed_stop_emits_the_stopped_event()
+    {
+        var (manager, _, bus) = NewManager();
+        await using var _d = manager;
+        var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
+        var stopped = new List<string>();
+        bus.Observe(new Record<SessionStoppedEvent>(e => stopped.Add(e.SessionId)));
+
+        await manager.StopSessionAsync(info.SessionId);
+
+        Assert.Contains(info.SessionId, stopped);
+    }
+
+    [Fact]
+    public async Task An_interceptor_can_veto_a_fork()
+    {
+        var (manager, _, bus) = NewManager();
+        await using var _d = manager;
+        var root = Path.Combine(Path.GetTempPath(), "agnes-forkveto-" + Guid.NewGuid().ToString("n"));
+        var src = Path.Combine(root, "Repo1");
+        Directory.CreateDirectory(src);
+        try
+        {
+            var info = await manager.OpenSessionAsync("scripted", src, useSandbox: false);
+            bus.Intercept(new Cancel<BeforeSessionForkEvent>("no forking"));
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => manager.ForkSessionAsync(info.SessionId, Path.Combine(root, "Repo2"), copySandbox: false));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* best effort */ }
+        }
+    }
 }

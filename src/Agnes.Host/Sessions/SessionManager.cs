@@ -245,6 +245,15 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, CancellationToken cancellationToken = default)
     {
+        // Event spine: a plugin may redirect the adapter/working directory or veto the open.
+        var open = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionOpenEvent(adapterId, workingDirectory), cancellationToken).ConfigureAwait(false);
+        if (open.IsCanceled)
+        {
+            throw new InvalidOperationException(open.CancelReason is { Length: > 0 } r ? $"Opening a session was blocked: {r}" : "Opening a session was blocked by a plugin.");
+        }
+
+        adapterId = open.AdapterId;
+        workingDirectory = open.WorkingDirectory;
         if (_adapters.Find(adapterId) is null)
         {
             throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
@@ -263,9 +272,11 @@ public sealed class SessionManager : IAsyncDisposable
             }
         }
 
-        return await OpenSessionCoreAsync(
+        var info = await OpenSessionCoreAsync(
             sessionId, adapterId, effectiveDirectory, skipPermissions, mcpApproval, gitCredentialMode,
             useSandbox, existingSandbox: null, worktree: useWorktree, cancellationToken).ConfigureAwait(false);
+        await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionOpenedEvent(info.SessionId, adapterId), cancellationToken).ConfigureAwait(false);
+        return info;
     }
 
     /// <summary>
@@ -405,6 +416,13 @@ public sealed class SessionManager : IAsyncDisposable
             throw new InvalidOperationException($"Unknown session '{sourceSessionId}'.");
         }
 
+        var fork = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionForkEvent(sourceSessionId, targetDirectory), cancellationToken).ConfigureAwait(false);
+        if (fork.IsCanceled)
+        {
+            throw new InvalidOperationException(fork.CancelReason is { Length: > 0 } r ? $"Forking was blocked: {r}" : "Forking was blocked by a plugin.");
+        }
+
+        targetDirectory = fork.TargetDirectory;
         var adapterId = source.AdapterId;
         var sourceDir = source.WorkingDirectory;
 
@@ -959,6 +977,12 @@ public sealed class SessionManager : IAsyncDisposable
     /// </summary>
     public async Task StopSessionAsync(string sessionId)
     {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionStopEvent(sessionId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin kept the session running
+        }
+
         if (_sessions.TryRemove(sessionId, out var session))
         {
             await session.DisposeAsync().ConfigureAwait(false);
@@ -970,6 +994,8 @@ public sealed class SessionManager : IAsyncDisposable
             _sandboxRegistry?.SetState(sessionId, "stopped", DateTimeOffset.UtcNow);
             _logger.LogInformation("Session {SessionId}: sandbox shut down on close (kept for resume).", sessionId);
         }
+
+        await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionStoppedEvent(sessionId)).ConfigureAwait(false);
     }
 
     /// <summary>Materializes a sandbox's credentials + MCP config + git-credential wiring (env + files)
