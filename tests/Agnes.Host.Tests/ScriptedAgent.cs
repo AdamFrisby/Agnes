@@ -26,7 +26,10 @@ public sealed class ScriptedAgentSession : IAgentSession
     public Task<StopReason> PromptAsync(IReadOnlyList<ContentBlock> content, CancellationToken cancellationToken = default)
         => OnPrompt(content, this);
 
-    public Task CancelAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    /// <summary>Invoked when the host forwards a cancel to the agent (for event-spine tests).</summary>
+    public Func<Task>? OnCancel { get; set; }
+
+    public Task CancelAsync(CancellationToken cancellationToken = default) => OnCancel?.Invoke() ?? Task.CompletedTask;
 
     /// <summary>Captures the last interaction the host forwarded to the agent (for event-spine tests).</summary>
     public string? LastPermissionOptionId { get; private set; }

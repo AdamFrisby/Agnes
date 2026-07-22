@@ -1,4 +1,5 @@
 using Agnes.Abstractions;
+using Agnes.Abstractions.Events;
 using Agnes.Protocol;
 
 namespace Agnes.Host.Plugins;
@@ -9,29 +10,68 @@ namespace Agnes.Host.Plugins;
 /// (<see cref="PluginConsentRequiredException"/>) and hard failures (<see cref="PluginInstallException"/>)
 /// into a typed <see cref="PluginInstallOutcome"/> rather than letting them cross the SignalR boundary as
 /// opaque exceptions. Kept separate from <c>AgnesHub</c> so this mapping is unit-testable without a hub.
+///
+/// Every mutating operation is routed through the event spine: a governance plugin can veto an install,
+/// enable/disable, or uninstall (Before* events), and observers see the committed change (*edEvent).
 /// </summary>
-public sealed class PluginManagementService(IPluginInstaller installer)
+public sealed class PluginManagementService(IPluginInstaller installer, IEventBus? bus = null)
 {
+    private readonly IEventBus _bus = bus ?? new EventBus();
+
     public async Task<IReadOnlyList<PluginSearchResultDto>> SearchAsync(string query, CancellationToken cancellationToken = default)
     {
         var results = await installer.SearchAsync(query, cancellationToken).ConfigureAwait(false);
         return results.Select(r => new PluginSearchResultDto(r.PackageId, r.DisplayName, r.Description, r.Publisher, r.Versions, r.IsReviewed)).ToArray();
     }
 
-    public Task<PluginInstallOutcome> InstallAsync(InstallPluginRequest request, CancellationToken cancellationToken = default)
-        => RunInstallAsync(() => installer.InstallAsync(request.PackageId, request.Version, request.GrantedCapabilities, cancellationToken));
+    public async Task<PluginInstallOutcome> InstallAsync(InstallPluginRequest request, CancellationToken cancellationToken = default)
+    {
+        var before = await _bus.DispatchAsync(new BeforePluginInstallEvent(request.PackageId, request.Version)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return new PluginInstallOutcome(Success: false, Plugin: null, ConsentRequired: false, MissingCapabilities: [], Error: "Installation was blocked by a plugin.");
+        }
 
-    public Task<PluginInstallOutcome> UpdateAsync(string pluginId, IReadOnlyList<string> grantedCapabilities, CancellationToken cancellationToken = default)
-        => RunInstallAsync(() => installer.UpdateAsync(pluginId, grantedCapabilities, cancellationToken));
+        return await RunInstallAsync(() => installer.InstallAsync(request.PackageId, request.Version, request.GrantedCapabilities, cancellationToken)).ConfigureAwait(false);
+    }
 
-    public Task SetEnabledAsync(string pluginId, bool enabled, CancellationToken cancellationToken = default)
-        => installer.SetEnabledAsync(pluginId, enabled, cancellationToken);
+    public async Task<PluginInstallOutcome> UpdateAsync(string pluginId, IReadOnlyList<string> grantedCapabilities, CancellationToken cancellationToken = default)
+    {
+        var before = await _bus.DispatchAsync(new BeforePluginInstallEvent(pluginId, version: null)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return new PluginInstallOutcome(Success: false, Plugin: null, ConsentRequired: false, MissingCapabilities: [], Error: "Update was blocked by a plugin.");
+        }
+
+        return await RunInstallAsync(() => installer.UpdateAsync(pluginId, grantedCapabilities, cancellationToken)).ConfigureAwait(false);
+    }
+
+    public async Task SetEnabledAsync(string pluginId, bool enabled, CancellationToken cancellationToken = default)
+    {
+        var before = await _bus.DispatchAsync(new BeforePluginEnableChangeEvent(pluginId, enabled)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin kept the current enabled state
+        }
+
+        await installer.SetEnabledAsync(pluginId, enabled, cancellationToken).ConfigureAwait(false);
+        await _bus.DispatchAsync(new PluginEnableChangedEvent(pluginId, enabled)).ConfigureAwait(false);
+    }
 
     public Task ConfigureAsync(string pluginId, IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default)
         => installer.ConfigureAsync(pluginId, settings, cancellationToken);
 
-    public Task UninstallAsync(string pluginId, CancellationToken cancellationToken = default)
-        => installer.UninstallAsync(pluginId, cancellationToken);
+    public async Task UninstallAsync(string pluginId, CancellationToken cancellationToken = default)
+    {
+        var before = await _bus.DispatchAsync(new BeforePluginUninstallEvent(pluginId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin kept it installed
+        }
+
+        await installer.UninstallAsync(pluginId, cancellationToken).ConfigureAwait(false);
+        await _bus.DispatchAsync(new PluginUninstalledEvent(pluginId)).ConfigureAwait(false);
+    }
 
     public async Task<IReadOnlyList<InstalledPluginDto>> ListInstalledAsync(CancellationToken cancellationToken = default)
     {
@@ -39,11 +79,12 @@ public sealed class PluginManagementService(IPluginInstaller installer)
         return installed.Select(ToDto).ToArray();
     }
 
-    private static async Task<PluginInstallOutcome> RunInstallAsync(Func<Task<InstalledPlugin>> action)
+    private async Task<PluginInstallOutcome> RunInstallAsync(Func<Task<InstalledPlugin>> action)
     {
         try
         {
             var plugin = await action().ConfigureAwait(false);
+            await _bus.DispatchAsync(new PluginInstalledEvent(plugin.PluginId, plugin.Version)).ConfigureAwait(false);
             return new PluginInstallOutcome(Success: true, ToDto(plugin), ConsentRequired: false, MissingCapabilities: [], Error: null);
         }
         catch (PluginConsentRequiredException ex)

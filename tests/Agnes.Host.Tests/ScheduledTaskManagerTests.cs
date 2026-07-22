@@ -6,13 +6,13 @@ namespace Agnes.Host.Tests;
 public class ScheduledTaskManagerTests
 {
     [Fact]
-    public void Schedules_marks_due_once_and_records_the_inbox()
+    public async Task Schedules_marks_due_once_and_records_the_inbox()
     {
         var manager = new ScheduledTaskManager();
         InboxRun? recorded = null;
         manager.RunRecorded += r => recorded = r;
 
-        var task = manager.Add(new ScheduleTaskRequest("opencode", "/tmp/agnes", "audit deps", 60));
+        var task = await manager.AddAsync(new ScheduleTaskRequest("opencode", "/tmp/agnes", "audit deps", 60));
         Assert.Equal(60, task.IntervalSeconds);
         Assert.Single(manager.List());
 
@@ -24,7 +24,7 @@ public class ScheduledTaskManagerTests
         Assert.Single(manager.Inbox());
         Assert.NotNull(recorded);
 
-        manager.Remove(task.Id);
+        await manager.RemoveAsync(task.Id);
         Assert.Empty(manager.List());
     }
 }

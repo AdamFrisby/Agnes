@@ -187,7 +187,9 @@ builder.Services.AddSingleton<IPluginRegistry<IAutomationTrigger>>(sp => sp.GetR
 builder.Services.AddSingleton<IMutablePluginRegistry<IAutomationTrigger>>(sp => sp.GetRequiredService<PluginRegistry<IAutomationTrigger>>());
 builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
     new Agnes.Host.Plugins.PluginPointMerger<IAutomationTrigger>(sp.GetRequiredService<IMutablePluginRegistry<IAutomationTrigger>>(), t => t.Kind));
-builder.Services.AddSingleton(sp => new ScheduledTaskManager(sp.GetRequiredService<IPluginRegistry<IAutomationTrigger>>()));
+builder.Services.AddSingleton(sp => new ScheduledTaskManager(
+    sp.GetRequiredService<IPluginRegistry<IAutomationTrigger>>(),
+    sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>()));
 builder.Services.AddHostedService<ScheduledRunner>();
 
 // ---- agent adapters (plugins) ----
@@ -379,7 +381,9 @@ builder.Services.AddSingleton<IPluginInstaller>(sp => new Agnes.Host.Plugins.Plu
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.PluginInstaller>()));
 
 // The wire-facing adapter the SignalR hub delegates to (DTO mapping + consent-exception → typed outcome).
-builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginManagementService(sp.GetRequiredService<IPluginInstaller>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginManagementService(
+    sp.GetRequiredService<IPluginInstaller>(),
+    sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>()));
 
 
 var app = builder.Build();
@@ -403,6 +407,9 @@ await app.Services.GetRequiredService<SessionManager>().RestoreAsync();
 _ = app.Services.GetRequiredService<IPluginInstaller>();
 
 var tokens = app.Services.GetRequiredService<DeviceRegistry>();
+// The host event spine — auth endpoints emit observe-only audit events (device paired/revoked) on it so a
+// plugin can react (notify, log) without the security-critical DeviceRegistry taking an async dependency.
+var authEvents = app.Services.GetRequiredService<Agnes.Abstractions.Events.IEventBus>();
 
 // Optionally serve a web frontend (e.g. the Uno WASM build) from the same origin as
 // the hub — avoids cross-origin setup and lets a browser reach both on one port.
@@ -472,7 +479,7 @@ app.MapGet("/auth/methods", (IPluginRegistry<IAuthMethodProvider> methods) =>
 });
 
 // Pair a new device with the current code; returns a durable per-device token (shown once).
-app.MapPost("/pair", (PairRequest request) =>
+app.MapPost("/pair", async (PairRequest request) =>
 {
     if (!tokens.PairingEnabled)
     {
@@ -480,9 +487,13 @@ app.MapPost("/pair", (PairRequest request) =>
     }
 
     var result = tokens.TryPair(request.Code, request.DeviceName);
-    return result is null
-        ? Results.Json(new { error = "Invalid or expired pairing code." }, statusCode: StatusCodes.Status401Unauthorized)
-        : Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    if (result is null)
+    {
+        return Results.Json(new { error = "Invalid or expired pairing code." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "pairing", "pairing"));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
 });
 
 // Exchange a GitHub user access token (obtained by the client via the device flow) for an Agnes device
@@ -501,6 +512,7 @@ app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHu
     }
 
     var result = tokens.IssueDeviceToken(request.DeviceName, subject: "github:" + login, kind: "github");
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "github", "github:" + login));
     return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
 });
 
@@ -511,7 +523,7 @@ app.MapGet("/auth/keypair/challenge", (KeypairAuth keypair) =>
         : Results.Json(new { error = "Keypair sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest));
 
 // Verify a signed challenge against the authorized keys and issue a device token.
-app.MapPost("/auth/keypair", (KeypairAuthRequest request, KeypairAuth keypair) =>
+app.MapPost("/auth/keypair", async (KeypairAuthRequest request, KeypairAuth keypair) =>
 {
     if (!keypair.IsUsable)
     {
@@ -525,6 +537,7 @@ app.MapPost("/auth/keypair", (KeypairAuthRequest request, KeypairAuth keypair) =
     }
 
     var result = tokens.IssueDeviceToken(request.DeviceName, subject: "key:" + label, kind: "keypair");
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "keypair", "key:" + label));
     return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
 });
 
@@ -564,9 +577,21 @@ static bool Authorized(HttpContext ctx, DeviceRegistry reg)
 app.MapGet("/devices", (HttpContext ctx) =>
     Authorized(ctx, tokens) ? Results.Ok(tokens.ListDevices()) : Results.Unauthorized());
 
-app.MapDelete("/devices/{id}", (HttpContext ctx, string id) =>
-    !Authorized(ctx, tokens) ? Results.Unauthorized()
-    : tokens.Revoke(id) ? Results.NoContent() : Results.NotFound());
+app.MapDelete("/devices/{id}", async (HttpContext ctx, string id) =>
+{
+    if (!Authorized(ctx, tokens))
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!tokens.Revoke(id))
+    {
+        return Results.NotFound();
+    }
+
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DeviceRevokedEvent(id));
+    return Results.NoContent();
+});
 
 // ---- MCP server management (requires a valid token; mirrors /devices) ----
 var mcp = app.Services.GetRequiredService<McpRegistry>();

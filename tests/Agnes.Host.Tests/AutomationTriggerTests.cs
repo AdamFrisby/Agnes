@@ -24,11 +24,11 @@ public class AutomationTriggerTests
     }
 
     [Fact]
-    public void Manager_uses_the_registered_trigger_to_decide_due_tasks()
+    public async Task Manager_uses_the_registered_trigger_to_decide_due_tasks()
     {
         var registry = new PluginRegistry<IAutomationTrigger>([new IntervalAutomationTrigger()], t => t.Kind);
         var manager = new ScheduledTaskManager(registry);
-        manager.Add(new ScheduleTaskRequest("scripted", "/tmp", "hello", IntervalSeconds: 5));
+        await manager.AddAsync(new ScheduleTaskRequest("scripted", "/tmp", "hello", IntervalSeconds: 5));
 
         // A newly added task starts "already due" and runs on the first check.
         var due = manager.TakeDue(DateTimeOffset.UtcNow);

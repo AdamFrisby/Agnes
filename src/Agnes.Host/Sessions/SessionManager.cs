@@ -841,6 +841,12 @@ public sealed class SessionManager : IAsyncDisposable
     /// resetting the crash-loop guard. Used to recover after auto-restart gave up.</summary>
     public async Task RestartAgentAsync(string sessionId)
     {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeAgentRestartEvent(sessionId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin kept the current agent as-is
+        }
+
         await _attachGate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -853,6 +859,7 @@ public sealed class SessionManager : IAsyncDisposable
             await AppendNoticeAsync(sessionId, "Restarting the agent…").ConfigureAwait(false);
             await RelaunchAgentAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
             await AppendNoticeAsync(sessionId, "Agent restarted.").ConfigureAwait(false);
+            await _bus.DispatchAsync(new Agnes.Abstractions.Events.AgentRestartedEvent(sessionId)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -928,6 +935,12 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task PauseSandboxAsync(string sessionId)
     {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSandboxPauseEvent(sessionId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin kept the sandbox running
+        }
+
         if (_sandboxBySession.TryGetValue(sessionId, out var sandbox) && sandbox is IPausableSandbox pausable)
         {
             await pausable.PauseAsync().ConfigureAwait(false);
@@ -936,6 +949,12 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task ResumeSandboxAsync(string sessionId)
     {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSandboxResumeEvent(sessionId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin kept the sandbox paused
+        }
+
         if (_sandboxBySession.TryGetValue(sessionId, out var sandbox) && sandbox is IPausableSandbox pausable)
         {
             await pausable.ResumeAsync().ConfigureAwait(false);
@@ -944,6 +963,12 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task DeleteSandboxAsync(string sessionId)
     {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSandboxDeleteEvent(sessionId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin protected the sandbox from destruction
+        }
+
         if (_forwardTokenBySession.TryRemove(sessionId, out var token))
         {
             _forward?.Unregister(token);
@@ -968,6 +993,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         _sandboxRegistry?.Remove(sessionId);
+        await _bus.DispatchAsync(new Agnes.Abstractions.Events.SandboxDeletedEvent(sessionId)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1044,6 +1070,12 @@ public sealed class SessionManager : IAsyncDisposable
     /// </summary>
     public async Task<SessionInfo> ResumeSessionAsync(string sessionId, CancellationToken cancellationToken = default)
     {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionResumeEvent(sessionId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            throw new InvalidOperationException($"Resuming session '{sessionId}' was blocked by a plugin.");
+        }
+
         if (_sessions.TryGetValue(sessionId, out var already))
         {
             // Already live — nothing to resume.
@@ -1075,6 +1107,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         _logger.LogInformation("Resumed session {SessionId}", sessionId);
+        await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionResumedEvent(sessionId)).ConfigureAwait(false);
         var sandbox = _sandboxBySession.TryGetValue(sessionId, out var sb) ? sb : null;
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var project = _projectBySession.TryGetValue(sessionId, out var p) ? p : null;
@@ -1201,7 +1234,15 @@ public sealed class SessionManager : IAsyncDisposable
     }
 
     public async Task CancelAsync(string sessionId)
-        => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).CancelAsync().ConfigureAwait(false);
+    {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionCancelEvent(sessionId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin kept the turn running
+        }
+
+        await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).CancelAsync().ConfigureAwait(false);
+    }
 
     public async Task SetModeAsync(string sessionId, string modeId)
     {

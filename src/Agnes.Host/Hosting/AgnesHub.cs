@@ -106,16 +106,13 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         => _sessions.GitCommitAsync(sessionId, message);
 
     public Task<ScheduledTask> ScheduleTask(ScheduleTaskRequest request)
-        => Task.FromResult(_schedule.Add(request));
+        => _schedule.AddAsync(request);
 
     public Task<IReadOnlyList<ScheduledTask>> ListScheduledTasks()
         => Task.FromResult(_schedule.List());
 
     public Task RemoveScheduledTask(string taskId)
-    {
-        _schedule.Remove(taskId);
-        return Task.CompletedTask;
-    }
+        => _schedule.RemoveAsync(taskId);
 
     public Task<IReadOnlyList<InboxRun>> GetInbox()
         => Task.FromResult(_schedule.Inbox());

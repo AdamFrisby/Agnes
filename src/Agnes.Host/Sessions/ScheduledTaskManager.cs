@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Agnes.Abstractions;
+using Agnes.Abstractions.Events;
 using Agnes.Protocol;
 
 namespace Agnes.Host.Sessions;
@@ -16,25 +17,49 @@ public sealed class ScheduledTaskManager
     private const int MaxInbox = 200;
 
     private readonly IPluginRegistry<IAutomationTrigger> _triggers;
+    private readonly IEventBus _bus;
 
-    /// <summary>The trigger registry is optional so tests can construct the manager bare; it then defaults
-    /// to interval-only, exactly the prior behavior.</summary>
-    public ScheduledTaskManager(IPluginRegistry<IAutomationTrigger>? triggers = null)
-        => _triggers = triggers ?? new PluginRegistry<IAutomationTrigger>([new IntervalAutomationTrigger()], t => t.Kind);
+    /// <summary>The trigger registry and event bus are optional so tests can construct the manager bare; it
+    /// then defaults to interval-only with an isolated bus, exactly the prior behavior.</summary>
+    public ScheduledTaskManager(IPluginRegistry<IAutomationTrigger>? triggers = null, IEventBus? bus = null)
+    {
+        _triggers = triggers ?? new PluginRegistry<IAutomationTrigger>([new IntervalAutomationTrigger()], t => t.Kind);
+        _bus = bus ?? new EventBus();
+    }
 
     /// <summary>Raised when a run is recorded, so the host can broadcast it.</summary>
     public event Action<InboxRun>? RunRecorded;
 
-    public ScheduledTask Add(ScheduleTaskRequest request)
+    public async Task<ScheduledTask> AddAsync(ScheduleTaskRequest request)
     {
+        var before = await _bus.DispatchAsync(
+            new BeforeScheduledTaskCreateEvent(request.AdapterId, request.WorkingDirectory, request.Prompt)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            throw new InvalidOperationException("Scheduling this task was blocked by a plugin.");
+        }
+
         var id = Guid.NewGuid().ToString("n");
         var task = new ScheduledTask(id, request.AdapterId, request.WorkingDirectory, request.Prompt,
             Math.Max(5, request.IntervalSeconds), Enabled: true);
         _tasks[id] = new Entry(task);
+        await _bus.DispatchAsync(new ScheduledTaskCreatedEvent(id)).ConfigureAwait(false);
         return task;
     }
 
-    public void Remove(string taskId) => _tasks.TryRemove(taskId, out _);
+    public async Task RemoveAsync(string taskId)
+    {
+        var before = await _bus.DispatchAsync(new BeforeScheduledTaskRemoveEvent(taskId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin kept the task
+        }
+
+        if (_tasks.TryRemove(taskId, out _))
+        {
+            await _bus.DispatchAsync(new ScheduledTaskRemovedEvent(taskId)).ConfigureAwait(false);
+        }
+    }
 
     public IReadOnlyList<ScheduledTask> List() => _tasks.Values.Select(e => e.Task).ToArray();
 
