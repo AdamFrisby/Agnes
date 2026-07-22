@@ -163,6 +163,15 @@ builder.Services.AddSingleton<IEventStore>(sp =>
     return provider.Create();
 });
 
+// ---- event spine (see .ideas/00d-event-spine-and-ui-extensibility.md) ----
+// One host bus. Plugin event bindings are applied to it via the merger below, so a plugin can observe or
+// intercept/cancel host actions (e.g. veto a prompt); unbinding happens on plugin disable/uninstall.
+builder.Services.AddSingleton<Agnes.Abstractions.Events.IEventBus>(sp =>
+    new Agnes.Abstractions.Events.EventBus(ex =>
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger("Agnes.Events").LogError(ex, "An event observer threw.")));
+builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
+    new Agnes.Host.Plugins.EventBindingMerger(sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>()));
+
 // ---- broadcast + session manager ----
 builder.Services.AddSingleton<Agnes.Host.Hosting.ClientCapabilityStore>();
 builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();

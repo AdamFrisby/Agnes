@@ -15,6 +15,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly IPluginRegistry<IAgentAdapter> _adapters;
     private readonly IEventStore _store;
     private readonly ISessionBroadcaster _broadcaster;
+    private readonly Agnes.Abstractions.Events.IEventBus _bus;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<SessionManager> _logger;
     private readonly Git.GitService _git = new();
@@ -59,12 +60,14 @@ public sealed class SessionManager : IAsyncDisposable
         CredentialBrokerRegistry? credentialBroker = null,
         CredentialBrokerListener? credentialListener = null,
         Projects.ProjectStore? projects = null,
-        SandboxRegistry? sandboxRegistry = null)
+        SandboxRegistry? sandboxRegistry = null,
+        Agnes.Abstractions.Events.IEventBus? eventBus = null)
     {
         _adapters = adapters;
         _store = store;
         _broadcaster = broadcaster;
         _loggerFactory = loggerFactory;
+        _bus = eventBus ?? new Agnes.Abstractions.Events.EventBus();
         _logger = loggerFactory.CreateLogger<SessionManager>();
         _sandboxes = sandboxProviders?.All.FirstOrDefault();
         _credentialProviders = credentialProviders?.ToArray() ?? [];
@@ -1099,7 +1102,18 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
     {
+        // The event spine: a plugin interceptor may rewrite the prompt or veto it before it's sent.
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforePromptEvent(sessionId, content)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            var message = before.CancelReason is { Length: > 0 } reason ? $"Prompt blocked: {reason}" : "Prompt was blocked by a plugin.";
+            var notice = await _store.AppendAsync(sessionId, new NoticeEvent(message, IsError: true)).ConfigureAwait(false);
+            await _broadcaster.PublishAsync(sessionId, notice).ConfigureAwait(false);
+            return;
+        }
+
         var session = await EnsureLiveAsync(sessionId).ConfigureAwait(false);
+        content = before.Content;
         // The real agent session id is captured via HostSession.AgentSessionStarted (on the init line),
         // not polled here — polling raced the init line and persisted the placeholder id, which broke
         // --resume. Codex reports its id synchronously at open, so the catalogue is already correct there.
