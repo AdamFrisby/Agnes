@@ -28,8 +28,28 @@ public sealed class ScriptedAgentSession : IAgentSession
 
     public Task CancelAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
+    /// <summary>Captures the last interaction the host forwarded to the agent (for event-spine tests).</summary>
+    public string? LastPermissionOptionId { get; private set; }
+    public string? LastMode { get; private set; }
+    public IReadOnlyList<QuestionAnswer>? LastAnswers { get; private set; }
+
     public Task RespondToPermissionAsync(string requestId, string optionId, CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
+    {
+        LastPermissionOptionId = optionId;
+        return Task.CompletedTask;
+    }
+
+    public Task AnswerQuestionAsync(string requestId, IReadOnlyList<QuestionAnswer> answers, CancellationToken cancellationToken = default)
+    {
+        LastAnswers = answers;
+        return Task.CompletedTask;
+    }
+
+    public Task SetModeAsync(string modeId, CancellationToken cancellationToken = default)
+    {
+        LastMode = modeId;
+        return Task.CompletedTask;
+    }
 
     public ValueTask DisposeAsync()
     {

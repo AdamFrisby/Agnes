@@ -1204,7 +1204,15 @@ public sealed class SessionManager : IAsyncDisposable
         => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).CancelAsync().ConfigureAwait(false);
 
     public async Task SetModeAsync(string sessionId, string modeId)
-        => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).SetModeAsync(modeId).ConfigureAwait(false);
+    {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeModeChangeEvent(sessionId, modeId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin blocked the mode change
+        }
+
+        await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).SetModeAsync(before.ModeId).ConfigureAwait(false);
+    }
 
     public Task<Agnes.Protocol.GitStatus> GetGitStatusAsync(string sessionId)
         => _git.GetStatusAsync(WorkingDirectoryOf(sessionId));
@@ -1213,14 +1221,29 @@ public sealed class SessionManager : IAsyncDisposable
         => _git.CommitAsync(WorkingDirectoryOf(sessionId), message);
 
     public async Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
-        => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).RespondToPermissionAsync(requestId, optionId).ConfigureAwait(false);
+    {
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforePermissionResponseEvent(sessionId, requestId, optionId)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin blocked the response (the request stays pending)
+        }
+
+        await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).RespondToPermissionAsync(requestId, before.OptionId).ConfigureAwait(false);
+    }
 
     public async Task AnswerQuestionAsync(string sessionId, string requestId, IReadOnlyList<Agnes.Protocol.QuestionAnswerDto> answers)
     {
-        var mapped = answers
+        var mapped = (IReadOnlyList<Agnes.Abstractions.QuestionAnswer>)answers
             .Select(a => new Agnes.Abstractions.QuestionAnswer(a.QuestionId, a.SelectedLabels, a.Notes))
             .ToList();
-        await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).AnswerQuestionAsync(requestId, mapped).ConfigureAwait(false);
+
+        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeQuestionAnswerEvent(sessionId, requestId, mapped)).ConfigureAwait(false);
+        if (before.IsCanceled)
+        {
+            return; // a plugin blocked the answer
+        }
+
+        await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).AnswerQuestionAsync(requestId, before.Answers).ConfigureAwait(false);
     }
 
     public async Task<SessionSnapshot> GetSnapshotAsync(string sessionId, long sinceSequence, CancellationToken cancellationToken = default)
