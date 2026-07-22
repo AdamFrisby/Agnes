@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
 using Agnes.App.Desktop.Persistence;
+using Agnes.App.Desktop.Plugins;
 using Agnes.Client;
 using Agnes.Protocol;
 using Agnes.Ui.Core;
+using Agnes.Ui.Core.Plugins;
 using Agnes.Ui.Core.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -37,6 +39,31 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     /// <summary>Surfaces session notifications (toast / OS). Set by the shell once a window exists.</summary>
     public INotifier Notifier { get; set; } = NullNotifier.Instance;
+
+    private ClientPluginSet? _clientPlugins;
+
+    /// <summary>The reconciliation from the last successful capability negotiation (empty until one runs) —
+    /// consumers gate two-sided features on entries reported <see cref="CapabilitySupport.Both"/>.</summary>
+    public IReadOnlyList<NegotiatedCapability> NegotiatedCapabilities { get; private set; } = [];
+
+    /// <summary>On connect, compose this client's plugins (built-in + any dynamic ones) and advertise them
+    /// to the host, keeping the reconciled result. Best-effort: a host that predates negotiation returns an
+    /// empty reconciliation, and any failure here must never break the connection.</summary>
+    private async Task NegotiateCapabilitiesAsync(IAgnesHost host)
+    {
+        try
+        {
+            _clientPlugins ??= DesktopClientPlugins.Build(Notifier,
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins"));
+            var caps = DesktopClientPlugins.Capabilities(Environment.MachineName, _clientPlugins);
+            var result = await host.NegotiateAsync(caps);
+            _dispatcher.Post(() => NegotiatedCapabilities = result.Capabilities);
+        }
+        catch
+        {
+            // Negotiation is additive and best-effort; ignore failures.
+        }
+    }
 
     /// <summary>Whether the window is focused — completion toasts are suppressed while it is.</summary>
     public bool WindowActive { get; set; } = true;
@@ -1583,6 +1610,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
             var agnesHost = await _connector.ConnectAsync(host.Url, host.Token);
             doc.Host = agnesHost;
+            _ = NegotiateCapabilitiesAsync(agnesHost);
             WireStatus(doc, agnesHost);
 
             var agents = await agnesHost.ListAgentsAsync();
@@ -1963,6 +1991,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             _dispatcher.Post(() => doc.StatusText = "Reconnecting…");
             var host = await _connector.ConnectAsync(descriptor.HostUrl, descriptor.Token);
             doc.Host = host;
+            _ = NegotiateCapabilitiesAsync(host);
             doc.HostToken = descriptor.Token;
             WireStatus(doc, host);
 

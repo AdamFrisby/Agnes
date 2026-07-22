@@ -24,6 +24,8 @@
     <ProjectReference Include="..\..\src\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Recording\Agnes.Recording.csproj" />
     <ProjectReference Include="..\..\src\Agnes.App.Desktop\Agnes.App.Desktop.csproj" />
+    <!-- Built but not linked: the dynamic-client-plugin loader test loads this DLL at runtime. -->
+    <ProjectReference Include="..\Agnes.TestClientPluginFixture\Agnes.TestClientPluginFixture.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <!-- Real captured fixtures, copied next to the test binary. -->

@@ -26,6 +26,7 @@
     <Project Path="tests/Agnes.Sandbox.Tests/Agnes.Sandbox.Tests.csproj" />
     <Project Path="tests/Agnes.TestKit/Agnes.TestKit.csproj" />
     <Project Path="tests/Agnes.TestPluginFixture/Agnes.TestPluginFixture.csproj" />
+    <Project Path="tests/Agnes.TestClientPluginFixture/Agnes.TestClientPluginFixture.csproj" />
     <Project Path="tests/Agnes.Ui.Core.Tests/Agnes.Ui.Core.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">

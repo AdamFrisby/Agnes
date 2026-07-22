@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Agnes.TestClientPluginFixture</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    A tiny, real IClientPluginModule assembly used ONLY by Agnes.Desktop.Tests to prove the client-side
+    AssemblyLoadContext dynamic-load path works against real compiled IL. Referenced with
+    ReferenceOutputAssembly="false" so it's built but never statically linked into the test assembly —
+    the test locates and loads this DLL dynamically, exactly as a real dynamic client plugin would be.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
+  </ItemGroup>
+
+</Project>
