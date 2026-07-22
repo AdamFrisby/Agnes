@@ -109,16 +109,27 @@ var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
 builder.Services.AddSingleton(sp => new Agnes.Host.Sessions.SandboxRegistry(
     sandboxesFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxRegistry>()));
 
-// ---- event store: SQLite if a path is configured, else in-memory ----
+// ---- event store: selected from a registry of built-in providers (AC13) ----
+// The backends are registered as built-in IEventStoreProvider plugins; the host picks one by name.
+// Default preserves the prior behavior exactly: SQLite when a database path is configured, else in-memory.
 var databasePath = builder.Configuration["Agnes:Database"];
-if (string.IsNullOrWhiteSpace(databasePath))
+var eventStoreName = builder.Configuration["Agnes:EventStore:Provider"]
+    ?? (string.IsNullOrWhiteSpace(databasePath) ? "in-memory" : "sqlite");
+builder.Services.AddSingleton<IEventStoreProvider>(new InMemoryEventStoreProvider());
+if (!string.IsNullOrWhiteSpace(databasePath))
 {
-    builder.Services.AddSingleton<IEventStore, InMemoryEventStore>();
+    builder.Services.AddSingleton<IEventStoreProvider>(new SqliteEventStoreProvider(databasePath));
 }
-else
+builder.Services.AddSingleton<IPluginRegistry<IEventStoreProvider>>(sp =>
+    new PluginRegistry<IEventStoreProvider>(sp.GetServices<IEventStoreProvider>(), p => p.Name));
+builder.Services.AddSingleton<IEventStore>(sp =>
 {
-    builder.Services.AddSingleton<IEventStore>(new SqliteEventStore(databasePath));
-}
+    var registry = sp.GetRequiredService<IPluginRegistry<IEventStoreProvider>>();
+    var provider = registry.Find(eventStoreName)
+        ?? throw new InvalidOperationException(
+            $"No event-store provider named '{eventStoreName}' is registered (have: {string.Join(", ", registry.All.Select(p => p.Name))}).");
+    return provider.Create();
+});
 
 // ---- broadcast + session manager ----
 builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
