@@ -317,6 +317,11 @@
                                     <MenuItem Header="Copy session link (hand off to another device)" Click="OnCopySessionLink" />
                                     <MenuItem Header="Schedule the composer prompt (every 5 min)" Command="{Binding Session.ScheduleCommand}" />
                                     <Separator />
+                                    <MenuItem Header="Compact context" Command="{Binding Session.CompactCommand}"
+                                              ToolTip.Tip="Ask the agent to summarise and free up its context window." />
+                                    <MenuItem Header="Clear conversation" Command="{Binding Session.ClearContextCommand}"
+                                              ToolTip.Tip="Ask the agent to start fresh (clears its context)." />
+                                    <Separator />
                                     <MenuItem Header="Open in new window" Command="{Binding MoveToWindowCommand}" />
                                     <Separator />
                                     <MenuItem Header="Duplicate (same session)" Command="{Binding DuplicateCommand}" />
@@ -721,14 +726,23 @@
                                 </StackPanel>
 
                                 <StackPanel Spacing="4" IsVisible="{Binding HasFiles}">
-                                    <TextBlock Text="FILES MODIFIED" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <ItemsControl ItemsSource="{Binding ModifiedFiles}">
+                                    <Button Command="{Binding ToggleFilesCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding FilesExpanded}" />
+                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding !FilesExpanded}" />
+                                            <TextBlock Text="FILES MODIFIED" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <ItemsControl ItemsSource="{Binding ModifiedFiles}" IsVisible="{Binding FilesExpanded}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Button Command="{Binding $parent[ItemsControl].DataContext.ShowFilePreviewCommand}"
                                                         CommandParameter="{Binding}" HorizontalAlignment="Stretch"
                                                         HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                                                        Padding="6,5" CornerRadius="6" Cursor="Hand">
+                                                        Padding="6,5" CornerRadius="6" Cursor="Hand" ToolTip.Tip="Open the diff">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                    FontFamily="{StaticResource MonoFont}" />
@@ -741,24 +755,40 @@
                                 </StackPanel>
 
                                 <StackPanel Spacing="4" IsVisible="{Binding HasTools}">
-                                    <TextBlock Text="TOOLS RUN" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <ItemsControl ItemsSource="{Binding ToolActivity}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Button Command="{Binding $parent[ItemsControl].DataContext.ShowFilePreviewCommand}"
-                                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                                                        Padding="6,5" CornerRadius="6" Cursor="Hand">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
-                                                                   FontFamily="{StaticResource MonoFont}" Width="52" />
-                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                                                   FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                </Button>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                    <Button Command="{Binding ToggleToolsListCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding ToolsListExpanded}" />
+                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding !ToolsListExpanded}" />
+                                            <TextBlock Text="TOOLS RUN" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <StackPanel Spacing="4" IsVisible="{Binding ToolsListExpanded}">
+                                        <ItemsControl ItemsSource="{Binding VisibleToolActivity}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Command="{Binding $parent[ItemsControl].DataContext.ShowFilePreviewCommand}"
+                                                            CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                            Padding="6,5" CornerRadius="6" Cursor="Hand">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" Width="52" />
+                                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                                       FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <!-- Only the most recent 50 render until asked for the rest. -->
+                                        <Button Content="{Binding MoreToolsLabel}" Command="{Binding ShowAllToolsCommand}"
+                                                IsVisible="{Binding HasMoreTools}" HorizontalAlignment="Left" Cursor="Hand"
+                                                Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
+                                                Padding="6,3" FontSize="11" />
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <!-- Audit trail: capabilities granted / denied -->

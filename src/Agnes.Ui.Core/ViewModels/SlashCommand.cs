@@ -11,5 +11,7 @@ public sealed record SlashCommand(string Name, string Description, string Expans
         new("test", "Write tests", "Write unit tests covering the important cases here."),
         new("fix", "Find and fix a bug", "Find the bug and fix it, then explain the root cause."),
         new("commit", "Draft a commit message", "Write a concise, conventional commit message for these changes."),
+        new("compact", "Compact the conversation (free up context)", "/compact"),
+        new("clear", "Clear the conversation history", "/clear"),
     ];
 }

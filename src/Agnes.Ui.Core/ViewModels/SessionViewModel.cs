@@ -75,6 +75,18 @@ public sealed class SessionViewModel : ObservableObject
         RespondWithCommand = new RelayCommand<PermissionOption>(o => { if (o is not null) { _ = RespondWithAsync(o); } });
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
+        ToggleFilesCommand = new RelayCommand(() => FilesExpanded = !FilesExpanded);
+        ToggleToolsListCommand = new RelayCommand(() => ToolsListExpanded = !ToolsListExpanded);
+        ShowAllToolsCommand = new RelayCommand(() => ShowAllTools = true);
+        CompactCommand = new RelayCommand(() => SendControl("/compact"));
+        ClearContextCommand = new RelayCommand(() => SendControl("/clear"));
+        // The tools panel shows only the last N until "show all"; keep the view + label in sync.
+        ToolActivity.CollectionChanged += (_, _) =>
+        {
+            Raise(nameof(VisibleToolActivity));
+            Raise(nameof(HasMoreTools));
+            Raise(nameof(MoreToolsLabel));
+        };
         ToggleInspectorCommand = new RelayCommand(() => IsInspectorOpen = !IsInspectorOpen);
         SetModeCommand = new RelayCommand<SessionMode>(m => { if (m is not null) { _ = SetModeAsync(m); } });
         RefreshGitCommand = new AsyncRelayCommand(RefreshGitAsync);
@@ -245,6 +257,49 @@ public sealed class SessionViewModel : ObservableObject
 
     public bool HasFiles => ModifiedFiles.Count > 0;
     public bool HasTools => ToolActivity.Count > 0;
+
+    // ---- left-panel collapse + the tools "show more" cap ----
+    private const int ToolDisplayLimit = 50;
+
+    private bool _showAllTools;
+    public bool ShowAllTools
+    {
+        get => _showAllTools;
+        set { if (Set(ref _showAllTools, value)) { Raise(nameof(VisibleToolActivity)); Raise(nameof(HasMoreTools)); } }
+    }
+
+    /// <summary>The tool calls to show — the most recent <see cref="ToolDisplayLimit"/> until "show all".</summary>
+    public IEnumerable<ToolEntry> VisibleToolActivity
+        => ShowAllTools || ToolActivity.Count <= ToolDisplayLimit
+            ? ToolActivity
+            : ToolActivity.Skip(ToolActivity.Count - ToolDisplayLimit);
+
+    public bool HasMoreTools => !ShowAllTools && ToolActivity.Count > ToolDisplayLimit;
+    public string MoreToolsLabel => $"Show all {ToolActivity.Count}";
+
+    private bool _filesExpanded = true;
+    public bool FilesExpanded { get => _filesExpanded; set => Set(ref _filesExpanded, value); }
+
+    private bool _toolsListExpanded = true;
+    public bool ToolsListExpanded { get => _toolsListExpanded; set => Set(ref _toolsListExpanded, value); }
+
+    public System.Windows.Input.ICommand ToggleFilesCommand { get; }
+    public System.Windows.Input.ICommand ToggleToolsListCommand { get; }
+    public System.Windows.Input.ICommand ShowAllToolsCommand { get; }
+
+    /// <summary>Ask the agent to compact / clear its context. Sent as a control command the agent
+    /// interprets (Claude honours /compact and /clear); harmless text otherwise.</summary>
+    public System.Windows.Input.ICommand CompactCommand { get; }
+    public System.Windows.Input.ICommand ClearContextCommand { get; }
+
+    private void SendControl(string command)
+    {
+        PromptText = command;
+        if (SendCommand.CanExecute(null))
+        {
+            SendCommand.Execute(null);
+        }
+    }
     public bool HasApprovals => Approvals.Count > 0;
     public bool HasMcpCalls => McpCalls.Count > 0;
 
@@ -893,9 +948,12 @@ public sealed class SessionViewModel : ObservableObject
                 break;
 
             case ToolCallEvent tc:
-                var entry = new ToolEntry(tc.ToolCallId, tc.Title, tc.Kind.ToString(), tc.Status.ToString(), TextOf(tc.Content));
+                var isFile = IsFileTool(tc.Kind);
+                // Modified files open as a DIFF, not the raw edit request — build one from the tool input.
+                var entry = new ToolEntry(tc.ToolCallId, tc.Title, tc.Kind.ToString(), tc.Status.ToString(),
+                    isFile ? FileDiff(tc) : TextOf(tc.Content));
                 _tools[tc.ToolCallId] = entry;
-                (IsFileTool(tc.Kind) ? ModifiedFiles : ToolActivity).Add(entry);
+                (isFile ? ModifiedFiles : ToolActivity).Add(entry);
                 RaisePanels();
                 break;
 
@@ -905,7 +963,8 @@ public sealed class SessionViewModel : ObservableObject
                     tracked.StatusText = status.ToString();
                 }
 
-                if (u.Content is { } content && TextOf(content) is { Length: > 0 } text)
+                // For an edit, keep the diff we built on start; the tool result is just a confirmation.
+                if (!IsFileToolKind(tracked.Kind) && u.Content is { } content && TextOf(content) is { Length: > 0 } text)
                 {
                     tracked.Detail = text;
                 }
@@ -1023,6 +1082,49 @@ public sealed class SessionViewModel : ObservableObject
 
     private static bool IsFileTool(ToolKind kind)
         => kind is ToolKind.Edit or ToolKind.Delete or ToolKind.Move;
+
+    private static bool IsFileToolKind(string kind)
+        => kind is nameof(ToolKind.Edit) or nameof(ToolKind.Delete) or nameof(ToolKind.Move);
+
+    /// <summary>
+    /// Renders a file-edit tool call as a unified diff for the preview pane. If the content is already a
+    /// diff (ACP agents, or a native adapter that emits DiffContent) it's used as-is; otherwise the edit
+    /// request (Claude's Edit/Write input JSON — file_path + old_string/new_string, or content) is turned
+    /// into one. This works for stored sessions too, since the full input JSON is persisted.
+    /// </summary>
+    private static string FileDiff(ToolCallEvent tc)
+    {
+        var text = TextOf(tc.Content);
+        if (Diff.DiffParser.LooksLikeDiff(text))
+        {
+            return text;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(text);
+            var root = doc.RootElement;
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("file_path", out var fp))
+            {
+                var path = fp.GetString() ?? string.Empty;
+                if (root.TryGetProperty("old_string", out var oldS) && root.TryGetProperty("new_string", out var newS))
+                {
+                    return Diff.UnifiedDiff.Format(path, oldS.GetString() ?? string.Empty, newS.GetString() ?? string.Empty);
+                }
+
+                if (root.TryGetProperty("content", out var content)) // Write = a whole new file
+                {
+                    return Diff.UnifiedDiff.Format(path, string.Empty, content.GetString() ?? string.Empty);
+                }
+            }
+        }
+        catch
+        {
+            // Not a JSON edit request — fall back to showing the raw detail.
+        }
+
+        return text;
+    }
 
     private static string TextOf(IReadOnlyList<ContentBlock> content)
         => string.Concat(content.Select(b => b switch
