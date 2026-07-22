@@ -77,6 +77,23 @@ public class IncusCommandTests
         Assert.Contains("--force", del);
     }
 
+    [Fact]
+    public void Snapshot_and_cow_copy_build_the_fork_clone_verbs()
+    {
+        Assert.Equal(["incus", "--project", "agnes", "snapshot", "create", "agnes-src", "fork1234"],
+            IncusCommandBuilder.BuildSnapshotCreate(Options, "agnes-src", "fork1234"));
+        Assert.Equal(["incus", "--project", "agnes", "snapshot", "delete", "agnes-src", "fork1234"],
+            IncusCommandBuilder.BuildSnapshotDelete(Options, "agnes-src", "fork1234"));
+
+        var copy = IncusCommandBuilder.BuildCopyFromSnapshot(Options, "agnes-src", "fork1234", "agnes-dst");
+        Assert.Equal(["incus", "--project", "agnes", "copy", "agnes-src/fork1234", "agnes-dst", "--storage", Options.StoragePoolName], copy);
+    }
+
+    [Fact]
+    public void Device_remove_targets_the_named_device()
+        => Assert.Equal(["incus", "--project", "agnes", "config", "device", "remove", "agnes-dst", "agnes-work"],
+            IncusCommandBuilder.BuildDeviceRemove(Options, "agnes-dst", "agnes-work"));
+
     [Theory]
     [InlineData("a; rm -rf /")]
     [InlineData("-x")]
@@ -84,6 +101,13 @@ public class IncusCommandTests
     [InlineData("")]
     public void Instance_name_validation_rejects_injection(string bad)
         => Assert.Throws<ArgumentException>(() => IncusCommandBuilder.BuildStart(Options, bad));
+
+    [Theory]
+    [InlineData("bad snap")]
+    [InlineData("snap/slash")]
+    [InlineData("")]
+    public void Snapshot_name_validation_rejects_injection(string bad)
+        => Assert.Throws<ArgumentException>(() => IncusCommandBuilder.BuildSnapshotCreate(Options, "agnes-src", bad));
 
     [Theory]
     [InlineData("relative/path")]

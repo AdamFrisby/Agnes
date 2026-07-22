@@ -11,7 +11,7 @@ namespace Agnes.Sandbox.Incus;
 /// wait for the guest ready marker. VMs are managed via <c>user.agnes.*</c> config keys and persist
 /// until explicitly deleted.
 /// </summary>
-public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilder
+public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilder, ISandboxCloner
 {
     public const string ProviderId = "incus";
 
@@ -55,6 +55,48 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
 
         await _cli.RunCheckedAsync("start", IncusCommandBuilder.BuildStart(_options, name), cancellationToken: cancellationToken).ConfigureAwait(false);
         await WaitForGuestReadyAsync(name, cancellationToken).ConfigureAwait(false);
+
+        return new IncusSandbox(name, _options, _cli, _logger);
+    }
+
+    public async Task<ISandbox> CloneAsync(string sourceVmName, string newHostWorkingDirectory, SandboxSpec spec, CancellationToken cancellationToken = default)
+    {
+        var name = CreateInstanceName();
+        // A short snapshot name on the source: point-in-time disk to copy from (CoW on ZFS/btrfs).
+        var snapshot = "fork" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(4));
+        _logger.LogInformation("Cloning Incus sandbox {Source} -> {Name} (snapshot {Snapshot})", sourceVmName, name, snapshot);
+
+        await _cli.RunCheckedAsync("snapshot", IncusCommandBuilder.BuildSnapshotCreate(_options, sourceVmName, snapshot), cancellationToken: cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _cli.RunCheckedAsync("cow copy", IncusCommandBuilder.BuildCopyFromSnapshot(_options, sourceVmName, snapshot, name), cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // The snapshot has served its purpose whether or not the copy succeeded; don't leak it.
+            await _cli.RunAsync(IncusCommandBuilder.BuildSnapshotDelete(_options, sourceVmName, snapshot), cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        // The copy inherited the source's work mount (pointing at the OLD host dir). Swap it for the
+        // forked working folder before boot (VM disk devices are set while stopped).
+        await _cli.RunAsync(IncusCommandBuilder.BuildDeviceRemove(_options, name, "agnes-work"), cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (newHostWorkingDirectory is { Length: > 0 } hostDir && Directory.Exists(hostDir))
+        {
+            await _cli.RunCheckedAsync("mount workdir",
+                IncusCommandBuilder.BuildDiskAdd(_options, name, "agnes-work", hostDir, spec.WorkingDirectory, readOnly: false),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        await _cli.RunCheckedAsync("start", IncusCommandBuilder.BuildStart(_options, name), cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        // Cloud-init already ran on the source (once per instance-id), so it won't re-run on the clone —
+        // and /run is tmpfs, so the /run/agnes/ready marker is gone after this fresh boot. The rootfs
+        // (agnes user, run wrapper, /work, packages) persisted, so once the guest agent answers we just
+        // recreate the runtime dir + marker ourselves rather than waiting on cloud-init.
+        await WaitForGuestAgentAsync(name, cancellationToken).ConfigureAwait(false);
+        await _cli.RunCheckedAsync("ready marker",
+            IncusCommandBuilder.BuildExec(_options, name, ["sh", "-c", "mkdir -p /run/agnes && chmod 0755 /run/agnes && touch /run/agnes/ready"], workingDirectory: null, asUser: false),
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return new IncusSandbox(name, _options, _cli, _logger);
     }
@@ -238,6 +280,27 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         }
 
         return result;
+    }
+
+    /// <summary>Waits until the guest agent answers <c>exec</c> (rootfs up + incus-agent connected), used
+    /// for clones where cloud-init won't re-run — we then recreate the tmpfs ready marker ourselves.</summary>
+    private async Task WaitForGuestAgentAsync(string name, CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow + _options.GuestReadyTimeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var probe = IncusCommandBuilder.BuildExec(_options, name, ["true"], workingDirectory: null, asUser: false);
+            var (code, _, _) = await _cli.RunAsync(probe, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (code == 0)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException($"Incus sandbox {name} guest agent did not answer within {_options.GuestReadyTimeout}.");
     }
 
     private async Task WaitForGuestReadyAsync(string name, CancellationToken cancellationToken)

@@ -258,6 +258,14 @@ public static class Program
         Pump(() => ask.Session!.PendingQuestion is not null);
         Capture(window, "05c-question-card.png");
 
+        // 5d) Fork dialog — copy the working folder to a new location (+ optional CoW sandbox clone).
+        var forkTab = OpenSession(vm, "opencode");
+        forkTab.ForkCommand.Execute(null);
+        Pump(() => vm.ForkPrompt is not null);
+        Capture(window, "05d-fork-dialog.png");
+        vm.ForkPrompt!.CancelCommand.Execute(null);
+        Pump(() => vm.ForkPrompt is null);
+
         // 6) Recorded session — real captured OpenCode data replayed as an agent
         vm.NewTabCommand.Execute(null);
         var rec = LastTab(vm)!;

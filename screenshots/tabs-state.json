@@ -61,5 +61,25 @@
     "title": "agnes",
     "pinned": false,
     "tags": null
+  },
+  {
+    "hostName": "Simulated host",
+    "hostUrl": "sim://demo",
+    "token": "",
+    "sessionId": "sim-0008",
+    "adapterId": "opencode",
+    "title": "agnes",
+    "pinned": false,
+    "tags": null
+  },
+  {
+    "hostName": "Simulated host",
+    "hostUrl": "sim://demo",
+    "token": "",
+    "sessionId": "sim-0009",
+    "adapterId": "opencode",
+    "title": "agnes",
+    "pinned": false,
+    "tags": null
   }
 ]

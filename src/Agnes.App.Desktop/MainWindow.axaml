@@ -337,6 +337,59 @@
                 </StackPanel>
             </Border>
         </Border>
+
+        <!-- Fork session: choose a target folder (copy of the working folder) and whether to CoW-clone the sandbox -->
+        <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="110" IsVisible="{Binding IsForkPromptOpen}"
+                Background="#88000000">
+            <Border Width="540" MaxHeight="460" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                    CornerRadius="12" Padding="20" BoxShadow="0 20 60 -20 #000000"
+                    DataContext="{Binding ForkPrompt}">
+                <StackPanel Spacing="14">
+                    <StackPanel Spacing="3">
+                        <TextBlock Text="Fork session" Foreground="{DynamicResource Fg}" FontSize="16" FontWeight="SemiBold" />
+                        <TextBlock Text="Copies the working folder to a new location and opens a fresh session there."
+                                   Foreground="{DynamicResource FgDim}" FontSize="12" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="From" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                        <TextBlock Text="{Binding SourceDirectory}" Foreground="{DynamicResource FgDim}" FontSize="12"
+                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Copy to" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                        <TextBox Text="{Binding TargetDirectory, Mode=TwoWay}" FontSize="13"
+                                 Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                 BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8" />
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding CopySandbox, Mode=TwoWay}" IsVisible="{Binding CanCopySandbox}"
+                              Foreground="{DynamicResource Fg}" FontSize="12">
+                        <StackPanel Spacing="1">
+                            <TextBlock Text="Copy the sandbox (copy-on-write)" Foreground="{DynamicResource Fg}" FontSize="12" />
+                            <TextBlock Text="Clones the VM's installed tooling/state; fast on ZFS. Otherwise a fresh sandbox is created."
+                                       Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </CheckBox>
+
+                    <TextBlock Text="{Binding ErrorText}" IsVisible="{Binding HasError}" Foreground="#E5484D"
+                               FontSize="12" TextWrapping="Wrap" />
+
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Text="Working…" IsVisible="{Binding Busy}" Foreground="{DynamicResource FgDim}"
+                                   FontSize="12" VerticalAlignment="Center" />
+                        <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelCommand}" IsEnabled="{Binding !Busy}"
+                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
+                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
+                        <Button Grid.Column="3" Content="Fork" Command="{Binding ConfirmCommand}" IsEnabled="{Binding !Busy}"
+                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="16,6"
+                                FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
     </Grid>
     </LayoutTransformControl>
     </ScrollViewer>

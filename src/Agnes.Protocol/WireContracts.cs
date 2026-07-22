@@ -179,6 +179,18 @@ public sealed record OpenSessionRequest(
     string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false,
     string McpApproval = "Ask", string GitCredentialMode = "Off", bool UseSandbox = true);
 
+/// <summary>What a fork would do, computed host-side: the source's working folder, a proposed
+/// (non-existing, numeral-incremented) target the UI prefills, and whether the source's sandbox can be
+/// copy-on-write cloned. Returned by <c>ProposeFork</c> so the client (which is remote from the host's
+/// filesystem) can present an editable target + a "copy sandbox" choice.</summary>
+public sealed record ForkPlan(string SourceSessionId, string SourceDirectory, string ProposedDirectory, bool CanCopySandbox);
+
+/// <summary>Fork a session by copying its working folder to <see cref="TargetDirectory"/> and opening a
+/// new session there (inheriting the source's agent + options). When <see cref="CopySandbox"/> and the
+/// source is sandboxed on a cloner-capable provider, the VM is CoW-cloned; otherwise a fresh sandbox is
+/// provisioned (or none, if the source ran on the host).</summary>
+public sealed record ForkSessionRequest(string SourceSessionId, string TargetDirectory, bool CopySandbox = true);
+
 /// <summary>Stores a token credential source for a host (the low-setup fine-grained-PAT fallback).</summary>
 public sealed record StoreCredentialRequest(string Host, string Token, string? Username = null);
 

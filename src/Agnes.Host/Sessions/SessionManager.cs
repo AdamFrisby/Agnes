@@ -227,7 +227,7 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, CancellationToken cancellationToken = default)
     {
-        if (!_adapters.TryGetValue(adapterId, out var adapter))
+        if (!_adapters.ContainsKey(adapterId))
         {
             throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
         }
@@ -243,6 +243,27 @@ public sealed class SessionManager : IAsyncDisposable
                 _worktrees[sessionId] = (workingDirectory, worktree);
                 _logger.LogInformation("Session {SessionId} isolated in worktree {Worktree}", sessionId, worktree);
             }
+        }
+
+        return await OpenSessionCoreAsync(
+            sessionId, adapterId, effectiveDirectory, skipPermissions, mcpApproval, gitCredentialMode,
+            useSandbox, existingSandbox: null, worktree: useWorktree, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The shared open path: resolve the project, ensure a checkout, provision (or adopt) a sandbox,
+    /// launch the agent, and catalogue the session. <paramref name="existingSandbox"/> is a pre-made
+    /// (e.g. CoW-cloned) sandbox to adopt instead of provisioning a fresh one; <paramref name="worktree"/>
+    /// only flags the persisted record.
+    /// </summary>
+    private async Task<SessionInfo> OpenSessionCoreAsync(
+        string sessionId, string adapterId, string effectiveDirectory,
+        bool skipPermissions, string mcpApproval, string gitCredentialMode, bool useSandbox,
+        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken)
+    {
+        if (!_adapters.TryGetValue(adapterId, out var adapter))
+        {
+            throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
         }
 
         // Resolve this session's project from the working directory's repo (auto-created + editable);
@@ -265,28 +286,32 @@ public sealed class SessionManager : IAsyncDisposable
         // Optionally provision a sandbox and run the agent inside it. Credentials and MCP config
         // (RunAt=Sandbox servers, plus RunAt=Host servers wired to the forward shim) are materialized
         // together in ONE bundle so the combined env write doesn't clobber the credential env file.
-        ISandbox? sandbox = null;
+        ISandbox? sandbox = existingSandbox;
         string? mcpConfigPath = null;
         if (_sandboxes is not null && useSandbox)
         {
-            // Ensure the image exists (bake if missing) before launching from it — the resolved
-            // project's own sandbox image when we have a project, else the legacy global baseline.
-            var image = string.Empty;
-            if (_images is not null)
+            if (sandbox is null)
             {
-                if (project is not null)
+                // Ensure the image exists (bake if missing) before launching from it — the resolved
+                // project's own sandbox image when we have a project, else the legacy global baseline.
+                var image = string.Empty;
+                if (_images is not null)
                 {
-                    image = await _images.EnsureForProjectAsync(project, cancellationToken).ConfigureAwait(false);
+                    if (project is not null)
+                    {
+                        image = await _images.EnsureForProjectAsync(project, cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await _images.EnsureAsync(cancellationToken).ConfigureAwait(false);
+                        image = _images.Alias;
+                    }
                 }
-                else
-                {
-                    await _images.EnsureAsync(cancellationToken).ConfigureAwait(false);
-                    image = _images.Alias;
-                }
+
+                sandbox = await _sandboxes.CreateAsync(
+                    new SandboxSpec { HostWorkingDirectory = effectiveDirectory, ImageReference = image }, cancellationToken).ConfigureAwait(false);
             }
 
-            sandbox = await _sandboxes.CreateAsync(
-                new SandboxSpec { HostWorkingDirectory = effectiveDirectory, ImageReference = image }, cancellationToken).ConfigureAwait(false);
             _sandboxBySession[sessionId] = sandbox;
 
             // Record the sandbox so it stays visible/manageable (resume/delete) even after a restart.
@@ -296,6 +321,8 @@ public sealed class SessionManager : IAsyncDisposable
                 project?.Name, SandboxTitle(project, effectiveDirectory), "running", now, now,
                 skipPermissions, mcpApproval, gitCredentialMode));
 
+            // (Re-)stamp this session's own credentials + MCP + forward token into the sandbox. Critical
+            // for a clone: it inherited the SOURCE session's tokens, which must be overwritten here.
             mcpConfigPath = await ProvisionSandboxContentsAsync(
                 sandbox, sessionId, adapterId, effectiveDirectory, project, skipPermissions, mcpApproval, gitCredentialMode, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Session {SessionId} runs in sandbox {SandboxId}", sessionId, sandbox.Id);
@@ -324,12 +351,68 @@ public sealed class SessionManager : IAsyncDisposable
         // Catalogue the session so it survives a host restart (agent session id is updated as it runs).
         var record = new SessionRecord(
             sessionId, adapterId, effectiveDirectory, agent.AgentSessionId,
-            useWorktree, skipPermissions, sandbox is not null, DateTimeOffset.UtcNow);
+            worktree, skipPermissions, sandbox is not null, DateTimeOffset.UtcNow);
         _catalog[sessionId] = record;
         await _store.SaveSessionAsync(record, cancellationToken).ConfigureAwait(false);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
         return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name);
+    }
+
+    /// <summary>Computes a fork plan for a live session: a proposed non-existing target folder (numeral-
+    /// incremented sibling) and whether its sandbox can be copy-on-write cloned. Null if unknown.</summary>
+    public ForkPlan? ProposeFork(string sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session))
+        {
+            return null;
+        }
+
+        var proposed = ForkNaming.Propose(session.WorkingDirectory);
+        var canCopySandbox = _sandboxBySession.ContainsKey(sessionId) && _sandboxes is ISandboxCloner;
+        return new ForkPlan(sessionId, session.WorkingDirectory, proposed, canCopySandbox);
+    }
+
+    /// <summary>
+    /// Forks a session: copies its working folder to <paramref name="targetDirectory"/> (a faithful,
+    /// independent snapshot including <c>.git</c> and untracked files) and opens a new session there,
+    /// inheriting the source's agent and open-time options. When <paramref name="copySandbox"/> and the
+    /// source is sandboxed on a cloner-capable provider, the VM is CoW-cloned and its work mount re-pointed
+    /// at the copy; otherwise a fresh sandbox is provisioned (or the fork runs on the host if the source did).
+    /// </summary>
+    public async Task<SessionInfo> ForkSessionAsync(string sourceSessionId, string targetDirectory, bool copySandbox = true, CancellationToken cancellationToken = default)
+    {
+        if (!_sessions.TryGetValue(sourceSessionId, out var source))
+        {
+            throw new InvalidOperationException($"Unknown session '{sourceSessionId}'.");
+        }
+
+        var adapterId = source.AdapterId;
+        var sourceDir = source.WorkingDirectory;
+
+        // A faithful copy of the working folder — uncommitted and untracked changes included.
+        await DirectoryCopier.CopyAsync(sourceDir, targetDirectory, cancellationToken).ConfigureAwait(false);
+
+        // Inherit the source's open-time options: skip-permissions from the session catalogue (always
+        // present); MCP/credential modes from the sandbox registry (only meaningful when sandboxed).
+        var skipPermissions = _catalog.TryGetValue(sourceSessionId, out var cat) && cat.SkipPermissions;
+        var sandboxRecord = _sandboxRegistry?.Get(sourceSessionId);
+        var mcpApproval = sandboxRecord?.McpApproval ?? "Ask";
+        var gitCredentialMode = sandboxRecord?.GitCredentialMode ?? "Off";
+        var sourceSandboxed = _sandboxBySession.TryGetValue(sourceSessionId, out var sourceSandbox);
+
+        var sessionId = Guid.NewGuid().ToString("n");
+        ISandbox? clonedSandbox = null;
+        if (copySandbox && sourceSandboxed && sourceSandbox is not null && _sandboxes is ISandboxCloner cloner)
+        {
+            _logger.LogInformation("Forking session {Source} -> {Session} with a CoW sandbox clone", sourceSessionId, sessionId);
+            clonedSandbox = await cloner.CloneAsync(
+                sourceSandbox.Id, targetDirectory, new SandboxSpec { HostWorkingDirectory = targetDirectory }, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await OpenSessionCoreAsync(
+            sessionId, adapterId, targetDirectory, skipPermissions, mcpApproval, gitCredentialMode,
+            useSandbox: sourceSandboxed, existingSandbox: clonedSandbox, worktree: false, cancellationToken).ConfigureAwait(false);
     }
 
     // Which agents Agnes can inject an MCP config into, and how: (config format, home-relative file,

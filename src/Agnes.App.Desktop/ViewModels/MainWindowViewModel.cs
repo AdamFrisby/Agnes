@@ -424,6 +424,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     [ObservableProperty]
     private bool _showGitHubLinkPrompt;
 
+    /// <summary>Non-null while the "Fork session" dialog is open (target folder + copy-sandbox choice).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsForkPromptOpen))]
+    private ForkPrompt? _forkPrompt;
+
+    public bool IsForkPromptOpen => ForkPrompt is not null;
+
     private void LinkGitHubNow()
     {
         ShowGitHubLinkPrompt = false;
@@ -2097,10 +2104,58 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     public async Task ForkAsync(SessionDocument doc)
     {
-        if (doc.Host is null || doc.Descriptor is not { } descriptor)
+        if (doc.Host is null || doc.Descriptor is null)
         {
             return;
         }
+
+        // Ask the host what a fork would do: a proposed (non-existing, numeral-incremented) target folder
+        // and whether the sandbox can be copy-on-write cloned. The client is remote, so only the host can
+        // stat the working folder and propose a free sibling.
+        ForkPlan? plan;
+        try
+        {
+            plan = await doc.Host.ProposeForkAsync(doc.Descriptor.SessionId);
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => doc.StatusText = "Couldn't prepare fork: " + ex.Message);
+            return;
+        }
+
+        if (plan is null)
+        {
+            _dispatcher.Post(() => doc.StatusText = "This host doesn't support forking sessions.");
+            return;
+        }
+
+        _dispatcher.Post(() =>
+        {
+            var title = doc.Title ?? "session";
+            ForkPrompt = new ForkPrompt(
+                title, plan,
+                onConfirm: prompt => ConfirmForkAsync(doc, prompt),
+                onCancel: () => ForkPrompt = null);
+        });
+    }
+
+    private async Task ConfirmForkAsync(SessionDocument doc, ForkPrompt prompt)
+    {
+        if (doc.Host is null || doc.Descriptor is not { } descriptor)
+        {
+            ForkPrompt = null;
+            return;
+        }
+
+        var target = prompt.TargetDirectory.Trim();
+        if (target.Length == 0)
+        {
+            prompt.ErrorText = "Enter a target folder for the fork.";
+            return;
+        }
+
+        prompt.Busy = true;
+        prompt.ErrorText = null;
 
         var fork = new SessionDocument(this)
         {
@@ -2109,30 +2164,34 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             HostName = doc.HostName,
             AgentName = doc.AgentName,
         };
-        ApplyTags(fork, doc.Tags.ToList());
-        AddDocument(fork);
 
         try
         {
-            fork.Host = doc.Host;
-            fork.HostToken = doc.HostToken;
-            WireStatus(fork, doc.Host);
-
-            // New session on the same host/agent and project, isolated in its own git worktree so
-            // the two sessions can run in parallel without colliding.
-            var forkDirectory = string.IsNullOrWhiteSpace(doc.WorkingDirectory) ? DefaultWorkingDirectory : doc.WorkingDirectory.Trim();
-            var info = await doc.Host.OpenSessionAsync(descriptor.AdapterId, forkDirectory, useWorktree: true);
+            // Copy the working folder host-side and open a new session there (optionally CoW-cloning the
+            // sandbox). This can take a while for a large tree / VM clone, so it runs before we commit the
+            // tab and any error keeps the dialog open for a retry.
+            var info = await doc.Host.ForkSessionAsync(descriptor.SessionId, target, prompt.CopySandbox && prompt.CanCopySandbox);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             _dispatcher.Post(() =>
             {
+                ApplyTags(fork, doc.Tags.ToList());
+                AddDocument(fork);
+                fork.Host = doc.Host;
+                fork.HostToken = doc.HostToken;
+                WireStatus(fork, doc.Host);
                 fork.AttachSession(CreateSession(doc.Host!, view, fork.Title!));
                 fork.Descriptor = descriptor with { SessionId = info.SessionId, Title = fork.Title! };
+                ForkPrompt = null;
                 SaveState();
             });
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => fork.StatusText = "Error: " + ex.Message);
+            _dispatcher.Post(() =>
+            {
+                prompt.Busy = false;
+                prompt.ErrorText = ex.Message;
+            });
         }
     }
 }

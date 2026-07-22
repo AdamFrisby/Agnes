@@ -57,6 +57,18 @@ public interface ISandboxImageBuilder
     Task BuildImageAsync(SandboxImageManifest manifest, IProgress<string>? progress = null, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// A provider that can clone an existing sandbox into a new one — copy-on-write where the storage
+/// backend supports it (e.g. ZFS/btrfs on Incus), so forking a session's VM is cheap and preserves
+/// its installed tooling/state. The clone re-points its working-directory mount at
+/// <c>newHostWorkingDirectory</c> (the forked, copied working folder). Optional capability on
+/// <see cref="ISandboxProvider"/>.
+/// </summary>
+public interface ISandboxCloner
+{
+    Task<ISandbox> CloneAsync(string sourceVmName, string newHostWorkingDirectory, SandboxSpec spec, CancellationToken cancellationToken = default);
+}
+
 /// <summary>A sandbox that can be paused (RAM→disk) and resumed. Optional capability.</summary>
 public interface IPausableSandbox
 {
