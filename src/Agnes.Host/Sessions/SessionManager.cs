@@ -347,15 +347,17 @@ public sealed class SessionManager : IAsyncDisposable
             },
             cancellationToken).ConfigureAwait(false);
 
-        var session = TrackSession(sessionId, adapterId, effectiveDirectory, agent);
-        _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
-
-        // Catalogue the session so it survives a host restart (agent session id is updated as it runs).
+        // Catalogue the session BEFORE tracking it: TrackSession starts the event pump, which fires
+        // AgentSessionStarted (persisting the real agent session id) — that update must find the record.
+        // Persist the initial (placeholder-id) record first so it can't overwrite the real id afterwards.
         var record = new SessionRecord(
             sessionId, adapterId, effectiveDirectory, agent.AgentSessionId,
             worktree, skipPermissions, sandbox is not null, DateTimeOffset.UtcNow);
         _catalog[sessionId] = record;
         await _store.SaveSessionAsync(record, cancellationToken).ConfigureAwait(false);
+
+        var session = TrackSession(sessionId, adapterId, effectiveDirectory, agent);
+        _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
         return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name);
@@ -716,6 +718,8 @@ public sealed class SessionManager : IAsyncDisposable
             _loggerFactory.CreateLogger<HostSession>())
         {
             Faulted = () => _ = RecoverAgentAsync(sessionId),
+            // Persist the agent's real session id the moment it reports one, so --resume works reliably.
+            AgentSessionStarted = id => _ = UpdateAgentSessionIdAsync(sessionId, id),
         };
         _sessions[sessionId] = session;
         return session;
@@ -1030,12 +1034,14 @@ public sealed class SessionManager : IAsyncDisposable
     public async Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
     {
         var session = await EnsureLiveAsync(sessionId).ConfigureAwait(false);
+        // The real agent session id is captured via HostSession.AgentSessionStarted (on the init line),
+        // not polled here — polling raced the init line and persisted the placeholder id, which broke
+        // --resume. Codex reports its id synchronously at open, so the catalogue is already correct there.
         await session.PromptAsync(content).ConfigureAwait(false);
-        await UpdateAgentSessionIdAsync(sessionId, session.AgentSessionId).ConfigureAwait(false);
     }
 
-    // The native CLI's real session id arrives asynchronously (after the first turn's init line);
-    // persist it once known so the agent can be resumed after a restart.
+    // Persist the agent's real session id once it reports one (a native CLI's init line) so the agent can
+    // be resumed (--resume) after a crash or restart. Only overwrites a different, non-empty id.
     private async Task UpdateAgentSessionIdAsync(string sessionId, string agentSessionId)
     {
         if (_catalog.TryGetValue(sessionId, out var record)

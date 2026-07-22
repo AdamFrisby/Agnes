@@ -58,10 +58,11 @@ public class AgentRecoveryTests
 
         var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
 
-        // Give the agent a real (resumable) session id and persist it to the catalogue via a prompt.
-        adapter.Sessions[0].AgentSessionId = ResumableId;
-        adapter.Sessions[0].OnPrompt = (_, s) => { s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
-        await manager.PromptAsync(info.SessionId, [new TextContent("hi")]);
+        // The agent reports its real (resumable) session id the way a native CLI does — an init line
+        // mapped to a SessionStartedEvent — which the host persists to the catalogue for --resume.
+        adapter.Sessions[0].Emit(new SessionStartedEvent(ResumableId));
+        await WaitForAsync(() => broadcaster.Published.Any(p => p.Event is SessionStartedEvent));
+        await Task.Delay(50); // let the (fire-and-forget) catalogue persist settle
 
         // The CLI process dies mid-session.
         adapter.Sessions[0].Die();

@@ -51,6 +51,11 @@ internal sealed class HostSession : IAsyncDisposable
     /// underlying CLI process died. The host uses this to auto-restart (and resume) the agent.</summary>
     public Action? Faulted { get; set; }
 
+    /// <summary>Invoked with the agent's real session id when it reports one (a native CLI's <c>init</c>
+    /// line). Persisted to the catalogue so the agent can be resumed (<c>--resume</c>) reliably — captured
+    /// here, not by polling after a prompt, which races the init line and grabs the placeholder id.</summary>
+    public Action<string>? AgentSessionStarted { get; set; }
+
     /// <summary>The agent's own session id (used to resume it after a host restart).</summary>
     public string AgentSessionId => _agent.AgentSessionId;
 
@@ -142,6 +147,11 @@ internal sealed class HostSession : IAsyncDisposable
         {
             await foreach (var @event in _agent.Events.ReadAllAsync(_cts.Token).ConfigureAwait(false))
             {
+                if (@event is SessionStartedEvent started && !string.IsNullOrEmpty(started.AgentSessionId))
+                {
+                    AgentSessionStarted?.Invoke(started.AgentSessionId);
+                }
+
                 await AppendAndPublishAsync(@event).ConfigureAwait(false);
             }
 
