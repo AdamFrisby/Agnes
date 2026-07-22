@@ -78,6 +78,16 @@ var keypairAuthOptions = new KeypairAuthOptions
 builder.Services.AddSingleton(sp => new KeypairAuth(
     keypairAuthOptions, sp.GetRequiredService<ILoggerFactory>().CreateLogger<KeypairAuth>()));
 
+// ---- rate limiting: cap the auth bootstrap endpoints per-IP and globally ----
+var authRateLimit = new AuthRateLimitOptions
+{
+    Enabled = builder.Configuration.GetValue("Agnes:Auth:RateLimit:Enabled", true),
+    PerIpPerMinute = builder.Configuration.GetValue("Agnes:Auth:RateLimit:PerIpPerMinute", 10),
+    GlobalPerMinute = builder.Configuration.GetValue("Agnes:Auth:RateLimit:GlobalPerMinute", 100),
+    TrustForwardedFor = builder.Configuration.GetValue("Agnes:Auth:RateLimit:TrustForwardedFor", false),
+};
+builder.Services.AddRateLimiter(o => AuthRateLimit.Configure(o, authRateLimit));
+
 // ---- MCP server registry (configured from the UI, persisted to ~/.agnes/mcp.json) ----
 var mcpFile = builder.Configuration["Agnes:McpFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "mcp.json");
@@ -283,6 +293,9 @@ if (webFiles is not null)
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = webFiles });
     app.UseStaticFiles(staticOptions);
 }
+
+// Throttle the auth bootstrap endpoints (per-IP + global); every other request is unlimited.
+app.UseRateLimiter();
 
 // Reject unauthorized clients at the negotiate level so the connection never establishes.
 app.Use(async (context, next) =>
@@ -600,6 +613,12 @@ var keypairUsable = app.Services.GetRequiredService<KeypairAuth>().IsUsable;
 if (keypairUsable)
 {
     app.Logger.LogInformation("Keypair sign-in enabled (authorized_keys: {File}).", keypairAuthOptions.AuthorizedKeysFile);
+}
+
+if (authRateLimit.Enabled)
+{
+    app.Logger.LogInformation("Auth rate limit: {PerIp}/min per IP, {Global}/min global (trust X-Forwarded-For: {Xff}).",
+        authRateLimit.PerIpPerMinute, authRateLimit.GlobalPerMinute, authRateLimit.TrustForwardedFor);
 }
 
 if (!tokens.PairingEnabled && !gitHubAuth.IsUsable && !keypairUsable)

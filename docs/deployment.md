@@ -170,6 +170,24 @@ On a client, **+ Add host** → **Sign in with a key**: it generates a key on fi
 (`~/.agnes/client_key.p8`) and shows the exact line to paste into the host's
 `authorized_keys`; add it, retry, and you're connected.
 
+## Rate limiting
+
+The token-minting endpoints (`/pair`, `/auth/github/exchange`, `/auth/keypair`[`/challenge`])
+are throttled **per client IP and globally** — on by default. A single IP can't
+hammer them, and a distributed attempt is still capped overall. Discovery
+(`/auth/methods`) is exempt. Defaults (per minute): `10` per IP, `100` global.
+
+```json
+{ "Agnes": { "Auth": { "RateLimit": {
+  "Enabled": true, "PerIpPerMinute": 10, "GlobalPerMinute": 100,
+  "TrustForwardedFor": true
+} } } }
+```
+
+Set **`TrustForwardedFor: true` only behind a reverse proxy you control** — it takes
+the client IP from `X-Forwarded-For`, which is spoofable if the host is reached
+directly. The global limit is the backstop either way.
+
 ## CORS
 
 The web client served from the **same origin** as the host needs no CORS. Only
@@ -190,6 +208,7 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 | `Auth:Pairing:Enabled` | Turn the pairing-code bootstrap off (default on) — e.g. GitHub-only. |
 | `Auth:GitHub:{Enabled,ClientId,AllowedUsers,AllowedOrgs}` | GitHub-SSO sign-in + allowlist (see above). |
 | `Auth:Keypair:{Enabled,AuthorizedKeysFile}` | Keypair (authorized_keys) sign-in (see above). |
+| `Auth:RateLimit:{Enabled,PerIpPerMinute,GlobalPerMinute,TrustForwardedFor}` | Throttle the auth endpoints (see above). |
 | `DevicesFile` | Where paired-device hashes are stored. |
 | `AllowedOrigins` / `AllowAllOrigins` | Cross-origin browser policy. |
 | `Database` | SQLite path for the event log (in-memory if empty). |
