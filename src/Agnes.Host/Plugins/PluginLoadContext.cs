@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.Loader;
+using Agnes.Abstractions;
 
 namespace Agnes.Host.Plugins;
 
@@ -10,9 +11,24 @@ namespace Agnes.Host.Plugins;
 /// dependency assemblies from its extracted package directory via <see cref="AssemblyDependencyResolver"/>;
 /// anything it can't resolve there falls through to the default context (so it shares Agnes's own
 /// framework/BCL assemblies rather than loading a second copy).
+///
+/// Critically, the plugin-contract assemblies — <c>Agnes.Abstractions</c> (so an <c>IAgentAdapter</c>
+/// the plugin registers is type-identical to the one <c>SessionManager</c> checks for) and
+/// <c>Microsoft.Extensions.DependencyInjection.Abstractions</c> (so the <c>IServiceCollection</c> the
+/// host hands the plugin's <c>ConfigureServices</c> is the same type the plugin's own compiled code
+/// resolves against) — are ALWAYS forced to resolve from the default context instead of a
+/// plugin-private copy. Loading a second copy of either would silently break type identity between
+/// the host and the plugin (service registrations that appear to "vanish" because they're keyed by a
+/// different runtime type than the one the host is looking for).
 /// </summary>
 public sealed class PluginLoadContext : AssemblyLoadContext
 {
+    private static readonly HashSet<string> SharedAssemblyNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        typeof(IAgentAdapter).Assembly.GetName().Name!,
+        typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.GetName().Name!,
+    };
+
     private readonly AssemblyDependencyResolver _resolver;
 
     public PluginLoadContext(string pluginId, string mainAssemblyPath)
@@ -28,6 +44,11 @@ public sealed class PluginLoadContext : AssemblyLoadContext
 
     protected override Assembly? Load(AssemblyName assemblyName)
     {
+        if (assemblyName.Name is not null && SharedAssemblyNames.Contains(assemblyName.Name))
+        {
+            return null; // fall through to the default context — never isolate the plugin-contract assemblies
+        }
+
         var path = _resolver.ResolveAssemblyToPath(assemblyName);
         return path is not null ? LoadFromAssemblyPath(path) : null;
     }

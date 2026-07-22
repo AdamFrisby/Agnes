@@ -17,6 +17,7 @@
       "src/Agnes.Ui.Core/Agnes.Ui.Core.csproj",
       "src/Agnes.App.Desktop/Agnes.App.Desktop.csproj",
       "tests/Agnes.TestKit/Agnes.TestKit.csproj",
+      "tests/Agnes.TestPluginFixture/Agnes.TestPluginFixture.csproj",
       "tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj",
       "tests/Agnes.Agents.Native.Tests/Agnes.Agents.Native.Tests.csproj",
       "tests/Agnes.Agents.Codex.Tests/Agnes.Agents.Codex.Tests.csproj",

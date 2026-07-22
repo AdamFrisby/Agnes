@@ -104,10 +104,13 @@ public sealed class PluginInstaller : IPluginInstaller
         var pluginDir = ExtractPackage(package, manifest);
         var mainAssemblyPath = FindMainAssembly(pluginDir, manifest);
 
-        Load(manifest.Id, mainAssemblyPath, grantedCapabilities.ToArray(), PluginSettings.Empty.Values);
+        // The effective granted set is exactly what the manifest declared — RequireConsent already
+        // proved that's a subset of what the caller passed in. A plugin never gets a capability it
+        // didn't itself ask for, even if a caller happened to grant something broader (AC11).
+        Load(manifest.Id, mainAssemblyPath, manifest.Capabilities, PluginSettings.Empty.Values);
 
         var record = new PluginRecord(manifest.Id, packageId, manifest.Version, Enabled: true,
-            grantedCapabilities.ToArray(), pluginDir, mainAssemblyPath, DateTimeOffset.UtcNow, PluginSettings.Empty.Values);
+            manifest.Capabilities, pluginDir, mainAssemblyPath, DateTimeOffset.UtcNow, PluginSettings.Empty.Values);
         _state.Set(record);
         _logger.LogInformation("Installed plugin {PluginId} {Version} from package {PackageId}.", manifest.Id, manifest.Version, packageId);
         return ToInstalledPlugin(record);
@@ -134,7 +137,7 @@ public sealed class PluginInstaller : IPluginInstaller
         {
             Version = manifest.Version,
             Enabled = wasEnabled,
-            GrantedCapabilities = grantedCapabilities.ToArray(),
+            GrantedCapabilities = manifest.Capabilities, // effective = what the manifest actually declares, see InstallAsync
             ExtractedPath = pluginDir,
             MainAssemblyPath = mainAssemblyPath,
             InstalledAt = DateTimeOffset.UtcNow,

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Agnes.TestPluginFixture</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    A tiny, real IAgnesPluginModule assembly used ONLY by Agnes.Host.Tests' PluginInstallerTests, to
+    prove the AssemblyLoadContext load path and capability-gated DI work against real compiled IL —
+    not something a unit test can fabricate. Referenced with ReferenceOutputAssembly="false" (so it's
+    built, but never statically linked into Agnes.Host.Tests' own assembly closure — the test locates
+    and loads this DLL dynamically, the same way a real installed plugin would be).
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Agnes.Abstractions\Agnes.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
