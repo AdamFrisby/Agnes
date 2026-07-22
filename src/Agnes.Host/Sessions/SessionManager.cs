@@ -1011,7 +1011,18 @@ public sealed class SessionManager : IAsyncDisposable
     }
 
     public SandboxStatus? GetSandboxStatus(string sessionId)
-        => _sandboxBySession.TryGetValue(sessionId, out var sandbox) ? MapSandbox(sandbox) : null;
+    {
+        if (_sandboxBySession.TryGetValue(sessionId, out var sandbox))
+        {
+            return MapSandbox(sandbox);
+        }
+
+        // Dormant (restored-but-not-yet-resumed) sandboxed session: report it from the persisted registry
+        // so the client still shows the sandbox chip (as stopped) before the VM is re-attached on prompt.
+        return _sandboxRegistry?.Get(sessionId) is { } record
+            ? new SandboxStatus(record.Provider, record.VmName, "Stopped")
+            : null;
+    }
 
     private static SandboxStatus? MapSandbox(ISandbox? sandbox)
         => sandbox is null ? null : new SandboxStatus(sandbox.Info.Provider, sandbox.Info.Id, sandbox.Info.State.ToString());

@@ -1247,12 +1247,19 @@ public sealed class SessionViewModel : ObservableObject
         try
         {
             await _host.PromptAsync(SessionId, blocks);
+
+            // Prompting a dormant sandboxed session re-attaches (resumes) its VM server-side; refresh so the
+            // toolbar chip flips from "stopped" to "running" now that the sandbox is live again.
+            if (HasSandbox)
+            {
+                await RefreshSandboxAsync();
+            }
         }
         catch (Exception)
         {
-            // A send can fail server-side — e.g. a restored sandboxed session whose VM is gone after a
-            // host restart ("cannot be resumed after a restart"), or a transient hub error. Never let it
-            // crash the app: end the turn and surface it as a stale banner (Fork/Duplicate starts fresh).
+            // A send can fail server-side — e.g. a restored sandboxed session whose VM is truly gone, or a
+            // transient hub error. Never let it crash the app: end the turn and surface it as a stale
+            // banner (Fork/Duplicate starts fresh).
             IsTurnActive = false;
             _stale = true;
             UpdateBanner();

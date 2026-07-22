@@ -405,8 +405,19 @@ public class SandboxWiringTests
                 sandboxRegistry: new SandboxRegistry(regPath)); // loads the persisted VM record
             await resumed.RestoreAsync();
 
+            // While dormant (not yet resumed), the snapshot still reports the sandbox from the registry so
+            // the client shows the chip (as stopped) rather than hiding it.
+            var dormant = await resumed.GetSnapshotAsync(sessionId, 0);
+            Assert.NotNull(dormant.Session.Sandbox);
+            Assert.Equal("Stopped", dormant.Session.Sandbox!.State);
+
             // Prompting a restored sandboxed session now re-attaches its VM (by name) instead of erroring.
             await resumed.PromptAsync(sessionId, [new TextContent("continue")]);
+
+            // After the resume the live status flips to running.
+            var live = resumed.GetSandboxStatus(sessionId);
+            Assert.NotNull(live);
+            Assert.Equal("Running", live!.State);
 
             Assert.NotNull(adapter2.LastOptions);
             Assert.NotNull(adapter2.LastOptions!.Sandbox); // relaunched INSIDE the re-attached sandbox
