@@ -17,6 +17,7 @@ namespace Agnes.Ui.Core.ViewModels;
 public sealed class SessionViewModel : ObservableObject
 {
     private readonly IAgnesHost _host;
+    private readonly Agnes.Abstractions.Events.IEventBus _bus;
     private readonly SessionView _view;
     private readonly IUiDispatcher _dispatcher;
     private readonly IPromptStore _prompts;
@@ -50,13 +51,14 @@ public sealed class SessionViewModel : ObservableObject
     private int _promptCursor = -1;
     private int _changeCursor = -1;
 
-    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null)
+    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null, Agnes.Abstractions.Events.IEventBus? eventBus = null)
     {
         _host = host;
         _view = view;
         _dispatcher = dispatcher;
         _prompts = prompts ?? NullPromptStore.Instance;
         _policy = policy ?? NullPermissionPolicy.Instance;
+        _bus = eventBus ?? new Agnes.Abstractions.Events.EventBus();
         Title = title;
 
         _promptText = _prompts.LoadDraft(view.SessionId);
@@ -1273,6 +1275,15 @@ public sealed class SessionViewModel : ObservableObject
 
     private async Task SubmitAsync(string text)
     {
+        // Client event spine: a client plugin may rewrite the outgoing message or veto it before it leaves
+        // this client (the host's BeforePromptEvent still fires afterward for host-side plugins).
+        var send = await _bus.DispatchAsync(new Plugins.BeforeMessageSendEvent(SessionId, text));
+        if (send.IsCanceled)
+        {
+            return;
+        }
+
+        text = send.Text;
         _interrupted = false;
         UpdateBanner();
         IsTurnActive = true;

@@ -1244,8 +1244,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// <summary>Creates a session view model and wires its notifications to the shell.</summary>
     private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
     {
-        var session = new SessionViewModel(host, view, _dispatcher, title, _prompts, _policy);
+        var session = new SessionViewModel(host, view, _dispatcher, title, _prompts, _policy, EnsureClientPlugins().EventBus);
         session.NotificationRaised += n => _dispatcher.Post(() => Surface(n));
+        _ = EnsureClientPlugins().EventBus.DispatchAsync(new SessionTabOpenedEvent(view.SessionId)); // observe-only
         return session;
     }
 
@@ -1301,6 +1302,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         dock.ActiveDockable = existing;
         _factory.SetActiveDockable(existing);
         _factory.SetFocusedDockable(dock, existing);
+        _ = EnsureClientPlugins().EventBus.DispatchAsync(new CustomScreenOpenedEvent(provider.ScreenId)); // observe-only
     }
 
     /// <summary>The directory to prefill for a new session — last used, else the user's home.</summary>

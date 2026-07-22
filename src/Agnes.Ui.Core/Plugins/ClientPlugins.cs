@@ -5,14 +5,6 @@ using Agnes.Ui.Core.ViewModels;
 
 namespace Agnes.Ui.Core.Plugins;
 
-/// <summary>Raised before a notification is shown on this device (client-side event spine). An interceptor
-/// may rewrite <see cref="Notification"/> or <see cref="CancelableEvent.Cancel"/> it (e.g. a do-not-disturb
-/// plugin, or one that reroutes certain notifications elsewhere).</summary>
-public sealed class BeforeNotificationEvent(AppNotification notification) : CancelableEvent
-{
-    public AppNotification Notification { get; set; } = notification;
-}
-
 /// <summary>Dispatches a notification through the client event bus before showing it, so client plugins can
 /// intercept it. A canceled notification is simply not shown.</summary>
 public sealed class NotificationDispatcher(IEventBus bus, INotifier notifier)
