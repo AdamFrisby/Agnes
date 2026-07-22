@@ -20,6 +20,8 @@ Every file follows the same shape:
 
 [`security/01-end-to-end-encryption.md`](security/01-end-to-end-encryption.md) is also worth reading early even if you're not implementing it yet — it sets the cryptographic ground rules (mutually-authenticated TLS, no custom protocols) that several other docs (connectivity, connected-services, automations, sharing) build on.
 
+[`PHASES.md`](PHASES.md) maps the hard/soft dependencies between every doc in this folder and groups the work into 11 phases of at most 4 items each, ordered by usefulness to a developer. Use it instead of the "Suggested build order" list below for anything beyond a rough first pass.
+
 ## Index, by category
 
 ### Connectivity — reaching your machine from anywhere
@@ -99,11 +101,4 @@ Keep these in mind while building the above — they're real strengths worth pro
 
 ## Suggested build order
 
-Rough dependency-aware ordering — later items lean on earlier ones:
-
-1. `00-plugin-architecture.md` (foundation for everything else)
-2. `connectivity/01-relay-and-tunneling.md` (unlocks "use it away from your LAN" — the single highest-value gap)
-3. `security/01-end-to-end-encryption.md` (do this *before* the relay carries real traffic through any third party)
-4. `providers/01-provider-breadth-acp-catalog.md` + `providers/02-connected-services-credential-broker.md`
-5. `sessions/01-session-forking-and-replay.md`, `connectivity/03-session-handoff.md` (both build on the event log Agnes already has)
-6. Everything else can proceed roughly in parallel once the above land.
+See [`PHASES.md`](PHASES.md) for the full dependency graph and an 11-phase build plan (≤4 items per phase, ordered by developer usefulness). The short version: plugin architecture first, then relay/tunneling + end-to-end encryption together (the relay isn't safe to use without it), then provider breadth — everything else builds on that foundation.
