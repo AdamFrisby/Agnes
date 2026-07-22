@@ -1,8 +1,31 @@
 using Agnes.Abstractions;
+using Agnes.Abstractions.Events;
 using Agnes.Protocol;
 using Agnes.Ui.Core.ViewModels;
 
 namespace Agnes.Ui.Core.Plugins;
+
+/// <summary>Raised before a notification is shown on this device (client-side event spine). An interceptor
+/// may rewrite <see cref="Notification"/> or <see cref="CancelableEvent.Cancel"/> it (e.g. a do-not-disturb
+/// plugin, or one that reroutes certain notifications elsewhere).</summary>
+public sealed class BeforeNotificationEvent(AppNotification notification) : CancelableEvent
+{
+    public AppNotification Notification { get; set; } = notification;
+}
+
+/// <summary>Dispatches a notification through the client event bus before showing it, so client plugins can
+/// intercept it. A canceled notification is simply not shown.</summary>
+public sealed class NotificationDispatcher(IEventBus bus, INotifier notifier)
+{
+    public async Task NotifyAsync(AppNotification notification)
+    {
+        var evt = await bus.DispatchAsync(new BeforeNotificationEvent(notification)).ConfigureAwait(false);
+        if (!evt.IsCanceled)
+        {
+            notifier.Notify(evt.Notification);
+        }
+    }
+}
 
 /// <summary>
 /// Client-side plugin infrastructure (see <c>.ideas/00c-client-plugins-and-negotiation.md</c>). Client
@@ -37,21 +60,40 @@ public sealed class DelegatingNotificationChannel(string channelId, INotifier no
     public void Show(AppNotification notification) => notifier.Notify(notification);
 }
 
-/// <summary>Collects client-plugin providers registered by modules, then builds the typed registries.</summary>
+/// <summary>Collects client-plugin providers and event bindings registered by modules, then builds the
+/// typed registries and the client event bus (with the plugins' bindings applied).</summary>
 public sealed class ClientPluginCollector
 {
     private readonly List<IClientNotificationChannel> _notificationChannels = [];
+    private readonly List<IEventBinding> _eventBindings = [];
 
     public void AddNotificationChannel(IClientNotificationChannel channel) => _notificationChannels.Add(channel);
 
-    public ClientPluginSet Build() => new(
-        new PluginRegistry<IClientNotificationChannel>(_notificationChannels, c => c.ChannelId));
+    /// <summary>Registers a plugin's event bindings (interceptors/observers) onto the client bus.</summary>
+    public void AddEventBinding(IEventBinding binding) => _eventBindings.Add(binding);
+
+    public ClientPluginSet Build()
+    {
+        var bus = new EventBus();
+        var registrations = new List<IDisposable>(); // the client bus lives for the app's lifetime
+        foreach (var binding in _eventBindings)
+        {
+            binding.Bind(bus, registrations);
+        }
+
+        return new ClientPluginSet(
+            new PluginRegistry<IClientNotificationChannel>(_notificationChannels, c => c.ChannelId),
+            bus);
+    }
 }
 
-/// <summary>The client's populated plugin registries, one per client plugin-point.</summary>
-public sealed class ClientPluginSet(IPluginRegistry<IClientNotificationChannel> notificationChannels)
+/// <summary>The client's populated plugin registries and event bus.</summary>
+public sealed class ClientPluginSet(IPluginRegistry<IClientNotificationChannel> notificationChannels, IEventBus eventBus)
 {
     public IPluginRegistry<IClientNotificationChannel> NotificationChannels { get; } = notificationChannels;
+
+    /// <summary>The client event spine, with every plugin's bindings applied.</summary>
+    public IEventBus EventBus { get; } = eventBus;
 
     /// <summary>Empty set — no client plugins (a valid state, e.g. a headless/minimal client).</summary>
     public static ClientPluginSet Empty { get; } = new ClientPluginCollector().Build();

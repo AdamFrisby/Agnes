@@ -53,9 +53,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     {
         try
         {
-            _clientPlugins ??= DesktopClientPlugins.Build(Notifier,
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins"));
-            var caps = DesktopClientPlugins.Capabilities(Environment.MachineName, _clientPlugins);
+            var caps = DesktopClientPlugins.Capabilities(Environment.MachineName, EnsureClientPlugins());
             var result = await host.NegotiateAsync(caps);
             _dispatcher.Post(() => NegotiatedCapabilities = result.Capabilities);
         }
@@ -1259,8 +1257,26 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             return;
         }
 
-        Notifier.Notify(notification);
+        // Route through the client event spine so a client plugin can intercept/rewrite/suppress it. The
+        // common case (synchronous interceptors, or none) stays on this UI thread; a rare async interceptor
+        // marshals the final show back onto the UI dispatcher.
+        var evt = new BeforeNotificationEvent(notification);
+        var dispatch = EnsureClientPlugins().EventBus.DispatchAsync(evt);
+        if (dispatch.IsCompletedSuccessfully)
+        {
+            if (!evt.IsCanceled) { Notifier.Notify(evt.Notification); }
+        }
+        else
+        {
+            _ = dispatch.ContinueWith(
+                _ => _dispatcher.Post(() => { if (!evt.IsCanceled) { Notifier.Notify(evt.Notification); } }),
+                TaskScheduler.Default);
+        }
     }
+
+    private ClientPluginSet EnsureClientPlugins()
+        => _clientPlugins ??= DesktopClientPlugins.Build(Notifier,
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins"));
 
     /// <summary>The directory to prefill for a new session — last used, else the user's home.</summary>
     public string DefaultWorkingDirectory =>
