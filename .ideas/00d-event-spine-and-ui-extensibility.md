@@ -158,7 +158,7 @@ MVVM heads resolve a view-model to a view via data templates / a view locator. F
 
 ## The retrofitted action event surface (implemented)
 
-Modularity, mirroring the plugin system: the `EventBus` is a small generic dispatcher that knows about **no** concrete events; events are grouped by domain into their own files (`SessionEvents`, `InteractionEvents`, `GitEvents`, client `ClientEvents`), not one monolith; dispatch happens at **each action's own call site**, not in a central router. Plugins bind through the same merger as every other plugin-point, and — because the bus is generic and the contracts live in `Agnes.Abstractions.Events` (referenced by plugins) — **a plugin can define, dispatch, and handle its own event types** with zero core changes (the bus is injected into host plugin DI and exposed on the client `ClientPluginCollector`).
+Modularity, mirroring the plugin system: the `EventBus` is a small generic dispatcher that knows about **no** concrete events; events are grouped by domain into their own files (`SessionEvents`, `SessionCommandEvents`, `SandboxEvents`, `InteractionEvents`, `GitEvents`, `PluginLifecycleEvents`, `AutomationEvents`, `AuthEvents`, `AgentEventBridge`, client `ClientEvents`), not one monolith; dispatch happens at **each action's own call site**, not in a central router. Plugins bind through the same merger as every other plugin-point, and — because the bus is generic and the contracts live in `Agnes.Abstractions.Events` (referenced by plugins) — **a plugin can define, dispatch, and handle its own event types** with zero core changes (the bus is injected into host plugin DI and exposed on the client `ClientPluginCollector`).
 
 Non-trivial actions now flow through the spine (not direct calls). `Before*` = cancelable/mutable; `*ed` = observe-only:
 
@@ -172,9 +172,29 @@ Non-trivial actions now flow through the spine (not direct calls). `Before*` = c
 | Host | question answer | `BeforeQuestionAnswerEvent` (rewrite answers) | not forwarded |
 | Host | mode change | `BeforeModeChangeEvent` (override mode) | no change |
 | Host | git commit | `BeforeGitCommitEvent` (rewrite message) / `GitCommittedEvent` | failed result |
+| Host | cancel turn | `BeforeSessionCancelEvent` | turn keeps running |
+| Host | restart agent | `BeforeAgentRestartEvent` / `AgentRestartedEvent` | agent left as-is |
+| Host | resume session | `BeforeSessionResumeEvent` / `SessionResumedEvent` | error to caller |
+| Host | pause/resume/delete sandbox | `BeforeSandbox{Pause,Resume,Delete}Event` / `SandboxDeletedEvent` | sandbox unchanged (delete is the safety veto) |
+| Host | plugin install/update | `BeforePluginInstallEvent` / `PluginInstalledEvent` | blocked outcome |
+| Host | plugin enable/disable | `BeforePluginEnableChangeEvent` / `PluginEnableChangedEvent` | state unchanged |
+| Host | plugin uninstall | `BeforePluginUninstallEvent` / `PluginUninstalledEvent` | stays installed |
+| Host | schedule task | `BeforeScheduledTaskCreateEvent` / `ScheduledTaskCreatedEvent` | error to caller |
+| Host | remove scheduled task | `BeforeScheduledTaskRemoveEvent` / `ScheduledTaskRemovedEvent` | task kept |
+| Host | device paired / revoked | `DevicePairedEvent` / `DeviceRevokedEvent` | — (observe; audit) |
+| Host | inbound agent event | every `SessionEvent` (e.g. `ToolCallEvent`) + `BeforeAgentEventEvent` | still logged; veto only redacts from clients |
 | Client | send message | `BeforeMessageSendEvent` (rewrite text) | not sent |
 | Client | show notification | `BeforeNotificationEvent` (rewrite) | not shown |
+| Client | interrupt (stop) turn | `BeforeTurnCancelEvent` | turn keeps running |
+| Client | close session tab | `BeforeSessionCloseEvent` / `SessionClosedEvent` | tab stays open |
+| Client | activate session (navigate) | `SessionActivatedEvent` | — (observe) |
+| Client | retry / reconnect | `RetryRequestedEvent` | — (observe) |
+| Client | add attachment | `AttachmentAddedEvent` | — (observe) |
 | Client | open session/screen tab | `SessionTabOpenedEvent` / `CustomScreenOpenedEvent` | — (observe) |
+
+The inbound agent-event bridge is the one place spine events carry a session **fact** rather than a command: because `SessionEvent : IAgnesEvent`, every event the agent produces is dispatchable, so a plugin observes `ToolCallEvent`, `TurnEndedEvent`, etc. with full typing. It stays observe-by-default — you can't un-happen what the agent did — with a single cancelable `BeforeAgentEventEvent` that only **redacts** an event from clients (it is always appended to the durable log first, so history stays complete).
+
+Deferred (pure-config mutations, low interception value, spread across sync call sites): MCP preset add/remove/toggle and project save. Left off the spine until a plugin actually needs them, rather than bloating the surface.
 
 Each is a **published contract** once shipped: its shape is a compatibility surface. New actions are added the same mechanical way (one event record + one call-site dispatch), so the surface grows without the bus or any registry changing.
 

@@ -28,6 +28,46 @@ public sealed class SessionTabOpenedEvent(string sessionId) : IAgnesEvent
     public string SessionId { get; } = sessionId;
 }
 
+/// <summary>After the user switches to (activates) a session tab (observe-only) — client navigation, so a
+/// plugin can track focus/"currently viewing".</summary>
+public sealed class SessionActivatedEvent(string sessionId) : IAgnesEvent
+{
+    public string SessionId { get; } = sessionId;
+}
+
+/// <summary>Before a session tab is closed on this client. Veto keeps the tab open (e.g. a plugin guarding
+/// unsaved input). Client-only — closing a tab doesn't stop the session on the host.</summary>
+public sealed class BeforeSessionCloseEvent(string sessionId) : CancelableEvent
+{
+    public string SessionId { get; } = sessionId;
+}
+
+/// <summary>After a session tab has been closed on this client (observe-only).</summary>
+public sealed class SessionClosedEvent(string sessionId) : IAgnesEvent
+{
+    public string SessionId { get; } = sessionId;
+}
+
+/// <summary>Before the user interrupts the current turn from this client (the Stop button). Veto keeps the
+/// turn running (e.g. a plugin confirming interruption of a long non-idempotent operation).</summary>
+public sealed class BeforeTurnCancelEvent(string sessionId) : CancelableEvent
+{
+    public string SessionId { get; } = sessionId;
+}
+
+/// <summary>After the user asked to retry/reconnect a session from this client (observe-only).</summary>
+public sealed class RetryRequestedEvent(string sessionId) : IAgnesEvent
+{
+    public string SessionId { get; } = sessionId;
+}
+
+/// <summary>After an attachment has been added to the composer on this client (observe-only) — a plugin can
+/// react (e.g. warn on a large or sensitive file).</summary>
+public sealed class AttachmentAddedEvent(string sessionId) : IAgnesEvent
+{
+    public string SessionId { get; } = sessionId;
+}
+
 /// <summary>After a custom plugin screen is opened as a tab (observe-only).</summary>
 public sealed class CustomScreenOpenedEvent(string screenId) : IAgnesEvent
 {

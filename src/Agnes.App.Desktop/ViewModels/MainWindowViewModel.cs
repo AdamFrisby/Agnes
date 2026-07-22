@@ -109,7 +109,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ReopenArchivedCommand = new RelayCommand<SessionDescriptor>(d => { if (d is not null) { ReopenArchived(d); } });
         SelectGlobalHitCommand = new RelayCommand<GlobalHit>(SelectGlobalHit);
         ActivateSessionCommand = new RelayCommand<SessionDocument>(d => { if (d is not null) { _factory.SetActiveDockable(d); } });
-        CloseActiveTabCommand = new RelayCommand(CloseActiveTab);
+        CloseActiveTabCommand = new AsyncRelayCommand(CloseActiveTabAsync);
         ToggleReducedMotionCommand = new RelayCommand(() => ReducedMotion = !ReducedMotion);
         SetThemeCommand = new RelayCommand<string>(t => { if (t is not null) { Theme = t; } });
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
@@ -167,7 +167,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             FontScale = s switch { "small" => 0.9, "large" => 1.2, _ => 1.0 };
         });
-        _factory.ActiveDockableChanged += (_, _) => UpdateWindowTitle();
+        _factory.ActiveDockableChanged += (_, e) =>
+        {
+            UpdateWindowTitle();
+            // Client navigation: a plugin can track which session the user is viewing (observe-only).
+            if (e.Dockable is SessionDocument { Session.SessionId: { } sid })
+            {
+                _ = EnsureClientPlugins().EventBus.DispatchAsync(new SessionActivatedEvent(sid));
+            }
+        };
 
         Plugins = new PluginManagementViewModel(ActiveHost, _dispatcher);
     }
@@ -222,7 +230,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
-    public IRelayCommand CloseActiveTabCommand { get; }
+    public IAsyncRelayCommand CloseActiveTabCommand { get; }
     public IRelayCommand ToggleReducedMotionCommand { get; }
     public IRelayCommand<SessionDocument> ActivateSessionCommand { get; }
 
@@ -1411,13 +1419,31 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
-    private void CloseActiveTab()
+    private async Task CloseActiveTabAsync()
     {
-        if (_factory.DocumentDock?.ActiveDockable is SessionDocument doc)
+        if (_factory.DocumentDock?.ActiveDockable is not SessionDocument doc)
         {
+            return;
+        }
+
+        // A live session's tab can be guarded by a client plugin (BeforeSessionClose veto); an unstarted
+        // tab has no session id, so it just closes.
+        if (doc.Session?.SessionId is { } sid)
+        {
+            var before = await EnsureClientPlugins().EventBus.DispatchAsync(new BeforeSessionCloseEvent(sid));
+            if (before.IsCanceled)
+            {
+                return; // a plugin kept the tab open
+            }
+
             _factory.CloseDockable(doc);
             SaveState();
+            _ = EnsureClientPlugins().EventBus.DispatchAsync(new SessionClosedEvent(sid)); // observe-only
+            return;
         }
+
+        _factory.CloseDockable(doc);
+        SaveState();
     }
 
     public IRootDock Layout { get; }

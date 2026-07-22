@@ -785,6 +785,7 @@ public sealed class SessionViewModel : ObservableObject
     {
         Attachments.Add(attachment);
         Raise(nameof(HasAttachments));
+        _ = _bus.DispatchAsync(new Plugins.AttachmentAddedEvent(SessionId)); // observe-only
     }
 
     private void AddReference()
@@ -973,6 +974,8 @@ public sealed class SessionViewModel : ObservableObject
 
     private async Task RetryAsync()
     {
+        _ = _bus.DispatchAsync(new Plugins.RetryRequestedEvent(SessionId)); // observe-only
+
         if (Banner == SessionBanner.Interrupted && !string.IsNullOrWhiteSpace(_lastPrompt))
         {
             // Resend through the normal path so the user gets immediate feedback (the Running/thinking
@@ -1335,6 +1338,12 @@ public sealed class SessionViewModel : ObservableObject
 
     private async Task CancelAsync()
     {
+        var before = await _bus.DispatchAsync(new Plugins.BeforeTurnCancelEvent(SessionId));
+        if (before.IsCanceled)
+        {
+            return; // a plugin kept the turn running
+        }
+
         IsTurnActive = false;
         await _host.CancelAsync(SessionId);
     }
