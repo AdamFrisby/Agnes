@@ -81,6 +81,17 @@ var keypairAuthOptions = new KeypairAuthOptions
 builder.Services.AddSingleton(sp => new KeypairAuth(
     keypairAuthOptions, sp.GetRequiredService<ILoggerFactory>().CreateLogger<KeypairAuth>()));
 
+// ---- auth methods as built-in plugins (AC13): /auth/methods is driven from this registry ----
+builder.Services.AddSingleton<IAuthMethodProvider>(sp => new PairingAuthMethodProvider(sp.GetRequiredService<DeviceRegistry>()));
+builder.Services.AddSingleton<IAuthMethodProvider>(sp => new GitHubAuthMethodProvider(sp.GetRequiredService<GitHubIdentity>()));
+builder.Services.AddSingleton<IAuthMethodProvider>(sp => new KeypairAuthMethodProvider(sp.GetRequiredService<KeypairAuth>()));
+builder.Services.AddSingleton<PluginRegistry<IAuthMethodProvider>>(sp =>
+    new PluginRegistry<IAuthMethodProvider>(sp.GetServices<IAuthMethodProvider>(), m => m.MethodId));
+builder.Services.AddSingleton<IPluginRegistry<IAuthMethodProvider>>(sp => sp.GetRequiredService<PluginRegistry<IAuthMethodProvider>>());
+builder.Services.AddSingleton<IMutablePluginRegistry<IAuthMethodProvider>>(sp => sp.GetRequiredService<PluginRegistry<IAuthMethodProvider>>());
+builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
+    new Agnes.Host.Plugins.PluginPointMerger<IAuthMethodProvider>(sp.GetRequiredService<IMutablePluginRegistry<IAuthMethodProvider>>(), m => m.MethodId));
+
 // ---- rate limiting: cap the auth bootstrap endpoints per-IP and globally ----
 var authRateLimit = new AuthRateLimitOptions
 {
@@ -399,12 +410,17 @@ app.MapHub<AgnesHub>(WireProtocol.HubPath);
 // ---- device auth + management ----
 // Advertise which bootstrap methods this host offers, so a client shows only the enabled ones. All
 // public info — the GitHub client id is an OAuth *public* client id, not a secret.
-app.MapGet("/auth/methods", (GitHubAuthOptions gh, KeypairAuth keypair) =>
-    Results.Ok(new AuthMethods(
-        Pairing: tokens.PairingEnabled,
-        GitHub: gh.IsUsable,
-        GitHubClientId: gh.IsUsable ? gh.ClientId : null,
-        Keypair: keypair.IsUsable)));
+// Sourced from the auth-method plugin registry (AC13): the same AuthMethods wire shape, but the set of
+// methods and their enabled state now come from registered IAuthMethodProvider built-ins.
+app.MapGet("/auth/methods", (IPluginRegistry<IAuthMethodProvider> methods) =>
+{
+    var github = methods.Find("github");
+    return Results.Ok(new AuthMethods(
+        Pairing: methods.Find("pairing")?.IsEnabled ?? false,
+        GitHub: github?.IsEnabled ?? false,
+        GitHubClientId: (github?.IsEnabled ?? false) ? github!.ClientMetadata.GetValueOrDefault("clientId") : null,
+        Keypair: methods.Find("keypair")?.IsEnabled ?? false));
+});
 
 // Pair a new device with the current code; returns a durable per-device token (shown once).
 app.MapPost("/pair", (PairRequest request) =>
