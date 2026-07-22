@@ -35,6 +35,9 @@ public partial class SessionTabView : UserControl
             HookSession();
         }
 
+        // Activating a tab re-attaches its view; land at the latest message rather than wherever it was.
+        AttachedToVisualTree += (_, _) => RequestScrollToBottom();
+
         // Drop files (or an image) anywhere on the session to attach them to the composer.
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
@@ -122,6 +125,7 @@ public partial class SessionTabView : UserControl
         {
             _session.PropertyChanged -= OnSessionPropertyChanged;
             _session.ScrollToRequested -= OnScrollToRequested;
+            _session.ScrollToBottomRequested -= OnScrollToBottomRequested;
             _session.Items.CollectionChanged -= OnTranscriptItemsChanged;
         }
 
@@ -130,14 +134,30 @@ public partial class SessionTabView : UserControl
         {
             _session.PropertyChanged += OnSessionPropertyChanged;
             _session.ScrollToRequested += OnScrollToRequested;
+            _session.ScrollToBottomRequested += OnScrollToBottomRequested;
             _session.Items.CollectionChanged += OnTranscriptItemsChanged;
-            _stickToBottom = true;
-            // The ListBox's ScrollViewer only exists after the template realizes; defer the hook + a
-            // scroll-to-bottom so a freshly opened session starts pinned at the latest message.
-            Dispatcher.UIThread.Post(() => { EnsureScrollHooked(); ScrollToBottom(); }, DispatcherPriority.Background);
+            RequestScrollToBottom(); // a freshly attached session starts at the latest message
         }
 
         UpdateColumns();
+    }
+
+    private void OnScrollToBottomRequested() => RequestScrollToBottom();
+
+    // Pin to the very bottom and remember we're pinned. Deferred to a background pass so it works even
+    // before the ScrollViewer / its extent are realised (session open, tab activation, agent switch).
+    private void RequestScrollToBottom()
+    {
+        _stickToBottom = true;
+        Dispatcher.UIThread.Post(() => { EnsureScrollHooked(); ScrollToEndNow(); }, DispatcherPriority.Background);
+    }
+
+    private void ScrollToEndNow()
+    {
+        if (_transcriptScroll is { } sv)
+        {
+            sv.Offset = new Vector(sv.Offset.X, sv.Extent.Height); // clamped to max → the true bottom
+        }
     }
 
     private void EnsureScrollHooked()
@@ -154,16 +174,31 @@ public partial class SessionTabView : UserControl
         }
     }
 
-    // Keep "stuck to bottom" true only while the user is at (or near) the end, so auto-scroll never
-    // fights a user who has scrolled up to read history.
     private void OnTranscriptScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
-        if (_transcriptScroll is { } sv)
+        if (_transcriptScroll is not { } sv)
         {
-            var distanceToBottom = sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height);
-            _stickToBottom = distanceToBottom < 48;
-            UpdateStickyHeader();
+            return;
         }
+
+        // Content grew/settled (streaming text, a new row, or the first layout): if we're pinned, follow
+        // it all the way to the true bottom — content keeps growing after the offset was set, which is why
+        // targeting the last item once only got ~75% of the way.
+        if (System.Math.Abs(e.ExtentDelta.Y) > 0.5)
+        {
+            if (_stickToBottom)
+            {
+                ScrollToEndNow();
+            }
+        }
+        // The user (or our own pin) moved the offset with no content change: re-evaluate whether we're at
+        // the bottom, so scrolling up releases the pin and scrolling back to the end re-arms it.
+        else if (System.Math.Abs(e.OffsetDelta.Y) > 0.5)
+        {
+            _stickToBottom = sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height) < 24;
+        }
+
+        UpdateStickyHeader();
     }
 
     private void OnTranscriptItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -171,18 +206,10 @@ public partial class SessionTabView : UserControl
         EnsureScrollHooked();
         if (e.Action == NotifyCollectionChangedAction.Add && _stickToBottom)
         {
-            Dispatcher.UIThread.Post(ScrollToBottom, DispatcherPriority.Background);
+            Dispatcher.UIThread.Post(ScrollToEndNow, DispatcherPriority.Background);
         }
 
         Dispatcher.UIThread.Post(UpdateStickyHeader, DispatcherPriority.Background);
-    }
-
-    private void ScrollToBottom()
-    {
-        if (_transcript is { ItemCount: > 0 } list)
-        {
-            list.ScrollIntoView(list.ItemCount - 1);
-        }
     }
 
     // Pin the last message above the viewport when a run of tool calls has pushed every message off-screen.

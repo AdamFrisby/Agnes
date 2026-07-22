@@ -221,7 +221,11 @@ public sealed class SessionViewModel : ObservableObject
 
         Raise(nameof(DisplayItems));
         Raise(nameof(IsTranscriptEmpty));
+        ScrollToBottomRequested?.Invoke(); // switching conversations lands at the latest, not the top
     }
+
+    /// <summary>Raised when the view should jump to the bottom of the transcript (agent/tab switch, open).</summary>
+    public event Action? ScrollToBottomRequested;
 
     /// <summary>
     /// A shareable reference to this session for cross-device handoff. Any Agnes client can
