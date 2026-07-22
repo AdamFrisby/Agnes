@@ -108,6 +108,15 @@ var mcpFile = builder.Configuration["Agnes:McpFile"]
 builder.Services.AddSingleton(sp => new McpRegistry(
     mcpFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpRegistry>()));
 
+// ---- MCP presets as built-in plugins (AC13): curated quick-install templates, extensible by plugins ----
+builder.Services.AddSingleton<IMcpPresetProvider, CuratedMcpPresetProvider>();
+builder.Services.AddSingleton<PluginRegistry<IMcpPresetProvider>>(sp =>
+    new PluginRegistry<IMcpPresetProvider>(sp.GetServices<IMcpPresetProvider>(), p => p.Id));
+builder.Services.AddSingleton<IPluginRegistry<IMcpPresetProvider>>(sp => sp.GetRequiredService<PluginRegistry<IMcpPresetProvider>>());
+builder.Services.AddSingleton<IMutablePluginRegistry<IMcpPresetProvider>>(sp => sp.GetRequiredService<PluginRegistry<IMcpPresetProvider>>());
+builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
+    new Agnes.Host.Plugins.PluginPointMerger<IMcpPresetProvider>(sp.GetRequiredService<IMutablePluginRegistry<IMcpPresetProvider>>(), p => p.Id));
+
 // ---- projects: per-repo bundles (sandbox + MCP + GitHub account + defaults) a session inherits ----
 var projectsFile = builder.Configuration["Agnes:ProjectsFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "projects.json");
@@ -542,6 +551,12 @@ var mcp = app.Services.GetRequiredService<McpRegistry>();
 
 app.MapGet("/mcp", (HttpContext ctx) =>
     Authorized(ctx, tokens) ? Results.Ok(mcp.List()) : Results.Unauthorized());
+
+// Curated MCP presets, aggregated from every registered IMcpPresetProvider plugin (AC13).
+app.MapGet("/mcp/presets", (HttpContext ctx, IPluginRegistry<IMcpPresetProvider> presets) =>
+    Authorized(ctx, tokens)
+        ? Results.Ok(presets.All.SelectMany(p => p.Presets).ToArray())
+        : Results.Unauthorized());
 
 app.MapPost("/mcp", (HttpContext ctx, McpServerRequest request) =>
     Authorized(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());
