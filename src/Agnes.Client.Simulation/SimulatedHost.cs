@@ -312,6 +312,114 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.CompletedTask;
     }
 
+    // ---- plugin management (in-memory: a small fake feed + an installed store with real consent semantics) ----
+
+    private sealed record SimPackage(string PackageId, string DisplayName, string Description, string Publisher,
+        IReadOnlyList<string> Versions, bool IsReviewed, IReadOnlyList<string> Capabilities);
+
+    private static readonly SimPackage[] Catalog =
+    [
+        new("Agnes.Plugins.SlackNotifications", "Slack notifications", "Push turn-ready and permission alerts to a Slack channel.",
+            "agnes-community", ["1.2.0", "1.1.0"], IsReviewed: true, ["network"]),
+        new("Agnes.Plugins.GitLabHost", "GitLab host", "Detect GitLab remotes and list/checkout merge requests.",
+            "agnes-community", ["0.9.1"], IsReviewed: false, ["network"]),
+        new("Agnes.Plugins.LocalPrompts", "Local prompt library", "A prompt registry backed by a local folder — no special access.",
+            "agnes-community", ["2.0.0"], IsReviewed: true, []),
+    ];
+
+    private sealed class SimInstalled
+    {
+        public required string PackageId { get; init; }
+        public required string Version { get; set; }
+        public bool Enabled { get; set; } = true;
+        public required IReadOnlyList<string> Capabilities { get; init; }
+        public Dictionary<string, string> Settings { get; } = [];
+    }
+
+    private readonly ConcurrentDictionary<string, SimInstalled> _plugins = new();
+
+    public Task<IReadOnlyList<PluginSearchResultDto>> SearchPluginsAsync(string query)
+    {
+        var q = (query ?? string.Empty).Trim();
+        var hits = Catalog
+            .Where(p => q.Length == 0
+                || p.PackageId.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || p.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || p.Description.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Select(p => new PluginSearchResultDto(p.PackageId, p.DisplayName, p.Description, p.Publisher, p.Versions, p.IsReviewed))
+            .ToArray();
+        return Task.FromResult<IReadOnlyList<PluginSearchResultDto>>(hits);
+    }
+
+    public Task<PluginInstallOutcome> InstallPluginAsync(InstallPluginRequest request)
+    {
+        var pkg = Catalog.FirstOrDefault(p => p.PackageId == request.PackageId);
+        if (pkg is null)
+        {
+            return Task.FromResult(new PluginInstallOutcome(false, null, false, [], $"No such package '{request.PackageId}'."));
+        }
+
+        // Consent: refuse (without running anything) until every declared capability has been granted.
+        var missing = pkg.Capabilities.Except(request.GrantedCapabilities).ToArray();
+        if (missing.Length > 0)
+        {
+            return Task.FromResult(new PluginInstallOutcome(false, null, true, missing, null));
+        }
+
+        var version = request.Version ?? pkg.Versions[0];
+        _plugins[pkg.PackageId] = new SimInstalled { PackageId = pkg.PackageId, Version = version, Capabilities = pkg.Capabilities };
+        return Task.FromResult(new PluginInstallOutcome(true, ToDto(pkg.PackageId), false, [], null));
+    }
+
+    public Task<PluginInstallOutcome> UpdatePluginAsync(string pluginId, IReadOnlyList<string> grantedCapabilities)
+    {
+        if (!_plugins.TryGetValue(pluginId, out var installed))
+        {
+            return Task.FromResult(new PluginInstallOutcome(false, null, false, [], $"'{pluginId}' is not installed."));
+        }
+
+        var pkg = Catalog.First(p => p.PackageId == installed.PackageId);
+        var missing = pkg.Capabilities.Except(grantedCapabilities).ToArray();
+        if (missing.Length > 0)
+        {
+            return Task.FromResult(new PluginInstallOutcome(false, null, true, missing, null));
+        }
+
+        installed.Version = pkg.Versions[0];
+        return Task.FromResult(new PluginInstallOutcome(true, ToDto(pluginId), false, [], null));
+    }
+
+    public Task SetPluginEnabledAsync(string pluginId, bool enabled)
+    {
+        if (_plugins.TryGetValue(pluginId, out var p)) { p.Enabled = enabled; }
+        return Task.CompletedTask;
+    }
+
+    public Task ConfigurePluginAsync(string pluginId, IReadOnlyDictionary<string, string> settings)
+    {
+        if (_plugins.TryGetValue(pluginId, out var p))
+        {
+            p.Settings.Clear();
+            foreach (var kv in settings) { p.Settings[kv.Key] = kv.Value; }
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task UninstallPluginAsync(string pluginId)
+    {
+        _plugins.TryRemove(pluginId, out _);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPluginsAsync()
+        => Task.FromResult<IReadOnlyList<InstalledPluginDto>>(_plugins.Keys.OrderBy(k => k).Select(ToDto).ToArray());
+
+    private InstalledPluginDto ToDto(string pluginId)
+    {
+        var p = _plugins[pluginId];
+        return new InstalledPluginDto(pluginId, p.Version, p.Enabled, p.Capabilities, UpdateAvailable: false);
+    }
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     // ---- scripted behavior ----

@@ -121,6 +121,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             new SettingsCategoryVm("sandboxes", "Sandboxes", "📦", "sandbox vm incus running stopped resume restart delete reap orphan cleanup lifecycle"),
             // Per-project
             new SettingsCategoryVm("projects", "Projects", "📁", "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
+            new SettingsCategoryVm("plugins", "Plugins", "🧩", "plugin plugins extension nuget install uninstall browse marketplace capability consent provider adapter transport voice notification enable disable configure"),
         ];
         SettingsCategories[0].IsSelected = true;
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
@@ -142,7 +143,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             FontScale = s switch { "small" => 0.9, "large" => 1.2, _ => 1.0 };
         });
         _factory.ActiveDockableChanged += (_, _) => UpdateWindowTitle();
+
+        Plugins = new PluginManagementViewModel(ActiveHost, _dispatcher);
     }
+
+    /// <summary>The plugin-management surface for the active host (Browse / install / configure / enable).</summary>
+    public PluginManagementViewModel Plugins { get; }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
     public IRelayCommand ClosePaletteCommand { get; }
@@ -356,6 +362,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         return any is not null ? (any.Host!.HostUrl, any.HostToken) : null;
     }
 
+    /// <summary>The active host connection for hub-based management (plugins), preferring the active
+    /// session's host and falling back to any connected host among the open tabs.</summary>
+    private IAgnesHost? ActiveHost()
+    {
+        if (_factory.DocumentDock?.ActiveDockable is SessionDocument active && active.Host is { } h)
+        {
+            return h;
+        }
+
+        return AllDocuments().Select(d => d.Host).FirstOrDefault(x => x is not null);
+    }
+
     private async Task LoadDevicesAsync()
     {
         var target = ActiveHttpHost();
@@ -484,6 +502,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatDevices => SettingsCategory == "devices";
     public bool CatSandboxes => SettingsCategory == "sandboxes";
     public bool CatProjects => SettingsCategory == "projects";
+    public bool CatPlugins => SettingsCategory == "plugins";
 
     /// <summary>The connected host these host-scoped settings apply to (e.g. GitHub, Devices, Projects).</summary>
     public string ActiveHostName => ActiveHttpHost() is { } t
@@ -503,6 +522,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatDevices));
         OnPropertyChanged(nameof(CatSandboxes));
         OnPropertyChanged(nameof(CatProjects));
+        OnPropertyChanged(nameof(CatPlugins));
         OnPropertyChanged(nameof(ActiveHostName));
         if (value == "projects" && SelectedProject is null)
         {
@@ -511,6 +531,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         else if (value == "sandboxes")
         {
             _ = LoadSandboxesAsync();
+        }
+        else if (value == "plugins")
+        {
+            _ = Plugins.RefreshInstalledAsync();
         }
     }
 
