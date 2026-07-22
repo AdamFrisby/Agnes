@@ -24,6 +24,8 @@ internal sealed class HostSession : IAsyncDisposable
     // client's answer — kept apart from agent-originated ones, which are answered by the agent.
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _hostPermissions = new();
 
+    private readonly Agnes.Abstractions.Events.IEventBus _bus;
+
     public HostSession(
         string sessionId,
         string adapterId,
@@ -31,7 +33,8 @@ internal sealed class HostSession : IAsyncDisposable
         IAgentSession agent,
         IEventStore store,
         ISessionBroadcaster broadcaster,
-        ILogger logger)
+        ILogger logger,
+        Agnes.Abstractions.Events.IEventBus? bus = null)
     {
         SessionId = sessionId;
         AdapterId = adapterId;
@@ -40,6 +43,7 @@ internal sealed class HostSession : IAsyncDisposable
         _store = store;
         _broadcaster = broadcaster;
         _logger = logger;
+        _bus = bus ?? new Agnes.Abstractions.Events.EventBus();
         _pump = Task.Run(PumpAsync);
     }
 
@@ -203,8 +207,18 @@ internal sealed class HostSession : IAsyncDisposable
 
     private async Task AppendAndPublishAsync(SessionEvent @event)
     {
+        // Redaction hook: a plugin may suppress this event from reaching clients (still logged).
+        var gate = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeAgentEventEvent(SessionId, @event)).ConfigureAwait(false);
+
         var stored = await _store.AppendAsync(SessionId, @event, _cts.Token).ConfigureAwait(false);
-        await _broadcaster.PublishAsync(SessionId, stored).ConfigureAwait(false);
+        if (!gate.IsCanceled)
+        {
+            await _broadcaster.PublishAsync(SessionId, stored).ConfigureAwait(false);
+        }
+
+        // Every inbound agent event is dispatchable on the spine with full typing (SessionEvent : IAgnesEvent),
+        // so a plugin can observe ToolCallEvent, TurnEndedEvent, etc. directly.
+        await _bus.DispatchAsync(stored).ConfigureAwait(false);
     }
 
     /// <summary>Records a forwarded MCP tool call in the session log (audit; from the forward proxy).</summary>

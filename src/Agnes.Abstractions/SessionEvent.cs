@@ -65,7 +65,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(McpToolCallEvent), "mcp_tool_call")]
 [JsonDerivedType(typeof(GitCredentialEvent), "git_credential")]
 [JsonDerivedType(typeof(SessionTitleEvent), "session_title")]
-public abstract record SessionEvent
+public abstract record SessionEvent : Events.IAgnesEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
     public long Sequence { get; init; }

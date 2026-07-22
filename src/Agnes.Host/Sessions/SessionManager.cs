@@ -748,7 +748,7 @@ public sealed class SessionManager : IAsyncDisposable
     {
         var session = new HostSession(
             sessionId, adapterId, workingDirectory, agent, _store, _broadcaster,
-            _loggerFactory.CreateLogger<HostSession>())
+            _loggerFactory.CreateLogger<HostSession>(), _bus)
         {
             Faulted = () => _ = RecoverAgentAsync(sessionId),
             // Persist the agent's real session id the moment it reports one, so --resume works reliably.
