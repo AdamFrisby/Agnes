@@ -172,6 +172,28 @@ A small, host-owned catalog of capability ids is worth building once every plugi
 - **AC12** — Given a client paired to a remote host, performing search/install/enable/disable/configure/uninstall from that client produces the same end state on the host as performing the same action from a client running locally on the host machine.
 - **AC13** - Review the existing systems and design, and migrate them to the plugin system as built-in plugins. Verify that there are no chunks of functionality remaining that could become plugins.
 
+## AC13 migration status
+
+Every existing subsystem that is plugin-shaped now flows through `IPluginRegistry<T>` with its current
+behavior registered as built-in plugin(s), so a new backend is a registered provider (or a NuGet plugin
+via the merger), not a core edit:
+
+| Plugin-point | Built-in(s) | Notes |
+|---|---|---|
+| `IAgentAdapter` | Claude Code (ACP), OpenCode (ACP), Codex (app-server), Native (stream-json) | Was already migrated |
+| `ISandboxProvider` | Incus | Was already migrated |
+| `IEventStoreProvider` | `sqlite`, `in-memory` | Selected by `Agnes:EventStore:Provider`; startup-only (no merger) |
+| `IAuthMethodProvider` | pairing, GitHub device-flow, keypair | `/auth/methods` reads the registry; token-issuing endpoints unchanged |
+| `IAutomationTrigger` | interval | `ScheduledTaskManager` due-check delegates to the registered trigger |
+| `IGitHostProvider` | GitHub | Forge identification via the registry; `GitRemote` parsing stays generic |
+| `IMcpPresetProvider` | curated | `GET /mcp/presets` aggregates providers; user-configured `McpRegistry` unchanged |
+| `ITransportProvider` | direct | Reachability/address seam; SignalR hub binding unchanged |
+
+Remaining spec-table interfaces (`ISecureChannelProvider`, `IVoiceProvider`, `IPromptRegistryProvider`,
+`ISharingBackend`, `IMemoryIndexProvider`, `IBugReportSink`, host-side `INotificationChannel`) back
+features **not built yet** — there is no existing functionality to migrate, so they are legitimately out
+of AC13's scope and will be introduced as plugin-points when their features land.
+
 ## Open questions
 
 - Third-party plugin loading isolation beyond `AssemblyLoadContext` (out-of-process, or reusing `Agnes.Sandbox`) is named above as a future hardening tier rather than resolved here — worth revisiting once there's a concrete plugin category that actually needs it, rather than over-building isolation for the common case up front.
