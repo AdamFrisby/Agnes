@@ -376,4 +376,45 @@ public class SandboxWiringTests
         Assert.Null(adapter.LastOptions!.Sandbox);
         Assert.Equal("/tmp/work", adapter.LastOptions.WorkingDirectory);
     }
+
+    [Fact]
+    public async Task Restored_sandboxed_session_resumes_on_prompt_by_reattaching_its_vm()
+    {
+        var store = new InMemoryEventStore();
+        var regPath = Path.Combine(Path.GetTempPath(), "agnes-sbxreg-" + Guid.NewGuid().ToString("n") + ".json");
+        try
+        {
+            string sessionId;
+            await using (var manager = new SessionManager(
+                [new ScriptedAgentAdapter()], store, new NullBroadcaster(), NullLoggerFactory.Instance,
+                new FakeSandboxProvider(), [new FakeCredentialProvider()],
+                sandboxRegistry: new SandboxRegistry(regPath)))
+            {
+                var info = await manager.OpenSessionAsync("scripted", "/tmp/work");
+                sessionId = info.SessionId;
+                Assert.NotNull(info.Sandbox); // provisioned + persisted to the registry file
+            }
+
+            // ---- host "restart": a new manager over the same store + registry file, no live VM handles ----
+            var adapter2 = new ScriptedAgentAdapter();
+            adapter2.Session.OnPrompt = (_, s) => { s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
+            var sandboxes2 = new FakeSandboxProvider();
+            await using var resumed = new SessionManager(
+                [adapter2], store, new NullBroadcaster(), NullLoggerFactory.Instance,
+                sandboxes2, [new FakeCredentialProvider()],
+                sandboxRegistry: new SandboxRegistry(regPath)); // loads the persisted VM record
+            await resumed.RestoreAsync();
+
+            // Prompting a restored sandboxed session now re-attaches its VM (by name) instead of erroring.
+            await resumed.PromptAsync(sessionId, [new TextContent("continue")]);
+
+            Assert.NotNull(adapter2.LastOptions);
+            Assert.NotNull(adapter2.LastOptions!.Sandbox); // relaunched INSIDE the re-attached sandbox
+            Assert.Equal("/work", adapter2.LastOptions.WorkingDirectory);
+        }
+        finally
+        {
+            try { File.Delete(regPath); } catch { /* best effort */ }
+        }
+    }
 }

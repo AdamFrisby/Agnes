@@ -599,15 +599,27 @@ public sealed class SessionManager : IAsyncDisposable
                 throw new InvalidOperationException($"Adapter '{record.AdapterId}' for session '{sessionId}' is no longer registered.");
             }
 
-            // A sandboxed session whose VM handle is gone (host restarted) can't be re-attached here yet.
-            // But if the VM is still live (e.g. only the CLI crashed in place), relaunch + resume it below.
-            if (record.Sandboxed && !_sandboxBySession.ContainsKey(sessionId))
+            // A sandboxed session needs its VM. We can relaunch + resume it when we still hold the live
+            // handle (only the CLI died), OR the VM is recorded in the persisted registry (host restarted
+            // — re-attach it by name below). Only give up when the VM truly can't be located.
+            var canReattachSandbox = _sandboxBySession.ContainsKey(sessionId)
+                || (_sandboxes is not null && _sandboxRegistry?.Get(sessionId) is not null);
+            if (record.Sandboxed && !canReattachSandbox)
             {
                 var notice = await _store.AppendAsync(sessionId, new NoticeEvent(
-                    "This sandboxed session can't be resumed after a host restart yet — fork it to continue in a new session.",
+                    "This sandboxed session can't be resumed — its sandbox VM is no longer available. Fork it to continue in a new session.",
                     IsError: true)).ConfigureAwait(false);
                 await _broadcaster.PublishAsync(sessionId, notice).ConfigureAwait(false);
-                throw new InvalidOperationException("Sandboxed sessions cannot be resumed after a restart.");
+                throw new InvalidOperationException("Sandbox VM not available for resume.");
+            }
+
+            // A cold-start re-attach (VM not currently held) can take a while — tell the client so the wait
+            // isn't silent while the VM boots and the agent re-launches.
+            if (record.Sandboxed && !_sandboxBySession.ContainsKey(sessionId))
+            {
+                var starting = await _store.AppendAsync(sessionId, new NoticeEvent(
+                    "Resuming the sandbox and reconnecting the agent…")).ConfigureAwait(false);
+                await _broadcaster.PublishAsync(sessionId, starting).ConfigureAwait(false);
             }
 
             _logger.LogInformation("Re-attaching agent for restored session {SessionId} (resume={Resume})", sessionId, record.AgentSessionId);

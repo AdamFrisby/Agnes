@@ -931,9 +931,10 @@ public sealed class SessionViewModel : ObservableObject
     {
         if (Banner == SessionBanner.Interrupted && !string.IsNullOrWhiteSpace(_lastPrompt))
         {
-            _interrupted = false;
-            UpdateBanner();
-            await _host.PromptAsync(SessionId, [new TextContent(_lastPrompt)]);
+            // Resend through the normal path so the user gets immediate feedback (the Running/thinking
+            // indicator + Stop button) while the host resumes — which for a restored sandboxed session can
+            // take a while (cold-starting the VM + re-attaching) — and so a failure surfaces as a banner.
+            await SubmitAsync(_lastPrompt);
             return;
         }
 
