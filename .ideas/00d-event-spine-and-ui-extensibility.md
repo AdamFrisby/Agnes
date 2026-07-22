@@ -156,6 +156,28 @@ The client plugin set aggregates `IUiContribution`, `IConversationItemRenderer`,
 
 MVVM heads resolve a view-model to a view via data templates / a view locator. For plugin-provided view-models to render, the head's view locator must be extended to also look in plugin assemblies (or the plugin supplies its view type explicitly). On the desktop head (dynamic client plugins), a plugin ships its own views; the locator resolves them from the plugin assembly. On locked-down heads (iOS/WASM, static plugins only), the same applies but the views are compiled in. This is the one genuinely head-specific, runtime-heavy part; the registries above are head-agnostic and unit-testable, and the desktop view-resolution is wired as the concrete first implementation.
 
+## The retrofitted action event surface (implemented)
+
+Modularity, mirroring the plugin system: the `EventBus` is a small generic dispatcher that knows about **no** concrete events; events are grouped by domain into their own files (`SessionEvents`, `InteractionEvents`, `GitEvents`, client `ClientEvents`), not one monolith; dispatch happens at **each action's own call site**, not in a central router. Plugins bind through the same merger as every other plugin-point, and — because the bus is generic and the contracts live in `Agnes.Abstractions.Events` (referenced by plugins) — **a plugin can define, dispatch, and handle its own event types** with zero core changes (the bus is injected into host plugin DI and exposed on the client `ClientPluginCollector`).
+
+Non-trivial actions now flow through the spine (not direct calls). `Before*` = cancelable/mutable; `*ed` = observe-only:
+
+| Side | Action | Event(s) | Veto behaviour |
+|---|---|---|---|
+| Host | open session | `BeforeSessionOpenEvent` (redirect adapter/dir) / `SessionOpenedEvent` | error to caller |
+| Host | stop session | `BeforeSessionStopEvent` / `SessionStoppedEvent` | stays running |
+| Host | fork session | `BeforeSessionForkEvent` (retarget dir) | error to caller |
+| Host | prompt | `BeforePromptEvent` (rewrite content) | not sent; notice emitted |
+| Host | permission response | `BeforePermissionResponseEvent` (override option) | not forwarded |
+| Host | question answer | `BeforeQuestionAnswerEvent` (rewrite answers) | not forwarded |
+| Host | mode change | `BeforeModeChangeEvent` (override mode) | no change |
+| Host | git commit | `BeforeGitCommitEvent` (rewrite message) / `GitCommittedEvent` | failed result |
+| Client | send message | `BeforeMessageSendEvent` (rewrite text) | not sent |
+| Client | show notification | `BeforeNotificationEvent` (rewrite) | not shown |
+| Client | open session/screen tab | `SessionTabOpenedEvent` / `CustomScreenOpenedEvent` | — (observe) |
+
+Each is a **published contract** once shipped: its shape is a compatibility surface. New actions are added the same mechanical way (one event record + one call-site dispatch), so the surface grows without the bus or any registry changing.
+
 ## Acceptance criteria
 
 - **AC1** — `DispatchAsync` runs interceptors in `Order`; an interceptor mutating the event's payload is visible to the caller after dispatch; an interceptor calling `Cancel()` sets `IsCanceled`, skips remaining interceptors, and suppresses observers.
