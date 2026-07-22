@@ -112,6 +112,9 @@ public sealed class HostConnection : IAgnesHost
     public Task CancelAsync(string sessionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.Cancel), sessionId);
 
+    public Task RestartAgentAsync(string sessionId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RestartAgent), sessionId);
+
     public Task SetModeAsync(string sessionId, string modeId)
         => _hub.InvokeAsync(nameof(IAgnesServer.SetMode), sessionId, modeId);
 

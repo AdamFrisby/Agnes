@@ -36,7 +36,12 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<string, (string Repo, string Worktree)> _worktrees = new();
     private readonly ConcurrentDictionary<string, ISandbox> _sandboxBySession = new();
     private readonly ConcurrentDictionary<string, SessionRecord> _catalog = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastRecoveryAt = new();
     private readonly SemaphoreSlim _attachGate = new(1, 1);
+
+    /// <summary>If a just-restarted agent dies again within this window, stop auto-restarting and ask the
+    /// user to restart manually — so a genuinely crash-looping agent doesn't thrash.</summary>
+    private static readonly TimeSpan RecoveryDebounce = TimeSpan.FromSeconds(60);
 
     public SessionManager(
         IEnumerable<IAgentAdapter> adapters,
@@ -342,10 +347,7 @@ public sealed class SessionManager : IAsyncDisposable
             },
             cancellationToken).ConfigureAwait(false);
 
-        var session = new HostSession(
-            sessionId, adapterId, effectiveDirectory, agent, _store, _broadcaster,
-            _loggerFactory.CreateLogger<HostSession>());
-        _sessions[sessionId] = session;
+        var session = TrackSession(sessionId, adapterId, effectiveDirectory, agent);
         _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
 
         // Catalogue the session so it survives a host restart (agent session id is updated as it runs).
@@ -592,13 +594,14 @@ public sealed class SessionManager : IAsyncDisposable
                 return live;
             }
 
-            if (!_adapters.TryGetValue(record.AdapterId, out var adapter))
+            if (!_adapters.ContainsKey(record.AdapterId))
             {
                 throw new InvalidOperationException($"Adapter '{record.AdapterId}' for session '{sessionId}' is no longer registered.");
             }
 
-            // Sandboxed sessions can't be re-attached across a restart yet (the VM handle is lost).
-            if (record.Sandboxed)
+            // A sandboxed session whose VM handle is gone (host restarted) can't be re-attached here yet.
+            // But if the VM is still live (e.g. only the CLI crashed in place), relaunch + resume it below.
+            if (record.Sandboxed && !_sandboxBySession.ContainsKey(sessionId))
             {
                 var notice = await _store.AppendAsync(sessionId, new NoticeEvent(
                     "This sandboxed session can't be resumed after a host restart yet — fork it to continue in a new session.",
@@ -608,19 +611,7 @@ public sealed class SessionManager : IAsyncDisposable
             }
 
             _logger.LogInformation("Re-attaching agent for restored session {SessionId} (resume={Resume})", sessionId, record.AgentSessionId);
-            var agent = await adapter.StartSessionAsync(
-                new AgentSessionOptions
-                {
-                    WorkingDirectory = record.WorkingDirectory,
-                    SkipPermissions = record.SkipPermissions,
-                    ResumeSessionId = record.AgentSessionId,
-                },
-                CancellationToken.None).ConfigureAwait(false);
-
-            var session = new HostSession(
-                sessionId, record.AdapterId, record.WorkingDirectory, agent, _store, _broadcaster,
-                _loggerFactory.CreateLogger<HostSession>());
-            _sessions[sessionId] = session;
+            var session = await RelaunchAgentAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
             var reconnected = await _store.AppendAsync(sessionId, new NoticeEvent(
                 record.AgentSessionId is null ? "Reconnected with a fresh agent." : "Reconnected and resumed the agent.")).ConfigureAwait(false);
             await _broadcaster.PublishAsync(sessionId, reconnected).ConfigureAwait(false);
@@ -630,6 +621,164 @@ public sealed class SessionManager : IAsyncDisposable
         {
             _attachGate.Release();
         }
+    }
+
+    /// <summary>
+    /// (Re)launches the agent for an already-catalogued session under the SAME session id, resuming the
+    /// agent's own conversation (<c>--resume</c>) when its session id is known. Reuses a live sandbox
+    /// handle (only the CLI died), else re-attaches the VM by name (cold-start), else runs on the host.
+    /// Installs and returns the new <see cref="HostSession"/>. Callers hold <see cref="_attachGate"/>.
+    /// </summary>
+    private async Task<HostSession> RelaunchAgentAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        if (!_catalog.TryGetValue(sessionId, out var record))
+        {
+            throw new InvalidOperationException($"Unknown session '{sessionId}'.");
+        }
+
+        if (!_adapters.TryGetValue(record.AdapterId, out var adapter))
+        {
+            throw new InvalidOperationException($"Adapter '{record.AdapterId}' for session '{sessionId}' is no longer registered.");
+        }
+
+        var effectiveDirectory = record.WorkingDirectory;
+        var project = await ResolveProjectForAsync(sessionId, effectiveDirectory, cancellationToken).ConfigureAwait(false);
+
+        ISandbox? sandbox = null;
+        string? mcpConfigPath;
+        if (record.Sandboxed && _sandboxes is not null)
+        {
+            var sandboxRecord = _sandboxRegistry?.Get(sessionId);
+            if (_sandboxBySession.TryGetValue(sessionId, out var existing))
+            {
+                sandbox = existing; // VM still up (the CLI died in place) — reuse it.
+            }
+            else if (sandboxRecord is not null)
+            {
+                sandbox = await _sandboxes.AttachAsync(
+                    sandboxRecord.VmName, new SandboxSpec { HostWorkingDirectory = effectiveDirectory }, start: true, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                throw new InvalidOperationException($"No sandbox recorded for session '{sessionId}'.");
+            }
+
+            _sandboxBySession[sessionId] = sandbox;
+            // Re-stamp credentials + MCP + forward token: the guest's /run is tmpfs (lost on a VM
+            // cold-start) and re-provisioning is idempotent when the VM was still up.
+            mcpConfigPath = await ProvisionSandboxContentsAsync(
+                sandbox, sessionId, record.AdapterId, effectiveDirectory, project,
+                record.SkipPermissions, sandboxRecord?.McpApproval ?? "Ask", sandboxRecord?.GitCredentialMode ?? "Off", cancellationToken).ConfigureAwait(false);
+            _sandboxRegistry?.SetState(sessionId, "running", DateTimeOffset.UtcNow);
+        }
+        else
+        {
+            mcpConfigPath = await MaterializeHostMcpAsync(record.AdapterId, project, cancellationToken).ConfigureAwait(false);
+        }
+
+        var agent = await adapter.StartSessionAsync(
+            new AgentSessionOptions
+            {
+                WorkingDirectory = sandbox is null ? effectiveDirectory : "/work",
+                Sandbox = sandbox,
+                SkipPermissions = record.SkipPermissions,
+                McpConfigPath = mcpConfigPath,
+                // Only resume when the agent reported a real session id (a UUID); the pre-init placeholder
+                // (a dash-less GUID) would make `--resume` fail, so start fresh in that case.
+                ResumeSessionId = LooksResumable(record.AgentSessionId) ? record.AgentSessionId : null,
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        return TrackSession(sessionId, record.AdapterId, effectiveDirectory, agent);
+    }
+
+    /// <summary>Claude's real session id is a UUID (has dashes); our pre-init placeholder is a dash-less GUID.</summary>
+    private static bool LooksResumable(string? agentSessionId)
+        => !string.IsNullOrEmpty(agentSessionId) && agentSessionId.Contains('-', StringComparison.Ordinal);
+
+    /// <summary>Builds a <see cref="HostSession"/>, wires crash-recovery, and tracks it as the live session.</summary>
+    private HostSession TrackSession(string sessionId, string adapterId, string workingDirectory, IAgentSession agent)
+    {
+        var session = new HostSession(
+            sessionId, adapterId, workingDirectory, agent, _store, _broadcaster,
+            _loggerFactory.CreateLogger<HostSession>())
+        {
+            Faulted = () => _ = RecoverAgentAsync(sessionId),
+        };
+        _sessions[sessionId] = session;
+        return session;
+    }
+
+    /// <summary>Auto-recovery: the agent's process died unexpectedly. Restart + resume it in place, unless it
+    /// just did the same (a crash loop) — then pause and ask the user to restart manually.</summary>
+    private async Task RecoverAgentAsync(string sessionId)
+    {
+        await _attachGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_sessions.TryRemove(sessionId, out var dead))
+            {
+                await dead.DisposeAsync().ConfigureAwait(false); // kills the dead process tree
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (_lastRecoveryAt.TryGetValue(sessionId, out var last) && now - last < RecoveryDebounce)
+            {
+                await AppendNoticeAsync(sessionId,
+                    "The agent crashed again right after restarting. Automatic restart is paused — use “Restart agent” to try once more.",
+                    isError: true).ConfigureAwait(false);
+                return;
+            }
+
+            _lastRecoveryAt[sessionId] = now;
+            await AppendNoticeAsync(sessionId, "The agent stopped unexpectedly — restarting and resuming the conversation…").ConfigureAwait(false);
+            await RelaunchAgentAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+            await AppendNoticeAsync(sessionId, "Agent restarted.").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Auto-recovery failed for session {SessionId}", sessionId);
+            await AppendNoticeAsync(sessionId, "Couldn't restart the agent automatically: " + ex.Message, isError: true).ConfigureAwait(false);
+        }
+        finally
+        {
+            _attachGate.Release();
+        }
+    }
+
+    /// <summary>User-invoked restart: tears down the current agent (if any) and relaunches + resumes it,
+    /// resetting the crash-loop guard. Used to recover after auto-restart gave up.</summary>
+    public async Task RestartAgentAsync(string sessionId)
+    {
+        await _attachGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_sessions.TryRemove(sessionId, out var old))
+            {
+                await old.DisposeAsync().ConfigureAwait(false);
+            }
+
+            _lastRecoveryAt.TryRemove(sessionId, out _);
+            await AppendNoticeAsync(sessionId, "Restarting the agent…").ConfigureAwait(false);
+            await RelaunchAgentAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+            await AppendNoticeAsync(sessionId, "Agent restarted.").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Manual restart failed for session {SessionId}", sessionId);
+            await AppendNoticeAsync(sessionId, "Couldn't restart the agent: " + ex.Message, isError: true).ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            _attachGate.Release();
+        }
+    }
+
+    private async Task AppendNoticeAsync(string sessionId, string message, bool isError = false)
+    {
+        var stored = await _store.AppendAsync(sessionId, new NoticeEvent(message, isError)).ConfigureAwait(false);
+        await _broadcaster.PublishAsync(sessionId, stored).ConfigureAwait(false);
     }
 
     // ---- sandbox lifecycle ----
@@ -759,42 +908,26 @@ public sealed class SessionManager : IAsyncDisposable
             throw new InvalidOperationException("Sandboxing is not configured on this host.");
         }
 
-        if (!_adapters.TryGetValue(record.AdapterId, out var adapter))
+        // Re-attach the VM (by name — works even after a host restart), re-provision, and relaunch the
+        // agent under the same session id — resuming its conversation (--resume) when its id is known.
+        await _attachGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        HostSession session;
+        try
         {
-            throw new InvalidOperationException($"Adapter '{record.AdapterId}' is no longer registered.");
+            session = _sessions.TryGetValue(sessionId, out var live)
+                ? live
+                : await RelaunchAgentAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _attachGate.Release();
         }
 
-        var effectiveDirectory = record.WorkingDirectory;
-        var project = await ResolveProjectForAsync(sessionId, effectiveDirectory, cancellationToken).ConfigureAwait(false);
-
-        // Reconnect to the existing VM (this run's handle if we still have it, else by name) and start it.
-        var sandbox = await _sandboxes.AttachAsync(
-            record.VmName, new SandboxSpec { HostWorkingDirectory = effectiveDirectory }, start: true, cancellationToken).ConfigureAwait(false);
-        _sandboxBySession[sessionId] = sandbox;
-
-        var mcpConfigPath = await ProvisionSandboxContentsAsync(
-            sandbox, sessionId, record.AdapterId, effectiveDirectory, project,
-            record.SkipPermissions, record.McpApproval, record.GitCredentialMode, cancellationToken).ConfigureAwait(false);
-
-        var agent = await adapter.StartSessionAsync(
-            new AgentSessionOptions
-            {
-                WorkingDirectory = "/work",
-                Sandbox = sandbox,
-                SkipPermissions = record.SkipPermissions,
-                McpConfigPath = mcpConfigPath,
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        var session = new HostSession(
-            sessionId, record.AdapterId, effectiveDirectory, agent, _store, _broadcaster,
-            _loggerFactory.CreateLogger<HostSession>());
-        _sessions[sessionId] = session;
-        _sandboxRegistry?.SetState(sessionId, "running", DateTimeOffset.UtcNow);
-        _logger.LogInformation("Resumed session {SessionId} in sandbox {SandboxId}", sessionId, sandbox.Id);
-
+        _logger.LogInformation("Resumed session {SessionId}", sessionId);
+        var sandbox = _sandboxBySession.TryGetValue(sessionId, out var sb) ? sb : null;
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return new SessionInfo(sessionId, record.AdapterId, "/work", head, agent.Modes, agent.CurrentModeId,
+        var project = _projectBySession.TryGetValue(sessionId, out var p) ? p : null;
+        return new SessionInfo(sessionId, record.AdapterId, "/work", head, session.Modes, session.CurrentModeId,
             MapSandbox(sandbox), record.SkipPermissions, project?.Name);
     }
 

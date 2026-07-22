@@ -64,6 +64,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task Cancel(string sessionId)
         => _sessions.CancelAsync(sessionId);
 
+    public Task RestartAgent(string sessionId)
+        => _sessions.RestartAgentAsync(sessionId);
+
     public Task SetMode(string sessionId, string modeId)
         => _sessions.SetModeAsync(sessionId, modeId);
 

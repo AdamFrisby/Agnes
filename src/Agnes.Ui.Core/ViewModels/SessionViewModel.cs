@@ -80,6 +80,7 @@ public sealed class SessionViewModel : ObservableObject
         ShowAllToolsCommand = new RelayCommand(() => ShowAllTools = true);
         CompactCommand = new RelayCommand(() => SendControl("/compact"));
         ClearContextCommand = new RelayCommand(() => SendControl("/clear"));
+        RestartAgentCommand = new RelayCommand(() => { _ = RestartAgentAsync(); });
         // The tools panel shows only the last N until "show all"; keep the view + label in sync.
         ToolActivity.CollectionChanged += (_, _) =>
         {
@@ -318,6 +319,22 @@ public sealed class SessionViewModel : ObservableObject
     /// interprets (Claude honours /compact and /clear); harmless text otherwise.</summary>
     public System.Windows.Input.ICommand CompactCommand { get; }
     public System.Windows.Input.ICommand ClearContextCommand { get; }
+
+    /// <summary>Restart the agent process (relaunch + resume) — recovers a crashed/hung agent, and the
+    /// manual fallback after the host paused auto-restart on a crash loop.</summary>
+    public System.Windows.Input.ICommand RestartAgentCommand { get; }
+
+    private async Task RestartAgentAsync()
+    {
+        try
+        {
+            await _host.RestartAgentAsync(SessionId);
+        }
+        catch
+        {
+            // The host emits a NoticeEvent on failure; nothing to do here.
+        }
+    }
 
     private void SendControl(string command)
     {

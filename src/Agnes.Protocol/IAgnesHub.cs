@@ -46,6 +46,10 @@ public interface IAgnesServer
     /// <summary>Cancels the in-flight turn for a session (maps to ACP <c>session/cancel</c>).</summary>
     Task Cancel(string sessionId);
 
+    /// <summary>Restart the agent process for a session (relaunch + resume its conversation) — recovery for
+    /// a crashed/hung agent, and the manual fallback after auto-restart has paused.</summary>
+    Task RestartAgent(string sessionId);
+
     /// <summary>Switches the session mode (maps to ACP <c>session/set_mode</c>).</summary>
     Task SetMode(string sessionId, string modeId);
 

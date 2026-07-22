@@ -58,6 +58,10 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Cancels the in-flight turn for a session (Stop).</summary>
     Task CancelAsync(string sessionId);
 
+    /// <summary>Restart the agent process for a session (relaunch + resume). Default no-op for hosts without
+    /// the capability.</summary>
+    Task RestartAgentAsync(string sessionId) => Task.CompletedTask;
+
     /// <summary>Switches the session's mode (Ask / Code / …).</summary>
     Task SetModeAsync(string sessionId, string modeId);
 

@@ -9,9 +9,13 @@ public sealed class ScriptedAgentSession : IAgentSession
     private readonly Channel<SessionEvent> _events =
         Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = true });
 
-    public string AgentSessionId { get; } = "scripted";
+    public string AgentSessionId { get; set; } = "scripted";
 
     public ChannelReader<SessionEvent> Events => _events.Reader;
+
+    /// <summary>Simulates the CLI process dying: completes the event stream without an intentional stop,
+    /// which the host reads as an unexpected fault.</summary>
+    public void Die() => _events.Writer.TryComplete();
 
     /// <summary>Invoked on prompt; emit events via <see cref="Emit"/> and return a stop reason.</summary>
     public Func<IReadOnlyList<ContentBlock>, ScriptedAgentSession, Task<StopReason>> OnPrompt { get; set; }
