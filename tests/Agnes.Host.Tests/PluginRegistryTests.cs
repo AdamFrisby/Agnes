@@ -42,13 +42,51 @@ public class PluginRegistryTests
     }
 
     [Fact]
-    public void A_later_provider_with_a_duplicate_id_wins_the_lookup_but_both_still_appear_in_All()
+    public void A_later_provider_with_a_duplicate_id_wins_both_All_and_Find()
     {
         var first = new ScriptedAgentAdapter("dup");
         var second = new ScriptedAgentAdapter("dup");
         var registry = new PluginRegistry<IAgentAdapter>([first, second], p => p.Descriptor.Id);
 
-        Assert.Equal([first, second], registry.All);
+        // All and Find agree — a mutable, id-keyed registry never shows an entry Find can't return.
+        Assert.Equal([second], registry.All);
         Assert.Same(second, registry.Find("dup"));
+    }
+
+    [Fact]
+    public void Register_adds_a_new_provider_visible_in_All_and_Find()
+    {
+        var a = new ScriptedAgentAdapter("a");
+        var registry = new PluginRegistry<IAgentAdapter>([a], p => p.Descriptor.Id);
+
+        var plugin = new ScriptedAgentAdapter("from-plugin");
+        registry.Register("from-plugin", plugin);
+
+        Assert.Equal([a, plugin], registry.All);
+        Assert.Same(plugin, registry.Find("from-plugin"));
+    }
+
+    [Fact]
+    public void Unregister_removes_a_provider_from_All_and_Find()
+    {
+        var a = new ScriptedAgentAdapter("a");
+        var plugin = new ScriptedAgentAdapter("from-plugin");
+        var registry = new PluginRegistry<IAgentAdapter>([a], p => p.Descriptor.Id);
+        registry.Register("from-plugin", plugin);
+
+        registry.Unregister("from-plugin");
+
+        Assert.Equal([a], registry.All);
+        Assert.Null(registry.Find("from-plugin"));
+    }
+
+    [Fact]
+    public void Unregister_of_an_unknown_id_is_a_harmless_no_op()
+    {
+        var registry = new PluginRegistry<IAgentAdapter>([new ScriptedAgentAdapter("a")], p => p.Descriptor.Id);
+
+        registry.Unregister("missing");
+
+        Assert.Single(registry.All);
     }
 }

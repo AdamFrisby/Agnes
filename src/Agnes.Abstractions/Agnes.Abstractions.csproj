@@ -4,4 +4,11 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Minimal, dependency-free, first-party abstraction — needed so a plugin package's
+         IAgnesPluginModule.ConfigureServices can register into the host's DI container without
+         Agnes.Abstractions depending on a concrete DI implementation. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
+  </ItemGroup>
+
 </Project>

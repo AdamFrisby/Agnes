@@ -11,6 +11,12 @@
     <!-- Pin the patched native SQLite bundle; overrides the vulnerable transitive
          SQLitePCLRaw.lib.e_sqlite3 2.1.11 (GHSA-2m69-gcr7-jv3q). -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <!-- Plugin distribution: a plugin is a NuGet package, discovered/installed/verified through
+         NuGet's own protocol and tooling rather than a bespoke registry — see
+         .ideas/00-plugin-architecture.md. All three are Microsoft, first-party. -->
+    <PackageReference Include="NuGet.Protocol" Version="7.6.0" />
+    <PackageReference Include="NuGet.Packaging" Version="7.6.0" />
+    <PackageReference Include="NuGet.Versioning" Version="7.6.0" />
   </ItemGroup>
 
   <ItemGroup>

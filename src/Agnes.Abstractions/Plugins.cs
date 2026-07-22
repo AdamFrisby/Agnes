@@ -15,27 +15,60 @@ public interface IPluginRegistry<TProvider> where TProvider : notnull
 }
 
 /// <summary>
+/// An <see cref="IPluginRegistry{TProvider}"/> that also accepts providers registered after startup —
+/// what <c>IPluginInstaller</c> uses to merge a newly installed/enabled plugin's instances in, and to
+/// remove them again on disable/uninstall, without a host restart (AC6/AC8/AC9 of
+/// .ideas/00-plugin-architecture.md).
+/// </summary>
+public interface IMutablePluginRegistry<TProvider> : IPluginRegistry<TProvider> where TProvider : notnull
+{
+    /// <summary>Adds (or replaces) the provider found under <paramref name="id"/>.</summary>
+    void Register(string id, TProvider provider);
+
+    /// <summary>Removes the provider registered under <paramref name="id"/>, if any.</summary>
+    void Unregister(string id);
+}
+
+/// <summary>
 /// Default <see cref="IPluginRegistry{TProvider}"/>, built from a set of implementations plus a
 /// function that extracts each one's stable id. Different plugin-point interfaces name their id
 /// differently (<c>IAgentAdapter.Descriptor.Id</c>, <c>ISandboxProvider.Name</c>, …), so the registry
 /// doesn't require them to share a common descriptor shape — it just needs a way to ask each instance
-/// for the id it should be found under.
+/// for the id it should be found under. Thread-safe: reads snapshot under a lock, so <see cref="All"/>
+/// is safe to enumerate concurrently with a plugin install/uninstall calling
+/// <see cref="Register"/>/<see cref="Unregister"/> on another thread.
 /// </summary>
-public sealed class PluginRegistry<TProvider> : IPluginRegistry<TProvider> where TProvider : notnull
+public sealed class PluginRegistry<TProvider> : IMutablePluginRegistry<TProvider> where TProvider : notnull
 {
+    private readonly object _gate = new();
     private readonly Dictionary<string, TProvider> _byId;
 
     public PluginRegistry(IEnumerable<TProvider> providers, Func<TProvider, string> idSelector)
     {
-        All = providers.ToArray();
         _byId = new Dictionary<string, TProvider>(StringComparer.Ordinal);
-        foreach (var provider in All)
+        foreach (var provider in providers)
         {
             _byId[idSelector(provider)] = provider;
         }
     }
 
-    public IReadOnlyList<TProvider> All { get; }
+    public IReadOnlyList<TProvider> All
+    {
+        get { lock (_gate) { return _byId.Values.ToArray(); } }
+    }
 
-    public TProvider? Find(string id) => _byId.GetValueOrDefault(id);
+    public TProvider? Find(string id)
+    {
+        lock (_gate) { return _byId.GetValueOrDefault(id); }
+    }
+
+    public void Register(string id, TProvider provider)
+    {
+        lock (_gate) { _byId[id] = provider; }
+    }
+
+    public void Unregister(string id)
+    {
+        lock (_gate) { _byId.Remove(id); }
+    }
 }

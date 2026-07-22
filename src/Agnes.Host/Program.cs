@@ -170,8 +170,15 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Codex.CodexAppSe
 // new provider interface in this backlog follows (see .ideas/00-plugin-architecture.md). Built once
 // all the AddSingleton<IAgentAdapter> registrations above have run; consumed by SessionManager
 // (Find-by-id instead of a hand-rolled dictionary) and by capability negotiation (GetCapabilities).
-builder.Services.AddSingleton<IPluginRegistry<IAgentAdapter>>(sp =>
+// Registered once as the concrete type, then exposed under both the read-only and mutable interfaces
+// so IPluginInstaller can merge a NuGet-installed plugin's adapters into the exact same instance
+// SessionManager already resolves — no separate "plugin adapters" list to keep in sync.
+builder.Services.AddSingleton(sp =>
     new PluginRegistry<IAgentAdapter>(sp.GetServices<IAgentAdapter>(), a => a.Descriptor.Id));
+builder.Services.AddSingleton<IPluginRegistry<IAgentAdapter>>(sp => sp.GetRequiredService<PluginRegistry<IAgentAdapter>>());
+builder.Services.AddSingleton<IMutablePluginRegistry<IAgentAdapter>>(sp => sp.GetRequiredService<PluginRegistry<IAgentAdapter>>());
+builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
+    new Agnes.Host.Plugins.PluginPointMerger<IAgentAdapter>(sp.GetRequiredService<IMutablePluginRegistry<IAgentAdapter>>(), a => a.Descriptor.Id));
 
 // ---- sandboxing (opt-in) ----
 // When Agnes:Sandbox:Provider=incus, agents run inside per-session Incus VMs with their
@@ -249,8 +256,12 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
 // A typed, DI-resolvable registry over every ISandboxProvider configured above (today: zero or one —
 // "Agnes:Sandbox:Provider" selects which backend is active). Registered unconditionally so the plugin
 // pattern (and capability negotiation) holds even when no sandbox backend is configured (AC2/AC3).
-builder.Services.AddSingleton<IPluginRegistry<Agnes.Sandbox.ISandboxProvider>>(sp =>
+builder.Services.AddSingleton(sp =>
     new PluginRegistry<Agnes.Sandbox.ISandboxProvider>(sp.GetServices<Agnes.Sandbox.ISandboxProvider>(), p => p.Name));
+builder.Services.AddSingleton<IPluginRegistry<Agnes.Sandbox.ISandboxProvider>>(sp => sp.GetRequiredService<PluginRegistry<Agnes.Sandbox.ISandboxProvider>>());
+builder.Services.AddSingleton<IMutablePluginRegistry<Agnes.Sandbox.ISandboxProvider>>(sp => sp.GetRequiredService<PluginRegistry<Agnes.Sandbox.ISandboxProvider>>());
+builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
+    new Agnes.Host.Plugins.PluginPointMerger<Agnes.Sandbox.ISandboxProvider>(sp.GetRequiredService<IMutablePluginRegistry<Agnes.Sandbox.ISandboxProvider>>(), p => p.Name));
 
 // Credential sources + the Connect-GitHub flow are always available (a user can link GitHub before
 // they ever open a sandbox); the broker above only consumes what's registered here.
@@ -261,6 +272,41 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.GitHubConnectFlow(
     sp.GetRequiredService<Agnes.Host.Hosting.CredentialSourceRegistry>(),
     new HttpClient(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.GitHubConnectFlow>()));
+
+// ---- plugin installer: NuGet-packaged third-party plugins (see .ideas/00-plugin-architecture.md) ----
+// The scoped service a plugin gets when it declares (and is granted) the "credentials" capability.
+builder.Services.AddSingleton<ICredentialBroker>(sp =>
+    new Agnes.Host.Plugins.HostCredentialBroker(sp.GetRequiredService<Agnes.Host.Hosting.CredentialSourceRegistry>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginCapabilityService(
+    PluginCapabilityIds.Credentials,
+    (pluginServices, hostServices) => pluginServices.AddSingleton(hostServices.GetRequiredService<ICredentialBroker>())));
+
+var pluginSources = builder.Configuration.GetSection("Agnes:Plugins:Sources").Get<string[]>() ?? [];
+builder.Services.AddSingleton<Agnes.Host.Plugins.INuGetPluginFeed>(
+    _ => new Agnes.Host.Plugins.NuGetProtocolFeed(pluginSources));
+
+var allowUnsignedPlugins = builder.Configuration.GetValue("Agnes:Plugins:AllowUnsignedPackages", false);
+builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPackageVerifier>(sp =>
+    new Agnes.Host.Plugins.NuGetSignatureVerifier(allowUnsignedPlugins,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.NuGetSignatureVerifier>()));
+
+var pluginsRoot = builder.Configuration["Agnes:Plugins:Directory"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "plugins");
+var pluginStateFile = builder.Configuration["Agnes:Plugins:StateFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "plugins.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginStateStore(
+    pluginStateFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.PluginStateStore>()));
+
+builder.Services.AddSingleton<IPluginInstaller>(sp => new Agnes.Host.Plugins.PluginInstaller(
+    sp.GetRequiredService<Agnes.Host.Plugins.INuGetPluginFeed>(),
+    sp.GetRequiredService<Agnes.Host.Plugins.IPluginPackageVerifier>(),
+    sp.GetRequiredService<Agnes.Host.Plugins.PluginStateStore>(),
+    pluginsRoot,
+    sp,
+    sp.GetServices<Agnes.Host.Plugins.IPluginPointMerger>(),
+    sp.GetServices<Agnes.Host.Plugins.PluginCapabilityService>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.PluginInstaller>()));
+
 
 var app = builder.Build();
 
@@ -277,6 +323,10 @@ _ = app.Services.GetService<Agnes.Host.Hosting.McpForwardListener>();
 
 // Restore the session catalogue so sessions (and their history) survive a host restart.
 await app.Services.GetRequiredService<SessionManager>().RestoreAsync();
+
+// Eagerly resolve the plugin installer so previously installed, enabled plugins reload (and merge
+// back into their registries) on this same startup, not lazily on the first plugin-management call.
+_ = app.Services.GetRequiredService<IPluginInstaller>();
 
 var tokens = app.Services.GetRequiredService<DeviceRegistry>();
 
