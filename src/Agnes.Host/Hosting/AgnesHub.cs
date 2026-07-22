@@ -13,14 +13,16 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly HostIdentity _identity;
     private readonly DeviceRegistry _tokens;
     private readonly PluginManagementService _plugins;
+    private readonly ClientCapabilityStore _clientCaps;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps)
     {
         _sessions = sessions;
         _schedule = schedule;
         _identity = identity;
         _tokens = tokens;
         _plugins = plugins;
+        _clientCaps = clientCaps;
     }
 
     public override async Task OnConnectedAsync()
@@ -35,6 +37,12 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         await base.OnConnectedAsync();
     }
 
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        _clientCaps.Remove(Context.ConnectionId);
+        return base.OnDisconnectedAsync(exception);
+    }
+
     public Task<HostInfo> GetHostInfo()
         => Task.FromResult(new HostInfo(_identity.HostId, _identity.DisplayName, _identity.Version, _sessions.SandboxAvailable));
 
@@ -42,12 +50,21 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         => Task.FromResult(_sessions.ListAgents());
 
     public Task<IReadOnlyList<HostCapability>> GetCapabilities()
+        => Task.FromResult(HostCapabilityList());
+
+    private IReadOnlyList<HostCapability> HostCapabilityList()
     {
         var caps = _sessions.GetCapabilities().ToList();
         // Plugin management is always available on a host built with the installer wired up (it is,
         // unconditionally, in Program.cs). Fail-open: a client without it just hides the Plugins screen.
         caps.Add(new HostCapability(HostCapabilityIds.PluginManagement, Available: true, FailClosed: false));
-        return Task.FromResult<IReadOnlyList<HostCapability>>(caps);
+        return caps;
+    }
+
+    public Task<NegotiatedCapabilities> Negotiate(ClientCapabilities client)
+    {
+        _clientCaps.Set(Context.ConnectionId, client);
+        return Task.FromResult(CapabilityNegotiator.Reconcile(HostCapabilityList(), client));
     }
 
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)

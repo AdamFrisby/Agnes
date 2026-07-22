@@ -164,6 +164,7 @@ builder.Services.AddSingleton<IEventStore>(sp =>
 });
 
 // ---- broadcast + session manager ----
+builder.Services.AddSingleton<Agnes.Host.Hosting.ClientCapabilityStore>();
 builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
 builder.Services.AddSingleton<SessionManager>();
 

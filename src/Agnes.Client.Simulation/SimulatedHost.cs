@@ -420,6 +420,19 @@ public sealed class SimulatedHost : IAgnesHost
         return new InstalledPluginDto(pluginId, p.Version, p.Enabled, p.Capabilities, UpdateAvailable: false);
     }
 
+    // ---- capability negotiation (see .ideas/00c-client-plugins-and-negotiation.md) ----
+    // The simulated host advertises a minimal capability set and reconciles a client's advertisement
+    // against it, so client-plugin/negotiation flows can be exercised offline.
+    public Task<NegotiatedCapabilities> NegotiateAsync(ClientCapabilities client)
+    {
+        IReadOnlyList<HostCapability> hostCaps =
+        [
+            new(HostCapabilityIds.AgentAdapter, Available: true, FailClosed: true),
+            new(HostCapabilityIds.PluginManagement, Available: true, FailClosed: false),
+        ];
+        return Task.FromResult(CapabilityNegotiator.Reconcile(hostCaps, client));
+    }
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     // ---- scripted behavior ----

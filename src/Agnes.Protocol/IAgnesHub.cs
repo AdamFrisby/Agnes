@@ -31,6 +31,11 @@ public interface IAgnesServer
     /// discovering its absence via a failed call.</summary>
     Task<IReadOnlyList<HostCapability>> GetCapabilities();
 
+    /// <summary>The client advertises what it can do; the host stores it for this connection and returns a
+    /// reconciled view so both parties can gate features on what's usable end to end (see
+    /// <c>.ideas/00c-client-plugins-and-negotiation.md</c>).</summary>
+    Task<NegotiatedCapabilities> Negotiate(ClientCapabilities client);
+
     Task<SessionInfo> OpenSession(OpenSessionRequest request);
 
     /// <summary>Compute a fork plan (proposed target folder + sandbox-copy capability) for a session.

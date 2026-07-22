@@ -91,6 +91,9 @@ public sealed class HostConnection : IAgnesHost
     public Task<IReadOnlyList<HostCapability>> GetCapabilitiesAsync()
         => _hub.InvokeAsync<IReadOnlyList<HostCapability>>(nameof(IAgnesServer.GetCapabilities));
 
+    public Task<NegotiatedCapabilities> NegotiateAsync(ClientCapabilities client)
+        => _hub.InvokeAsync<NegotiatedCapabilities>(nameof(IAgnesServer.Negotiate), client);
+
     public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true)
         => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox));
 

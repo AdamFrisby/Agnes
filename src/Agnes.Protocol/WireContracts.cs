@@ -90,6 +90,48 @@ public static class HostCapabilityIds
     public const string PluginManagement = "plugin-management";
 }
 
+/// <summary>
+/// What a connecting client can do, sent to the host so it can reconcile against its own capabilities
+/// (see <c>.ideas/00c-client-plugins-and-negotiation.md</c>). <see cref="SupportsDynamicPlugins"/> is
+/// false on locked-down heads (iOS/WASM) that can only run compile-time plugins.
+/// </summary>
+public sealed record ClientCapabilities(
+    string ClientId,
+    string Platform,
+    bool SupportsDynamicPlugins,
+    IReadOnlyList<string> PluginPointIds,
+    IReadOnlyList<string> CapabilityIds);
+
+/// <summary>Where a capability id is supported across the two parties.</summary>
+public enum CapabilitySupport
+{
+    /// <summary>Only the host has it (e.g. sandboxing) — usable regardless of the client.</summary>
+    HostOnly,
+
+    /// <summary>Only the client has it (e.g. a custom tool renderer) — no host dependency.</summary>
+    ClientOnly,
+
+    /// <summary>Both parties have it — the only state in which a two-sided feature is usable end to end.</summary>
+    Both,
+}
+
+/// <summary>One capability id and how it lines up across client and host.</summary>
+public sealed record NegotiatedCapability(string Id, CapabilitySupport Support, bool FailClosed);
+
+/// <summary>The reconciled view returned to the client after it advertises its capabilities.</summary>
+public sealed record NegotiatedCapabilities(IReadOnlyList<NegotiatedCapability> Capabilities);
+
+/// <summary>Stable ids for capabilities a client advertises to the host. Two-sided feature ids (like
+/// <see cref="Notifications"/>) are neutral and shared: both parties advertise the same id, so the
+/// reconciliation reports <see cref="CapabilitySupport.Both"/> only when each side has its half.</summary>
+public static class ClientCapabilityIds
+{
+    /// <summary>End-to-end notifications: the client advertises this when it has a notification channel
+    /// (can show one on its device); the host advertises the same id when it can trigger them. Only when
+    /// both do is it <see cref="CapabilitySupport.Both"/>.</summary>
+    public const string Notifications = "notifications";
+}
+
 /// <summary>A plugin package a Browse/search returned — the wire shape of
 /// <c>Agnes.Abstractions.PluginSearchResult</c>.</summary>
 public sealed record PluginSearchResultDto(

@@ -44,6 +44,11 @@ public interface IAgnesHost : IAsyncDisposable
     /// list the same as one explicitly reported unavailable.</summary>
     Task<IReadOnlyList<HostCapability>> GetCapabilitiesAsync() => Task.FromResult<IReadOnlyList<HostCapability>>([]);
 
+    /// <summary>Advertises this client's capabilities to the host and returns the reconciled view. Defaulted
+    /// so hosts/fixtures that predate negotiation reply as if the client shares no capabilities.</summary>
+    Task<NegotiatedCapabilities> NegotiateAsync(ClientCapabilities client)
+        => Task.FromResult(new NegotiatedCapabilities([]));
+
     Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true);
 
     /// <summary>Compute a fork plan (proposed target folder + sandbox-copy capability) for a session, or
