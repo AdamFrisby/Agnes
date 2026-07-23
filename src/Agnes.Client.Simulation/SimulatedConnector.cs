@@ -20,4 +20,12 @@ public sealed class SimulatedConnector : IAgnesConnector
 
         return host;
     }
+
+    public async Task RemoveAsync(string hostUrl)
+    {
+        if (_hosts.TryRemove(hostUrl, out var host))
+        {
+            await host.DisposeAsync().ConfigureAwait(false);
+        }
+    }
 }

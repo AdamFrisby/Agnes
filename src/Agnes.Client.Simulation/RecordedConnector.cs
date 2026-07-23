@@ -28,4 +28,13 @@ public sealed class RecordedConnector : IAgnesConnector
 
         return _host;
     }
+
+    public async Task RemoveAsync(string hostUrl)
+    {
+        if (_host is { } host && string.Equals(host.HostUrl, hostUrl, StringComparison.Ordinal))
+        {
+            _host = null;
+            await host.DisposeAsync().ConfigureAwait(false);
+        }
+    }
 }

@@ -33,4 +33,19 @@ public sealed class RoutingConnector : IAgnesConnector
 
         return _real.ConnectAsync(hostUrl, token, cancellationToken);
     }
+
+    public Task RemoveAsync(string hostUrl)
+    {
+        if (hostUrl.StartsWith("sim:", StringComparison.OrdinalIgnoreCase))
+        {
+            return _simulated.RemoveAsync(hostUrl);
+        }
+
+        if (hostUrl.StartsWith("rec:", StringComparison.OrdinalIgnoreCase))
+        {
+            return _recorded.RemoveAsync(hostUrl);
+        }
+
+        return _real.RemoveAsync(hostUrl);
+    }
 }

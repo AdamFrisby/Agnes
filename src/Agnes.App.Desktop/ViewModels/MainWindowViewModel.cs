@@ -236,7 +236,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         PromptLibrary = new PromptLibraryViewModel(ActiveHost, _dispatcher);
         LaunchProfiles = new LaunchProfilesViewModel(ActiveHost, _dispatcher);
         Friends = new FriendsViewModel(ActiveHost, _dispatcher);
+        MultiHost = new MultiHostViewModel(_connector, _dispatcher);
     }
+
+    /// <summary>The multi-server surface (connectivity/02): the merged host list and cross-host session
+    /// aggregate over every connected host, across whatever transports reach them.</summary>
+    public MultiHostViewModel MultiHost { get; }
 
     /// <summary>The plugin-management surface for the active host (Browse / install / configure / enable).</summary>
     public PluginManagementViewModel Plugins { get; }
@@ -2579,6 +2584,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // A newly-connected host may already have open approvals — pull them into the unified list.
             _ = Approvals.LoadAsync();
             _ = RefreshAutomationsAsync();
+            // Fold the newly-connected host into the merged multi-server host/session aggregate.
+            _dispatcher.Post(MultiHost.Refresh);
         }
     }
 

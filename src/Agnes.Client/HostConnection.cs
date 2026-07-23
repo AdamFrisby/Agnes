@@ -22,12 +22,20 @@ public sealed class HostConnection : IAgnesHost
 
         // A relay address (agnes-relay://relay/hostId?fp=...) tunnels the same SignalR wire + bearer token
         // through the blind relay to the host, pinning the host's advertised cert fingerprint (AC2/AC4/AC5).
-        // A direct https/http URL keeps today's behavior untouched (AC1).
+        // A direct https/http URL keeps today's behavior untouched (AC1). The transport is chosen purely from
+        // the address scheme, so a caller adds a host the same way regardless of how it's reachable.
+        Transport = ClientTransport.Classify(HostUrl);
         string baseUrl = HostUrl;
         Action<HttpConnectionOptions>? relayConfigure = null;
         if (RelayClientTransport.IsRelayAddress(HostUrl))
         {
+            RelayClientAddress relay = RelayClientTransport.Parse(HostUrl);
+            HostId = relay.HostId;
             (baseUrl, relayConfigure) = RelayClientTransport.Build(HostUrl);
+        }
+        else
+        {
+            HostId = HostUrl;
         }
 
         var url = $"{baseUrl}{WireProtocol.HubPath}?{WireProtocol.TokenParameter}={Uri.EscapeDataString(token)}";
@@ -81,6 +89,15 @@ public sealed class HostConnection : IAgnesHost
     }
 
     public string HostUrl { get; }
+
+    /// <summary>Stable identity of this host: the routed host-id for a relay connection, else the URL.</summary>
+    public string HostId { get; }
+
+    /// <summary>The transport this connection uses, chosen from the address scheme (Direct / Relay / Tailscale).</summary>
+    public ClientTransportKind Transport { get; }
+
+    /// <summary>The sessions this connection currently holds a live view of (one per <see cref="SubscribeAsync"/>).</summary>
+    public IReadOnlyCollection<SessionView> Sessions => _views.Values.ToArray();
 
     public AgnesConnectionState State => _hub.State switch
     {
