@@ -111,6 +111,10 @@ var mcpFile = builder.Configuration["Agnes:McpFile"]
 builder.Services.AddSingleton(sp => new McpRegistry(
     mcpFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpRegistry>()));
 
+// Strict vs lenient MCP startup resolution (default lenient): an unresolvable enabled server is either
+// skipped-with-a-warning (lenient) or fails the session start naming the server (strict).
+builder.Services.AddSingleton(new McpOptions(builder.Configuration.GetValue("Agnes:Mcp:Strict", false)));
+
 // ---- MCP presets as built-in plugins (AC13): curated quick-install templates, extensible by plugins ----
 builder.Services.AddSingleton<IMcpPresetProvider, CuratedMcpPresetProvider>();
 builder.Services.AddPluginPoint<IMcpPresetProvider>(p => p.Id);
@@ -634,6 +638,11 @@ app.MapGet("/mcp/presets", (HttpContext ctx, IPluginRegistry<IMcpPresetProvider>
     Authorized(ctx, tokens)
         ? Results.Ok(presets.All.SelectMany(p => p.Presets).ToArray())
         : Results.Unauthorized());
+
+// Effective-config preview: the merged, scope-filtered set that WOULD be active for a workspace right now
+// (a pure read of the same resolution session open uses). No workspaceId => the host-wide default view.
+app.MapGet("/mcp/effective", (HttpContext ctx, string? workspaceId) =>
+    Authorized(ctx, tokens) ? Results.Ok(mcp.EffectiveFor(workspaceId)) : Results.Unauthorized());
 
 app.MapPost("/mcp", (HttpContext ctx, McpServerRequest request) =>
     Authorized(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());

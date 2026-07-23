@@ -25,6 +25,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
     private readonly ClaudeTokenRotationPusher? _rotationPusher;
     private readonly McpRegistry? _mcp;
+    private readonly bool _mcpStrict;
     private readonly McpForwardRegistry? _forward;
     private readonly McpForwardListener? _forwardListener;
     private readonly SandboxImageManager? _images;
@@ -99,7 +100,8 @@ public sealed class SessionManager : IAsyncDisposable
         CredentialBrokerListener? credentialListener = null,
         Projects.ProjectStore? projects = null,
         SandboxRegistry? sandboxRegistry = null,
-        Agnes.Abstractions.Events.IEventBus? eventBus = null)
+        Agnes.Abstractions.Events.IEventBus? eventBus = null,
+        McpOptions? mcpOptions = null)
     {
         _adapters = adapters;
         _store = store;
@@ -111,6 +113,7 @@ public sealed class SessionManager : IAsyncDisposable
         _credentialProviders = credentialProviders?.ToArray() ?? [];
         _rotationPusher = rotationPusher;
         _mcp = mcp;
+        _mcpStrict = mcpOptions?.Strict ?? false;
         _forward = forward;
         _forwardListener = forwardListener;
         _images = images;
@@ -424,6 +427,10 @@ public sealed class SessionManager : IAsyncDisposable
         // scrubbed) before anything launches — so the agent starts on a ready checkout.
         await EnsureProjectCheckoutAsync(project, effectiveDirectory, sessionId, cancellationToken).ConfigureAwait(false);
 
+        // Validate the MCP set up front: strict mode aborts here (naming the offending server) before any
+        // sandbox/agent is provisioned; lenient mode emits a visible warning per skipped server.
+        await ValidateMcpAsync(project, effectiveDirectory, sessionId, cancellationToken).ConfigureAwait(false);
+
         // Optionally provision a sandbox and run the agent inside it. Credentials and MCP config
         // (RunAt=Sandbox servers, plus RunAt=Host servers wired to the forward shim) are materialized
         // together in ONE bundle so the combined env write doesn't clobber the credential env file.
@@ -470,7 +477,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
         else
         {
-            mcpConfigPath = await MaterializeHostMcpAsync(adapterId, project, cancellationToken).ConfigureAwait(false);
+            mcpConfigPath = await MaterializeHostMcpAsync(adapterId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
         }
 
         var agent = await adapter.StartSessionAsync(
@@ -631,8 +638,10 @@ public sealed class SessionManager : IAsyncDisposable
     /// reaches the real host server through the proxy). Returns the config path for the CLI flag, or null.
     /// </summary>
     // The MCP servers applicable to a session at a given run-location — from its project when we have
-    // one (so two projects can expose different servers), else the host's global registry (legacy).
-    private IReadOnlyList<McpServerInfo> ApplicableMcp(Projects.Project? project, McpRunAt runAt)
+    // one (so two projects can expose different servers), else the host's global registry (legacy). The
+    // registry path is scope-filtered for the session's workspace and drops unresolvable enabled servers;
+    // strict-mode failures are surfaced up front by ValidateMcpAsync, so this stays non-throwing.
+    private IReadOnlyList<McpServerInfo> ApplicableMcp(Projects.Project? project, McpRunAt runAt, string? workspaceId)
     {
         if (project is not null)
         {
@@ -640,25 +649,52 @@ public sealed class SessionManager : IAsyncDisposable
             return project.McpServers.Where(s => s.Enabled && string.Equals(s.RunAt, want, StringComparison.OrdinalIgnoreCase)).ToArray();
         }
 
-        return _mcp?.Applicable(runAt) ?? [];
+        return _mcp?.Resolve(runAt, workspaceId, strict: false).Servers ?? [];
+    }
+
+    /// <summary>
+    /// Pre-flight the host registry's MCP resolution for a session about to start (the global-registry
+    /// path only — a project's servers are already workspace-scoped by construction). In strict mode an
+    /// unresolvable enabled server throws <see cref="McpResolutionException"/>, aborting the start with a
+    /// clear cause; in lenient mode each skipped server is surfaced as a visible NoticeEvent so the user
+    /// sees they're running with fewer tools than configured.
+    /// </summary>
+    private async Task ValidateMcpAsync(Projects.Project? project, string? workspaceId, string sessionId, CancellationToken cancellationToken)
+    {
+        if (project is not null || _mcp is null)
+        {
+            return;
+        }
+
+        foreach (var runAt in new[] { McpRunAt.Host, McpRunAt.Sandbox })
+        {
+            var resolution = _mcp.Resolve(runAt, workspaceId, _mcpStrict); // strict: throws, naming the server
+            foreach (var warning in resolution.Warnings)
+            {
+                await AppendNoticeAsync(sessionId, warning).ConfigureAwait(false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+        }
     }
 
     private string? AddSandboxMcp(string adapterId, ISandbox sandbox, string sessionId,
-        bool skipPermissions, string mcpApproval, Projects.Project? project, Dictionary<string, string> env, List<SandboxCredentialFile> files)
+        bool skipPermissions, string mcpApproval, Projects.Project? project, string? workspaceId,
+        Dictionary<string, string> env, List<SandboxCredentialFile> files)
     {
         if (McpTargetFor(adapterId) is not { } target)
         {
             return null;
         }
 
-        var entries = new List<McpServerInfo>(ApplicableMcp(project, McpRunAt.Sandbox));
+        var entries = new List<McpServerInfo>(ApplicableMcp(project, McpRunAt.Sandbox, workspaceId));
 
         // An autonomous session doesn't prompt per tool, so host servers are only forwarded to it
         // when the user has chosen to trust them (the "Ask vs Trust" preference). Attended sessions
         // always get forwarding — the agent's own permission protocol gates each tool call.
         var forwardAllowed = !skipPermissions || string.Equals(mcpApproval, "Trust", StringComparison.OrdinalIgnoreCase);
         var hostServers = _forward is not null && _forwardListener is not null && forwardAllowed
-            ? ApplicableMcp(project, McpRunAt.Host)
+            ? ApplicableMcp(project, McpRunAt.Host, workspaceId)
             : [];
         if (hostServers.Count > 0)
         {
@@ -737,14 +773,14 @@ public sealed class SessionManager : IAsyncDisposable
     }
 
     /// <summary>Writes a host (non-sandbox) session's RunAt=Host MCP config to a temp file for the CLI flag.</summary>
-    private async Task<string?> MaterializeHostMcpAsync(string adapterId, Projects.Project? project, CancellationToken cancellationToken)
+    private async Task<string?> MaterializeHostMcpAsync(string adapterId, Projects.Project? project, string? workspaceId, CancellationToken cancellationToken)
     {
         if (McpTargetFor(adapterId) is not { UsesFlag: true })
         {
             return null; // only the config-flag (Claude) host path is wired; host-Codex/ACP deferred
         }
 
-        var servers = ApplicableMcp(project, McpRunAt.Host);
+        var servers = ApplicableMcp(project, McpRunAt.Host, workspaceId);
         if (servers.Count == 0)
         {
             return null;
@@ -855,6 +891,9 @@ public sealed class SessionManager : IAsyncDisposable
         var effectiveDirectory = record.WorkingDirectory;
         var project = await ResolveProjectForAsync(sessionId, effectiveDirectory, cancellationToken).ConfigureAwait(false);
 
+        // Re-validate MCP on restart too (config may have changed since first open): strict aborts, lenient warns.
+        await ValidateMcpAsync(project, effectiveDirectory, sessionId, cancellationToken).ConfigureAwait(false);
+
         ISandbox? sandbox = null;
         string? mcpConfigPath;
         if (record.Sandboxed && _sandboxes is not null)
@@ -884,7 +923,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
         else
         {
-            mcpConfigPath = await MaterializeHostMcpAsync(record.AdapterId, project, cancellationToken).ConfigureAwait(false);
+            mcpConfigPath = await MaterializeHostMcpAsync(record.AdapterId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
         }
 
         var agent = await adapter.StartSessionAsync(
@@ -1186,7 +1225,7 @@ public sealed class SessionManager : IAsyncDisposable
             files.AddRange(credential.Files);
         }
 
-        var mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, project, env, files);
+        var mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, project, effectiveDirectory, env, files);
         await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, env, files, cancellationToken).ConfigureAwait(false);
 
         if (env.Count > 0 || files.Count > 0)

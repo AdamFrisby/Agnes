@@ -198,9 +198,30 @@ public sealed record ProjectDto(
 public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt, string? Subject = null);
 
 /// <summary>
+/// How widely an MCP server applies, resolved at session start. <see cref="AllHosts"/> and
+/// <see cref="ThisHost"/> both apply on the host that stores them (they differ only in a multi-host
+/// client's configured view — a per-host registry can't see other hosts); <see cref="ThisWorkspace"/>
+/// applies only to the workspace named by <see cref="McpServerInfo.WorkspaceId"/>. The zero value is
+/// <see cref="AllHosts"/> so an entry persisted before scopes existed deserializes to "always applies".
+/// </summary>
+public enum McpApplyScope
+{
+    /// <summary>Applies everywhere (the back-compatible default for entries with no recorded scope).</summary>
+    AllHosts,
+
+    /// <summary>Applies to this host only.</summary>
+    ThisHost,
+
+    /// <summary>Applies only to the one workspace named by <see cref="McpServerInfo.WorkspaceId"/>.</summary>
+    ThisWorkspace,
+}
+
+/// <summary>
 /// An MCP server registered on a host. <see cref="RunAt"/> is "host" (runs on the Agnes host; used
 /// by host sessions and forwarded into sandboxes) or "sandbox" (runs inside the VM). <see cref="Transport"/>
 /// is "stdio" (Command/Args/Env) or "http" (Url/BearerTokenEnv). A server is used only when Enabled.
+/// <see cref="ApplyScope"/> (with <see cref="WorkspaceId"/> for <see cref="McpApplyScope.ThisWorkspace"/>)
+/// narrows which sessions see it; both are additive and default to "applies everywhere" for back-compat.
 /// </summary>
 public sealed record McpServerInfo(
     string Id,
@@ -212,7 +233,9 @@ public sealed record McpServerInfo(
     IReadOnlyList<string> Args,
     IReadOnlyDictionary<string, string> Env,
     string? Url,
-    string? BearerTokenEnv);
+    string? BearerTokenEnv,
+    McpApplyScope ApplyScope = McpApplyScope.AllHosts,
+    string? WorkspaceId = null);
 
 /// <summary>Create/replace payload for an MCP server (Id is assigned by the host on add).</summary>
 public sealed record McpServerRequest(
@@ -224,7 +247,9 @@ public sealed record McpServerRequest(
     IReadOnlyList<string>? Args = null,
     IReadOnlyDictionary<string, string>? Env = null,
     string? Url = null,
-    string? BearerTokenEnv = null);
+    string? BearerTokenEnv = null,
+    McpApplyScope ApplyScope = McpApplyScope.AllHosts,
+    string? WorkspaceId = null);
 
 /// <summary>Status of the sandbox a session runs in, or null if it runs on the host.</summary>
 public sealed record SandboxStatus(string Provider, string Id, string State);
