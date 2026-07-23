@@ -168,6 +168,23 @@ var promptLibraryDir = builder.Configuration["Agnes:PromptLibraryDir"]
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.PromptLibrary(
     promptLibraryDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.PromptLibrary>()));
 
+// ---- skill bundles + external registries (extensibility/02): a SKILL.md + supporting files as one unit ----
+// The library owns managed copies (source of truth); registries are explicit, tracked import sources.
+var skillLibraryDir = builder.Configuration["Agnes:SkillLibraryDir"] ?? promptLibraryDir;
+builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.SkillLibrary(
+    skillLibraryDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.SkillLibrary>()));
+
+// External skill registries as a plugin point: a configured local directory / local-git checkout is the
+// built-in reference source (NO network — Agnes reads the working tree). A shared-catalog / HTTP provider is
+// a later drop-in that implements IPromptRegistryProvider and registers here with no core change.
+var skillRegistryDir = builder.Configuration["Agnes:SkillRegistryDir"];
+if (!string.IsNullOrWhiteSpace(skillRegistryDir))
+{
+    builder.Services.AddSingleton<IPromptRegistryProvider>(new Agnes.Host.Hosting.LocalDirectoryRegistryProvider(skillRegistryDir));
+}
+
+builder.Services.AddPluginPoint<IPromptRegistryProvider>(p => p.Id);
+
 // ---- connected services: named, multi-profile provider credentials (.ideas/providers/02) ----
 // A parallel surface to the sandbox git-credential broker (NOT a replacement): a user connects a provider
 // account once, names it as a ConnectedServiceProfile, and any host can materialise a short-lived credential

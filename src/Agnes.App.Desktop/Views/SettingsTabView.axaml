@@ -687,6 +687,8 @@
                                 <TextBlock Classes="fieldLabel" Text="Prompt body" />
                                 <TextBox Text="{Binding PromptBody, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"
                                          Watermark="Review this diff for security issues…" FontSize="12" Padding="8,5" CornerRadius="6" />
+                                <CheckBox IsChecked="{Binding PromptIsSystemAddition, Mode=TwoWay}"
+                                          Content="Use as a system-prompt addition (prepended to a session's system prompt at open)" FontSize="12" />
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <Button Content="Save prompt" Command="{Binding SavePromptCommand}" Classes="seg" />
                                     <Button Content="New" Command="{Binding NewPromptCommand}" Classes="seg" />
@@ -705,6 +707,29 @@
                                                         Command="{Binding $parent[ItemsControl].DataContext.EditPromptCommand}" CommandParameter="{Binding}" />
                                                 <Button Grid.Column="2" Content="Delete" Classes="seg" Margin="6,0,0,0"
                                                         Command="{Binding $parent[ItemsControl].DataContext.DeletePromptCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Skill bundles -->
+                            <TextBlock Classes="sectionTitle" Text="Skills" FontSize="14" />
+                            <TextBlock Classes="scopeNote"
+                                       Text="Skill bundles (a SKILL.md plus supporting files) imported from an external registry and managed as a unit." />
+                            <ItemsControl ItemsSource="{Binding Skills}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                    <TextBlock Text="{Binding SupportingFiles.Count, StringFormat='{}{0} supporting file(s)'}"
+                                                               Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Delete" Classes="seg"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.DeleteSkillCommand}" CommandParameter="{Binding}" />
                                             </Grid>
                                         </Border>
                                     </DataTemplate>

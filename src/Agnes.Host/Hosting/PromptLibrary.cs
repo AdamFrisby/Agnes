@@ -48,6 +48,36 @@ public sealed class PromptLibrary
         }
     }
 
+    /// <summary>The enabled system-prompt additions, ordered by title — the standing instructions to prepend
+    /// to a session's system prompt at open. A prompt with <see cref="LibraryPrompt.IsSystemPromptAddition"/>
+    /// false is excluded.</summary>
+    public IReadOnlyList<LibraryPrompt> ListSystemPromptAdditions()
+    {
+        lock (_gate)
+        {
+            return _state.Prompts
+                .Where(p => p.IsSystemPromptAddition)
+                .OrderBy(p => p.Title, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Assembles the system-prompt text to prepend at session open: the bodies of every enabled system-prompt
+    /// addition, in order, joined by blank lines. Returns null when there are no additions (so the session-open
+    /// path can leave the effective system prompt untouched). Pure over the current state, hence unit-testable.
+    /// </summary>
+    public string? AssembleSystemPromptAdditions()
+    {
+        var additions = ListSystemPromptAdditions();
+        if (additions.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Join("\n\n", additions.Select(p => p.MarkdownBody));
+    }
+
     /// <summary>Upserts a prompt (assigning an id when blank) and persists it; returns the stored prompt.</summary>
     public LibraryPrompt Save(LibraryPrompt prompt)
     {

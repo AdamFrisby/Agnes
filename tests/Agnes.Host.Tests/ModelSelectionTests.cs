@@ -82,4 +82,28 @@ public sealed class ModelSelectionTests
 
         Assert.DoesNotContain("--model", args);
     }
+
+    [Fact]
+    public void ClaudeCode_threads_system_prompt_additions_into_launch_args()
+    {
+        var spec = ClaudeCodeAgent.CreateLaunchSpec();
+        var options = new AgentSessionOptions { WorkingDirectory = Path.GetTempPath(), SystemPrompt = "Always write tests." };
+
+        var args = AcpAgentAdapter.BuildAgentArguments(spec, options).ToList();
+
+        var flagIndex = args.IndexOf("--append-system-prompt");
+        Assert.True(flagIndex >= 0, "expected an --append-system-prompt flag in the launch args");
+        Assert.Equal("Always write tests.", args[flagIndex + 1]);
+    }
+
+    [Fact]
+    public void ClaudeCode_omits_system_prompt_flag_when_no_additions()
+    {
+        var spec = ClaudeCodeAgent.CreateLaunchSpec();
+        var options = new AgentSessionOptions { WorkingDirectory = Path.GetTempPath() };
+
+        var args = AcpAgentAdapter.BuildAgentArguments(spec, options);
+
+        Assert.DoesNotContain("--append-system-prompt", args);
+    }
 }

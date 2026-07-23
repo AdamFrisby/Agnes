@@ -309,6 +309,25 @@ public interface IAgnesServer
     /// <summary>Deletes a template by slash token.</summary>
     Task DeletePromptTemplate(string token);
 
+    // ---- skill bundles + external registries (see .ideas/extensibility/02-prompts-skills-library.md) ----
+    // A skill is a SKILL.md + supporting files managed as one unit. The library owns managed copies (source of
+    // truth); registries are explicit import sources exposed as a plugin point.
+
+    /// <summary>The host's saved skill bundles.</summary>
+    Task<IReadOnlyList<Abstractions.LibrarySkill>> GetSkills();
+
+    /// <summary>Deletes a skill bundle by id (removing its managed files as a unit).</summary>
+    Task DeleteSkill(string id);
+
+    /// <summary>The ids of the registered external skill-registry sources.</summary>
+    Task<IReadOnlyList<string>> GetSkillRegistries();
+
+    /// <summary>The skills a registry source currently offers (before import).</summary>
+    Task<IReadOnlyList<Abstractions.RegistrySkillEntry>> GetRegistrySkills(string registryId);
+
+    /// <summary>Fetches a registry entry and imports it into the library, returning the stored skill.</summary>
+    Task<Abstractions.LibrarySkill> InstallSkillFromRegistry(string registryId, string entryId);
+
     // ---- connected-service quota (see .ideas/providers/03-quota-monitoring.md) ----
     // Pull-only for MVP: a client asks for a profile's usage snapshot when it wants to paint a badge; the host
     // serves it from a per-profile cache behind a staleness window, so redrawing the badge doesn't hammer the

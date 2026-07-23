@@ -44,6 +44,10 @@ public static class ClaudeCodeAgent
     /// <summary>Claude Code selects a model with <c>--model &lt;id&gt;</c>.</summary>
     public static IReadOnlyList<string> BuildModelArguments(string modelId) => ["--model", modelId];
 
+    /// <summary>Claude Code appends extra system-prompt text with <c>--append-system-prompt &lt;text&gt;</c> —
+    /// how a session's collected system-prompt additions reach the agent.</summary>
+    public static IReadOnlyList<string> BuildSystemPromptArguments(string systemPrompt) => ["--append-system-prompt", systemPrompt];
+
     public static AcpLaunchSpec CreateLaunchSpec(ClaudeCodeOptions? options = null)
     {
         options ??= new ClaudeCodeOptions();
@@ -56,6 +60,7 @@ public static class ClaudeCodeAgent
             // No standard ACP model-list call, so ship the static list and fall back to it (LiveModelProbe null).
             Models = StaticModels,
             ModelArguments = BuildModelArguments,
+            SystemPromptArguments = BuildSystemPromptArguments,
         };
     }
 

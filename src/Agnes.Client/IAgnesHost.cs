@@ -368,6 +368,28 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Deletes a template by slash token.</summary>
     Task DeletePromptTemplateAsync(string token) => Task.CompletedTask;
 
+    // ---- skill bundles + external registries (see .ideas/extensibility/02-prompts-skills-library.md) ----
+    // Defaulted so hosts/fixtures that predate skills reply empty (and reject writes) instead of failing.
+
+    /// <summary>The host's saved skill bundles. Default empty for hosts without a skill library.</summary>
+    Task<IReadOnlyList<LibrarySkill>> GetSkillsAsync()
+        => Task.FromResult<IReadOnlyList<LibrarySkill>>([]);
+
+    /// <summary>Deletes a skill bundle by id.</summary>
+    Task DeleteSkillAsync(string id) => Task.CompletedTask;
+
+    /// <summary>The ids of the host's external skill-registry sources. Default empty.</summary>
+    Task<IReadOnlyList<string>> GetSkillRegistriesAsync()
+        => Task.FromResult<IReadOnlyList<string>>([]);
+
+    /// <summary>The skills a registry source currently offers. Default empty.</summary>
+    Task<IReadOnlyList<RegistrySkillEntry>> GetRegistrySkillsAsync(string registryId)
+        => Task.FromResult<IReadOnlyList<RegistrySkillEntry>>([]);
+
+    /// <summary>Fetches a registry entry and imports it into the host's library, returning the stored skill.</summary>
+    Task<LibrarySkill> InstallSkillFromRegistryAsync(string registryId, string entryId)
+        => throw new NotSupportedException("This host does not support skill registries.");
+
     // ---- connected-service quota (see .ideas/providers/03-quota-monitoring.md) ----
     // Defaulted null so hosts/fixtures that predate quota reporting reply "unavailable" instead of failing.
 

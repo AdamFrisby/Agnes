@@ -350,6 +350,21 @@ public sealed class HostConnection : IAgnesHost
     public Task DeletePromptTemplateAsync(string token)
         => _hub.InvokeAsync(nameof(IAgnesServer.DeletePromptTemplate), token);
 
+    public Task<IReadOnlyList<Abstractions.LibrarySkill>> GetSkillsAsync()
+        => _hub.InvokeAsync<IReadOnlyList<Abstractions.LibrarySkill>>(nameof(IAgnesServer.GetSkills));
+
+    public Task DeleteSkillAsync(string id)
+        => _hub.InvokeAsync(nameof(IAgnesServer.DeleteSkill), id);
+
+    public Task<IReadOnlyList<string>> GetSkillRegistriesAsync()
+        => _hub.InvokeAsync<IReadOnlyList<string>>(nameof(IAgnesServer.GetSkillRegistries));
+
+    public Task<IReadOnlyList<Abstractions.RegistrySkillEntry>> GetRegistrySkillsAsync(string registryId)
+        => _hub.InvokeAsync<IReadOnlyList<Abstractions.RegistrySkillEntry>>(nameof(IAgnesServer.GetRegistrySkills), registryId);
+
+    public Task<Abstractions.LibrarySkill> InstallSkillFromRegistryAsync(string registryId, string entryId)
+        => _hub.InvokeAsync<Abstractions.LibrarySkill>(nameof(IAgnesServer.InstallSkillFromRegistry), registryId, entryId);
+
     public Task<Abstractions.QuotaSnapshot?> GetQuotaSnapshotAsync(string profileId)
         => _hub.InvokeAsync<Abstractions.QuotaSnapshot?>(nameof(IAgnesServer.GetQuotaSnapshot), profileId);
 

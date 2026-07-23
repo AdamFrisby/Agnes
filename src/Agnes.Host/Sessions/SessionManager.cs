@@ -44,6 +44,10 @@ public sealed class SessionManager : IAsyncDisposable
     // constructions are unaffected (null ⇒ terminals resolve only from a session whose agent is itself an
     // ICliFallback). Used both for in-session terminals and provider login — the ONE shared spawn path.
     private readonly ICliFallback? _cliFallback;
+    // The prompt library, so enabled system-prompt additions are assembled and prepended to a session's
+    // effective system prompt at open. Optional so the many test/simulation constructions are unaffected
+    // (null ⇒ no additions).
+    private readonly Hosting.PromptLibrary? _prompts;
     // Open fallback terminals, keyed by their (globally-unique) terminal id, so write/resize can reach the
     // live PTY handle. Distinct lifetime from a session's agent handle, hence its own map.
     private readonly ConcurrentDictionary<string, ITerminalHandle> _terminals = new();
@@ -122,7 +126,8 @@ public sealed class SessionManager : IAsyncDisposable
         McpOptions? mcpOptions = null,
         IPluginRegistry<IGitHostProvider>? gitHosts = null,
         Attention.AttentionRequestStore? attention = null,
-        ICliFallback? cliFallback = null)
+        ICliFallback? cliFallback = null,
+        Hosting.PromptLibrary? promptLibrary = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -145,6 +150,7 @@ public sealed class SessionManager : IAsyncDisposable
         _credentialListener = credentialListener;
         _attention = attention;
         _cliFallback = cliFallback;
+        _prompts = promptLibrary;
         if (_forwardListener is not null)
         {
             _forwardListener.OnToolCall = OnForwardedToolCall;
@@ -534,6 +540,9 @@ public sealed class SessionManager : IAsyncDisposable
                 SkipPermissions = skipPermissions,
                 McpConfigPath = mcpConfigPath,
                 ModelId = modelId,
+                // Prepend the library's enabled system-prompt additions; adapters whose CLI accepts a
+                // system-prompt flag (e.g. Claude Code's --append-system-prompt) thread this through.
+                SystemPrompt = _prompts?.AssembleSystemPromptAdditions(),
             },
             cancellationToken).ConfigureAwait(false);
 

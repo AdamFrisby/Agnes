@@ -35,6 +35,7 @@ public sealed class PromptLibraryViewModel : ObservableObject
         DeletePromptCommand = new AsyncRelayCommand<LibraryPrompt>(DeletePromptAsync);
         SaveTemplateCommand = new AsyncRelayCommand(SaveTemplateAsync, () => CanSaveTemplate);
         DeleteTemplateCommand = new AsyncRelayCommand<PromptTemplateRow>(DeleteTemplateAsync);
+        DeleteSkillCommand = new AsyncRelayCommand<LibrarySkill>(DeleteSkillAsync);
     }
 
     /// <summary>The host's saved prompts.</summary>
@@ -42,6 +43,9 @@ public sealed class PromptLibraryViewModel : ObservableObject
 
     /// <summary>The host's templates, each flagged if its referenced prompt is missing.</summary>
     public ObservableCollection<PromptTemplateRow> Templates { get; } = [];
+
+    /// <summary>The host's saved skill bundles (SKILL.md + supporting files, managed as a unit).</summary>
+    public ObservableCollection<LibrarySkill> Skills { get; } = [];
 
     private string _status = string.Empty;
     public string Status { get => _status; set => SetProperty(ref _status, value); }
@@ -55,6 +59,11 @@ public sealed class PromptLibraryViewModel : ObservableObject
 
     private string _promptBody = string.Empty;
     public string PromptBody { get => _promptBody; set { if (SetProperty(ref _promptBody, value)) { RaiseCanSavePrompt(); } } }
+
+    /// <summary>When true the edited prompt is saved as a system-prompt addition (prepended to a session's
+    /// system prompt at open) rather than a per-message snippet.</summary>
+    private bool _promptIsSystemAddition;
+    public bool PromptIsSystemAddition { get => _promptIsSystemAddition; set => SetProperty(ref _promptIsSystemAddition, value); }
 
     public bool CanSavePrompt => !string.IsNullOrWhiteSpace(_promptTitle) && !string.IsNullOrWhiteSpace(_promptBody);
 
@@ -78,6 +87,7 @@ public sealed class PromptLibraryViewModel : ObservableObject
     public ICommand DeletePromptCommand { get; }
     public IAsyncRelayCommand SaveTemplateCommand { get; }
     public ICommand DeleteTemplateCommand { get; }
+    public ICommand DeleteSkillCommand { get; }
 
     /// <summary>Loads prompts and templates from the host and rebuilds both lists (recomputing broken flags).</summary>
     public async Task RefreshAsync()
@@ -93,7 +103,8 @@ public sealed class PromptLibraryViewModel : ObservableObject
         {
             var prompts = await host.GetPromptsAsync().ConfigureAwait(false);
             var templates = await host.GetPromptTemplatesAsync().ConfigureAwait(false);
-            _dispatcher.Post(() => Rebuild(prompts, templates));
+            var skills = await host.GetSkillsAsync().ConfigureAwait(false);
+            _dispatcher.Post(() => Rebuild(prompts, templates, skills));
         }
         catch (Exception ex)
         {
@@ -101,7 +112,7 @@ public sealed class PromptLibraryViewModel : ObservableObject
         }
     }
 
-    private void Rebuild(IReadOnlyList<LibraryPrompt> prompts, IReadOnlyList<PromptTemplate> templates)
+    private void Rebuild(IReadOnlyList<LibraryPrompt> prompts, IReadOnlyList<PromptTemplate> templates, IReadOnlyList<LibrarySkill> skills)
     {
         Prompts.Clear();
         foreach (var p in prompts)
@@ -110,7 +121,14 @@ public sealed class PromptLibraryViewModel : ObservableObject
         }
 
         RebuildTemplates(templates);
-        Status = $"{Prompts.Count} prompt(s), {Templates.Count} template(s).";
+
+        Skills.Clear();
+        foreach (var s in skills)
+        {
+            Skills.Add(s);
+        }
+
+        Status = $"{Prompts.Count} prompt(s), {Templates.Count} template(s), {Skills.Count} skill(s).";
     }
 
     private void RebuildTemplates(IReadOnlyList<PromptTemplate> templates)
@@ -128,6 +146,7 @@ public sealed class PromptLibraryViewModel : ObservableObject
         EditingPromptId = null;
         PromptTitle = string.Empty;
         PromptBody = string.Empty;
+        PromptIsSystemAddition = false;
     }
 
     private void BeginEditPrompt(LibraryPrompt? prompt)
@@ -140,6 +159,7 @@ public sealed class PromptLibraryViewModel : ObservableObject
         EditingPromptId = prompt.Id;
         PromptTitle = prompt.Title;
         PromptBody = prompt.MarkdownBody;
+        PromptIsSystemAddition = prompt.IsSystemPromptAddition;
     }
 
     private async Task SavePromptAsync()
@@ -150,7 +170,10 @@ public sealed class PromptLibraryViewModel : ObservableObject
             return;
         }
 
-        var prompt = new LibraryPrompt(EditingPromptId ?? string.Empty, PromptTitle.Trim(), PromptBody);
+        var prompt = new LibraryPrompt(EditingPromptId ?? string.Empty, PromptTitle.Trim(), PromptBody)
+        {
+            IsSystemPromptAddition = PromptIsSystemAddition,
+        };
         try
         {
             await host.SavePromptAsync(prompt).ConfigureAwait(false);
@@ -220,6 +243,25 @@ public sealed class PromptLibraryViewModel : ObservableObject
         catch (Exception ex)
         {
             _dispatcher.Post(() => Status = "Couldn't delete the template: " + ex.Message);
+        }
+    }
+
+    private async Task DeleteSkillAsync(LibrarySkill? skill)
+    {
+        var host = _host();
+        if (host is null || skill is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await host.DeleteSkillAsync(skill.Id).ConfigureAwait(false);
+            await RefreshAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => Status = "Couldn't delete the skill: " + ex.Message);
         }
     }
 

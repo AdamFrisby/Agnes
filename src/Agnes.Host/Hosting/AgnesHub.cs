@@ -22,13 +22,15 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly IPluginRegistry<IMemoryIndexProvider> _memoryIndexes;
     private readonly BugReportRouter _bugReports;
     private readonly PromptLibrary _prompts;
+    private readonly SkillLibrary _skills;
+    private readonly IPluginRegistry<IPromptRegistryProvider> _skillRegistries;
     private readonly AttentionRequestService _attention;
     private readonly QuotaService _quota;
     private readonly Notifications.PushRegistrationStore _pushRegistrations;
     private readonly Notifications.ActiveSessionViewTracker _views;
     private readonly IPluginRegistry<INotificationChannel> _channels;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels)
     {
         _pushRegistrations = pushRegistrations;
         _views = views;
@@ -43,6 +45,8 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _memoryIndexes = memoryIndexes;
         _bugReports = bugReports;
         _prompts = prompts;
+        _skills = skills;
+        _skillRegistries = skillRegistries;
         _attention = attention;
         _quota = quota;
     }
@@ -415,6 +419,47 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     {
         _prompts.DeleteTemplate(token);
         return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<Abstractions.LibrarySkill>> GetSkills()
+        => Task.FromResult(_skills.List());
+
+    public Task DeleteSkill(string id)
+    {
+        _skills.Delete(id);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<string>> GetSkillRegistries()
+        => Task.FromResult<IReadOnlyList<string>>(_skillRegistries.All.Select(r => r.Id).ToArray());
+
+    public async Task<IReadOnlyList<Abstractions.RegistrySkillEntry>> GetRegistrySkills(string registryId)
+    {
+        var registry = _skillRegistries.Find(registryId)
+            ?? throw new InvalidOperationException($"Unknown skill registry '{registryId}'.");
+        return await registry.ListAsync().ConfigureAwait(false);
+    }
+
+    public async Task<Abstractions.LibrarySkill> InstallSkillFromRegistry(string registryId, string entryId)
+    {
+        var registry = _skillRegistries.Find(registryId)
+            ?? throw new InvalidOperationException($"Unknown skill registry '{registryId}'.");
+
+        // Fetch into a scratch dir, then import (copy) into the managed library, which becomes the source of
+        // truth. The scratch dir is always cleaned up regardless of outcome.
+        var scratch = Path.Combine(Path.GetTempPath(), "agnes-skill-fetch", Guid.NewGuid().ToString("n"));
+        try
+        {
+            var fetched = await registry.FetchAsync(entryId, scratch).ConfigureAwait(false);
+            return _skills.Save(id: null, title: fetched.Title, sourceSkillMdPath: fetched.SkillMdPath, supportingFiles: fetched.SupportingFiles);
+        }
+        finally
+        {
+            if (Directory.Exists(scratch))
+            {
+                Directory.Delete(scratch, recursive: true);
+            }
+        }
     }
 
     // Connected-service quota: the host serves a cached snapshot behind a staleness window (see QuotaService),

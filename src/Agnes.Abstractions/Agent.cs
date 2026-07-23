@@ -71,6 +71,15 @@ public sealed record AgentSessionOptions
     /// expects; adapters that don't understand a model axis ignore it. Null means "the CLI's own default".
     /// </summary>
     public string? ModelId { get; init; }
+
+    /// <summary>
+    /// Additional system-prompt text to prepend to this session's effective system prompt — assembled at open
+    /// from the library's enabled system-prompt additions (see
+    /// <c>.ideas/extensibility/02-prompts-skills-library.md</c>). Threaded into the launch invocation by
+    /// adapters whose CLI accepts a system-prompt flag (e.g. Claude Code's <c>--append-system-prompt</c>);
+    /// adapters without such a mechanism ignore it. Null/blank means "no additions".
+    /// </summary>
+    public string? SystemPrompt { get; init; }
 }
 
 /// <summary>

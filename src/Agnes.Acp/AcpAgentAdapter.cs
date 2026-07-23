@@ -31,6 +31,11 @@ public sealed record AcpLaunchSpec
     /// <summary>Builds the CLI arguments that select a model id (e.g. <c>--model &lt;id&gt;</c>). Null means
     /// this CLI doesn't take a model flag, so a requested <see cref="AgentSessionOptions.ModelId"/> is ignored.</summary>
     public Func<string, IReadOnlyList<string>>? ModelArguments { get; init; }
+
+    /// <summary>Builds the CLI arguments that inject extra system-prompt text (e.g. Claude Code's
+    /// <c>--append-system-prompt &lt;text&gt;</c>). Null means this CLI has no system-prompt flag Agnes knows,
+    /// so a requested <see cref="AgentSessionOptions.SystemPrompt"/> is ignored.</summary>
+    public Func<string, IReadOnlyList<string>>? SystemPromptArguments { get; init; }
 }
 
 /// <summary>
@@ -64,12 +69,18 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
     /// without spawning a process.</summary>
     public static IReadOnlyList<string> BuildAgentArguments(AcpLaunchSpec spec, AgentSessionOptions options)
     {
-        if (options.ModelId is { Length: > 0 } modelId && spec.ModelArguments is { } build)
+        var args = new List<string>(spec.Arguments);
+        if (options.ModelId is { Length: > 0 } modelId && spec.ModelArguments is { } buildModel)
         {
-            return [.. spec.Arguments, .. build(modelId)];
+            args.AddRange(buildModel(modelId));
         }
 
-        return spec.Arguments;
+        if (options.SystemPrompt is { Length: > 0 } systemPrompt && spec.SystemPromptArguments is { } buildSystem)
+        {
+            args.AddRange(buildSystem(systemPrompt));
+        }
+
+        return args;
     }
 
     public async Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
