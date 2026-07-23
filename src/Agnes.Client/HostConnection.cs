@@ -245,6 +245,12 @@ public sealed class HostConnection : IAgnesHost
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RespondPermission), new PermissionResponseRequest(sessionId, requestId, optionId));
 
+    public Task RegisterPushChannelAsync(string channelId, string channelToken, PushNotificationPrefs prefs)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RegisterPushChannel), new RegisterPushRequest(channelId, channelToken, prefs));
+
+    public Task SetSessionViewingAsync(string sessionId, bool viewing)
+        => _hub.InvokeAsync(nameof(IAgnesServer.SetSessionViewing), sessionId, viewing);
+
     public Task AnswerAttentionRequestAsync(string requestId, string answer)
         => _hub.InvokeAsync(nameof(IAgnesServer.AnswerAttentionRequest), new AttentionAnswerRequest(requestId, answer));
 

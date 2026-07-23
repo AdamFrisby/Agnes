@@ -1798,6 +1798,12 @@ public sealed class SessionManager : IAsyncDisposable
         await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).AnswerQuestionAsync(requestId, before.Answers).ConfigureAwait(false);
     }
 
+    /// <summary>Whether this host knows the session at all — live or dormant (restored-but-not-yet-prompted).
+    /// Used by the push interactive-action guard to reject an action naming an unrecognized session before it
+    /// could ever reach the live agent.</summary>
+    public bool KnowsSession(string sessionId)
+        => _sessions.ContainsKey(sessionId) || _catalog.ContainsKey(sessionId);
+
     public async Task<SessionSnapshot> GetSnapshotAsync(string sessionId, long sinceSequence, CancellationToken cancellationToken = default)
     {
         // Served from the durable log — works for live and dormant (restored-but-not-yet-prompted) sessions.

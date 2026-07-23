@@ -61,69 +61,76 @@ For each item: **Hard** = cannot be correctly built before this lands (the hub/i
 
 Each phase title is the theme that ties its items together. Items are ordered within a phase by developer usefulness, highest first.
 
+**Status legend** (as of the build-out through 2026-07):
+- `[x]` — **implemented**, feature-complete for its intended scope, built + tested + on `main`.
+- `[~]` — **basic / partial**: an MVP shipped and green on `main`, but a substantial part of the spec is deliberately deferred (noted per item). Provider-shaped items marked `[~] template` ship the plugin interface + a commented stub so a real backend wires in later — no real third-party integration yet.
+- `[ ]` — **not built** (reason noted: infra-blocked, gated behind another unbuilt item, or a pending product decision).
+
+**Tally of the 42 scheduled items: 13 `[x]` complete · 16 `[~]` basic/partial · 13 `[ ]` not built** (29 have at least a working MVP). `platform/04` remains excluded.
+
 ### Phase 1 — Foundation + two everyday wins
-1. `00-plugin-architecture.md` (DONE — core scope only) — unlocks nearly everything else; do this first. Delivered: the generalized `IPluginRegistry<T>`/`PluginRegistry<T>` pattern, migrating `IAgentAdapter` and `ISandboxProvider` onto it with no behavior change (AC1, AC4), and host-level capability negotiation (`GetCapabilities()` end to end through `Agnes.Protocol`/`Agnes.Client`, AC2/AC3). Deliberately **not** built in this pass: NuGet-based third-party plugin distribution, package signature verification, `AssemblyLoadContext` hot-reload, capability-consent enforcement, and the plugin management UI (AC5–AC13) — that's real, separate scope (the doc rates it "L" on its own); tracked as follow-on work against the same doc rather than attempted half-finished here.
-2. `sessions/01-session-forking-and-replay.md` — branch a conversation instead of dead-ending it. High daily value, zero dependencies.
-3. `sessions/03-pending-queue-and-steering.md` — fixes "can't send while the agent's busy," a constant point of friction today.
+1. `[x]` `00-plugin-architecture.md` — the generalized `IPluginRegistry<T>`/`PluginRegistry<T>` pattern; `IAgentAdapter`/`ISandboxProvider`/auth/git-host/MCP/transport/event-store all migrated onto it (AC13.1–6); NuGet install + signature verification + `AssemblyLoadContext` loader; host + client capability negotiation; client-plugin registry; the event spine; and the plugin management UI. (Went well beyond the original "core scope only" pass.)
+2. `[x]` `sessions/01-session-forking-and-replay.md` — branch a conversation instead of dead-ending it. High daily value, zero dependencies.
+3. `[~]` `sessions/03-pending-queue-and-steering.md` — fixes "can't send while the agent's busy." **Partial:** queue + three send policies + send-now + discarded list shipped; true in-turn `ISteerableSession` injection deferred (uses the always-available cancel-then-resend fallback).
 
 ### Phase 2 — Structural enablers + remote-workflow basics
-1. `sessions/06-tool-timeline-normalization.md` — formalizes something that already half-exists; unlocks git integration and broader provider support.
-2. `git-and-files/03-attachments-and-file-browser.md` — get files in and out of a remote session; a real gap today.
-3. `sessions/02-direct-vs-synced-sessions.md` — attach to a session started outside Agnes instead of losing track of it.
-4. `sessions/05-session-read-state-and-shortcuts.md` — unread indicators and "same setup again"; cheap, high polish-to-effort ratio.
+1. `[x]` `sessions/06-tool-timeline-normalization.md` — formalizes something that already half-exists; unlocks git integration and broader provider support.
+2. `[~]` `git-and-files/03-attachments-and-file-browser.md` — **Partial:** attachment upload + workspace path-safety shipped; the full file-browser surface is not built.
+3. `[ ]` `sessions/02-direct-vs-synced-sessions.md` — **Not built.** Buildable (discovering/attaching to CLI sessions started outside Agnes), just not reached; needs per-adapter on-disk-log reading.
+4. `[x]` `sessions/05-session-read-state-and-shortcuts.md` — unread indicators and "same setup again"; cheap, high polish-to-effort ratio.
 
 ### Phase 3 — Review, terminal reuse, and social groundwork
-1. `git-and-files/02-review-comments.md` — leave feedback anchored to a diff line, not lost in chat scrollback.
-2. `platform/03-embedded-terminal-everywhere.md` — one terminal transport reused everywhere instead of reinvented per feature.
-3. `providers/06-provider-authentication-detection.md` — stop discovering "not logged in" by watching a session fail.
-4. `collaboration/01-friends-and-social.md` — foundational for session sharing later; flagged as needing a real account-model decision first.
+1. `[x]` `git-and-files/02-review-comments.md` — leave feedback anchored to a diff line, not lost in chat scrollback.
+2. `[~]` `platform/03-embedded-terminal-everywhere.md` — **Partial:** client terminal-I/O protocol over the existing `ICliFallback`/`TerminalOutputEvent`, a desktop panel via `Iciclecreek.Avalonia.Terminal`, and provider "Log in" routed through `ICliFallback` all shipped; streaming live login output back to a client-visible session + broader runtime polish deferred.
+3. `[x]` `providers/06-provider-authentication-detection.md` — stop discovering "not logged in" by watching a session fail.
+4. `[ ]` `collaboration/01-friends-and-social.md` — **Not built.** Needs a real account/identity-model decision first.
 
 ### Phase 4 — Low-priority polish (last of the no-dependency items)
-1. `ops/04-onboarding-showcase.md`
-2. `platform/02-menubar-and-tray.md`
-3. `delight/01-pets-companion.md` — included for completeness; genuinely optional, see its own doc.
+1. `[x]` `ops/04-onboarding-showcase.md` — first-run setup wizard over `GET /auth/methods` + data-driven shown-once showcase cards.
+2. `[x]` `platform/02-menubar-and-tray.md` — the system-tray icon (aggregate status + jump-to-session); the separate self-host operator status tool is intentionally out of scope per the spec.
+3. `[ ]` `delight/01-pets-companion.md` — **Not built.** Deferred per its own spec pending a product-tone decision; its tone-neutral ambient-status core is already covered by the inbox + tray.
 
 ### Phase 5 — Reachability + the security work that must ride along with it
-1. `connectivity/01-relay-and-tunneling.md` — the single biggest gap: use Agnes away from your own LAN.
-2. `security/01-end-to-end-encryption.md` — built alongside #1, not after it (see the exception noted above); makes the relay safe to actually use.
-3. `providers/01-provider-breadth-acp-catalog.md` — a generic custom-ACP adapter plus the on-ramp for new agent CLIs.
-4. `notifications/02-inbox-and-approvals.md` — one place to see everything across every session that needs you.
+1. `[ ]` `connectivity/01-relay-and-tunneling.md` — **Not built.** Needs a hosted relay/tunnel service — external infrastructure, not verifiable headlessly here.
+2. `[ ]` `security/01-end-to-end-encryption.md` — **Not built.** Coupled to the relay + a key-exchange design; gates the broker→quota→profiles and session-sharing chain.
+3. `[x]` `providers/01-provider-breadth-acp-catalog.md` — a generic custom-ACP adapter plus the on-ramp for new agent CLIs.
+4. `[~]` `notifications/02-inbox-and-approvals.md` — **Partial:** the tier-1 cross-session approvals inbox shipped (and is unioned with the external-webhook requests); richer inbox tiers/filters pending.
 
 ### Phase 6 — Git, notifications, and the automation upgrade
-1. `notifications/01-push-notifications.md` — the mobile client is only as useful as its ability to reach you when you're not looking at it.
-2. `git-and-files/01-deep-git-integration.md` — stash, branch, pull, push, PR checkout, without dropping to a separate terminal.
-3. `extensibility/03-automations.md` — grows something Agnes already has into a real "cron for agents."
-4. `sessions/07-local-cli-wrapper-and-handoff.md` — start a session the way you already start one (`agnes claude`), with clean remote handoff.
+1. `[~] template` `notifications/01-push-notifications.md` — **Partial:** `INotificationChannel` plugin point + a template mobile-push stub + a Desktop channel + spine-driven dispatch with per-trigger/per-device toggles, active-session suppression, and the untrusted-payload safety guard. No real FCM/APNs backend.
+2. `[~]` `git-and-files/01-deep-git-integration.md` — **Partial:** stash/branch/pull(ff-only)/push + PR list/checkout with server-side safety shipped; changed-file scoping and agent-generated commit messages deferred.
+3. `[x]` `extensibility/03-automations.md` — persistence + cron scheduling + pause/resume/run-now; a real "cron for agents."
+4. `[ ]` `sessions/07-local-cli-wrapper-and-handoff.md` — **Not built.** Depends on direct-vs-synced sessions + a live PTY/handoff runtime.
 
 ### Phase 7 — Extensibility surface
-1. `extensibility/01-mcp-management.md` — quick-install presets, native-config detection, a preview before you commit to a session.
-2. `extensibility/02-prompts-skills-library.md` — stop retyping the same instructions; adopts the emerging `SKILL.md` convention.
-3. `sessions/04-participant-routing-and-subagents-panel.md` — a real roster view once forking and steering (phase 1) exist to build on.
-4. `voice/01-voice-assistant.md` — novel and effort-heavy, but no longer blocked once the plugin system exists.
+1. `[~]` `extensibility/01-mcp-management.md` — **Partial:** preset install + scope rules + strict/lenient toggle + effective-config preview shipped; native-config detection deferred.
+2. `[~]` `extensibility/02-prompts-skills-library.md` — **Partial:** saved prompts + slash-token templates shipped; skill bundles, external registries, copy/symlink sync, and system-prompt additions deferred.
+3. `[~]` `sessions/04-participant-routing-and-subagents-panel.md` — **Partial:** the subagents roster (visibility tier) shipped; true addressed message-routing / stop-a-subagent control deferred (capability flag in place).
+4. `[~]` `voice/01-voice-assistant.md` — **Partial:** `IVoiceProvider` plugin + hidden controller (transcript→host-call intent mapping) + privacy-default summarizer, proven with a fake provider; real STT/TTS engines deferred.
 
 ### Phase 8 — Diagnostics and the long tail of plugin points
-1. `ops/01-bug-reports-and-diagnostics.md` — a structured way to report what broke.
-2. `ops/02-memory-search.md` — full-text search over every session ever run, starting cheap (SQLite FTS5).
-3. `security/02-enterprise-auth.md` — OIDC/mTLS/org gating; low priority until there's an actual organization asking.
-4. `extensibility/04-channel-bridges.md` — real but niche; approve a permission request from a chat app.
+1. `[~]` `ops/01-bug-reports-and-diagnostics.md` — **Partial:** GitHub-issue sink (with duplicate detection) + custom endpoint + prefilled browser fallback; crash/error telemetry and the owner-only host-log diagnostic attachment deferred.
+2. `[~]` `ops/02-memory-search.md` — **Partial:** the SQLite FTS5 full-text tier (the spec's intended cheap starting point) shipped; semantic/embedding search not built.
+3. `[~]` `security/02-enterprise-auth.md` — **Partial:** OIDC token validation + mTLS client-cert + GitHub org/team gating shipped; the interactive OIDC authorization-code redirect deferred (token-validation core built).
+4. `[~]` `extensibility/04-channel-bridges.md` — **Partial:** `IChannelBridge` plugin point + chat-id↔identity linking + authorized inbound routing + spine-driven outbound, proven with a fake bridge; real Telegram/Slack transport deferred.
 
 ### Phase 9 — Multi-account and multi-host connectivity
-1. `providers/02-connected-services-credential-broker.md` — one login per provider, reused across every machine you pair.
-2. `connectivity/03-session-handoff.md` — move a live session to a different machine without losing it.
-3. `connectivity/02-multi-server-support.md` — more than one relay active in the same client at once.
-4. `connectivity/04-device-linking-and-restore.md` — the three pairing/restore flows, properly distinguished in the UI.
+1. `[~] template` `providers/02-connected-services-credential-broker.md` — **Partial:** `IConnectedServiceProvider` plugin point + a named multi-profile model + broker + profile store + a commented template stub. No real vendor OAuth yet.
+2. `[ ]` `connectivity/03-session-handoff.md` — **Not built.** Needs the relay + multi-node runtime.
+3. `[ ]` `connectivity/02-multi-server-support.md` — **Not built.** Needs the relay + multiple live hosts.
+4. `[ ]` `connectivity/04-device-linking-and-restore.md` — **Not built.** Needs the relay + a second reachable device.
 
 ### Phase 10 — Sharing, scripting, and account/model refinement
-1. `providers/05-model-and-engine-selection.md` — pick a model per session, with favorites.
-2. `extensibility/05-scriptable-agent-cli.md` — a headless CLI for CI and shell scripts, distinct from both automations and the interactive clients.
-3. `collaboration/02-session-sharing-and-public-links.md` — direct sharing plus always-read-only public links.
-4. `ops/03-deployment-topology-and-multi-db.md` — only relevant once the relay is a real, separately-deployed service.
+1. `[x]` `providers/05-model-and-engine-selection.md` — per-session model pick with client-side favorites reconciled against the live catalog (model threading wired for Claude Code; other adapters as their CLIs allow).
+2. `[x]` `extensibility/05-scriptable-agent-cli.md` — the headless `agnes-agent` CLI (spawn/send/status/wait/stop/machines/auth), prefix matching, `--json`, CI-friendly exit codes.
+3. `[ ]` `collaboration/02-session-sharing-and-public-links.md` — **Not built.** Gated on end-to-end encryption.
+4. `[ ]` `ops/03-deployment-topology-and-multi-db.md` — **Not built.** Only relevant once the relay is a real, separately-deployed service.
 
 ### Phase 11 — The advanced/compounding tier
-1. `providers/04-profiles.md` — named, reusable launch configs.
-2. `extensibility/06-generic-human-in-the-loop-webhook.md` — the same "ask a human" primitive, exposed to any external system, not just Agnes-native sessions.
-3. `connectivity/05-multi-machine-workspace-model.md` — one logical project, tracked across every machine it's checked out on.
-4. `providers/03-quota-monitoring.md` — usage visibility for connected provider accounts.
+1. `[ ]` `providers/04-profiles.md` — **Not built.** Gated on the connected-services broker + provider breadth being real (needs the OAuth backends).
+2. `[x]` `extensibility/06-generic-human-in-the-loop-webhook.md` — external `/v1/attention-requests` REST (create/poll) unioned into the inbox, callback delivery with retry, timeouts, per-caller scoping.
+3. `[ ]` `connectivity/05-multi-machine-workspace-model.md` — **Not built.** Needs deep-git worktrees (done) **and** session handoff (not built) + multi-machine runtime.
+4. `[~] template` `providers/03-quota-monitoring.md` — **Partial:** the optional `IQuotaReportingProvider` capability + cached-snapshot service + a client badge VM + a template stub. No real usage-endpoint backend.
 
 ## Not scheduled
 

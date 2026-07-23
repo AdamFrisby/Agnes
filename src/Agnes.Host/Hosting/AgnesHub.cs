@@ -24,9 +24,15 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly PromptLibrary _prompts;
     private readonly AttentionRequestService _attention;
     private readonly QuotaService _quota;
+    private readonly Notifications.PushRegistrationStore _pushRegistrations;
+    private readonly Notifications.ActiveSessionViewTracker _views;
+    private readonly IPluginRegistry<INotificationChannel> _channels;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, AttentionRequestService attention, QuotaService quota)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels)
     {
+        _pushRegistrations = pushRegistrations;
+        _views = views;
+        _channels = channels;
         _sessions = sessions;
         _schedule = schedule;
         _identity = identity;
@@ -250,6 +256,53 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task RespondPermission(PermissionResponseRequest response)
         => _sessions.RespondPermissionAsync(response.SessionId, response.RequestId, response.OptionId);
+
+    public async Task RegisterPushChannel(RegisterPushRequest request)
+    {
+        var deviceId = CallerDeviceId();
+        if (deviceId is null)
+        {
+            return; // bootstrap/anonymous token: no device record to hang a push registration on.
+        }
+
+        _pushRegistrations.Register(deviceId, request.ChannelId, request.ChannelToken);
+        _pushRegistrations.SetPreferences(
+            deviceId,
+            request.Prefs.Enabled,
+            new Notifications.PushTriggerPrefs(request.Prefs.TurnReady, request.Prefs.PermissionRequest, request.Prefs.UserActionRequest));
+
+        // Let the target channel record the channel-specific token (a real one would register it with FCM/APNs).
+        if (_channels.Find(request.ChannelId) is { } channel)
+        {
+            await channel.RegisterAsync(deviceId, request.ChannelToken, Context.ConnectionAborted).ConfigureAwait(false);
+        }
+    }
+
+    public Task SetSessionViewing(string sessionId, bool viewing)
+    {
+        if (CallerDeviceId() is { } deviceId)
+        {
+            if (viewing)
+            {
+                _views.MarkViewing(deviceId, sessionId);
+            }
+            else
+            {
+                _views.ClearViewing(deviceId, sessionId);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Resolves the connection's bearer token to its stable device id, or null for the bootstrap /
+    /// anonymous token (which isn't a device record and so can't own a push registration).</summary>
+    private string? CallerDeviceId()
+    {
+        var token = Context.GetHttpContext()?.Request.Query[WireProtocol.TokenParameter].ToString();
+        var caller = _tokens.ResolveCallerId(token);
+        return caller is null or "bootstrap" ? null : caller;
+    }
 
     public Task AnswerQuestion(QuestionAnswerRequest response)
         => _sessions.AnswerQuestionAsync(response.SessionId, response.RequestId, response.Answers);

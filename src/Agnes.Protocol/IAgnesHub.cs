@@ -121,6 +121,15 @@ public interface IAgnesServer
 
     Task RespondPermission(PermissionResponseRequest response);
 
+    /// <summary>Registers the calling device's push token against a notification channel and sets its toggles,
+    /// so the host can page it (per <c>.ideas/notifications/01-push-notifications.md</c>) when a watched session
+    /// crosses a trigger. Keyed to the caller's device identity, so revoking pairing also stops pushes.</summary>
+    Task RegisterPushChannel(RegisterPushRequest request);
+
+    /// <summary>Tells the host the calling device is (or is no longer) actively foregrounding a session, so a
+    /// push for that session is suppressed on THIS device only while it's being watched here.</summary>
+    Task SetSessionViewing(string sessionId, bool viewing);
+
     /// <summary>Submit the user's answers to an outstanding structured question set.</summary>
     Task AnswerQuestion(QuestionAnswerRequest response);
 
