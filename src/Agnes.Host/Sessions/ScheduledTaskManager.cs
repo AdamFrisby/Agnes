@@ -92,8 +92,12 @@ public sealed class ScheduledTaskManager
     public void Record(InboxRun run)
     {
         _inbox.Enqueue(run);
-        while (_inbox.Count > MaxInbox && _inbox.TryDequeue(out _))
+        while (_inbox.Count > MaxInbox)
         {
+            if (!_inbox.TryDequeue(out _))
+            {
+                break; // drained (concurrent take) — nothing left to trim
+            }
         }
 
         RunRecorded?.Invoke(run);

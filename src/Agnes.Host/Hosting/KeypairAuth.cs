@@ -102,7 +102,7 @@ public sealed class KeypairAuth(KeypairAuthOptions options, ILogger<KeypairAuth>
             return [];
         }
 
-        var keys = new List<(byte[], string)>();
+        var keys = new List<(byte[] Key, string Label)>();
         foreach (var raw in File.ReadAllLines(file))
         {
             var line = raw.Trim();

@@ -249,7 +249,7 @@ public sealed class TranscriptBuilder
 
     private static List<(string Content, string Status)> ParseTodos(string input)
     {
-        var result = new List<(string, string)>();
+        var result = new List<(string Content, string Status)>();
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(input);
@@ -268,7 +268,7 @@ public sealed class TranscriptBuilder
         }
         catch
         {
-            // best-effort — a clipped/odd todo payload just yields no tasks.
+            // best-effort — a clipped/odd task-list payload just yields no entries.
         }
 
         return result;

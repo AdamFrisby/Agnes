@@ -41,11 +41,8 @@ dotnet_diagnostic.PH2029.severity = none   # Avoid #pragma — it's the standard
 dotnet_diagnostic.PH2045.severity = none   # Avoid static classes (we use static helpers/extension holders deliberately)
 dotnet_diagnostic.PH2082.severity = none   # "Positive naming" — bans negative words, fights domain vocab (enable/disable, valid/invalid)
 dotnet_diagnostic.PH2089.severity = none   # "Assignment in condition" false-positives on record `with` expressions (e ​with { ... })
-dotnet_diagnostic.PH2093.severity = none   # Prefer named tuple fields — fine advice, too heavy as a hard error on every local tuple
 dotnet_diagnostic.PH2096.severity = none   # Prefer async Task over async void — ICommand.Execute must be async void
-dotnet_diagnostic.PH2097.severity = none   # Avoid empty statement blocks — fights the empty drain-loop idiom
 dotnet_diagnostic.PH2147.severity = none   # Flags variables named `_`; we use `_` as the discard idiom deliberately
-dotnet_diagnostic.PH2151.severity = none   # Avoid TODO comments — TODOs are a normal, useful marker here
 # PH2075 (AssemblyVersion must be 1.0.0.0) is an assembly-level diagnostic with no file location, so an
 # editorconfig severity here can't reach it — it's silenced via NoWarn in Directory.Build.props instead.
 # PH2098 (empty catch) defaults to warning; we lower it to suggestion rather than enforce it — our few
@@ -56,6 +53,9 @@ dotnet_diagnostic.PH2098.severity = suggestion
 # On — high-value correctness/maintainability rules promoted to warning (the codebase already complies):
 dotnet_diagnostic.PH2031.severity = warning   # TryParse without a Culture
 dotnet_diagnostic.PH2066.severity = warning   # Lock object should be readonly
+dotnet_diagnostic.PH2093.severity = warning   # Prefer named tuple fields (readable at the use site)
+dotnet_diagnostic.PH2097.severity = warning   # Empty statement block (an empty {} usually hides a mistake)
+dotnet_diagnostic.PH2151.severity = warning   # TODO comments — a TODO means the work isn't finished; fail the build on it
 dotnet_diagnostic.PH2074.severity = warning   # Don't register (event handlers) in Dispose
 dotnet_diagnostic.PH2077.severity = warning   # Switch statement with no cases
 dotnet_diagnostic.PH2084.severity = warning   # Don't lock on a freshly-newed object

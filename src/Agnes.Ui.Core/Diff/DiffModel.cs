@@ -72,7 +72,7 @@ public static class UnifiedDiff
             }
         }
 
-        var result = new List<(char, string)>();
+        var result = new List<(char Op, string Text)>();
         int x = 0, y = 0;
         while (x < n && y < m)
         {

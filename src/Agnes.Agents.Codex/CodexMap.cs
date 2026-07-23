@@ -299,7 +299,7 @@ internal sealed class CodexMap
                 continue;
             }
 
-            // Recognize simple markdown checkboxes ("- [x] done", "- [ ] todo").
+            // Recognize simple markdown checkboxes: "- [x]" (completed) vs "- [ ]" (pending).
             var status = "pending";
             if (line.StartsWith("- [x]", StringComparison.OrdinalIgnoreCase) || line.StartsWith("- [X]"))
             {
