@@ -66,6 +66,12 @@ public interface IAgnesHost : IAsyncDisposable
     Task<SessionInfo> ForkSessionAsync(string sourceSessionId, string targetDirectory, bool copySandbox = true)
         => throw new NotSupportedException("This host does not support forking sessions.");
 
+    /// <summary>Replay-fork a session at a log point: branch the conversation, seeding the child with the
+    /// parent's transcript up to <paramref name="atSequence"/>. Returns the child plus an editable draft
+    /// when the fork point was a user message.</summary>
+    Task<ForkAtResult> ForkSessionAtAsync(string sourceSessionId, string targetDirectory, long atSequence, bool copySandbox = true)
+        => throw new NotSupportedException("This host does not support forking sessions.");
+
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>
     Task<SessionView> SubscribeAsync(string sessionId, long since = 0);
 

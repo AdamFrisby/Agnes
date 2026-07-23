@@ -562,6 +562,59 @@ public sealed class SessionManager : IAsyncDisposable
             useSandbox: sourceSandboxed, existingSandbox: clonedSandbox, worktree: false, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Replay-fork: branch the conversation at a log point. Copies the workspace and inherits config
+    /// exactly like <see cref="ForkSessionAsync"/>, then seeds the child agent with the parent's transcript
+    /// up to <paramref name="atSequence"/> (invisibly — see <see cref="ForkedFromEvent"/>) and marks the
+    /// child's log. Forking at a user message forks just before it and returns its text as an editable
+    /// draft; forking at any other event forks after it with no draft.</summary>
+    public async Task<Agnes.Protocol.ForkAtResult> ForkSessionAtAsync(string sourceSessionId, string targetDirectory, long atSequence, bool copySandbox = true, CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetSnapshotAsync(sourceSessionId, 0, cancellationToken).ConfigureAwait(false);
+        var (seedEvents, draft) = SplitAtFork(snapshot.Events, atSequence);
+
+        var childInfo = await ForkSessionAsync(sourceSessionId, targetDirectory, copySandbox, cancellationToken).ConfigureAwait(false);
+
+        var marker = await _store.AppendAsync(childInfo.SessionId, new ForkedFromEvent(sourceSessionId, atSequence), cancellationToken).ConfigureAwait(false);
+        await _broadcaster.PublishAsync(childInfo.SessionId, marker).ConfigureAwait(false);
+
+        if (_sessions.TryGetValue(childInfo.SessionId, out var child) && BuildForkSeed(seedEvents) is { } seed)
+        {
+            child.SetPendingSeed([seed]);
+        }
+
+        return new Agnes.Protocol.ForkAtResult(childInfo, draft);
+    }
+
+    // Fork "at a user message" forks BEFORE it (its text becomes an editable draft); forking at any other
+    // event forks AFTER it (no draft).
+    private static (IReadOnlyList<SessionEvent> Seed, string? Draft) SplitAtFork(IReadOnlyList<SessionEvent> events, long atSequence)
+        => events.FirstOrDefault(e => e.Sequence == atSequence) is MessageChunkEvent { Role: MessageRole.User, Content: TextContent t }
+            ? (events.Where(e => e.Sequence < atSequence).ToList(), t.Text)
+            : (events.Where(e => e.Sequence <= atSequence).ToList(), null);
+
+    // The parent transcript tail rendered as one text block the child agent reads as prior context.
+    private static ContentBlock? BuildForkSeed(IReadOnlyList<SessionEvent> events)
+    {
+        const string header = "[Forked conversation — prior context follows]";
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine(header);
+        foreach (var e in events)
+        {
+            switch (e)
+            {
+                case MessageChunkEvent { Content: TextContent t } m:
+                    sb.Append(m.Role == MessageRole.User ? "User: " : "Assistant: ").AppendLine(t.Text);
+                    break;
+                case ToolCallEvent tc:
+                    sb.Append("[tool: ").Append(tc.Title).AppendLine("]");
+                    break;
+            }
+        }
+
+        var text = sb.ToString().TrimEnd();
+        return text.Length > header.Length ? new TextContent(text) : null;
+    }
+
     // Which agents Agnes can inject an MCP config into, and how: (config format, home-relative file,
     // whether the CLI loads it via a flag). ACP bridges (claude-code, opencode) and host-side Codex
     // are deferred — see the plan.

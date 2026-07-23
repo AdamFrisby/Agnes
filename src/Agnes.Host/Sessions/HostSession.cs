@@ -70,6 +70,14 @@ internal sealed class HostSession : IAsyncDisposable
     /// <summary>The agent's own session id (used to resume it after a host restart).</summary>
     public string AgentSessionId => _agent.AgentSessionId;
 
+    // A forked session's seed: the parent's transcript context, prepended to the FIRST real prompt's agent
+    // call so the agent has the branch's history — but never logged as a visible user message (see
+    // ForkedFromEvent). Cleared after it's consumed once.
+    private IReadOnlyList<ContentBlock>? _pendingSeed;
+
+    /// <summary>Sets the fork seed prepended (invisibly) to this session's next prompt.</summary>
+    public void SetPendingSeed(IReadOnlyList<ContentBlock> seed) => _pendingSeed = seed;
+
     /// <summary>Records a user prompt in the log, then drives an agent turn in the background.</summary>
     public async Task PromptAsync(IReadOnlyList<ContentBlock> content)
     {
@@ -78,11 +86,20 @@ internal sealed class HostSession : IAsyncDisposable
             await AppendAndPublishAsync(new MessageChunkEvent(MessageRole.User, block)).ConfigureAwait(false);
         }
 
+        // The agent receives the fork seed ahead of the user's message, but only the user's message was
+        // logged above — the seed is context transfer, not something a person typed.
+        var toAgent = content;
+        if (_pendingSeed is { } seed)
+        {
+            toAgent = [.. seed, .. content];
+            _pendingSeed = null;
+        }
+
         _ = Task.Run(async () =>
         {
             try
             {
-                await _agent.PromptAsync(content, _cts.Token).ConfigureAwait(false);
+                await _agent.PromptAsync(toAgent, _cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

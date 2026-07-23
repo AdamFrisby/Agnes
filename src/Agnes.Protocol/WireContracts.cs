@@ -286,6 +286,14 @@ public sealed record ForkPlan(string SourceSessionId, string SourceDirectory, st
 /// provisioned (or none, if the source ran on the host).</summary>
 public sealed record ForkSessionRequest(string SourceSessionId, string TargetDirectory, bool CopySandbox = true);
 
+/// <summary>Replay-fork request: branch the conversation at <see cref="AtSequence"/> (a parent log
+/// sequence), copying the workspace like a plain fork.</summary>
+public sealed record ForkAtRequest(string SourceSessionId, string TargetDirectory, long AtSequence, bool CopySandbox = true);
+
+/// <summary>The result of a replay-fork: the new child session, plus the origin user-message text as an
+/// editable composer draft when the fork point was a user message (else null).</summary>
+public sealed record ForkAtResult(SessionInfo Info, string? Draft);
+
 /// <summary>Stores a token credential source for a host (the low-setup fine-grained-PAT fallback).</summary>
 public sealed record StoreCredentialRequest(string Host, string Token, string? Username = null);
 

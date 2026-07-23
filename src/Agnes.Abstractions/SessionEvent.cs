@@ -67,6 +67,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(UsageReportedEvent), "usage_reported")]
 [JsonDerivedType(typeof(AgentErrorEvent), "agent_error")]
 [JsonDerivedType(typeof(SubagentStartedEvent), "subagent_started")]
+[JsonDerivedType(typeof(ForkedFromEvent), "forked_from")]
 [JsonDerivedType(typeof(NoticeEvent), "notice")]
 [JsonDerivedType(typeof(McpToolCallEvent), "mcp_tool_call")]
 [JsonDerivedType(typeof(GitCredentialEvent), "git_credential")]
@@ -192,3 +193,11 @@ public sealed record AgentErrorEvent(string Message) : SessionEvent;
 /// carrying this <see cref="AgentId"/> belong to the subagent's sub-conversation.
 /// </summary>
 public sealed record SubagentStartedEvent(string SubagentId, string Name, string? ParentAgentId = null) : SessionEvent;
+
+/// <summary>
+/// The first row of a replay-forked session: a cross-reference to the parent it branched from and the
+/// parent sequence it forked at. The child's log holds only this marker (not a copy of the parent's rows),
+/// so the parent stays the single source of truth for its own history; the UI resolves the marker to render
+/// the parent's transcript read-only above a "Forked from…" divider (sessions/01).
+/// </summary>
+public sealed record ForkedFromEvent(string ParentSessionId, long ParentSequence) : SessionEvent;

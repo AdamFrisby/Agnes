@@ -109,6 +109,9 @@ public sealed class HostConnection : IAgnesHost
     public Task<ForkPlan?> ProposeForkAsync(string sessionId)
         => _hub.InvokeAsync<ForkPlan?>(nameof(IAgnesServer.ProposeFork), sessionId);
 
+    public Task<ForkAtResult> ForkSessionAtAsync(string sourceSessionId, string targetDirectory, long atSequence, bool copySandbox = true)
+        => _hub.InvokeAsync<ForkAtResult>(nameof(IAgnesServer.ForkSessionAt), new ForkAtRequest(sourceSessionId, targetDirectory, atSequence, copySandbox));
+
     public Task<SessionInfo> ForkSessionAsync(string sourceSessionId, string targetDirectory, bool copySandbox = true)
         => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.ForkSession), new ForkSessionRequest(sourceSessionId, targetDirectory, copySandbox));
 

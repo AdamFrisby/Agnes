@@ -51,6 +51,9 @@ public interface IAgnesServer
     /// the sandbox). See <see cref="ForkSessionRequest"/>.</summary>
     Task<SessionInfo> ForkSession(ForkSessionRequest request);
 
+    /// <summary>Replay-forks a session at a log point (branch the conversation); returns the child plus an optional composer draft.</summary>
+    Task<ForkAtResult> ForkSessionAt(ForkAtRequest request);
+
     /// <summary>Join a session's broadcast group and get a snapshot from <paramref name="sinceSequence"/>.</summary>
     Task<SessionSnapshot> Subscribe(string sessionId, long sinceSequence);
 

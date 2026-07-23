@@ -82,6 +82,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<SessionInfo> ForkSession(ForkSessionRequest request)
         => _sessions.ForkSessionAsync(request.SourceSessionId, request.TargetDirectory, request.CopySandbox);
 
+    public Task<ForkAtResult> ForkSessionAt(ForkAtRequest request)
+        => _sessions.ForkSessionAtAsync(request.SourceSessionId, request.TargetDirectory, request.AtSequence, request.CopySandbox);
+
     public async Task<SessionSnapshot> Subscribe(string sessionId, long sinceSequence)
     {
         // Join the group BEFORE snapshotting so no event is missed; the client dedupes by
