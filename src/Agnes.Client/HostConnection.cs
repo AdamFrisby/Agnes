@@ -127,6 +127,10 @@ public sealed class HostConnection : IAgnesHost
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
         => _hub.InvokeAsync(nameof(IAgnesServer.Prompt), new PromptRequest(sessionId, content));
 
+    public Task<IReadOnlyList<Agnes.Abstractions.MemorySearchResult>> SearchMemoryAsync(string query, Agnes.Abstractions.MemorySearchOptions options)
+        => _hub.InvokeAsync<IReadOnlyList<Agnes.Abstractions.MemorySearchResult>>(
+            nameof(IAgnesServer.SearchMemory), query, new MemorySearchOptionsDto(options.Limit, options.SessionId));
+
     public Task CancelAsync(string sessionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.Cancel), sessionId);
 

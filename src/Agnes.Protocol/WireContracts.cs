@@ -93,6 +93,10 @@ public static class HostCapabilityIds
     /// <summary>The NuGet-packaged plugin lifecycle (search/install/enable/…) is available on this
     /// host. Absence degrades gracefully: a client just hides the Plugins screen.</summary>
     public const string PluginManagement = "plugin-management";
+
+    /// <summary>An <c>IMemoryIndexProvider</c> is configured, so transcript search is available. Absence
+    /// degrades gracefully: a client hides the search screen (a search still returns an empty list).</summary>
+    public const string MemorySearch = "memory-search";
 }
 
 /// <summary>
@@ -302,6 +306,11 @@ public sealed record CredentialStatus(string State, string? Slug, bool Installed
 
 /// <summary>Request to send a prompt to a session.</summary>
 public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock> Content);
+
+/// <summary>Wire form of <see cref="Agnes.Abstractions.MemorySearchOptions"/> — how many hits to return
+/// and an optional single-session scope. The result type (<see cref="Agnes.Abstractions.MemorySearchResult"/>)
+/// is already a flat, wire-safe record, so it crosses the boundary unchanged.</summary>
+public sealed record MemorySearchOptionsDto(int Limit = 50, string? SessionId = null);
 
 /// <summary>A client's answer to a permission request.</summary>
 public sealed record PermissionResponseRequest(string SessionId, string RequestId, string OptionId);
