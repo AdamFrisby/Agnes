@@ -197,6 +197,16 @@ public interface IAgnesHost : IAsyncDisposable
     Task<GitOperationResult> CheckoutPullRequestAsync(string sessionId, string pullRequestId)
         => Task.FromResult(new GitOperationResult(false, "This host does not support pull-request checkout."));
 
+    /// <summary>The session's changed files scoped to this turn, this session, or the whole repository.
+    /// Default: empty (hosts without git report no scoped changes).</summary>
+    Task<IReadOnlyList<string>> GetChangedFilesAsync(string sessionId, ChangedFileScope scope)
+        => Task.FromResult<IReadOnlyList<string>>([]);
+
+    /// <summary>Suggests a commit message by summarizing the staged diff via a one-shot agent run (never commits).
+    /// Default: no suggestion.</summary>
+    Task<CommitMessageSuggestion> GenerateCommitMessageAsync(string sessionId)
+        => Task.FromResult(new CommitMessageSuggestion(false, string.Empty));
+
     /// <summary>Review comments left on a project's files (durable across sessions). Default empty for hosts
     /// that don't store review comments.</summary>
     Task<IReadOnlyList<Agnes.Abstractions.ReviewComment>> ListReviewCommentsAsync(string projectId)

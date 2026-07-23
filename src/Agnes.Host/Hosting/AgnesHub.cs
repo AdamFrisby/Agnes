@@ -206,6 +206,12 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<GitOperationResult> CheckoutPullRequest(string sessionId, string pullRequestId)
         => _sessions.CheckoutPullRequestAsync(sessionId, pullRequestId);
 
+    public Task<IReadOnlyList<string>> GetChangedFiles(string sessionId, ChangedFileScope scope)
+        => _sessions.GetChangedFilesAsync(sessionId, scope);
+
+    public Task<CommitMessageSuggestion> GenerateCommitMessage(string sessionId)
+        => _sessions.GenerateCommitMessageAsync(sessionId);
+
     public Task<IReadOnlyList<Abstractions.ReviewComment>> ListReviewComments(string projectId)
         => Task.FromResult(_reviewComments.ListForProject(projectId));
 

@@ -438,6 +438,31 @@ public sealed record GitSwitchResult(bool Success, bool StashReapplyConflict, st
 /// PR checkout).</summary>
 public sealed record GitOperationResult(bool Success, string Message);
 
+/// <summary>
+/// How broadly to scope a session's "changed files" list (see <c>git-and-files/01-deep-git-integration.md</c>).
+/// <see cref="ThisTurn"/> and <see cref="ThisSession"/> are answered from the event-sourced session log (the
+/// files touched by the agent's normalized tool calls), while <see cref="WholeRepo"/> is the git working-tree
+/// status — so a scope narrower than the whole repository is a query over history, not a new tracking subsystem.
+/// </summary>
+public enum ChangedFileScope
+{
+    /// <summary>Only the files touched by tool calls in the session's most recent (current) turn.</summary>
+    ThisTurn,
+
+    /// <summary>Every file touched by any tool call across the whole session.</summary>
+    ThisSession,
+
+    /// <summary>Every file the git working tree reports as changed, regardless of this session's activity.</summary>
+    WholeRepo,
+}
+
+/// <summary>
+/// An agent-suggested commit message (from a one-shot summarization of the staged diff). <see cref="HasSuggestion"/>
+/// is false — with an empty <see cref="Message"/> — when there was nothing staged to summarize, so a client can
+/// tell "no staged changes" apart from a real suggestion. The user always edits/confirms; this never commits.
+/// </summary>
+public sealed record CommitMessageSuggestion(bool HasSuggestion, string Message);
+
 /// <summary>A request to leave a review comment on a project's file at a specific line.</summary>
 public sealed record AddReviewCommentRequest(string ProjectId, string FilePath, int LineNumber, string LineHash, string Text);
 

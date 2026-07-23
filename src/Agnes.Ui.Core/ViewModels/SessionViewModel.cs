@@ -58,6 +58,11 @@ public sealed class SessionViewModel : ObservableObject
     private bool _carryStash = true;
     private string _gitOpMessage = string.Empty;
     private bool _gitOpFailed;
+    private ChangedFileScope _changedFileScope = ChangedFileScope.WholeRepo;
+    private bool _generatingCommitMessage;
+    // The latest whole-repo status change set (path -> status code), kept so a narrower scope can still show a
+    // status code for files that are also uncommitted.
+    private IReadOnlyList<GitFileChange> _repoChanges = [];
     private int _matchCursor = -1;
     private int _promptCursor = -1;
     private int _changeCursor = -1;
@@ -115,6 +120,7 @@ public sealed class SessionViewModel : ObservableObject
         ResumeCommand = new RelayCommand(Resume);
         ScheduleCommand = new AsyncRelayCommand(ScheduleAsync, () => !string.IsNullOrWhiteSpace(PromptText) && _view.Info is not null);
         CommitCommand = new AsyncRelayCommand(CommitAsync, () => !string.IsNullOrWhiteSpace(CommitMessage) && GitDirty);
+        GenerateCommitMessageCommand = new AsyncRelayCommand(GenerateCommitMessageAsync, () => !_generatingCommitMessage);
         StashCommand = new AsyncRelayCommand(StashAsync, () => GitDirty);
         PopStashCommand = new AsyncRelayCommand(PopStashAsync, () => HasStash);
         SwitchBranchCommand = new AsyncRelayCommand(SwitchBranchAsync, () => !string.IsNullOrWhiteSpace(TargetBranch));
@@ -956,6 +962,9 @@ public sealed class SessionViewModel : ObservableObject
 
     public ICommand RefreshGitCommand { get; }
     public AsyncRelayCommand CommitCommand { get; }
+
+    /// <summary>Fills <see cref="CommitMessage"/> with an agent-suggested message summarizing the staged diff.</summary>
+    public AsyncRelayCommand GenerateCommitMessageCommand { get; }
     public AsyncRelayCommand StashCommand { get; }
     public AsyncRelayCommand PopStashCommand { get; }
     public AsyncRelayCommand SwitchBranchCommand { get; }
@@ -1091,19 +1100,123 @@ public sealed class SessionViewModel : ObservableObject
         set { if (SetProperty(ref _commitMessage, value)) { CommitCommand.NotifyCanExecuteChanged(); } }
     }
 
+    /// <summary>The scopes offered by the changed-file scope selector, in menu order.</summary>
+    public IReadOnlyList<ChangedFileScope> ChangedFileScopes { get; } =
+        [ChangedFileScope.WholeRepo, ChangedFileScope.ThisSession, ChangedFileScope.ThisTurn];
+
+    /// <summary>Which changed-file scope the panel's file list is filtered to. Changing it re-queries the host
+    /// and repopulates <see cref="GitChanges"/> accordingly.</summary>
+    public ChangedFileScope ChangedFileScope
+    {
+        get => _changedFileScope;
+        set
+        {
+            if (SetProperty(ref _changedFileScope, value))
+            {
+                _ = ApplyChangedFileScopeAsync();
+            }
+        }
+    }
+
+    /// <summary>True while a commit-message suggestion is being generated (a Generate button binds its disabled
+    /// state to this).</summary>
+    public bool IsGeneratingCommitMessage => _generatingCommitMessage;
+
     private async Task RefreshGitAsync()
     {
         var status = await _host.GetGitStatusAsync(SessionId);
+        _repoChanges = status.Changes;
+        if (_changedFileScope == ChangedFileScope.WholeRepo)
+        {
+            _dispatcher.Post(() =>
+            {
+                GitChanges.Clear();
+                foreach (var change in status.Changes)
+                {
+                    GitChanges.Add(change);
+                }
+
+                Git = status;
+            });
+        }
+        else
+        {
+            var scoped = await _host.GetChangedFilesAsync(SessionId, _changedFileScope);
+            _dispatcher.Post(() =>
+            {
+                PopulateScopedChanges(scoped);
+                Git = status;
+            });
+        }
+    }
+
+    // Re-queries the host for the selected scope and repopulates the file list (whole-repo shows the git status
+    // change set directly; the narrower scopes show the files the session's tool calls touched).
+    private async Task ApplyChangedFileScopeAsync()
+    {
+        if (_changedFileScope == ChangedFileScope.WholeRepo)
+        {
+            _dispatcher.Post(() =>
+            {
+                GitChanges.Clear();
+                foreach (var change in _repoChanges)
+                {
+                    GitChanges.Add(change);
+                }
+            });
+            return;
+        }
+
+        var scoped = await _host.GetChangedFilesAsync(SessionId, _changedFileScope);
+        _dispatcher.Post(() => PopulateScopedChanges(scoped));
+    }
+
+    // Maps scoped paths to rows, reusing the whole-repo status code when the file is also uncommitted, else a
+    // neutral marker (the file was touched this scope but isn't a pending working-tree change).
+    private void PopulateScopedChanges(IReadOnlyList<string> paths)
+    {
+        GitChanges.Clear();
+        foreach (var path in paths)
+        {
+            var status = _repoChanges.FirstOrDefault(c => string.Equals(c.Path, path, StringComparison.Ordinal))?.Status ?? "~";
+            GitChanges.Add(new GitFileChange(path, status));
+        }
+    }
+
+    private async Task GenerateCommitMessageAsync()
+    {
         _dispatcher.Post(() =>
         {
-            GitChanges.Clear();
-            foreach (var change in status.Changes)
-            {
-                GitChanges.Add(change);
-            }
-
-            Git = status;
+            _generatingCommitMessage = true;
+            OnPropertyChanged(nameof(IsGeneratingCommitMessage));
+            GenerateCommitMessageCommand.NotifyCanExecuteChanged();
         });
+
+        try
+        {
+            var suggestion = await _host.GenerateCommitMessageAsync(SessionId);
+            _dispatcher.Post(() =>
+            {
+                if (suggestion.HasSuggestion)
+                {
+                    CommitMessage = suggestion.Message;
+                }
+                else
+                {
+                    GitOpMessage = "Nothing staged to summarize — stage changes first.";
+                    GitOpFailed = false;
+                }
+            });
+        }
+        finally
+        {
+            _dispatcher.Post(() =>
+            {
+                _generatingCommitMessage = false;
+                OnPropertyChanged(nameof(IsGeneratingCommitMessage));
+                GenerateCommitMessageCommand.NotifyCanExecuteChanged();
+            });
+        }
     }
 
     private async Task CommitAsync()

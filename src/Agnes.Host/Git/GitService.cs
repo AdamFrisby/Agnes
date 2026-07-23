@@ -280,6 +280,22 @@ public sealed class GitService
         return new GitOperationResult(push.ExitCode == 0, msg.Length > 0 ? msg : (push.ExitCode == 0 ? "Pushed." : "Push failed."));
     }
 
+    /// <summary>
+    /// The staged diff (<c>git diff --cached</c>) of the working directory — the input for generating a commit
+    /// message. Returns an empty string when nothing is staged (or the directory isn't a repo), so a caller can
+    /// tell "nothing to summarize" apart from a real diff without inspecting exit codes.
+    /// </summary>
+    public async Task<string> GetStagedDiffAsync(string workingDirectory, CancellationToken cancellationToken = default)
+    {
+        if (!(await GetStatusAsync(workingDirectory, cancellationToken).ConfigureAwait(false)).IsRepository)
+        {
+            return string.Empty;
+        }
+
+        var diff = await RunAsync(workingDirectory, cancellationToken, "diff", "--cached");
+        return diff.ExitCode == 0 ? diff.StdOut : string.Empty;
+    }
+
     /// <summary>Fetches <paramref name="remoteRefspec"/> from <c>origin</c> into a local branch and checks it
     /// out. Used by forge providers to land a PR/MR into the session's working directory.</summary>
     public async Task<GitOperationResult> FetchAndCheckoutAsync(string workingDirectory, string remoteRefspec, string localBranch, CancellationToken cancellationToken = default)
