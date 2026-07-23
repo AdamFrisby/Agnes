@@ -127,6 +127,34 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Stages all changes and commits them.</summary>
     Task<GitCommitResult> GitCommitAsync(string sessionId, string message);
 
+    /// <summary>Stashes the working tree; null if nothing to stash. Default no-op for hosts without git.</summary>
+    Task<GitStashInfo?> GitStashAsync(string sessionId)
+        => Task.FromResult<GitStashInfo?>(null);
+
+    /// <summary>Restores a previously created stash by its id. Default unsupported.</summary>
+    Task<GitOperationResult> GitPopStashAsync(string sessionId, string stashId)
+        => Task.FromResult(new GitOperationResult(false, "This host does not support git stash."));
+
+    /// <summary>Switches branch, optionally carrying uncommitted changes across. Default unsupported.</summary>
+    Task<GitSwitchResult> GitSwitchBranchAsync(string sessionId, string branch, bool carryStash)
+        => Task.FromResult(new GitSwitchResult(false, false, null, "This host does not support branch switching."));
+
+    /// <summary>Fast-forward-only pull (diverged remotes refused server-side). Default unsupported.</summary>
+    Task<GitPullResult> GitPullAsync(string sessionId)
+        => Task.FromResult(new GitPullResult(false, false, "This host does not support git pull."));
+
+    /// <summary>Pushes the current branch, publishing it upstream when requested. Default unsupported.</summary>
+    Task<GitOperationResult> GitPushAsync(string sessionId, bool publishBranch)
+        => Task.FromResult(new GitOperationResult(false, "This host does not support git push."));
+
+    /// <summary>Open pull requests on the forge owning the session's remote. Default empty.</summary>
+    Task<IReadOnlyList<Agnes.Abstractions.PullRequestInfo>> ListPullRequestsAsync(string sessionId)
+        => Task.FromResult<IReadOnlyList<Agnes.Abstractions.PullRequestInfo>>([]);
+
+    /// <summary>Fetches and checks out a pull request into the session's working directory. Default unsupported.</summary>
+    Task<GitOperationResult> CheckoutPullRequestAsync(string sessionId, string pullRequestId)
+        => Task.FromResult(new GitOperationResult(false, "This host does not support pull-request checkout."));
+
     /// <summary>Review comments left on a project's files (durable across sessions). Default empty for hosts
     /// that don't store review comments.</summary>
     Task<IReadOnlyList<Agnes.Abstractions.ReviewComment>> ListReviewCommentsAsync(string projectId)

@@ -359,6 +359,28 @@ public sealed record GitFileChange(string Path, string Status);
 /// <summary>Result of a commit attempt.</summary>
 public sealed record GitCommitResult(bool Success, string Message);
 
+/// <summary>Metadata identifying a stash created from a session's working tree, with enough to find it
+/// again later. <see cref="StashId"/> is the stash commit sha (stable across list reshuffles).</summary>
+public sealed record GitStashInfo(string StashId, string Branch, DateTimeOffset CreatedAt, int FileCount);
+
+/// <summary>
+/// Result of a fast-forward-only pull. <see cref="NonFastForward"/> means the remote had diverged and the
+/// pull was refused server-side (in <c>GitService</c>) rather than silently merging or rebasing — the
+/// safety rule lives at the API layer, not the UI.
+/// </summary>
+public sealed record GitPullResult(bool Success, bool NonFastForward, string Message);
+
+/// <summary>
+/// Result of a branch switch. <see cref="StashReapplyConflict"/> means the switch itself succeeded but a
+/// carried stash couldn't be reapplied cleanly; the changes are preserved in stash <see cref="StashId"/>
+/// (no data loss) for the user to resolve manually.
+/// </summary>
+public sealed record GitSwitchResult(bool Success, bool StashReapplyConflict, string? StashId, string Message);
+
+/// <summary>Generic success/message for a git mutation with no richer typed result (stash pop, push,
+/// PR checkout).</summary>
+public sealed record GitOperationResult(bool Success, string Message);
+
 /// <summary>A request to leave a review comment on a project's file at a specific line.</summary>
 public sealed record AddReviewCommentRequest(string ProjectId, string FilePath, int LineNumber, string LineHash, string Text);
 

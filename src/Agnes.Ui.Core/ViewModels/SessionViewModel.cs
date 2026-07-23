@@ -53,6 +53,11 @@ public sealed class SessionViewModel : ObservableObject
     private SandboxStatus? _sandbox;
     private GitStatus? _git;
     private string _commitMessage = string.Empty;
+    private GitStashInfo? _lastStash;
+    private string _targetBranch = string.Empty;
+    private bool _carryStash = true;
+    private string _gitOpMessage = string.Empty;
+    private bool _gitOpFailed;
     private int _matchCursor = -1;
     private int _promptCursor = -1;
     private int _changeCursor = -1;
@@ -110,6 +115,14 @@ public sealed class SessionViewModel : ObservableObject
         ResumeCommand = new RelayCommand(Resume);
         ScheduleCommand = new AsyncRelayCommand(ScheduleAsync, () => !string.IsNullOrWhiteSpace(PromptText) && _view.Info is not null);
         CommitCommand = new AsyncRelayCommand(CommitAsync, () => !string.IsNullOrWhiteSpace(CommitMessage) && GitDirty);
+        StashCommand = new AsyncRelayCommand(StashAsync, () => GitDirty);
+        PopStashCommand = new AsyncRelayCommand(PopStashAsync, () => HasStash);
+        SwitchBranchCommand = new AsyncRelayCommand(SwitchBranchAsync, () => !string.IsNullOrWhiteSpace(TargetBranch));
+        PullCommand = new AsyncRelayCommand(PullAsync);
+        PushCommand = new AsyncRelayCommand(() => PushAsync(false));
+        PublishBranchCommand = new AsyncRelayCommand(() => PushAsync(true));
+        RefreshPullRequestsCommand = new AsyncRelayCommand(RefreshPullRequestsAsync);
+        CheckoutPullRequestCommand = new AsyncRelayCommand<PullRequestInfo>(pr => pr is null ? Task.CompletedTask : CheckoutPullRequestAsync(pr));
         foreach (var mode in view.Info?.Modes ?? [])
         {
             Modes.Add(mode);
@@ -871,8 +884,20 @@ public sealed class SessionViewModel : ObservableObject
     // ---- git (host working directory) ----
 
     public ObservableCollection<GitFileChange> GitChanges { get; } = [];
+
+    /// <summary>Open pull requests on the session's forge (loaded on demand via <see cref="RefreshPullRequestsCommand"/>).</summary>
+    public ObservableCollection<PullRequestInfo> PullRequests { get; } = [];
+
     public ICommand RefreshGitCommand { get; }
     public AsyncRelayCommand CommitCommand { get; }
+    public AsyncRelayCommand StashCommand { get; }
+    public AsyncRelayCommand PopStashCommand { get; }
+    public AsyncRelayCommand SwitchBranchCommand { get; }
+    public AsyncRelayCommand PullCommand { get; }
+    public AsyncRelayCommand PushCommand { get; }
+    public AsyncRelayCommand PublishBranchCommand { get; }
+    public AsyncRelayCommand RefreshPullRequestsCommand { get; }
+    public AsyncRelayCommand<PullRequestInfo> CheckoutPullRequestCommand { get; }
 
     public GitStatus? Git
     {
@@ -886,9 +911,56 @@ public sealed class SessionViewModel : ObservableObject
                 OnPropertyChanged(nameof(GitDirty));
                 OnPropertyChanged(nameof(GitSummary));
                 CommitCommand.NotifyCanExecuteChanged();
+                StashCommand.NotifyCanExecuteChanged();
             }
         }
     }
+
+    /// <summary>The most recent stash Agnes created for this session (so the UI can offer "restore").</summary>
+    public GitStashInfo? LastStash
+    {
+        get => _lastStash;
+        private set
+        {
+            if (SetProperty(ref _lastStash, value))
+            {
+                OnPropertyChanged(nameof(HasStash));
+                PopStashCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasStash => _lastStash is not null;
+
+    /// <summary>The branch name typed into the switcher.</summary>
+    public string TargetBranch
+    {
+        get => _targetBranch;
+        set { if (SetProperty(ref _targetBranch, value)) { SwitchBranchCommand.NotifyCanExecuteChanged(); } }
+    }
+
+    /// <summary>Whether a branch switch should carry uncommitted changes across via a stash.</summary>
+    public bool CarryStash
+    {
+        get => _carryStash;
+        set => SetProperty(ref _carryStash, value);
+    }
+
+    /// <summary>The last git-operation status line (stash/switch/pull/push/PR), shown in the git flyout.</summary>
+    public string GitOpMessage
+    {
+        get => _gitOpMessage;
+        private set { if (SetProperty(ref _gitOpMessage, value)) { OnPropertyChanged(nameof(HasGitOpMessage)); } }
+    }
+
+    /// <summary>Whether the last git operation failed (so the message renders as an error, e.g. a refused pull).</summary>
+    public bool GitOpFailed
+    {
+        get => _gitOpFailed;
+        private set => SetProperty(ref _gitOpFailed, value);
+    }
+
+    public bool HasGitOpMessage => !string.IsNullOrEmpty(_gitOpMessage);
 
     public AsyncRelayCommand PauseSandboxCommand { get; }
     public AsyncRelayCommand ResumeSandboxCommand { get; }
@@ -978,6 +1050,106 @@ public sealed class SessionViewModel : ObservableObject
 
         await _host.GitCommitAsync(SessionId, message);
         _dispatcher.Post(() => CommitMessage = string.Empty);
+        await RefreshGitAsync();
+    }
+
+    private void ReportGit(string message, bool failed)
+        => _dispatcher.Post(() => { GitOpMessage = message; GitOpFailed = failed; });
+
+    private async Task StashAsync()
+    {
+        var stash = await _host.GitStashAsync(SessionId);
+        _dispatcher.Post(() =>
+        {
+            LastStash = stash;
+            GitOpMessage = stash is null ? "Nothing to stash." : $"Stashed {stash.FileCount} file(s) from {stash.Branch}.";
+            GitOpFailed = stash is null;
+        });
+        await RefreshGitAsync();
+    }
+
+    private async Task PopStashAsync()
+    {
+        if (_lastStash is null)
+        {
+            return;
+        }
+
+        var result = await _host.GitPopStashAsync(SessionId, _lastStash.StashId);
+        _dispatcher.Post(() =>
+        {
+            GitOpMessage = result.Message;
+            GitOpFailed = !result.Success;
+            if (result.Success)
+            {
+                LastStash = null;
+            }
+        });
+        await RefreshGitAsync();
+    }
+
+    private async Task SwitchBranchAsync()
+    {
+        var branch = TargetBranch.Trim();
+        if (branch.Length == 0)
+        {
+            return;
+        }
+
+        var result = await _host.GitSwitchBranchAsync(SessionId, branch, CarryStash);
+        _dispatcher.Post(() =>
+        {
+            GitOpMessage = result.Message;
+            GitOpFailed = !result.Success;
+            if (result.Success)
+            {
+                TargetBranch = string.Empty;
+            }
+        });
+        await RefreshGitAsync();
+    }
+
+    private async Task PullAsync()
+    {
+        var result = await _host.GitPullAsync(SessionId);
+        // A non-fast-forwardable remote is refused server-side; surface it as a clear, actionable error.
+        var message = result.NonFastForward
+            ? $"Pull refused: the remote has diverged and can't be fast-forwarded. Reconcile it manually. {result.Message}"
+            : result.Message;
+        ReportGit(message, !result.Success);
+        await RefreshGitAsync();
+    }
+
+    private async Task PushAsync(bool publishBranch)
+    {
+        var result = await _host.GitPushAsync(SessionId, publishBranch);
+        ReportGit(result.Message, !result.Success);
+        await RefreshGitAsync();
+    }
+
+    private async Task RefreshPullRequestsAsync()
+    {
+        var prs = await _host.ListPullRequestsAsync(SessionId);
+        _dispatcher.Post(() =>
+        {
+            PullRequests.Clear();
+            foreach (var pr in prs)
+            {
+                PullRequests.Add(pr);
+            }
+
+            if (prs.Count == 0)
+            {
+                GitOpMessage = "No open pull requests (or no forge configured for this remote).";
+                GitOpFailed = false;
+            }
+        });
+    }
+
+    private async Task CheckoutPullRequestAsync(PullRequestInfo pullRequest)
+    {
+        var result = await _host.CheckoutPullRequestAsync(SessionId, pullRequest.Id);
+        ReportGit(result.Message, !result.Success);
         await RefreshGitAsync();
     }
 

@@ -161,6 +161,27 @@ public sealed class HostConnection : IAgnesHost
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
         => _hub.InvokeAsync<GitCommitResult>(nameof(IAgnesServer.GitCommit), sessionId, message);
 
+    public Task<GitStashInfo?> GitStashAsync(string sessionId)
+        => _hub.InvokeAsync<GitStashInfo?>(nameof(IAgnesServer.GitStash), sessionId);
+
+    public Task<GitOperationResult> GitPopStashAsync(string sessionId, string stashId)
+        => _hub.InvokeAsync<GitOperationResult>(nameof(IAgnesServer.GitPopStash), sessionId, stashId);
+
+    public Task<GitSwitchResult> GitSwitchBranchAsync(string sessionId, string branch, bool carryStash)
+        => _hub.InvokeAsync<GitSwitchResult>(nameof(IAgnesServer.GitSwitchBranch), sessionId, branch, carryStash);
+
+    public Task<GitPullResult> GitPullAsync(string sessionId)
+        => _hub.InvokeAsync<GitPullResult>(nameof(IAgnesServer.GitPull), sessionId);
+
+    public Task<GitOperationResult> GitPushAsync(string sessionId, bool publishBranch)
+        => _hub.InvokeAsync<GitOperationResult>(nameof(IAgnesServer.GitPush), sessionId, publishBranch);
+
+    public Task<IReadOnlyList<Abstractions.PullRequestInfo>> ListPullRequestsAsync(string sessionId)
+        => _hub.InvokeAsync<IReadOnlyList<Abstractions.PullRequestInfo>>(nameof(IAgnesServer.ListPullRequests), sessionId);
+
+    public Task<GitOperationResult> CheckoutPullRequestAsync(string sessionId, string pullRequestId)
+        => _hub.InvokeAsync<GitOperationResult>(nameof(IAgnesServer.CheckoutPullRequest), sessionId, pullRequestId);
+
     public Task<IReadOnlyList<Abstractions.ReviewComment>> ListReviewCommentsAsync(string projectId)
         => _hub.InvokeAsync<IReadOnlyList<Abstractions.ReviewComment>>(nameof(IAgnesServer.ListReviewComments), projectId);
 
