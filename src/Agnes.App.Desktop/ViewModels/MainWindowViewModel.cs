@@ -186,6 +186,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // Help
             new SettingsCategoryVm("bugreport", "Report a bug", "🐞", "bug report issue github feedback problem crash diagnostics support help"),
             new SettingsCategoryVm("prompts", "Prompts", "📝", "prompt prompts template templates slash token library saved snippet reuse review insert send"),
+            new SettingsCategoryVm("profiles", "Launch profiles", "🚀", "launch profile profiles preset saved reusable session config agent permissions sandbox model new session"),
         ];
         SettingsCategories[0].IsSelected = true;
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
@@ -232,6 +233,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OpenSearchCommand = new RelayCommand(OpenSearch);
         BugReport = new BugReportViewModel(ActiveHost, _dispatcher, OpenInBrowser);
         PromptLibrary = new PromptLibraryViewModel(ActiveHost, _dispatcher);
+        LaunchProfiles = new LaunchProfilesViewModel(ActiveHost, _dispatcher);
     }
 
     /// <summary>The plugin-management surface for the active host (Browse / install / configure / enable).</summary>
@@ -259,6 +261,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     }
     /// <summary>The prompt-library surface for the active host (saved prompts + slash-token templates).</summary>
     public PromptLibraryViewModel PromptLibrary { get; }
+
+    /// <summary>The launch-profiles management surface for the active host (list / rename / delete).</summary>
+    public LaunchProfilesViewModel LaunchProfiles { get; }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
     public IRelayCommand ClosePaletteCommand { get; }
@@ -675,6 +680,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatPlugins => SettingsCategory == "plugins";
     public bool CatBugReport => SettingsCategory == "bugreport";
     public bool CatPrompts => SettingsCategory == "prompts";
+    public bool CatProfiles => SettingsCategory == "profiles";
 
     /// <summary>The connected host these host-scoped settings apply to (e.g. GitHub, Devices, Projects).</summary>
     public string ActiveHostName => ActiveHttpHost() is { } t
@@ -698,6 +704,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatPlugins));
         OnPropertyChanged(nameof(CatBugReport));
         OnPropertyChanged(nameof(CatPrompts));
+        OnPropertyChanged(nameof(CatProfiles));
         OnPropertyChanged(nameof(ActiveHostName));
         if (value == "projects" && SelectedProject is null)
         {
@@ -719,6 +726,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         else if (value == "prompts")
         {
             _ = PromptLibrary.RefreshAsync();
+        }
+        else if (value == "profiles")
+        {
+            _ = LaunchProfiles.RefreshAsync();
         }
         else if (value == "bugreport")
         {
@@ -2763,6 +2774,61 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         return SelectAgentAsync(
             doc, descriptor.AdapterId, source.AgentName ?? descriptor.AdapterId,
             source.SkipPermissions, source.GitCredentialMode, source.UseSandbox && source.SandboxAvailable);
+    }
+
+    // ---- launch profiles (providers/04): named, reusable new-session launch configs ----
+
+    public async Task LoadLaunchProfilesAsync(SessionDocument doc)
+    {
+        if (doc.Host is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var profiles = await doc.Host.GetLaunchProfilesAsync();
+            _dispatcher.Post(() => doc.SetLaunchProfiles(profiles));
+        }
+        catch
+        {
+            // A host without the feature (or a transient error) simply shows no profile picker.
+        }
+    }
+
+    public async Task SaveCurrentAsLaunchProfileAsync(SessionDocument doc, string name)
+    {
+        if (doc.Host is null || doc.SelectedAgent is not { Available: true } agent || string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        // Capture the tab's current new-session selections (plus the client-global MCP-approval posture) into a
+        // profile. WorkingDirectory is stored only when the user pinned one; a blank keeps the profile
+        // directory-agnostic so it can be reused across folders.
+        var dir = string.IsNullOrWhiteSpace(doc.WorkingDirectory) ? null : doc.WorkingDirectory.Trim();
+        var profile = new LaunchProfile(
+            string.Empty, name.Trim(), agent.AdapterId, dir, UseWorktree: false,
+            doc.SkipPermissions, McpApproval, doc.GitCredentialMode, doc.SandboxAvailable && doc.UseSandbox, doc.EffectiveModelId);
+
+        try
+        {
+            await doc.Host.SaveLaunchProfileAsync(profile);
+            await LoadLaunchProfilesAsync(doc);
+            _dispatcher.Post(() => doc.StatusText = $"Saved launch profile \"{profile.Name}\".");
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => doc.StatusText = "Couldn't save the profile: " + ex.Message);
+        }
+    }
+
+    public void ApplyLaunchProfileMcpApproval(string mcpApproval)
+    {
+        if (!string.IsNullOrWhiteSpace(mcpApproval))
+        {
+            McpApproval = mcpApproval;
+        }
     }
 
     public async Task ForkAsync(SessionDocument doc)

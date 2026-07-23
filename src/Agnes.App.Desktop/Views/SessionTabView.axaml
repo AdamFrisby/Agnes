@@ -676,6 +676,34 @@
                         </Grid>
                     </Border>
 
+                    <!-- Launch profiles: pick a saved config to prefill everything below, or save the current one -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="PROFILE" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                        <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding HasLaunchProfiles}">
+                            <ComboBox Grid.Column="0" ItemsSource="{Binding LaunchProfiles}" SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch" FontSize="12" PlaceholderText="Apply a saved profile…">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Name}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button Grid.Column="1" Content="Apply" Command="{Binding ApplyProfileCommand}" Classes="seg" Margin="6,0,0,0" />
+                            <Button Grid.Column="2" Content="Save current…" Command="{Binding ToggleSaveProfileCommand}" Classes="seg" Margin="6,0,0,0" />
+                        </Grid>
+                        <!-- When there are no profiles yet, still offer to save the current selections as the first one -->
+                        <Button Content="Save current as profile…" Command="{Binding ToggleSaveProfileCommand}" Classes="seg"
+                                HorizontalAlignment="Left" IsVisible="{Binding !HasLaunchProfiles}" />
+                        <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding ShowSaveProfile}">
+                            <TextBox Grid.Column="0" Text="{Binding NewProfileName, Mode=TwoWay}" PlaceholderText="Profile name (e.g. Scratch OpenCode)"
+                                     Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                     BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="9,5" FontSize="12"
+                                     AutomationProperties.Name="New profile name" />
+                            <Button Grid.Column="1" Content="Save" Command="{Binding SaveProfileCommand}" Classes="seg" Margin="6,0,0,0" />
+                            <Button Grid.Column="2" Content="Cancel" Command="{Binding ToggleSaveProfileCommand}" Classes="seg" Margin="6,0,0,0" />
+                        </Grid>
+                    </StackPanel>
+
                     <!-- Agent: label + search (scales past a handful) + selectable list; opens only on Start -->
                     <StackPanel Spacing="6">
                         <Grid ColumnDefinitions="Auto,*">

@@ -22,6 +22,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly IPluginRegistry<IMemoryIndexProvider> _memoryIndexes;
     private readonly BugReportRouter _bugReports;
     private readonly PromptLibrary _prompts;
+    private readonly LaunchProfileStore _launchProfiles;
     private readonly SkillLibrary _skills;
     private readonly IPluginRegistry<IPromptRegistryProvider> _skillRegistries;
     private readonly AttentionRequestService _attention;
@@ -30,8 +31,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly Notifications.ActiveSessionViewTracker _views;
     private readonly IPluginRegistry<INotificationChannel> _channels;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels)
     {
+        _launchProfiles = launchProfiles;
         _pushRegistrations = pushRegistrations;
         _views = views;
         _channels = channels;
@@ -104,6 +106,26 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
         => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox, request.ModelId);
+
+    public Task<IReadOnlyList<LaunchProfile>> GetLaunchProfiles()
+        => Task.FromResult(_launchProfiles.List());
+
+    public Task<LaunchProfile> SaveLaunchProfile(LaunchProfile profile)
+        => Task.FromResult(_launchProfiles.Save(profile));
+
+    public Task DeleteLaunchProfile(string id)
+    {
+        _launchProfiles.Delete(id);
+        return Task.CompletedTask;
+    }
+
+    public Task<SessionInfo> OpenSessionFromProfile(OpenSessionFromProfileRequest request)
+    {
+        var profile = _launchProfiles.Find(request.ProfileId)
+            ?? throw new InvalidOperationException($"No launch profile with id '{request.ProfileId}'.");
+        var open = profile.ToOpenSessionRequest(request.WorkingDirectoryOverride);
+        return _sessions.OpenSessionAsync(open.AdapterId, open.WorkingDirectory, open.UseWorktree, open.SkipPermissions, open.McpApproval, open.GitCredentialMode, open.UseSandbox, open.ModelId);
+    }
 
     public Task<ForkPlan?> ProposeFork(string sessionId)
         => Task.FromResult(_sessions.ProposeFork(sessionId));

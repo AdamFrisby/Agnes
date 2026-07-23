@@ -63,6 +63,25 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
 
+    // ---- launch profiles (see .ideas/providers/04-profiles.md) ----
+    // Defaulted so hosts/fixtures that predate profiles reply empty (and reject writes) instead of failing.
+
+    /// <summary>The host's saved launch profiles. Default empty for hosts without the feature.</summary>
+    Task<IReadOnlyList<LaunchProfile>> GetLaunchProfilesAsync()
+        => Task.FromResult<IReadOnlyList<LaunchProfile>>([]);
+
+    /// <summary>Upserts a launch profile on the host, returning it with any assigned id.</summary>
+    Task<LaunchProfile> SaveLaunchProfileAsync(LaunchProfile profile)
+        => throw new NotSupportedException("This host does not support launch profiles.");
+
+    /// <summary>Deletes a launch profile by id.</summary>
+    Task DeleteLaunchProfileAsync(string id) => Task.CompletedTask;
+
+    /// <summary>Opens a new session from a saved profile, optionally overriding its working directory (required
+    /// when the profile is directory-agnostic).</summary>
+    Task<SessionInfo> OpenSessionFromProfileAsync(string profileId, string? workingDirectoryOverride = null)
+        => throw new NotSupportedException("This host does not support launch profiles.");
+
     /// <summary>Compute a fork plan (proposed target folder + sandbox-copy capability) for a session, or
     /// null if the session/host doesn't support forking. Default null for hosts without the feature.</summary>
     Task<ForkPlan?> ProposeForkAsync(string sessionId) => Task.FromResult<ForkPlan?>(null);

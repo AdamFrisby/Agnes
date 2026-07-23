@@ -48,6 +48,23 @@ public interface IAgnesServer
 
     Task<SessionInfo> OpenSession(OpenSessionRequest request);
 
+    // ---- launch profiles (see .ideas/providers/04-profiles.md) ----
+    // Named, reusable bundles of new-session launch options, persisted host-side and driven over the wire so
+    // any paired client can manage them. A profile carries no secret, so LaunchProfile crosses the wire whole.
+
+    /// <summary>The host's saved launch profiles.</summary>
+    Task<IReadOnlyList<LaunchProfile>> GetLaunchProfiles();
+
+    /// <summary>Upserts a launch profile (assigning an id when blank) and returns the stored profile.</summary>
+    Task<LaunchProfile> SaveLaunchProfile(LaunchProfile profile);
+
+    /// <summary>Deletes a launch profile by id.</summary>
+    Task DeleteLaunchProfile(string id);
+
+    /// <summary>Opens a new session from a saved profile: materializes it into an <see cref="OpenSessionRequest"/>
+    /// (using the request's directory override when the profile is directory-agnostic) and opens it.</summary>
+    Task<SessionInfo> OpenSessionFromProfile(OpenSessionFromProfileRequest request);
+
     /// <summary>Compute a fork plan (proposed target folder + sandbox-copy capability) for a session.
     /// Returns null if the session is unknown.</summary>
     Task<ForkPlan?> ProposeFork(string sessionId);

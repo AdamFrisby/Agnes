@@ -69,6 +69,17 @@ public interface ITabController
     /// <summary>Detach the tab into its own floating window (drag it back to re-dock).</summary>
     void FloatTab(SessionDocument doc);
 
+    /// <summary>Load the host's saved launch profiles into the tab's new-session picker (no-op off a host).</summary>
+    Task LoadLaunchProfilesAsync(SessionDocument doc);
+
+    /// <summary>Capture the tab's current new-session selections as a named launch profile on the host, then
+    /// refresh the tab's profile list. No-op without a chosen agent or a name.</summary>
+    Task SaveCurrentAsLaunchProfileAsync(SessionDocument doc, string name);
+
+    /// <summary>Apply a saved profile's MCP-approval posture to the client-global setting (the rest of a
+    /// profile's options prefill the tab's own controls directly).</summary>
+    void ApplyLaunchProfileMcpApproval(string mcpApproval);
+
     /// <summary>The working directory to prefill for a new session (last used, or the user's home).</summary>
     string DefaultWorkingDirectory { get; }
 

@@ -109,6 +109,18 @@ public sealed class HostConnection : IAgnesHost
     public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
         => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox, modelId));
 
+    public Task<IReadOnlyList<LaunchProfile>> GetLaunchProfilesAsync()
+        => _hub.InvokeAsync<IReadOnlyList<LaunchProfile>>(nameof(IAgnesServer.GetLaunchProfiles));
+
+    public Task<LaunchProfile> SaveLaunchProfileAsync(LaunchProfile profile)
+        => _hub.InvokeAsync<LaunchProfile>(nameof(IAgnesServer.SaveLaunchProfile), profile);
+
+    public Task DeleteLaunchProfileAsync(string id)
+        => _hub.InvokeAsync(nameof(IAgnesServer.DeleteLaunchProfile), id);
+
+    public Task<SessionInfo> OpenSessionFromProfileAsync(string profileId, string? workingDirectoryOverride = null)
+        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSessionFromProfile), new OpenSessionFromProfileRequest(profileId, workingDirectoryOverride));
+
     public Task<ForkPlan?> ProposeForkAsync(string sessionId)
         => _hub.InvokeAsync<ForkPlan?>(nameof(IAgnesServer.ProposeFork), sessionId);
 

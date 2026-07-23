@@ -782,6 +782,38 @@
                         </StackPanel>
                     </StackPanel>
 
+                    <!-- Launch profiles -->
+                    <StackPanel IsVisible="{Binding CatProfiles}">
+                        <StackPanel DataContext="{Binding LaunchProfiles}" Spacing="14">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Launch profiles" />
+                                <Button Grid.Column="2" Content="Refresh" Command="{Binding RefreshCommand}" Classes="seg" />
+                            </Grid>
+                            <TextBlock Classes="scopeNote"
+                                       Text="Named, reusable new-session configs — agent, permission posture, git/sandbox defaults, model. Create one from the new-session screen with &quot;Save current as profile…&quot;; applying it there prefills the launch controls. Deleting a profile never affects a session already launched from it." />
+
+                            <ItemsControl ItemsSource="{Binding Profiles}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                    <TextBlock Text="{Binding AdapterId}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Delete" Classes="seg"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.DeleteCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
+
                 </StackPanel>
             </ScrollViewer>
         </Grid>

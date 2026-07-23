@@ -36,6 +36,9 @@ public sealed partial class SessionDocument : Document, ITraySession
         SelectAgentChoiceCommand = new RelayCommand<AgentChoice>(SelectAgentChoice);
         SelectModelChoiceCommand = new RelayCommand<ModelChoice>(SelectModelChoice);
         StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => SelectedAgent is { Available: true });
+        ApplyProfileCommand = new RelayCommand(() => { if (SelectedProfile is { } p) { ApplyLaunchProfile(p); } });
+        ToggleSaveProfileCommand = new RelayCommand(() => { ShowSaveProfile = !ShowSaveProfile; if (ShowSaveProfile && string.IsNullOrWhiteSpace(NewProfileName)) { NewProfileName = SelectedAgent?.DisplayName ?? string.Empty; } });
+        SaveProfileCommand = new AsyncRelayCommand(SaveProfileAsync, () => SelectedAgent is { Available: true } && !string.IsNullOrWhiteSpace(NewProfileName));
 
         Tags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTags));
 
@@ -85,7 +88,11 @@ public sealed partial class SessionDocument : Document, ITraySession
 
     partial void OnAgentFilterChanged(string value) => ApplyAgentFilter();
 
-    partial void OnSelectedAgentChanged(AgentChoice? value) => StartSessionCommand.NotifyCanExecuteChanged();
+    partial void OnSelectedAgentChanged(AgentChoice? value)
+    {
+        StartSessionCommand.NotifyCanExecuteChanged();
+        SaveProfileCommand.NotifyCanExecuteChanged();
+    }
 
     // ---- model picker (per selected agent; populated from the host's live/static catalog) ----
 
@@ -155,6 +162,76 @@ public sealed partial class SessionDocument : Document, ITraySession
         SelectedModel = null;
         SelectModelChoice(Models.FirstOrDefault(m => m.IsAvailable));
         OnPropertyChanged(nameof(HasModels));
+    }
+
+    // ---- launch profiles (providers/04): pick a saved config to prefill the new-session controls ----
+
+    /// <summary>The host's saved launch profiles, offered in the new-session picker. Empty hides the picker.</summary>
+    public ObservableCollection<LaunchProfile> LaunchProfiles { get; } = [];
+
+    public bool HasLaunchProfiles => LaunchProfiles.Count > 0;
+
+    /// <summary>The profile chosen in the picker; applying it prefills the launch controls (the user can still
+    /// tweak before starting).</summary>
+    [ObservableProperty]
+    private LaunchProfile? _selectedProfile;
+
+    /// <summary>Whether the "Save current as profile…" name field is showing.</summary>
+    [ObservableProperty]
+    private bool _showSaveProfile;
+
+    /// <summary>The name typed for a new profile when saving the current selections.</summary>
+    [ObservableProperty]
+    private string _newProfileName = string.Empty;
+
+    partial void OnNewProfileNameChanged(string value) => SaveProfileCommand.NotifyCanExecuteChanged();
+
+    public IRelayCommand ApplyProfileCommand { get; private set; } = null!;
+    public IRelayCommand ToggleSaveProfileCommand { get; private set; } = null!;
+    public IAsyncRelayCommand SaveProfileCommand { get; private set; } = null!;
+
+    /// <summary>Replaces the tab's launch-profile list (called by the controller after loading from the host).</summary>
+    public void SetLaunchProfiles(IEnumerable<LaunchProfile> profiles)
+    {
+        LaunchProfiles.Clear();
+        foreach (var p in profiles)
+        {
+            LaunchProfiles.Add(p);
+        }
+
+        OnPropertyChanged(nameof(HasLaunchProfiles));
+    }
+
+    /// <summary>Applies <paramref name="profile"/>'s captured options to this tab's new-session controls:
+    /// selects the matching agent, and prefills the working directory, permission posture, git-credential mode,
+    /// sandbox toggle, and model. The MCP-approval posture is a client-global setting, applied via the
+    /// controller. Everything remains editable before Start (profiles are a starting point, not a lock).</summary>
+    public void ApplyLaunchProfile(LaunchProfile profile)
+    {
+        SelectedProfile = profile;
+
+        if (!string.IsNullOrWhiteSpace(profile.WorkingDirectory))
+        {
+            WorkingDirectory = profile.WorkingDirectory;
+        }
+
+        SkipPermissions = profile.SkipPermissions;
+        GitCredentialMode = profile.GitCredentialMode;
+        UseSandbox = profile.UseSandbox && SandboxAvailable;
+        _controller.ApplyLaunchProfileMcpApproval(profile.McpApproval);
+
+        // Select the agent the profile targets, if it's present and available; this also (re)loads its models.
+        var agent = _allAgents.FirstOrDefault(a => a.AdapterId == profile.AdapterId && a.Available);
+        if (agent is not null)
+        {
+            SelectAgentChoice(agent);
+        }
+
+        // The model catalog loads asynchronously; stash the profile's model as free-text so it's applied
+        // regardless of whether the catalog lists it.
+        CustomModelId = profile.ModelId ?? string.Empty;
+
+        StatusText = $"Applied profile \"{profile.Name}\" — adjust anything, then Start.";
     }
 
     [ObservableProperty]
@@ -421,6 +498,18 @@ public sealed partial class SessionDocument : Document, ITraySession
         return _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode, SandboxAvailable && UseSandbox, EffectiveModelId);
     }
 
+    private async Task SaveProfileAsync()
+    {
+        if (SelectedAgent is not { Available: true } || string.IsNullOrWhiteSpace(NewProfileName))
+        {
+            return;
+        }
+
+        await _controller.SaveCurrentAsLaunchProfileAsync(this, NewProfileName.Trim()).ConfigureAwait(true);
+        ShowSaveProfile = false;
+        NewProfileName = string.Empty;
+    }
+
     private void ApplyAgentFilter()
     {
         var q = AgentFilter?.Trim() ?? string.Empty;
@@ -476,6 +565,8 @@ public sealed partial class SessionDocument : Document, ITraySession
         ApplyAgentFilter();
         Stage = TabStage.PickAgent;
         StatusText = string.Empty;
+        // Offer any saved launch profiles alongside the from-scratch agent picker.
+        _ = _controller.LoadLaunchProfilesAsync(this);
     }
 
     /// <summary>Refreshes the picker's login badges from a host-pushed agent list (OnAgentsChanged), so a

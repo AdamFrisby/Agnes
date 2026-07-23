@@ -168,6 +168,11 @@ var promptLibraryDir = builder.Configuration["Agnes:PromptLibraryDir"]
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.PromptLibrary(
     promptLibraryDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.PromptLibrary>()));
 
+// ---- launch profiles (providers/04): named, reusable new-session launch configs ----
+var launchProfilesDir = builder.Configuration["Agnes:LaunchProfilesDir"] ?? promptLibraryDir;
+builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.LaunchProfileStore(
+    launchProfilesDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.LaunchProfileStore>()));
+
 // ---- skill bundles + external registries (extensibility/02): a SKILL.md + supporting files as one unit ----
 // The library owns managed copies (source of truth); registries are explicit, tracked import sources.
 var skillLibraryDir = builder.Configuration["Agnes:SkillLibraryDir"] ?? promptLibraryDir;

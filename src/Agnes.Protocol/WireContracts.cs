@@ -332,6 +332,63 @@ public sealed record OpenSessionRequest(
     string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false,
     string McpApproval = "Ask", string GitCredentialMode = "Off", bool UseSandbox = true, string? ModelId = null);
 
+/// <summary>
+/// A named, reusable bundle of new-session launch options — pick it once, reuse it forever. It captures the
+/// same knobs an <see cref="OpenSessionRequest"/> carries (which agent, permission posture, MCP/git/sandbox
+/// defaults, model), minus the parts that are inherently per-launch. <see cref="WorkingDirectory"/> is
+/// optional: a null/blank value makes the profile <em>directory-agnostic</em> (the launcher supplies a folder
+/// via <see cref="OpenSessionFromProfileRequest.WorkingDirectoryOverride"/>); a pinned value binds it to one
+/// folder. Applied only at launch and fixed for the session's lifetime — deleting a profile never affects a
+/// session already launched from it.
+/// </summary>
+/// <param name="Id">Stable unique id (assigned when blank on save) — the key <c>OpenSessionFromProfile</c> references.</param>
+/// <param name="Name">Human-friendly name shown in the new-session profile picker.</param>
+/// <param name="ConnectedServiceProfileId">
+/// Reserved seam for later wiring to the connected-services credential broker
+/// (<c>.ideas/providers/02-connected-services-credential-broker.md</c>). A profile carries <em>no</em> service
+/// credential yet — this pass ignores the field; it exists now so adding a credential-profile reference later
+/// needs no schema/wire change. Trailing-optional so legacy JSON without it deserializes to null.
+/// </param>
+public sealed record LaunchProfile(
+    string Id,
+    string Name,
+    string AdapterId,
+    string? WorkingDirectory = null,
+    bool UseWorktree = false,
+    bool SkipPermissions = false,
+    string McpApproval = "Ask",
+    string GitCredentialMode = "Off",
+    bool UseSandbox = true,
+    string? ModelId = null,
+    string? ConnectedServiceProfileId = null)
+{
+    /// <summary>Materializes this profile into a concrete <see cref="OpenSessionRequest"/> for one launch. The
+    /// override wins when supplied; otherwise the profile's pinned <see cref="WorkingDirectory"/> is used, and a
+    /// directory-agnostic profile launched with neither is a clear error rather than a silent empty-directory
+    /// launch. Pure over the profile, so it's unit-testable without a host. The reserved
+    /// <see cref="ConnectedServiceProfileId"/> seam is intentionally not consulted yet.</summary>
+    public OpenSessionRequest ToOpenSessionRequest(string? workingDirectoryOverride = null)
+    {
+        var directory = !string.IsNullOrWhiteSpace(workingDirectoryOverride)
+            ? workingDirectoryOverride
+            : WorkingDirectory;
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            throw new InvalidOperationException(
+                $"Launch profile '{Name}' is directory-agnostic; a working directory must be supplied to launch it.");
+        }
+
+        return new OpenSessionRequest(
+            AdapterId, directory, UseWorktree, SkipPermissions,
+            McpApproval, GitCredentialMode, UseSandbox, ModelId);
+    }
+}
+
+/// <summary>Open a new session from a saved <see cref="LaunchProfile"/>. When the profile is directory-agnostic
+/// (or the caller wants a different folder for this launch), <see cref="WorkingDirectoryOverride"/> supplies the
+/// working directory; otherwise the profile's own pinned directory is used.</summary>
+public sealed record OpenSessionFromProfileRequest(string ProfileId, string? WorkingDirectoryOverride = null);
+
 /// <summary>What a fork would do, computed host-side: the source's working folder, a proposed
 /// (non-existing, numeral-incremented) target the UI prefills, and whether the source's sandbox can be
 /// copy-on-write cloned. Returned by <c>ProposeFork</c> so the client (which is remote from the host's
