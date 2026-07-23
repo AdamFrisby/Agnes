@@ -239,6 +239,96 @@
                         </ItemsControl>
                     </StackPanel>
 
+                    <!-- MCP SERVERS (host-level registry: presets · scope · preview) -->
+                    <StackPanel Spacing="12" IsVisible="{Binding CatMcp}">
+                        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="MCP servers" />
+                            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                                          Description="MCP servers give agents extra tools. Install a curated preset in one click, or add your own. Each server has a scope (all hosts / this host / this workspace) that decides which sessions see it. Changes apply on the next session start, never mid-session."
+                                          Security="These servers live on the host you're connected to. A host-run server is proxied into a sandbox through the audited forward; a sandbox-run server runs inside the VM." />
+                            <Button Grid.Column="3" Content="Preview effective" Command="{Binding PreviewMcpCommand}" Classes="seg"
+                                    ToolTip.Tip="Show which servers would actually be active for a plain session right now (scope-filtered)." />
+                            <Button Grid.Column="4" Content="Refresh" Command="{Binding LoadMcpServersCommand}" Classes="seg" Margin="6,0,0,0" />
+                        </Grid>
+                        <TextBlock Classes="scopeNote">
+                            <Run Text="Configured on the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
+                        </TextBlock>
+                        <TextBlock Text="{Binding McpStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+
+                        <!-- Curated quick-install presets -->
+                        <TextBlock Text="Quick install" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                        <ItemsControl ItemsSource="{Binding McpPresets}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                            <TextBlock Text="{Binding Command}" Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="Install" Classes="seg"
+                                                Command="{Binding $parent[ItemsControl].DataContext.InstallMcpPresetCommand}" CommandParameter="{Binding}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Configured servers (with scope + run location) -->
+                        <TextBlock Text="Configured servers" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                        <ItemsControl ItemsSource="{Binding McpServers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,3" ColumnSpacing="8">
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                            <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
+                                                <Run Text="{Binding RunAt}" /><Run Text=" · " /><Run Text="{Binding Transport}" /><Run Text=" · " /><Run Text="{Binding ApplyScope}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding Enabled}" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
+                                        <Button Grid.Column="2" Content="Toggle" Classes="seg"
+                                                Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}" CommandParameter="{Binding}" />
+                                        <Button Grid.Column="3" Content="Remove" FontSize="11" Padding="9,3" Background="Transparent" Foreground="#E5484D"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                                Command="{Binding $parent[ItemsControl].DataContext.RemoveMcpServerCommand}" CommandParameter="{Binding Id}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Add a server by hand (reuses the shared MCP composer fields) -->
+                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
+                        <TextBlock Text="Add a server" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                        <StackPanel Spacing="6">
+                            <TextBox Text="{Binding NewMcpName, Mode=TwoWay}" Watermark="Server name" FontSize="12" Padding="8,5" CornerRadius="6" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Button Content="Host" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="host" Classes.on="{Binding NewMcpRunAtHost}" Classes="seg" />
+                                <Button Content="Sandbox" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="sandbox" Classes.on="{Binding NewMcpRunAtSandbox}" Classes="seg" />
+                                <Button Content="stdio" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="stdio" Classes.on="{Binding NewMcpIsStdio}" Classes="seg" />
+                                <Button Content="http" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="http" Classes.on="{Binding NewMcpIsHttp}" Classes="seg" />
+                            </StackPanel>
+                            <StackPanel Spacing="6" IsVisible="{Binding NewMcpIsStdio}">
+                                <TextBox Text="{Binding NewMcpCommand, Mode=TwoWay}" Watermark="command (e.g. npx)" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                <TextBox Text="{Binding NewMcpArgs, Mode=TwoWay}" Watermark="args (space-separated)" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                            </StackPanel>
+                            <TextBox IsVisible="{Binding NewMcpIsHttp}" Text="{Binding NewMcpUrl, Mode=TwoWay}" Watermark="https://server/mcp" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                            <Button Content="Add server" Command="{Binding AddMcpServerCommand}" HorizontalAlignment="Left" Classes="seg" />
+                        </StackPanel>
+
+                        <!-- Effective-config preview -->
+                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
+                        <TextBlock Text="Would be active" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                        <TextBlock Text="{Binding McpPreviewStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding EffectiveMcp}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Foreground="{DynamicResource FgDim}" FontSize="11" Margin="2,1,0,0">
+                                        <Run Text="{Binding Name}" /><Run Text="  ·  " /><Run Text="{Binding RunAt}" /><Run Text="  ·  " /><Run Text="{Binding ApplyScope}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
                     <!-- PROJECTS (per-repo, on the host) -->
                     <StackPanel Spacing="12" IsVisible="{Binding CatProjects}">
                         <Grid ColumnDefinitions="Auto,Auto,*,Auto">

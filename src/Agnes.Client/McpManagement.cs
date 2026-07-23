@@ -24,6 +24,56 @@ public static class McpManagement
         }
     }
 
+    /// <summary>The host's curated quick-install presets (aggregated across every IMcpPresetProvider).</summary>
+    public static async Task<IReadOnlyList<McpServerInfo>> PresetsAsync(
+        string hostUrl, string token, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            return await client.GetFromJsonAsync<IReadOnlyList<McpServerInfo>>(
+                       hostUrl.TrimEnd('/') + "/mcp/presets", cancellationToken).ConfigureAwait(false)
+                   ?? [];
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
+    /// <summary>Preview the effective, scope-filtered MCP set that WOULD be active for a workspace (a pure
+    /// read; pass null for the host-wide view). Answers "what will actually run if I start a session now."</summary>
+    public static async Task<IReadOnlyList<McpServerInfo>> PreviewEffectiveAsync(
+        string hostUrl, string token, string? workspaceId = null, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            var url = hostUrl.TrimEnd('/') + "/mcp/effective";
+            if (!string.IsNullOrEmpty(workspaceId))
+            {
+                url += "?workspaceId=" + Uri.EscapeDataString(workspaceId);
+            }
+
+            return await client.GetFromJsonAsync<IReadOnlyList<McpServerInfo>>(url, cancellationToken).ConfigureAwait(false) ?? [];
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
+    /// <summary>Quick-install a curated preset: turns its template into a normal add-server request (the
+    /// exact same persistence path a hand-typed server uses), optionally scoped, so no config is retyped.</summary>
+    public static Task<McpServerInfo?> InstallPresetAsync(
+        string hostUrl, string token, McpServerInfo template,
+        McpApplyScope scope = McpApplyScope.AllHosts, string? workspaceId = null,
+        HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+        => AddAsync(hostUrl, token, new McpServerRequest(
+            template.Name, template.RunAt, template.Enabled, template.Transport,
+            template.Command, template.Args, template.Env, template.Url, template.BearerTokenEnv,
+            scope, scope == McpApplyScope.ThisWorkspace ? workspaceId : null), httpClient, cancellationToken);
+
     public static async Task<McpServerInfo?> AddAsync(
         string hostUrl, string token, McpServerRequest request, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
     {

@@ -119,6 +119,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         AddMcpServerCommand = new AsyncRelayCommand(AddMcpServerAsync);
         RemoveMcpServerCommand = new AsyncRelayCommand<string>(RemoveMcpServerAsync);
         ToggleMcpServerCommand = new AsyncRelayCommand<McpServerInfo>(ToggleMcpServerAsync);
+        LoadMcpPresetsCommand = new AsyncRelayCommand(LoadMcpPresetsAsync);
+        InstallMcpPresetCommand = new AsyncRelayCommand<McpServerInfo>(InstallMcpPresetAsync);
+        PreviewMcpCommand = new AsyncRelayCommand(PreviewMcpAsync);
         SetMcpApprovalCommand = new RelayCommand<string>(v => { if (v is not null) { McpApproval = v; } });
         LoadCredentialStatusCommand = new AsyncRelayCommand(LoadCredentialStatusAsync);
         ConnectGitHubCommand = new AsyncRelayCommand(ConnectGitHubAsync);
@@ -145,6 +148,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             new SettingsCategoryVm("github", "GitHub accounts", "⑂", "github git push credential token connect app scope repo installation secret account"),
             new SettingsCategoryVm("devices", "Devices", "🔑", "paired devices pairing token revoke auth access per-device"),
             new SettingsCategoryVm("sandboxes", "Sandboxes", "📦", "sandbox vm incus running stopped resume restart delete reap orphan cleanup lifecycle"),
+            new SettingsCategoryVm("mcp", "MCP servers", "🔌", "mcp model context protocol server tool preset install curated playwright github context7 scope workspace host preview effective strict"),
             // Per-project
             new SettingsCategoryVm("projects", "Projects", "📁", "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
             new SettingsCategoryVm("plugins", "Plugins", "🧩", "plugin plugins extension nuget install uninstall browse marketplace capability consent provider adapter transport voice notification enable disable configure"),
@@ -544,6 +548,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatGitHub => SettingsCategory == "github";
     public bool CatDevices => SettingsCategory == "devices";
     public bool CatSandboxes => SettingsCategory == "sandboxes";
+    public bool CatMcp => SettingsCategory == "mcp";
     public bool CatProjects => SettingsCategory == "projects";
     public bool CatPlugins => SettingsCategory == "plugins";
 
@@ -564,6 +569,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatGitHub));
         OnPropertyChanged(nameof(CatDevices));
         OnPropertyChanged(nameof(CatSandboxes));
+        OnPropertyChanged(nameof(CatMcp));
         OnPropertyChanged(nameof(CatProjects));
         OnPropertyChanged(nameof(CatPlugins));
         OnPropertyChanged(nameof(ActiveHostName));
@@ -574,6 +580,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         else if (value == "sandboxes")
         {
             _ = LoadSandboxesAsync();
+        }
+        else if (value == "mcp")
+        {
+            _ = LoadMcpServersAsync();
+            _ = LoadMcpPresetsAsync();
         }
         else if (value == "plugins")
         {
@@ -1014,6 +1025,87 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public IAsyncRelayCommand<string> RemoveMcpServerCommand { get; }
     public IAsyncRelayCommand<McpServerInfo> ToggleMcpServerCommand { get; }
 
+    // ---- MCP curated presets + effective-config preview (for the active session's host) ----
+    public ObservableCollection<McpServerInfo> McpPresets { get; } = [];
+    public ObservableCollection<McpServerInfo> EffectiveMcp { get; } = [];
+
+    [ObservableProperty] private string _mcpPreviewStatus = "Preview the servers that would be active.";
+
+    public IAsyncRelayCommand LoadMcpPresetsCommand { get; }
+    public IAsyncRelayCommand<McpServerInfo> InstallMcpPresetCommand { get; }
+    public IAsyncRelayCommand PreviewMcpCommand { get; }
+
+    private async Task LoadMcpPresetsAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => McpPresets.Clear());
+            return;
+        }
+
+        try
+        {
+            var presets = await McpManagement.PresetsAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() =>
+            {
+                McpPresets.Clear();
+                foreach (var p in presets) { McpPresets.Add(p); }
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => McpStatus = "Couldn't load presets: " + ex.Message);
+        }
+    }
+
+    private async Task InstallMcpPresetAsync(McpServerInfo? template)
+    {
+        var target = ActiveHttpHost();
+        if (target is null || template is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // Quick-install: reuse the host's normal add-server path (no command/args retyped).
+            await McpManagement.InstallPresetAsync(target.Value.Url, target.Value.Token, template);
+            await LoadMcpServersAsync();
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => McpStatus = "Couldn't install preset: " + ex.Message);
+        }
+    }
+
+    private async Task PreviewMcpAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // Host-wide effective view (no workspace filter) — what would be active for a plain session now.
+            var effective = await McpManagement.PreviewEffectiveAsync(target.Value.Url, target.Value.Token);
+            _dispatcher.Post(() =>
+            {
+                EffectiveMcp.Clear();
+                foreach (var s in effective) { EffectiveMcp.Add(s); }
+                McpPreviewStatus = effective.Count == 0
+                    ? "No MCP servers would be active."
+                    : $"{effective.Count} server(s) would be active.";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => McpPreviewStatus = "Couldn't preview: " + ex.Message);
+        }
+    }
+
     private async Task LoadMcpServersAsync()
     {
         var target = ActiveHttpHost();
@@ -1102,7 +1194,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         var request = new McpServerRequest(
             server.Name, server.RunAt, !server.Enabled, server.Transport,
-            server.Command, server.Args, server.Env, server.Url, server.BearerTokenEnv);
+            server.Command, server.Args, server.Env, server.Url, server.BearerTokenEnv,
+            server.ApplyScope, server.WorkspaceId);
 
         try
         {
