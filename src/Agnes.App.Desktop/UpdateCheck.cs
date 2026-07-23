@@ -15,6 +15,14 @@ public static class UpdateCheck
 {
     private const string LatestReleaseApi = "https://api.github.com/repos/AdamFrisby/Agnes/releases/latest";
 
+    // GitHub's snake_case release payload — we read the tag and the browser URL.
+    private static readonly JsonSerializerOptions GitHubJson = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    };
+
+    private sealed record GitHubRelease(string? TagName, string? HtmlUrl);
+
     public static async Task<UpdateInfo?> CheckAsync(string currentVersion, CancellationToken cancellationToken = default)
     {
         try
@@ -24,11 +32,10 @@ public static class UpdateCheck
             http.Timeout = TimeSpan.FromSeconds(6);
 
             var json = await http.GetStringAsync(LatestReleaseApi, cancellationToken).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
+            var release = JsonSerializer.Deserialize<GitHubRelease>(json, GitHubJson);
 
-            var tag = root.TryGetProperty("tag_name", out var t) ? t.GetString()?.TrimStart('v', 'V') : null;
-            var url = root.TryGetProperty("html_url", out var u) ? u.GetString() : null;
+            var tag = release?.TagName?.TrimStart('v', 'V');
+            var url = release?.HtmlUrl;
             if (string.IsNullOrEmpty(tag) || string.IsNullOrEmpty(url))
             {
                 return null;

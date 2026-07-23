@@ -31,6 +31,14 @@ public sealed class GitHubAppCredentialSource : ICredentialSource
     private readonly HttpClient _http;
     private readonly ConcurrentDictionary<string, GitCredential> _cache = new(StringComparer.OrdinalIgnoreCase);
 
+    // GitHub's snake_case REST payload (installation access token).
+    private static readonly JsonSerializerOptions GitHubJson = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    };
+
+    private sealed record InstallationToken(string? Token, DateTimeOffset? ExpiresAt);
+
     public GitHubAppCredentialSource(Func<IReadOnlyList<GitHubAppConfig>> accounts, HttpClient http)
     {
         _accounts = accounts;
@@ -86,16 +94,14 @@ public sealed class GitHubAppCredentialSource : ICredentialSource
             return null;
         }
 
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
-        var token = doc.RootElement.GetProperty("token").GetString();
-        if (token is null)
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (JsonSerializer.Deserialize<InstallationToken>(body, GitHubJson) is not { Token: { } token } installation)
         {
             return null;
         }
 
-        var expiresAt = doc.RootElement.TryGetProperty("expires_at", out var e) && e.TryGetDateTimeOffset(out var parsed)
-            ? parsed
-            : DateTimeOffset.UtcNow.AddMinutes(55);
+        // GitHub returns a ~1h expiry; fall back to a conservative 55 min if it's absent.
+        var expiresAt = installation.ExpiresAt ?? DateTimeOffset.UtcNow.AddMinutes(55);
         var credential = new GitCredential("x-access-token", token, expiresAt);
         _cache[cacheKey] = credential;
         return credential;

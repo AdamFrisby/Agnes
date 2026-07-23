@@ -280,25 +280,36 @@ public sealed class GitHubConnectFlow
         return ParseConversion(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
     }
 
+    // Shared options for GitHub's snake_case REST payloads (case-insensitive so single-word keys match too).
+    private static readonly JsonSerializerOptions GitHubJson = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    };
+
+    private sealed record AppManifestConversion(long Id, string? Slug, string? Pem, AppOwner? Owner);
+
+    private sealed record AppOwner(string? Login);
+
     /// <summary>Parses GitHub's app-manifest conversion response into the fields we persist.</summary>
     internal static GitHubAppConfig? ParseConversion(string json)
     {
+        AppManifestConversion? conversion;
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            var appId = root.GetProperty("id").GetInt64().ToString(System.Globalization.CultureInfo.InvariantCulture);
-            var slug = root.GetProperty("slug").GetString();
-            var pem = root.GetProperty("pem").GetString();
-            var account = root.TryGetProperty("owner", out var owner) && owner.TryGetProperty("login", out var login)
-                ? login.GetString() ?? string.Empty
-                : string.Empty;
-            return slug is null || pem is null ? null : new GitHubAppConfig(appId, slug, 0, pem, account);
+            conversion = JsonSerializer.Deserialize<AppManifestConversion>(json, GitHubJson);
         }
-        catch
+        catch (JsonException)
         {
             return null;
         }
+
+        if (conversion is not { Slug: { } slug, Pem: { } pem })
+        {
+            return null;
+        }
+
+        var appId = conversion.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return new GitHubAppConfig(appId, slug, 0, pem, conversion.Owner?.Login ?? string.Empty);
     }
 
     private static string Page(string title, string body) => $$"""
