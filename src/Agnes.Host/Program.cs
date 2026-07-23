@@ -127,6 +127,12 @@ var reviewCommentsFile = builder.Configuration["Agnes:ReviewCommentsFile"]
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ReviewCommentStore(
     reviewCommentsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ReviewCommentStore>()));
 
+// ---- prompt library: host-persisted saved prompts + slash-token templates ("stop retyping prompts") ----
+var promptLibraryDir = builder.Configuration["Agnes:PromptLibraryDir"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.PromptLibrary(
+    promptLibraryDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.PromptLibrary>()));
+
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
 var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandboxes.json");

@@ -183,6 +183,31 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Every plugin installed on the host and its state.</summary>
     Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPluginsAsync()
         => Task.FromResult<IReadOnlyList<InstalledPluginDto>>([]);
+
+    // ---- prompt library (see .ideas/extensibility/02-prompts-skills-library.md) ----
+    // Defaulted so hosts/fixtures that predate the library reply empty (and reject writes) instead of failing.
+
+    /// <summary>The host's saved prompts. Default empty for hosts without a library.</summary>
+    Task<IReadOnlyList<LibraryPrompt>> GetPromptsAsync()
+        => Task.FromResult<IReadOnlyList<LibraryPrompt>>([]);
+
+    /// <summary>Upserts a saved prompt on the host, returning it with any assigned id.</summary>
+    Task<LibraryPrompt> SavePromptAsync(LibraryPrompt prompt)
+        => throw new NotSupportedException("This host does not support a prompt library.");
+
+    /// <summary>Deletes a saved prompt by id.</summary>
+    Task DeletePromptAsync(string id) => Task.CompletedTask;
+
+    /// <summary>The host's slash-token templates. Default empty for hosts without a library.</summary>
+    Task<IReadOnlyList<PromptTemplate>> GetPromptTemplatesAsync()
+        => Task.FromResult<IReadOnlyList<PromptTemplate>>([]);
+
+    /// <summary>Upserts a template on the host, returning the stored template.</summary>
+    Task<PromptTemplate> SavePromptTemplateAsync(PromptTemplate template)
+        => throw new NotSupportedException("This host does not support a prompt library.");
+
+    /// <summary>Deletes a template by slash token.</summary>
+    Task DeletePromptTemplateAsync(string token) => Task.CompletedTask;
 }
 
 /// <summary>Creates/looks up host connections. Swap the implementation to simulate a server.</summary>

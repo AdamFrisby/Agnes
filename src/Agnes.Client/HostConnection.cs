@@ -222,5 +222,25 @@ public sealed class HostConnection : IAgnesHost
     public Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPluginsAsync()
         => _hub.InvokeAsync<IReadOnlyList<InstalledPluginDto>>(nameof(IAgnesServer.ListInstalledPlugins));
 
+    // ---- prompt library (see .ideas/extensibility/02-prompts-skills-library.md) ----
+
+    public Task<IReadOnlyList<Abstractions.LibraryPrompt>> GetPromptsAsync()
+        => _hub.InvokeAsync<IReadOnlyList<Abstractions.LibraryPrompt>>(nameof(IAgnesServer.GetPrompts));
+
+    public Task<Abstractions.LibraryPrompt> SavePromptAsync(Abstractions.LibraryPrompt prompt)
+        => _hub.InvokeAsync<Abstractions.LibraryPrompt>(nameof(IAgnesServer.SavePrompt), prompt);
+
+    public Task DeletePromptAsync(string id)
+        => _hub.InvokeAsync(nameof(IAgnesServer.DeletePrompt), id);
+
+    public Task<IReadOnlyList<Abstractions.PromptTemplate>> GetPromptTemplatesAsync()
+        => _hub.InvokeAsync<IReadOnlyList<Abstractions.PromptTemplate>>(nameof(IAgnesServer.GetPromptTemplates));
+
+    public Task<Abstractions.PromptTemplate> SavePromptTemplateAsync(Abstractions.PromptTemplate template)
+        => _hub.InvokeAsync<Abstractions.PromptTemplate>(nameof(IAgnesServer.SavePromptTemplate), template);
+
+    public Task DeletePromptTemplateAsync(string token)
+        => _hub.InvokeAsync(nameof(IAgnesServer.DeletePromptTemplate), token);
+
     public async ValueTask DisposeAsync() => await _hub.DisposeAsync();
 }

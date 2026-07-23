@@ -148,6 +148,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // Per-project
             new SettingsCategoryVm("projects", "Projects", "📁", "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
             new SettingsCategoryVm("plugins", "Plugins", "🧩", "plugin plugins extension nuget install uninstall browse marketplace capability consent provider adapter transport voice notification enable disable configure"),
+            new SettingsCategoryVm("prompts", "Prompts", "📝", "prompt prompts template templates slash token library saved snippet reuse review insert send"),
         ];
         SettingsCategories[0].IsSelected = true;
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
@@ -188,10 +189,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         };
 
         Plugins = new PluginManagementViewModel(ActiveHost, _dispatcher);
+        PromptLibrary = new PromptLibraryViewModel(ActiveHost, _dispatcher);
     }
 
     /// <summary>The plugin-management surface for the active host (Browse / install / configure / enable).</summary>
     public PluginManagementViewModel Plugins { get; }
+
+    /// <summary>The prompt-library surface for the active host (saved prompts + slash-token templates).</summary>
+    public PromptLibraryViewModel PromptLibrary { get; }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
     public IRelayCommand ClosePaletteCommand { get; }
@@ -546,6 +551,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatSandboxes => SettingsCategory == "sandboxes";
     public bool CatProjects => SettingsCategory == "projects";
     public bool CatPlugins => SettingsCategory == "plugins";
+    public bool CatPrompts => SettingsCategory == "prompts";
 
     /// <summary>The connected host these host-scoped settings apply to (e.g. GitHub, Devices, Projects).</summary>
     public string ActiveHostName => ActiveHttpHost() is { } t
@@ -566,6 +572,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatSandboxes));
         OnPropertyChanged(nameof(CatProjects));
         OnPropertyChanged(nameof(CatPlugins));
+        OnPropertyChanged(nameof(CatPrompts));
         OnPropertyChanged(nameof(ActiveHostName));
         if (value == "projects" && SelectedProject is null)
         {
@@ -578,6 +585,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         else if (value == "plugins")
         {
             _ = Plugins.RefreshInstalledAsync();
+        }
+        else if (value == "prompts")
+        {
+            _ = PromptLibrary.RefreshAsync();
         }
     }
 

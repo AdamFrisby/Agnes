@@ -16,8 +16,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly PluginManagementService _plugins;
     private readonly ClientCapabilityStore _clientCaps;
     private readonly ReviewCommentStore _reviewComments;
+    private readonly PromptLibrary _prompts;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, PromptLibrary prompts)
     {
         _sessions = sessions;
         _schedule = schedule;
@@ -26,6 +27,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _plugins = plugins;
         _clientCaps = clientCaps;
         _reviewComments = reviewComments;
+        _prompts = prompts;
     }
 
     public override async Task OnConnectedAsync()
@@ -189,4 +191,28 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPlugins()
         => _plugins.ListInstalledAsync();
+
+    public Task<IReadOnlyList<Abstractions.LibraryPrompt>> GetPrompts()
+        => Task.FromResult(_prompts.List());
+
+    public Task<Abstractions.LibraryPrompt> SavePrompt(Abstractions.LibraryPrompt prompt)
+        => Task.FromResult(_prompts.Save(prompt));
+
+    public Task DeletePrompt(string id)
+    {
+        _prompts.Delete(id);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<Abstractions.PromptTemplate>> GetPromptTemplates()
+        => Task.FromResult(_prompts.ListTemplates());
+
+    public Task<Abstractions.PromptTemplate> SavePromptTemplate(Abstractions.PromptTemplate template)
+        => Task.FromResult(_prompts.SaveTemplate(template));
+
+    public Task DeletePromptTemplate(string token)
+    {
+        _prompts.DeleteTemplate(token);
+        return Task.CompletedTask;
+    }
 }
