@@ -217,6 +217,17 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Codex.CodexAppSe
     builder.Configuration.GetSection("Agnes:Codex:Args").Get<string[]>(),
     builder.Configuration.GetValue("Agnes:Codex:EnableUserInput", false)));
 
+// User-configured extra ACP backends (Agnes:CustomBackends): a "bring your own ACP CLI" path so a
+// host operator can point Agnes at any ACP-speaking binary from config alone — no new package. Each
+// valid entry becomes a generic AcpAgentAdapter joining the same registry as the built-ins. Fail-closed
+// per entry: a malformed/invalid/duplicate entry is skipped (logged) and the host still starts.
+using (var customBackendsLog = LoggerFactory.Create(lb =>
+    lb.AddConfiguration(builder.Configuration.GetSection("Logging")).AddConsole()))
+{
+    Agnes.Host.CustomBackends.Register(builder.Services, builder.Configuration,
+        customBackendsLog.CreateLogger("Agnes.Host.CustomBackends"));
+}
+
 // A typed, DI-resolvable registry over every IAgentAdapter above — the plugin-point pattern every
 // new provider interface in this backlog follows (see .ideas/00-plugin-architecture.md). Built once
 // all the AddSingleton<IAgentAdapter> registrations above have run; consumed by SessionManager
