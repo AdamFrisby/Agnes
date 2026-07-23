@@ -209,6 +209,50 @@
                             </Flyout>
                         </Button.Flyout>
                     </Button>
+                    <!-- Automations: scheduled tasks with pause/resume/run-now/delete -->
+                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12"
+                            IsVisible="{Binding HasScheduledTasks}" AutomationProperties.Name="Automations">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Text="⏱ Automations" VerticalAlignment="Center" />
+                            <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding ScheduledTaskCount}" Foreground="#1A1200" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                        <Button.Flyout>
+                            <Flyout Placement="Bottom">
+                                <ScrollViewer MinWidth="380" MaxHeight="420" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding ScheduledTasks}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="8,6" Margin="0,2" CornerRadius="6" Background="{DynamicResource PanelAlt}">
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock Text="{Binding Prompt}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding Schedule}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <Button Content="Run now" FontSize="11" Padding="8,3"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.RunAutomationNowCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Run automation now" />
+                                                        <Button Content="Pause" FontSize="11" Padding="8,3" IsVisible="{Binding Enabled}"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.PauseAutomationCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Pause automation" />
+                                                        <Button Content="Resume" FontSize="11" Padding="8,3" IsVisible="{Binding Paused}"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.ResumeAutomationCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Resume automation" />
+                                                        <Button Content="Delete" FontSize="11" Padding="8,3"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.RemoveAutomationCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Delete automation" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                </ScrollViewer>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
 
                     <!-- Sessions switcher: state of every open session + attention -->
                     <Button Background="Transparent" Foreground="{DynamicResource FgDim}"

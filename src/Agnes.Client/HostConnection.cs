@@ -163,6 +163,15 @@ public sealed class HostConnection : IAgnesHost
     public Task RemoveScheduledTaskAsync(string taskId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RemoveScheduledTask), taskId);
 
+    public Task PauseScheduledTaskAsync(string taskId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.PauseScheduledTask), taskId);
+
+    public Task ResumeScheduledTaskAsync(string taskId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.ResumeScheduledTask), taskId);
+
+    public Task RunScheduledTaskNowAsync(string taskId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RunScheduledTaskNow), taskId);
+
     public Task<IReadOnlyList<InboxRun>> GetInboxAsync()
         => _hub.InvokeAsync<IReadOnlyList<InboxRun>>(nameof(IAgnesServer.GetInbox));
 

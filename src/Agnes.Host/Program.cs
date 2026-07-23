@@ -170,13 +170,17 @@ builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
 builder.Services.AddSingleton<SessionManager>();
 
 // ---- scheduled / background tasks + inbox ----
-// Automation triggers are built-in plugins (AC13): the interval trigger is the only kind today, with a
-// merger so a cron/webhook trigger can be added as a plugin.
+// Automation triggers are built-in plugins (AC13): interval + cron ship in-box, with a merger so a
+// webhook (or other) trigger can be added as a plugin without touching the scheduler.
 builder.Services.AddSingleton<IAutomationTrigger, IntervalAutomationTrigger>();
+builder.Services.AddSingleton<IAutomationTrigger, CronAutomationTrigger>();
 builder.Services.AddPluginPoint<IAutomationTrigger>(t => t.Kind);
+var scheduledTasksFile = builder.Configuration["Agnes:ScheduledTasksFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "scheduled-tasks.json");
 builder.Services.AddSingleton(sp => new ScheduledTaskManager(
     sp.GetRequiredService<IPluginRegistry<IAutomationTrigger>>(),
-    sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>()));
+    sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
+    scheduledTasksFile));
 builder.Services.AddHostedService<ScheduledRunner>();
 
 // ---- agent adapters (plugins) ----
