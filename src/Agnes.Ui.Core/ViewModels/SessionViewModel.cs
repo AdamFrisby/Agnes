@@ -790,6 +790,14 @@ public sealed class SessionViewModel : ObservableObject
         _ = _bus.DispatchAsync(new Plugins.AttachmentAddedEvent(SessionId)); // observe-only
     }
 
+    /// <summary>Uploads a picked/pasted file to the workspace (materialized to a gitignored path, not sent
+    /// inline) and adds it as a reference attachment — the agent receives the path, never the bytes.</summary>
+    public async Task AttachFileAsync(string fileName, byte[] data)
+    {
+        var path = await _host.UploadAttachmentAsync(SessionId, fileName, data).ConfigureAwait(true);
+        Attach(PromptAttachment.Reference(path));
+    }
+
     private void AddReference()
     {
         var reference = ReferenceInput.Trim().TrimStart('@');

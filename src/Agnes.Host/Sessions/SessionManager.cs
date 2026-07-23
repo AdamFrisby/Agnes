@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Agnes.Abstractions;
 using Agnes.Abstractions.Events;
+using Agnes.Host.Files;
 using Agnes.Host.Events;
 using Agnes.Host.Hosting;
 using Agnes.Protocol;
@@ -1237,6 +1238,69 @@ public sealed class SessionManager : IAsyncDisposable
             var updated = record with { AgentSessionId = agentSessionId };
             _catalog[sessionId] = updated;
             await _store.SaveSessionAsync(updated).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Materializes a client-uploaded attachment to a gitignored dir under the session's workspace and
+    /// returns the workspace-relative path the agent should reference (never inline binary). Writes to the
+    /// host-side working directory, which is bind-mounted to /work inside a sandbox, so one path serves both
+    /// local and sandboxed sessions. The filename is stripped to its leaf and resolved through
+    /// <see cref="Files.WorkspacePaths"/>, so nothing can be written outside the workspace.
+    /// </summary>
+    public async Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data, AttachmentConflict conflict = AttachmentConflict.KeepBoth)
+    {
+        var hostDir = WorkingDirectoryOf(sessionId);
+        var attachDir = Files.WorkspacePaths.ResolveWithin(hostDir, Path.Combine(".agnes", "attachments"))
+            ?? throw new InvalidOperationException("Could not resolve the attachments directory within the workspace.");
+        Directory.CreateDirectory(attachDir);
+
+        var leaf = Path.GetFileName(fileName);
+        if (string.IsNullOrWhiteSpace(leaf))
+        {
+            leaf = "attachment";
+        }
+
+        var target = ResolveAttachmentTarget(attachDir, leaf, conflict);
+        if (target is not null)
+        {
+            await File.WriteAllBytesAsync(target, data).ConfigureAwait(false);
+        }
+
+        // Workspace-relative, POSIX-separated (the agent sees it at /work/... inside the sandbox).
+        var finalPath = target ?? Path.Combine(attachDir, leaf);
+        return Path.GetRelativePath(hostDir, finalPath).Replace(Path.DirectorySeparatorChar, '/');
+    }
+
+    // Applies the conflict policy, returning the path to write to — or null when the policy is Skip and the
+    // file already exists (keep the original, write nothing).
+    private static string? ResolveAttachmentTarget(string dir, string leaf, AttachmentConflict conflict)
+    {
+        var direct = Path.Combine(dir, leaf);
+        if (!File.Exists(direct))
+        {
+            return direct;
+        }
+
+        return conflict switch
+        {
+            AttachmentConflict.Replace => direct,
+            AttachmentConflict.Skip => null,
+            _ => UniqueName(dir, leaf), // KeepBoth
+        };
+    }
+
+    private static string UniqueName(string dir, string leaf)
+    {
+        var stem = Path.GetFileNameWithoutExtension(leaf);
+        var ext = Path.GetExtension(leaf);
+        for (var n = 1; ; n++)
+        {
+            var candidate = Path.Combine(dir, $"{stem} ({n}){ext}");
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
         }
     }
 

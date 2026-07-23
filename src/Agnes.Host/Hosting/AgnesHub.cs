@@ -105,6 +105,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<GitCommitResult> GitCommit(string sessionId, string message)
         => _sessions.GitCommitAsync(sessionId, message);
 
+    public Task<string> UploadAttachment(string sessionId, string fileName, byte[] data)
+        => _sessions.UploadAttachmentAsync(sessionId, fileName, data);
+
     public Task<ScheduledTask> ScheduleTask(ScheduleTaskRequest request)
         => _schedule.AddAsync(request);
 

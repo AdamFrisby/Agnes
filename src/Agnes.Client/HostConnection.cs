@@ -130,6 +130,9 @@ public sealed class HostConnection : IAgnesHost
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
         => _hub.InvokeAsync<GitCommitResult>(nameof(IAgnesServer.GitCommit), sessionId, message);
 
+    public Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data)
+        => _hub.InvokeAsync<string>(nameof(IAgnesServer.UploadAttachment), sessionId, fileName, data);
+
     public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request)
         => _hub.InvokeAsync<ScheduledTask>(nameof(IAgnesServer.ScheduleTask), request);
 

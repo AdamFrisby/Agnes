@@ -713,6 +713,13 @@ internal sealed class FakeHost : IAgnesHost
 
     public Task<GitStatus> GetGitStatusAsync(string sessionId) => Task.FromResult(GitState);
 
+    public List<(string FileName, int Bytes)> Uploads { get; } = [];
+    public Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data)
+    {
+        Uploads.Add((fileName, data.Length));
+        return Task.FromResult(".agnes/attachments/" + fileName);
+    }
+
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
     {
         Commits.Add(message);

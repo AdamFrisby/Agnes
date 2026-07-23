@@ -242,6 +242,9 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(new GitStatus(true, "main", changes.Length > 0, changes));
     }
 
+    public Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data)
+        => Task.FromResult(".agnes/attachments/" + Path.GetFileName(fileName));
+
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
     {
         _committed = true;

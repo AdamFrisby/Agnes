@@ -88,6 +88,10 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Stages all changes and commits them.</summary>
     Task<GitCommitResult> GitCommitAsync(string sessionId, string message);
 
+    /// <summary>Uploads an attachment's bytes; the host materializes it into the workspace and returns the
+    /// workspace-relative path to reference in a prompt.</summary>
+    Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data);
+
     /// <summary>Schedules a recurring background task.</summary>
     Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request);
 

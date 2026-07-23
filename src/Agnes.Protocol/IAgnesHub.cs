@@ -74,6 +74,10 @@ public interface IAgnesServer
     /// <summary>Stages all changes and commits them in the session's working directory.</summary>
     Task<GitCommitResult> GitCommit(string sessionId, string message);
 
+    /// <summary>Materializes an uploaded attachment to a gitignored dir in the session's workspace and
+    /// returns the workspace-relative path to reference in a prompt (never inline binary).</summary>
+    Task<string> UploadAttachment(string sessionId, string fileName, byte[] data);
+
     /// <summary>Schedules a recurring background task; returns it with its assigned id.</summary>
     Task<ScheduledTask> ScheduleTask(ScheduleTaskRequest request);
 
