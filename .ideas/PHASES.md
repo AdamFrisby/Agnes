@@ -65,7 +65,6 @@ Each phase title is the theme that ties its items together. Items are ordered wi
 1. `00-plugin-architecture.md` (DONE — core scope only) — unlocks nearly everything else; do this first. Delivered: the generalized `IPluginRegistry<T>`/`PluginRegistry<T>` pattern, migrating `IAgentAdapter` and `ISandboxProvider` onto it with no behavior change (AC1, AC4), and host-level capability negotiation (`GetCapabilities()` end to end through `Agnes.Protocol`/`Agnes.Client`, AC2/AC3). Deliberately **not** built in this pass: NuGet-based third-party plugin distribution, package signature verification, `AssemblyLoadContext` hot-reload, capability-consent enforcement, and the plugin management UI (AC5–AC13) — that's real, separate scope (the doc rates it "L" on its own); tracked as follow-on work against the same doc rather than attempted half-finished here.
 2. `sessions/01-session-forking-and-replay.md` — branch a conversation instead of dead-ending it. High daily value, zero dependencies.
 3. `sessions/03-pending-queue-and-steering.md` — fixes "can't send while the agent's busy," a constant point of friction today.
-4. `platform/01-ios-client.md` — doubles Agnes's reachable mobile surface; the hard UX work already exists in the Android/desktop shells.
 
 ### Phase 2 — Structural enablers + remote-workflow basics
 1. `sessions/06-tool-timeline-normalization.md` — formalizes something that already half-exists; unlocks git integration and broader provider support.

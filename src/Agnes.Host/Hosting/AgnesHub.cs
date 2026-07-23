@@ -1,4 +1,5 @@
 using Agnes.Abstractions;
+using Agnes.Host.Ops;
 using Agnes.Host.Plugins;
 using Agnes.Host.Projects;
 using Agnes.Host.Sessions;
@@ -18,8 +19,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly ClientCapabilityStore _clientCaps;
     private readonly ReviewCommentStore _reviewComments;
     private readonly IPluginRegistry<IMemoryIndexProvider> _memoryIndexes;
+    private readonly BugReportRouter _bugReports;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports)
     {
         _sessions = sessions;
         _schedule = schedule;
@@ -29,6 +31,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _clientCaps = clientCaps;
         _reviewComments = reviewComments;
         _memoryIndexes = memoryIndexes;
+        _bugReports = bugReports;
     }
 
     public override async Task OnConnectedAsync()
@@ -224,4 +227,10 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPlugins()
         => _plugins.ListInstalledAsync();
+
+    // Map the wire DTO to the domain report with a null diagnostic payload (the owner-only host-log
+    // attachment is deferred), then route to the host's selected sink.
+    public Task<Abstractions.BugReportResult> SubmitBugReport(BugReportDto report)
+        => _bugReports.SubmitAsync(new Abstractions.BugReport(
+            report.Title, report.Summary, report.CurrentBehavior, report.ExpectedBehavior, DiagnosticPayload: null));
 }

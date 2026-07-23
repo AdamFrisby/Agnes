@@ -350,6 +350,32 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.GitHubConnectFlow(
 builder.Services.AddSingleton<IGitHostProvider, GitHubGitHostProvider>();
 builder.Services.AddPluginPoint<IGitHostProvider>(p => p.Id);
 
+// ---- bug-report sinks as built-in plugins (see .ideas/ops/01-bug-reports-and-diagnostics.md) ----
+// GitHubIssueSink is always available (prefilled browser fallback with no token; API create/duplicate-search
+// with one); CustomEndpointSink is added only when a self-hoster configures an endpoint. The default sink is
+// selected by which config is present, unless pinned by Agnes:BugReports:Sink.
+// DEFERRED: crash/error telemetry (an opt-in SDK in the UI heads + host) is not wired here.
+// DEFERRED: the owner-only host-log DiagnosticPayload attachment — reports carry a null payload for now.
+var bugReportRepo = builder.Configuration["Agnes:BugReports:Repo"] ?? "AdamFrisby/Agnes";
+var bugReportToken = builder.Configuration["Agnes:BugReports:GitHubToken"] ?? Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+var bugReportEndpoint = builder.Configuration["Agnes:BugReports:Endpoint"];
+var bugReportMaxBytes = builder.Configuration.GetValue("Agnes:BugReports:MaxPayloadBytes", 1024L * 1024L);
+builder.Services.AddSingleton<IBugReportSink>(sp => new Agnes.Host.Ops.GitHubIssueSink(
+    new HttpClient(), bugReportRepo, bugReportToken,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Ops.GitHubIssueSink>()));
+if (!string.IsNullOrWhiteSpace(bugReportEndpoint))
+{
+    builder.Services.AddSingleton<IBugReportSink>(sp => new Agnes.Host.Ops.CustomEndpointSink(
+        new HttpClient(), bugReportEndpoint, bugReportMaxBytes, TimeSpan.FromSeconds(30),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Ops.CustomEndpointSink>()));
+}
+
+builder.Services.AddPluginPoint<IBugReportSink>(s => s.Id);
+var defaultBugSink = builder.Configuration["Agnes:BugReports:Sink"]
+    ?? (string.IsNullOrWhiteSpace(bugReportEndpoint) ? "github-issue" : "custom-endpoint");
+builder.Services.AddSingleton(sp => new Agnes.Host.Ops.BugReportRouter(
+    sp.GetRequiredService<IPluginRegistry<IBugReportSink>>(), defaultBugSink));
+
 // ---- plugin installer: NuGet-packaged third-party plugins (see .ideas/00-plugin-architecture.md) ----
 // The scoped service a plugin gets when it declares (and is granted) the "credentials" capability.
 builder.Services.AddSingleton<ICredentialBroker>(sp =>

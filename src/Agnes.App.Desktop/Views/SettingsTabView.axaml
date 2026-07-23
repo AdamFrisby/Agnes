@@ -510,6 +510,63 @@
                         </StackPanel>
                     </StackPanel>
 
+                    <!-- REPORT A BUG (files a GitHub issue on the host, or falls back to the public flow) -->
+                    <StackPanel IsVisible="{Binding CatBugReport}">
+                        <StackPanel DataContext="{Binding BugReport}" Spacing="12">
+                            <Grid ColumnDefinitions="Auto,Auto,*">
+                                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Report a bug" />
+                                <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                                              Description="Describe what went wrong. This files an issue on the project's GitHub, or — if this host has a GitHub token — first checks for likely duplicates you can comment on instead. If the host can't be reached, a prefilled issue opens in your browser."
+                                              Security="Only the text you enter here is sent. No host logs or diagnostic data are attached (that owner-only capability isn't enabled)." />
+                            </Grid>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="Title" />
+                                <TextBox Text="{Binding Title, Mode=TwoWay}" Watermark="A short summary of the problem" FontSize="13" Padding="8,5" CornerRadius="6" />
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="Summary" />
+                                <TextBox Text="{Binding Summary, Mode=TwoWay}" Watermark="What happened?" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" FontSize="13" Padding="8,5" CornerRadius="6" />
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="Current behavior (optional)" />
+                                <TextBox Text="{Binding CurrentBehavior, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" FontSize="13" Padding="8,5" CornerRadius="6" />
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="Expected behavior (optional)" />
+                                <TextBox Text="{Binding ExpectedBehavior, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" FontSize="13" Padding="8,5" CornerRadius="6" />
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Content="Submit report" Command="{Binding SubmitCommand}" HorizontalAlignment="Left" Classes="seg" IsEnabled="{Binding !IsBusy}" />
+                                <ProgressBar IsIndeterminate="True" Width="90" Height="4" VerticalAlignment="Center"
+                                             IsVisible="{Binding IsBusy}"
+                                             Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                            </StackPanel>
+
+                            <!-- Likely-duplicate issues: comment on one instead of filing a new report -->
+                            <StackPanel Spacing="6" IsVisible="{Binding HasDuplicates}">
+                                <TextBlock Text="Possibly related open issues" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                                <ItemsControl ItemsSource="{Binding Duplicates}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding Number, StringFormat='#{0}'}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Comment instead" FontSize="11" Padding="9,3" Classes="seg"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.OpenDuplicateCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
+
                 </StackPanel>
             </ScrollViewer>
         </Grid>

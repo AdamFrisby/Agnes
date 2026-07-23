@@ -1,0 +1,3 @@
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda2        16G   16G     0 100% /
+/dev/sda2        16G   16G     0 100% /

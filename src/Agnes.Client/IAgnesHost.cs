@@ -204,6 +204,11 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Every plugin installed on the host and its state.</summary>
     Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPluginsAsync()
         => Task.FromResult<IReadOnlyList<InstalledPluginDto>>([]);
+
+    /// <summary>Submits a user-authored bug report to the host's configured sink. Default for hosts/fixtures
+    /// without bug reporting: report it as unavailable so the client falls back to the public browser flow.</summary>
+    Task<Agnes.Abstractions.BugReportResult> SubmitBugReportAsync(BugReportDto report)
+        => Task.FromResult(new Agnes.Abstractions.BugReportResult(false, null, "Bug reporting is not available on this host."));
 }
 
 /// <summary>Creates/looks up host connections. Swap the implementation to simulate a server.</summary>
