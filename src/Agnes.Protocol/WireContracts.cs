@@ -17,7 +17,10 @@ public sealed record PairResponse(string DeviceId, string DeviceName, string Tok
 /// <summary>Which bootstrap auth methods a host offers (advertised at <c>GET /auth/methods</c>) so a
 /// client shows only the enabled ones. <see cref="GitHubClientId"/> is a public OAuth client id for the
 /// device flow — never a secret. The enterprise methods (<see cref="Oidc"/>, <see cref="Mtls"/>) are
-/// trailing-optional so this stays wire-compatible with clients that predate them.</summary>
+/// trailing-optional so this stays wire-compatible with clients that predate them. <see cref="Flows"/> is
+/// the newest addition (also trailing-optional): one descriptor per <em>enabled</em> method carrying its
+/// <see cref="AuthFlowKind"/>, so the client can bucket methods into the right UX group instead of one flat
+/// list. Null on hosts that predate it — the client then falls back to a per-method default kind.</summary>
 public sealed record AuthMethods(
     bool Pairing,
     bool GitHub,
@@ -25,7 +28,18 @@ public sealed record AuthMethods(
     bool Keypair,
     bool Oidc = false,
     string? OidcIssuer = null,
-    bool Mtls = false);
+    bool Mtls = false,
+    IReadOnlyList<AuthMethodDescriptor>? Flows = null);
+
+/// <summary>Per-method detail advertised in <see cref="AuthMethods.Flows"/>: the stable method id, a
+/// human-friendly label, and which real-world <see cref="AuthFlowKind"/> bucket the method belongs to.</summary>
+public sealed record AuthMethodDescriptor(string MethodId, string DisplayName, AuthFlowKind Kind);
+
+/// <summary>The externally-reachable address a pairing QR/deep-link should encode (from <c>GET /pair/qr</c>).
+/// <see cref="HostUrl"/> is the address a client on another network can actually resolve — the active
+/// transport's advertised endpoint, or the <c>Agnes:PublicUrl</c> override — never a bound LAN/loopback
+/// address. <see cref="DeepLink"/> is the ready-to-encode <c>agnes://pair</c> link over that address.</summary>
+public sealed record PairingInfo(string HostUrl, string DeepLink);
 
 /// <summary>Exchange a GitHub user access token (obtained by the client via the device flow) for an Agnes
 /// device token. The host verifies the identity against its allowlist and discards the GitHub token.</summary>

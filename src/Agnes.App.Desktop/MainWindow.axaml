@@ -487,7 +487,7 @@
              it never appears once a host is paired, and cancelling keeps persisted progress for next launch. -->
         <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="120" IsVisible="{Binding IsSetupWizardOpen}"
                 Background="#88000000">
-            <Border Width="560" MaxHeight="560" VerticalAlignment="Center" HorizontalAlignment="Center"
+            <Border x:Name="SetupWizardRoot" Width="560" MaxHeight="560" VerticalAlignment="Center" HorizontalAlignment="Center"
                     Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                     CornerRadius="12" Padding="24" BoxShadow="0 20 60 -20 #000000"
                     DataContext="{Binding SetupWizard}">
@@ -517,19 +517,30 @@
                     <!-- Step 2: methods the host actually advertises -->
                     <StackPanel Spacing="10" IsVisible="{Binding IsChoosingMethod}">
                         <TextBlock Text="How do you want to sign in?" Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" />
-                        <ItemsControl ItemsSource="{Binding Methods}">
+                        <!-- Grouped by AuthFlowKind: add a device / restore access / authorize a headless process. -->
+                        <ItemsControl ItemsSource="{Binding MethodGroups}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Button Command="{Binding $parent[ItemsControl].DataContext.ChooseMethodCommand}"
-                                            CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                            HorizontalContentAlignment="Left" Background="{DynamicResource PanelAlt}"
-                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8"
-                                            Padding="12,9" Margin="0,0,0,6" Cursor="Hand">
-                                        <StackPanel Spacing="2">
-                                            <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" />
-                                            <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
-                                        </StackPanel>
-                                    </Button>
+                                    <StackPanel Spacing="4" Margin="0,0,0,8">
+                                        <TextBlock Text="{Binding Heading}" Foreground="{DynamicResource FgFaint}"
+                                                   FontSize="11" FontWeight="SemiBold" Margin="0,2,0,2" />
+                                        <ItemsControl ItemsSource="{Binding Methods}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Command="{Binding #SetupWizardRoot.DataContext.ChooseMethodCommand}"
+                                                            CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Left" Background="{DynamicResource PanelAlt}"
+                                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8"
+                                                            Padding="12,9" Margin="0,0,0,6" Cursor="Hand">
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" />
+                                                            <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

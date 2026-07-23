@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Agnes.Abstractions;
 using Agnes.Protocol;
 using Agnes.Ui.Core.Onboarding;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -14,7 +15,11 @@ namespace Agnes.Ui.Core.ViewModels;
 /// <summary>One sign-in method the wizard offers, derived from a host's <see cref="AuthMethods"/>. <see cref="DocsUrl"/>
 /// links out to <c>docs/deployment.md</c> for the host-side setup a method may need (e.g. a GitHub OAuth app),
 /// rather than duplicating that content in the client.</summary>
-public sealed record WizardAuthOption(AuthMethodKind Kind, string Label, string Description, string? DocsUrl = null);
+/// <summary><see cref="Flow"/> is which real-world <see cref="AuthFlowKind"/> bucket the method belongs to,
+/// so the wizard can group the options (add a device / restore access / authorize a headless process).</summary>
+public sealed record WizardAuthOption(
+    AuthMethodKind Kind, string Label, string Description, string? DocsUrl = null,
+    AuthFlowKind Flow = AuthFlowKind.NewDevice);
 
 /// <summary>
 /// Drives the first-run setup wizard: a thin, resumable sequence over the client's <em>existing</em>
@@ -133,6 +138,11 @@ public sealed class SetupWizardViewModel : ObservableObject
     /// exactly what the host returned and nothing more.</summary>
     public ObservableCollection<WizardAuthOption> Methods { get; } = [];
 
+    /// <summary>The same methods grouped into UX buckets by <see cref="AuthFlowKind"/> (add this device /
+    /// restore access / authorize a headless process), so the shell can show distinct sections rather than
+    /// one flat list. Rebuilt alongside <see cref="Methods"/>.</summary>
+    public ObservableCollection<AuthMethodBucket<WizardAuthOption>> MethodGroups { get; } = [];
+
     private AuthMethodKind? _selectedMethod;
     /// <summary>The method the user picked to run (null until they choose one).</summary>
     public AuthMethodKind? SelectedMethod { get => _selectedMethod; private set => SetProperty(ref _selectedMethod, value); }
@@ -240,6 +250,7 @@ public sealed class SetupWizardViewModel : ObservableObject
     public void Restart()
     {
         Methods.Clear();
+        MethodGroups.Clear();
         SelectedMethod = null;
         Status = string.Empty;
         _store.Save(_store.Load() with
@@ -263,20 +274,20 @@ public sealed class SetupWizardViewModel : ObservableObject
         Methods.Clear();
         if (methods.Pairing)
         {
-            Methods.Add(new WizardAuthOption(AuthMethodKind.Pairing, "Pairing code",
-                "Enter the short code the host prints on startup.", DeploymentDocsUrl));
+            Add(AuthMethodKind.Pairing, "Pairing code",
+                "Enter the short code the host prints on startup.");
         }
 
         if (methods.GitHub)
         {
-            Methods.Add(new WizardAuthOption(AuthMethodKind.GitHub, "Sign in with GitHub",
-                "Authorise this device with your GitHub account.", DeploymentDocsUrl));
+            Add(AuthMethodKind.GitHub, "Sign in with GitHub",
+                "Authorise this device with your GitHub account.");
         }
 
         if (methods.Keypair)
         {
-            Methods.Add(new WizardAuthOption(AuthMethodKind.Keypair, "Device key",
-                "Use this device's key; add its public line to the host's authorized keys.", DeploymentDocsUrl));
+            Add(AuthMethodKind.Keypair, "Device key",
+                "Use this device's key; add its public line to the host's authorized keys.");
         }
 
         if (methods.Oidc)
@@ -284,14 +295,25 @@ public sealed class SetupWizardViewModel : ObservableObject
             var hint = string.IsNullOrEmpty(methods.OidcIssuer)
                 ? "Sign in through your organisation's identity provider."
                 : $"Sign in through {methods.OidcIssuer}.";
-            Methods.Add(new WizardAuthOption(AuthMethodKind.Oidc, "Single sign-on (OIDC)", hint, DeploymentDocsUrl));
+            Add(AuthMethodKind.Oidc, "Single sign-on (OIDC)", hint);
         }
 
         if (methods.Mtls)
         {
-            Methods.Add(new WizardAuthOption(AuthMethodKind.Mtls, "Client certificate (mTLS)",
-                "Pair using the client certificate presented on the TLS connection.", DeploymentDocsUrl));
+            Add(AuthMethodKind.Mtls, "Client certificate (mTLS)",
+                "Pair using the client certificate presented on the TLS connection.");
         }
+
+        // Bucket the flat list by AuthFlowKind for the grouped shell (add a device / restore / headless).
+        MethodGroups.Clear();
+        foreach (var bucket in AuthMethodBuckets.Group(Methods, o => o.Flow))
+        {
+            MethodGroups.Add(bucket);
+        }
+
+        void Add(AuthMethodKind kind, string label, string description)
+            => Methods.Add(new WizardAuthOption(
+                kind, label, description, DeploymentDocsUrl, AuthMethodBuckets.FlowFor(methods, kind)));
     }
 
     private static bool IsValidHostUrl(string url)

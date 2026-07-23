@@ -187,6 +187,10 @@ builder.Services.AddSingleton<IAuthMethodProvider>(sp => new OidcAuthMethodProvi
 builder.Services.AddSingleton<IAuthMethodProvider>(sp => new MtlsAuthMethodProvider(sp.GetRequiredService<MtlsIdentity>()));
 builder.Services.AddPluginPoint<IAuthMethodProvider>(m => m.MethodId);
 
+// Holds the reachable address the active transport exposed at startup, so the pairing QR/deep-link
+// endpoint advertises that (relay/tunnel/public) address rather than a bound LAN one.
+builder.Services.AddSingleton<HostReachability>();
+
 // ---- rate limiting: cap the auth bootstrap endpoints per-IP and globally ----
 var authRateLimit = new AuthRateLimitOptions
 {
@@ -1031,19 +1035,26 @@ app.MapMcp(Agnes.Host.Mcp.AgnesMcpEndpoints.Path);
 // public info — the GitHub client id is an OAuth *public* client id, not a secret.
 // Sourced from the auth-method plugin registry (AC13): the same AuthMethods wire shape, but the set of
 // methods and their enabled state now come from registered IAuthMethodProvider built-ins.
+// Also reports each enabled method's AuthFlowKind (in Flows) so the client buckets them into the right UX
+// group ("add a device" / "restore access" / "authorize a headless process").
 app.MapGet("/auth/methods", (IPluginRegistry<IAuthMethodProvider> methods) =>
+    Results.Ok(AuthMethodsFactory.Build(methods)));
+
+// The externally-reachable address a pairing QR/deep-link should encode. Reuses the active transport's
+// TransportEndpoint (captured at startup) — or the Agnes:PublicUrl override — so a host reached only through
+// a relay or reverse proxy advertises an address a client on another network can resolve, not a bound LAN
+// one. The address is public (not the pairing secret), so this needs no auth.
+app.MapGet("/pair/qr", (HostReachability reach, IConfiguration cfg) =>
 {
-    var github = methods.Find("github");
-    var oidc = methods.Find("oidc");
-    var mtls = methods.Find("mtls");
-    return Results.Ok(new AuthMethods(
-        Pairing: methods.Find("pairing")?.IsEnabled ?? false,
-        GitHub: github?.IsEnabled ?? false,
-        GitHubClientId: (github?.IsEnabled ?? false) ? github!.ClientMetadata.GetValueOrDefault("clientId") : null,
-        Keypair: methods.Find("keypair")?.IsEnabled ?? false,
-        Oidc: oidc?.IsEnabled ?? false,
-        OidcIssuer: (oidc?.IsEnabled ?? false) ? oidc!.ClientMetadata.GetValueOrDefault("issuer") : null,
-        Mtls: mtls?.IsEnabled ?? false));
+    var reachable = PairingReachability.Resolve(cfg["Agnes:PublicUrl"], reach.Endpoint);
+    if (string.IsNullOrWhiteSpace(reachable))
+    {
+        return Results.Json(
+            new { error = "This host has no externally-reachable address to advertise yet. Set Agnes:PublicUrl if it sits behind a reverse proxy." },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    return Results.Ok(new PairingInfo(reachable, PairingReachability.BuildDeepLink(reachable)));
 });
 
 // Pair a new device with the current code; returns a durable per-device token (shown once).
@@ -1458,6 +1469,8 @@ app.Lifetime.ApplicationStarted.Register(() =>
         // echoes the bound addresses. Block here so a misconfigured transport fails loudly at startup with an
         // actionable error rather than silently leaving the host unreachable/unintended (AC6).
         var endpoint = transport.ExposeAsync(new HostExposureContext(bound)).GetAwaiter().GetResult();
+        // Publish the reachable endpoint so the pairing QR/deep-link advertises it, not a bound LAN address.
+        app.Services.GetRequiredService<HostReachability>().Endpoint = endpoint;
         app.Logger.LogInformation("Transport '{Transport}' ({Hint}): clients reach this host at {Addresses}.",
             transport.DisplayName, endpoint.DisplayHint, string.Join(", ", endpoint.ClientAddresses));
     }
