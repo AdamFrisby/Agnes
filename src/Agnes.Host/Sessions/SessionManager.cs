@@ -1544,6 +1544,40 @@ public sealed class SessionManager : IAsyncDisposable
         return new SessionSnapshot(info, events, head);
     }
 
+    /// <summary>
+    /// The cross-session approvals list (notifications/02 tier 1): for every live session, the
+    /// <see cref="PermissionRequestedEvent"/>s in its log that have no matching
+    /// <see cref="PermissionResolvedEvent"/> (matched on <c>RequestId</c>) — i.e. still waiting on a human —
+    /// unioned across sessions and returned most-recent first. Pure aggregation over the durable log; it
+    /// creates no state and mutates nothing.
+    /// </summary>
+    public async Task<IReadOnlyList<OpenApproval>> GetOpenApprovalsAsync(CancellationToken cancellationToken = default)
+    {
+        var open = new List<OpenApproval>();
+        foreach (var sessionId in _sessions.Keys)
+        {
+            var events = await _store.ReadSinceAsync(sessionId, 0, cancellationToken).ConfigureAwait(false);
+            var resolved = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var e in events)
+            {
+                if (e is PermissionResolvedEvent r)
+                {
+                    resolved.Add(r.RequestId);
+                }
+            }
+
+            foreach (var e in events)
+            {
+                if (e is PermissionRequestedEvent p && !resolved.Contains(p.RequestId))
+                {
+                    open.Add(new OpenApproval(sessionId, p.RequestId, p.Title, p.ToolCallId, p.Timestamp));
+                }
+            }
+        }
+
+        return open.OrderByDescending(a => a.RequestedAt).ToArray();
+    }
+
     private string WorkingDirectoryOf(string sessionId)
         => _sessions.TryGetValue(sessionId, out var live) ? live.WorkingDirectory
         : _catalog.TryGetValue(sessionId, out var record) ? record.WorkingDirectory

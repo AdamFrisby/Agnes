@@ -87,6 +87,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _settingsStore = settingsStore ?? new SettingsStore();
         _settings = _settingsStore.Load();
 
+        // Cross-session approvals (notifications/02 tier 1): unions open permission requests across every
+        // connected host, newest first, with jump-to-session. Constructed before the layout is built so an
+        // early attention refresh can safely poke it.
+        Approvals = new ApprovalsViewModel(SnapshotHosts, _dispatcher);
+        Approvals.JumpRequested += JumpToApproval;
+
         _knownHosts.Add(SimulatedHost);
         _knownHosts.Add(RecordedHost);
         _knownHosts.AddRange(hostStore.Load());
@@ -284,6 +290,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     {
         OnPropertyChanged(nameof(AttentionCount));
         OnPropertyChanged(nameof(HasAttention));
+        // A permission request appearing/clearing is what flips a session's attention flag, so this is the
+        // natural moment to re-query the cross-session approvals list.
+        _ = Approvals.LoadAsync();
     }
 
     /// <summary>Accessibility: disables non-essential motion/animation when on.</summary>
@@ -2115,12 +2124,45 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         // Usage is per-session and flows through the session event stream (SessionDocument mirrors
         // its SessionViewModel.Usage) — not a host-level property.
 
-        if (_inboxHosts.Add(host))
+        bool added;
+        lock (_inboxHosts)
+        {
+            added = _inboxHosts.Add(host);
+        }
+
+        if (added)
         {
             host.InboxRunReceived += run => _dispatcher.Post(() => AddInboxRun(run));
             _ = LoadInboxAsync(host);
+            // A newly-connected host may already have open approvals — pull them into the unified list.
+            _ = Approvals.LoadAsync();
         }
     }
+
+    // ---- cross-session approvals (notifications/02 tier 1) ----
+
+    /// <summary>The unified open-approvals list across every connected host.</summary>
+    public ApprovalsViewModel Approvals { get; }
+
+    /// <summary>A thread-safe snapshot of the currently-connected hosts, for the approvals aggregation.</summary>
+    private IEnumerable<IAgnesHost> SnapshotHosts()
+    {
+        lock (_inboxHosts)
+        {
+            return _inboxHosts.ToArray();
+        }
+    }
+
+    /// <summary>Jump-to-session: focus the tab hosting the approval's originating session, if it's open.</summary>
+    private void JumpToApproval(ApprovalRow row) => _dispatcher.Post(() =>
+    {
+        var doc = AllDocuments().FirstOrDefault(d =>
+            ReferenceEquals(d.Host, row.Host) && d.Session?.SessionId == row.SessionId);
+        if (doc is not null)
+        {
+            _factory.SetActiveDockable(doc);
+        }
+    });
 
     // ---- background-run inbox (across hosts) ----
 

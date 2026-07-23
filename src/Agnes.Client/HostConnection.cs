@@ -166,6 +166,9 @@ public sealed class HostConnection : IAgnesHost
     public Task<IReadOnlyList<InboxRun>> GetInboxAsync()
         => _hub.InvokeAsync<IReadOnlyList<InboxRun>>(nameof(IAgnesServer.GetInbox));
 
+    public Task<IReadOnlyList<OpenApproval>> GetOpenApprovalsAsync()
+        => _hub.InvokeAsync<IReadOnlyList<OpenApproval>>(nameof(IAgnesServer.GetOpenApprovals));
+
     public event Action<InboxRun>? InboxRunReceived;
     public event Action<string, long, bool>? ReadStateChanged;
 

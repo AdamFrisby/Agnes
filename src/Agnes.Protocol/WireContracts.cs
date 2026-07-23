@@ -351,3 +351,13 @@ public sealed record InboxRun(
     string Title,
     string Summary,
     DateTimeOffset CompletedAt);
+
+/// <summary>An open permission request still waiting on a human, surfaced in the cross-session approvals
+/// list (notifications/02 tier 1). Aggregated from a session's <c>PermissionRequestedEvent</c>s that have no
+/// matching <c>PermissionResolvedEvent</c>; carries the originating session so a client can jump to it.</summary>
+public sealed record OpenApproval(
+    string SessionId,
+    string RequestId,
+    string Title,
+    string ToolCallId,
+    DateTimeOffset RequestedAt);

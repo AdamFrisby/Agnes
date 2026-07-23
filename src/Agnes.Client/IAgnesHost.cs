@@ -128,6 +128,12 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Completed background runs (newest first).</summary>
     Task<IReadOnlyList<InboxRun>> GetInboxAsync();
 
+    /// <summary>Open permission requests across every session on this host that still need a human, newest
+    /// first — the cross-session approvals list (notifications/02 tier 1). Default empty for hosts/fixtures
+    /// that don't aggregate approvals.</summary>
+    Task<IReadOnlyList<OpenApproval>> GetOpenApprovalsAsync()
+        => Task.FromResult<IReadOnlyList<OpenApproval>>([]);
+
     /// <summary>Raised when a background run lands in the inbox.</summary>
     event Action<InboxRun>? InboxRunReceived;
 
