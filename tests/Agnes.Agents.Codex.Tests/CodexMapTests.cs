@@ -96,10 +96,10 @@ public class CodexMapTests
             "{\"threadId\":\"t1\",\"turnId\":\"u1\",\"tokenUsage\":{\"modelContextWindow\":272000," +
             "\"total\":{\"inputTokens\":1000,\"cachedInputTokens\":8000,\"outputTokens\":250,\"reasoningOutputTokens\":40,\"totalTokens\":9250}}}"));
         var u = Assert.IsType<UsageReportedEvent>(e);
-        Assert.Equal(9000, u.ContextTokens); // input + cached
-        Assert.Equal(272000, u.ContextWindow);
-        Assert.Equal(250, u.OutputTokens);
-        Assert.Null(u.CostUsd); // Codex reports no USD cost here — never fabricated
+        Assert.Equal(9000, u.Metrics.ContextUsed); // input + cached
+        Assert.Equal(272000, u.Metrics.ContextWindow);
+        Assert.Equal(250, u.Metrics.OutputTokens);
+        Assert.Null(u.Metrics.CostUsd); // Codex reports no USD cost here — never fabricated
     }
 
     [Fact]

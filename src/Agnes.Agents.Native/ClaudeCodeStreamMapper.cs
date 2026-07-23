@@ -81,7 +81,7 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
                 // the per-message usage below, which reflects live window occupancy).
                 if (GetDouble(line, "total_cost_usd") is { } cost)
                 {
-                    yield return new UsageReportedEvent(CostUsd: cost);
+                    yield return new UsageReportedEvent(new UsageMetrics(CostUsd: cost));
                 }
 
                 var isError = line.TryGetProperty("is_error", out var err) && err.ValueKind == JsonValueKind.True;
@@ -107,7 +107,7 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
             var output = GetLong(usage, "output_tokens");
             if (context is not null || output is not null)
             {
-                yield return new UsageReportedEvent(ContextTokens: context, ContextWindow: _contextWindow, OutputTokens: output);
+                yield return new UsageReportedEvent(new UsageMetrics(ContextUsed: context, ContextWindow: _contextWindow, OutputTokens: output));
             }
         }
 

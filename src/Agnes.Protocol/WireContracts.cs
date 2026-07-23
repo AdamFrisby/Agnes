@@ -36,27 +36,29 @@ public sealed record KeypairAuthRequest(string PublicKey, string Nonce, string S
 /// is a free-form fallback caption. (Real hosts will populate this via a future ACP extension;
 /// today only the simulator does.)
 /// </summary>
-public sealed record UsageInfo(
-    long? ContextUsed = null,
-    long? ContextWindow = null,
-    long? OutputTokens = null,
-    double? CostUsd = null)
+/// Presentation over the shared <see cref="UsageMetrics"/> — the same data the <c>UsageReportedEvent</c>
+/// carries, with derived display helpers. There is one data shape (<see cref="UsageMetrics"/>); this only
+/// adds computed captions the UI binds to. A convenience constructor keeps the flat call sites terse.
+public sealed record UsageInfo(UsageMetrics Metrics)
 {
+    public UsageInfo(long? ContextUsed = null, long? ContextWindow = null, long? OutputTokens = null, double? CostUsd = null)
+        : this(new UsageMetrics(ContextUsed, ContextWindow, OutputTokens, CostUsd)) { }
+
     /// <summary>The model reported a context-token count (so we can show at least the number).</summary>
-    [JsonIgnore] public bool HasAnyContext => ContextUsed is >= 0;
+    [JsonIgnore] public bool HasAnyContext => Metrics.ContextUsed is >= 0;
 
     /// <summary>We know both the used tokens and the model's window (so we can show a meter).</summary>
-    [JsonIgnore] public bool HasContext => ContextWindow is > 0 && ContextUsed is >= 0;
+    [JsonIgnore] public bool HasContext => Metrics.ContextWindow is > 0 && Metrics.ContextUsed is >= 0;
 
-    [JsonIgnore] public double ContextPercent => HasContext ? Math.Clamp(100.0 * ContextUsed!.Value / ContextWindow!.Value, 0, 100) : 0;
+    [JsonIgnore] public double ContextPercent => HasContext ? Math.Clamp(100.0 * Metrics.ContextUsed!.Value / Metrics.ContextWindow!.Value, 0, 100) : 0;
 
     /// <summary>"18,240 / 200,000" when the window is known, else just "18,240", else empty.</summary>
     [JsonIgnore] public string ContextText => HasContext
-        ? $"{ContextUsed:N0} / {ContextWindow:N0}"
-        : HasAnyContext ? $"{ContextUsed:N0}" : string.Empty;
+        ? $"{Metrics.ContextUsed:N0} / {Metrics.ContextWindow:N0}"
+        : HasAnyContext ? $"{Metrics.ContextUsed:N0}" : string.Empty;
 
     /// <summary>A compact status caption (the real reported cost), or null when there's nothing to show.</summary>
-    [JsonIgnore] public string? Summary => CostUsd is > 0 ? $"${CostUsd:0.####}" : null;
+    [JsonIgnore] public string? Summary => Metrics.CostUsd is > 0 ? $"${Metrics.CostUsd:0.####}" : null;
 }
 
 /// <summary>An agent kind available on a host (a loaded adapter plugin).</summary>

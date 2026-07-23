@@ -662,7 +662,7 @@ public sealed class SimulatedHost : IAgnesHost
                 cost = _costUsd;
             }
 
-            Emit(new UsageReportedEvent(ContextTokens: ctx, ContextWindow: Window, CostUsd: cost > 0 ? cost : null));
+            Emit(new UsageReportedEvent(new UsageMetrics(ContextUsed: ctx, ContextWindow: Window, CostUsd: cost > 0 ? cost : null)));
         }
 
         public SessionSnapshot Snapshot()

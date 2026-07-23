@@ -123,7 +123,7 @@ internal sealed class CodexMap
             return null;
         }
 
-        return new UsageReportedEvent(ContextTokens: context, ContextWindow: _contextWindow, OutputTokens: output);
+        return new UsageReportedEvent(new UsageMetrics(ContextUsed: context, ContextWindow: _contextWindow, OutputTokens: output));
     }
 
     // ---- tool items ----

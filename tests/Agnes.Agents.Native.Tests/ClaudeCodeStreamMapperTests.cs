@@ -89,10 +89,10 @@ public class ClaudeCodeStreamMapperTests
         // input + cache_read + cache_creation all count against the context window.
         var e = Map("{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":10,\"cache_read_input_tokens\":18000,\"cache_creation_input_tokens\":240,\"output_tokens\":120},\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}");
         var usage = Assert.Single(e.OfType<UsageReportedEvent>());
-        Assert.Equal(18_250, usage.ContextTokens);
-        Assert.Equal(120, usage.OutputTokens);
-        Assert.Null(usage.ContextWindow); // no init seen → window unknown, not guessed
-        Assert.Null(usage.CostUsd);
+        Assert.Equal(18_250, usage.Metrics.ContextUsed);
+        Assert.Equal(120, usage.Metrics.OutputTokens);
+        Assert.Null(usage.Metrics.ContextWindow); // no init seen → window unknown, not guessed
+        Assert.Null(usage.Metrics.CostUsd);
     }
 
     [Fact]
@@ -108,19 +108,19 @@ public class ClaudeCodeStreamMapperTests
         var standard = MapAll(
             "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"model\":\"claude-sonnet-4-5\"}",
             "{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":5000}}}");
-        Assert.Equal(200_000, Assert.Single(standard.OfType<UsageReportedEvent>()).ContextWindow);
+        Assert.Equal(200_000, Assert.Single(standard.OfType<UsageReportedEvent>()).Metrics.ContextWindow);
 
         var longContext = MapAll(
             "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"model\":\"claude-opus-4-8[1m]\"}",
             "{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":5000}}}");
-        Assert.Equal(1_000_000, Assert.Single(longContext.OfType<UsageReportedEvent>()).ContextWindow);
+        Assert.Equal(1_000_000, Assert.Single(longContext.OfType<UsageReportedEvent>()).Metrics.ContextWindow);
     }
 
     [Fact]
     public void Result_cost_becomes_a_usage_event_before_the_turn_ends()
     {
         var e = Map("{\"type\":\"result\",\"is_error\":false,\"total_cost_usd\":0.0345}");
-        Assert.Equal(0.0345, Assert.Single(e.OfType<UsageReportedEvent>()).CostUsd);
+        Assert.Equal(0.0345, Assert.Single(e.OfType<UsageReportedEvent>()).Metrics.CostUsd);
         // Usage is reported before the turn-ended marker.
         Assert.IsType<UsageReportedEvent>(e[0]);
         Assert.IsType<TurnEndedEvent>(e[1]);

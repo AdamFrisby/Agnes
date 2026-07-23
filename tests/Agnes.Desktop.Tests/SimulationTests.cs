@@ -108,14 +108,14 @@ public class SimulatedHostTests
 
         // Usage rides the session event stream (the same UsageReportedEvent a real agent emits).
         await WaitAsync(() => view.Events.OfType<UsageReportedEvent>().Any());
-        var before = view.Events.OfType<UsageReportedEvent>().Last().ContextTokens;
+        var before = view.Events.OfType<UsageReportedEvent>().Last().Metrics.ContextUsed;
 
         await host.PromptAsync(info.SessionId, [new TextContent("hello world")]);
-        await WaitAsync(() => view.Events.OfType<UsageReportedEvent>().Last().ContextTokens > before);
+        await WaitAsync(() => view.Events.OfType<UsageReportedEvent>().Last().Metrics.ContextUsed > before);
 
         var latest = view.Events.OfType<UsageReportedEvent>().Last();
-        Assert.True(latest.ContextTokens > before);
-        Assert.Equal(200_000, latest.ContextWindow);
+        Assert.True(latest.Metrics.ContextUsed > before);
+        Assert.Equal(200_000, latest.Metrics.ContextWindow);
     }
 
     [Fact]

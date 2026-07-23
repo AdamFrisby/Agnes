@@ -140,18 +140,22 @@ public sealed record TerminalOutputEvent(string TerminalId, string Data) : Sessi
 public sealed record TurnEndedEvent(StopReason Reason) : SessionEvent;
 
 /// <summary>
-/// Real token/cost usage the agent reported (today: the native Claude Code adapter, from the
-/// stream's per-message and result <c>usage</c> blocks). Every field is nullable — a client shows
-/// only what's present, and nothing at all when the agent reports no usage. Nothing here is
-/// estimated or fabricated: <see cref="ContextTokens"/> is the context-window occupancy the model
-/// reported, <see cref="ContextWindow"/> is the model's real window (when known), and
-/// <see cref="CostUsd"/> is the cost the CLI reported.
+/// Real token/cost usage numbers (the single shared shape for usage across the domain event, the wire, and
+/// the UI — see <c>UsageInfo</c> in Agnes.Protocol, which adds presentation over this). Every field is
+/// nullable and nothing is estimated or fabricated: <see cref="ContextUsed"/> is the context-window
+/// occupancy the model reported, <see cref="ContextWindow"/> is the model's real window (when known),
+/// <see cref="OutputTokens"/> is tokens produced, and <see cref="CostUsd"/> is the cost the CLI reported.
 /// </summary>
-public sealed record UsageReportedEvent(
-    long? ContextTokens = null,
+public sealed record UsageMetrics(
+    long? ContextUsed = null,
     long? ContextWindow = null,
     long? OutputTokens = null,
-    double? CostUsd = null) : SessionEvent;
+    double? CostUsd = null);
+
+/// <summary>Real token/cost usage the agent reported (today: the native Claude Code adapter, from the
+/// stream's per-message and result <c>usage</c> blocks). Each event may carry only some fields (context
+/// from a message, cost from the result); a client merges them, keeping the last real value per field.</summary>
+public sealed record UsageReportedEvent(UsageMetrics Metrics) : SessionEvent;
 
 /// <summary>A host-level informational notice in the transcript (e.g. a session was reconnected).</summary>
 public sealed record NoticeEvent(string Message, bool IsError = false) : SessionEvent;
