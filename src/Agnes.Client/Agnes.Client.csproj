@@ -11,6 +11,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Agnes.Abstractions\Agnes.Abstractions.csproj" />
     <ProjectReference Include="..\Agnes.Protocol\Agnes.Protocol.csproj" />
+    <!-- Relay connection-setup frames: the client relay transport routes through a relay before the
+         end-to-end TLS handshake to the host (see .ideas/connectivity/01-relay-and-tunneling.md). -->
+    <ProjectReference Include="..\Agnes.Relay.Protocol\Agnes.Relay.Protocol.csproj" />
   </ItemGroup>
 
 </Project>

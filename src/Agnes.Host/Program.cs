@@ -34,7 +34,39 @@ builder.Services.AddSingleton(new TailscaleTransportOptions
 });
 builder.Services.AddSingleton<ITransportProvider>(sp =>
     new TailscaleTransportProvider(sp.GetRequiredService<ITailscaleCli>(), sp.GetRequiredService<TailscaleTransportOptions>()));
+// Agnes relay: dial out to a self-hosted blind relay so a host behind NAT is reachable with no inbound port
+// (Agnes:Transport:Provider=agnes-relay). TLS terminates at Kestrel with a pinned self-signed host cert; the
+// relay and the host's loopback pump only move already-encrypted bytes. See .ideas/connectivity/01-relay-and-tunneling.md.
+var agnesHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+var relayTransportOptions = new RelayTransportOptions
+{
+    Url = builder.Configuration["Agnes:Transport:Relay:Url"] ?? "",
+    HostId = builder.Configuration["Agnes:Transport:Relay:HostId"] ?? "",
+    HubPort = builder.Configuration.GetValue<int?>("Agnes:Transport:Relay:HubPort", null),
+};
+builder.Services.AddSingleton(relayTransportOptions);
+builder.Services.AddSingleton<IRelayHostKey>(sp => new FileRelayHostKey(
+    builder.Configuration["Agnes:Transport:Relay:KeyFile"] ?? Path.Combine(agnesHome, "relay-host-key.pem"),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<FileRelayHostKey>()));
+// One shared cert-provider instance so the fingerprint Kestrel presents is exactly the one advertised to
+// (and pinned by) clients. The interface leaves a clean seam for a real-CA impl (DNS-01) in a later wave.
+var hostCertificateProvider = new SelfSignedHostCertificateProvider(
+    builder.Configuration["Agnes:Transport:Relay:CertFile"] ?? Path.Combine(agnesHome, "relay-host-cert.pfx"));
+builder.Services.AddSingleton<IHostCertificateProvider>(hostCertificateProvider);
+builder.Services.AddSingleton<ITransportProvider>(sp => new AgnesRelayTransportProvider(
+    sp.GetRequiredService<RelayTransportOptions>(),
+    sp.GetRequiredService<IRelayHostKey>(),
+    sp.GetRequiredService<IHostCertificateProvider>(),
+    logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger<AgnesRelayTransportProvider>()));
 builder.Services.AddPluginPoint<ITransportProvider>(t => t.Id);
+
+// On the relay path TLS must terminate at Kestrel with the cert clients pin, so present the host cert on the
+// HTTPS listener. Only done when the relay transport is selected — Direct keeps today's cert behavior (AC1).
+if (string.Equals(builder.Configuration["Agnes:Transport:Provider"], "agnes-relay", StringComparison.OrdinalIgnoreCase))
+{
+    builder.WebHost.ConfigureKestrel(kestrel =>
+        kestrel.ConfigureHttpsDefaults(https => https.ServerCertificate = hostCertificateProvider.GetCertificate()));
+}
 
 // CORS for a browser-hosted frontend (Uno WASM) reaching the hub cross-origin. The web client
 // served from this same origin needs no CORS; only configure origins when it's hosted elsewhere.

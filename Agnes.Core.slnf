@@ -9,6 +9,7 @@
       "src/Agnes.Agents.Codex/Agnes.Agents.Codex.csproj",
       "src/Agnes.Protocol/Agnes.Protocol.csproj",
       "src/Agnes.Relay/Agnes.Relay.csproj",
+      "src/Agnes.Relay.Protocol/Agnes.Relay.Protocol.csproj",
       "src/Agnes.Sandbox/Agnes.Sandbox.csproj",
       "src/Agnes.Sandbox.Incus/Agnes.Sandbox.Incus.csproj",
       "src/Agnes.Host/Agnes.Host.csproj",

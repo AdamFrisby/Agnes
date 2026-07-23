@@ -19,9 +19,24 @@ public sealed class HostConnection : IAgnesHost
     public HostConnection(string hostUrl, string token, Action<HttpConnectionOptions>? configureHttp = null)
     {
         HostUrl = hostUrl.TrimEnd('/');
-        var url = $"{HostUrl}{WireProtocol.HubPath}?{WireProtocol.TokenParameter}={Uri.EscapeDataString(token)}";
+
+        // A relay address (agnes-relay://relay/hostId?fp=...) tunnels the same SignalR wire + bearer token
+        // through the blind relay to the host, pinning the host's advertised cert fingerprint (AC2/AC4/AC5).
+        // A direct https/http URL keeps today's behavior untouched (AC1).
+        string baseUrl = HostUrl;
+        Action<HttpConnectionOptions>? relayConfigure = null;
+        if (RelayClientTransport.IsRelayAddress(HostUrl))
+        {
+            (baseUrl, relayConfigure) = RelayClientTransport.Build(HostUrl);
+        }
+
+        var url = $"{baseUrl}{WireProtocol.HubPath}?{WireProtocol.TokenParameter}={Uri.EscapeDataString(token)}";
         _hub = new HubConnectionBuilder()
-            .WithUrl(url, options => configureHttp?.Invoke(options))
+            .WithUrl(url, options =>
+            {
+                relayConfigure?.Invoke(options);
+                configureHttp?.Invoke(options);
+            })
             .WithAutomaticReconnect()
             .Build();
 

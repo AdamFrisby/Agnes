@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- The relay's tiny connection-setup wire contract (frames + length-prefixed codec), extracted
+         into its own project so BOTH the standalone relay broker (Agnes.Relay) and the Agnes
+         host/client relay transports (Agnes.Host / Agnes.Client) speak the exact same frames from a
+         single source of truth. BCL only (System.Text.Json) — no Agnes domain deps, no third-party
+         packages. See .ideas/connectivity/01-relay-and-tunneling.md. -->
+    <RootNamespace>Agnes.Relay.Protocol</RootNamespace>
+  </PropertyGroup>
+
+</Project>

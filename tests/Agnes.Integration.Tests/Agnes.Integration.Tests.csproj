@@ -27,6 +27,9 @@
     <ProjectReference Include="..\..\src\Agnes.Protocol\Agnes.Protocol.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Host\Agnes.Host.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Client\Agnes.Client.csproj" />
+    <!-- The relay end-to-end test runs the in-process blind relay broker between host and client. -->
+    <ProjectReference Include="..\..\src\Agnes.Relay\Agnes.Relay.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Relay.Protocol\Agnes.Relay.Protocol.csproj" />
   </ItemGroup>
 
 </Project>

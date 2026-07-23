@@ -14,6 +14,7 @@
     <Project Path="src/Agnes.Protocol/Agnes.Protocol.csproj" />
     <Project Path="src/Agnes.Recording/Agnes.Recording.csproj" />
     <Project Path="src/Agnes.Relay/Agnes.Relay.csproj" />
+    <Project Path="src/Agnes.Relay.Protocol/Agnes.Relay.Protocol.csproj" />
     <Project Path="src/Agnes.Sandbox/Agnes.Sandbox.csproj" />
     <Project Path="src/Agnes.Sandbox.Incus/Agnes.Sandbox.Incus.csproj" />
     <Project Path="src/Agnes.Ui.Core/Agnes.Ui.Core.csproj" />

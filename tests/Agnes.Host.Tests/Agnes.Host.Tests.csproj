@@ -24,6 +24,9 @@
     <ProjectReference Include="..\..\src\Agnes.Abstractions\Agnes.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Protocol\Agnes.Protocol.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Host\Agnes.Host.csproj" />
+    <!-- The relay transport tests stand up the in-process relay broker + speak its setup frames. -->
+    <ProjectReference Include="..\..\src\Agnes.Relay\Agnes.Relay.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Relay.Protocol\Agnes.Relay.Protocol.csproj" />
     <!-- Built (so its DLL exists on disk for PluginInstallerTests to load into a real
          AssemblyLoadContext), but never statically linked — see that project's own comment. -->
     <ProjectReference Include="..\Agnes.TestPluginFixture\Agnes.TestPluginFixture.csproj" ReferenceOutputAssembly="false" />

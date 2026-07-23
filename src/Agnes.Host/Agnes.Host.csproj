@@ -44,6 +44,9 @@
     <ProjectReference Include="..\Agnes.Agents.Codex\Agnes.Agents.Codex.csproj" />
     <ProjectReference Include="..\Agnes.Sandbox\Agnes.Sandbox.csproj" />
     <ProjectReference Include="..\Agnes.Sandbox.Incus\Agnes.Sandbox.Incus.csproj" />
+    <!-- Relay connection-setup frames: the host relay transport dials out to a relay and answers
+         "client waiting" signals (see .ideas/connectivity/01-relay-and-tunneling.md). -->
+    <ProjectReference Include="..\Agnes.Relay.Protocol\Agnes.Relay.Protocol.csproj" />
   </ItemGroup>
 
   <ItemGroup>

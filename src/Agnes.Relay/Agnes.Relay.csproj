@@ -12,6 +12,12 @@
     <RootNamespace>Agnes.Relay</RootNamespace>
   </PropertyGroup>
 
+  <!-- The relay's connection-setup wire contract now lives in a shared project so the Agnes host/client
+       relay transports speak the identical frames. The relay still references NO Agnes domain projects. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Agnes.Relay.Protocol\Agnes.Relay.Protocol.csproj" />
+  </ItemGroup>
+
   <!-- Let the test project reach internal helpers without widening the public surface. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Agnes.Relay.Tests" />

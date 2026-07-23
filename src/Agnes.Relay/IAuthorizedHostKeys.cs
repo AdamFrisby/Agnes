@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using System.Text;
+using Agnes.Relay.Protocol;
 
 namespace Agnes.Relay;
 
@@ -17,9 +17,9 @@ public interface IAuthorizedHostKeys
 /// </summary>
 public static class HostKeyVerifier
 {
-    /// <summary>The exact bytes a host signs to prove a key controls a host-id.</summary>
+    /// <summary>The exact bytes a host signs to prove a key controls a host-id (shared with the host transport).</summary>
     public static byte[] ChallengePayload(string nonce, string hostId) =>
-        Encoding.UTF8.GetBytes(nonce + "\n" + hostId);
+        RelayChallenge.Payload(nonce, hostId);
 
     /// <summary>
     /// Returns the canonical SPKI of the presented key iff the key is authorized and its signature
