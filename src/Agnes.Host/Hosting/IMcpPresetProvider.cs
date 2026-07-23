@@ -10,10 +10,10 @@ namespace Agnes.Host.Hosting;
 /// presets (e.g. an org's internal MCP servers) without changing the host. The user-facing MCP registry
 /// (<see cref="Agnes.Host.Sessions.McpRegistry"/>) stores what a user actually configures; presets are
 /// just templates it can be seeded from.
+/// Native-config detection — surfacing servers an agent CLI already has in its own config — is a separate,
+/// adapter-level capability (<see cref="Agnes.Abstractions.IMcpDiscoveryAdapter"/>, implemented per agent
+/// package); the host folds it into the effective-config preview via <see cref="McpEffectiveConfig"/>.
 /// </summary>
-// DEFERRED: native-config detection (a per-adapter `IMcpDiscoveryAdapter.DetectNativeConfigAsync()` that
-// surfaces servers already configured in an agent CLI's own config as a read-only, importable "detected"
-// view) is intentionally not implemented here — it's adapter-level and tracked in .ideas/extensibility/01-mcp-management.md.
 public interface IMcpPresetProvider
 {
     /// <summary>Stable id for this preset source, e.g. <c>curated</c>.</summary>

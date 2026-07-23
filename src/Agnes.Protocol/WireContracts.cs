@@ -243,6 +243,10 @@ public enum McpApplyScope
 /// is "stdio" (Command/Args/Env) or "http" (Url/BearerTokenEnv). A server is used only when Enabled.
 /// <see cref="ApplyScope"/> (with <see cref="WorkspaceId"/> for <see cref="McpApplyScope.ThisWorkspace"/>)
 /// narrows which sessions see it; both are additive and default to "applies everywhere" for back-compat.
+/// <see cref="NativeConfig"/> marks a server that Agnes did NOT add — it was detected in an agent CLI's own
+/// native config (<see cref="Source"/> names which) and is therefore read-only through Agnes: shown in the
+/// effective-config preview so the user knows it's active, but not removable/editable here. Both are trailing
+/// and default to "not native", so an entry persisted before they existed deserializes to an Agnes-managed one.
 /// </summary>
 public sealed record McpServerInfo(
     string Id,
@@ -256,7 +260,9 @@ public sealed record McpServerInfo(
     string? Url,
     string? BearerTokenEnv,
     McpApplyScope ApplyScope = McpApplyScope.AllHosts,
-    string? WorkspaceId = null);
+    string? WorkspaceId = null,
+    bool NativeConfig = false,
+    string? Source = null);
 
 /// <summary>Create/replace payload for an MCP server (Id is assigned by the host on add).</summary>
 public sealed record McpServerRequest(

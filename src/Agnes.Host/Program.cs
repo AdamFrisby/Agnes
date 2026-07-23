@@ -881,10 +881,14 @@ app.MapGet("/mcp/presets", (HttpContext ctx, IPluginRegistry<IMcpPresetProvider>
         ? Results.Ok(presets.All.SelectMany(p => p.Presets).ToArray())
         : Results.Unauthorized());
 
-// Effective-config preview: the merged, scope-filtered set that WOULD be active for a workspace right now
-// (a pure read of the same resolution session open uses). No workspaceId => the host-wide default view.
-app.MapGet("/mcp/effective", (HttpContext ctx, string? workspaceId) =>
-    Authorized(ctx, tokens) ? Results.Ok(mcp.EffectiveFor(workspaceId)) : Results.Unauthorized());
+// Effective-config preview: the merged, scope-filtered set that WOULD be active for a workspace right now —
+// Agnes-managed servers unioned with any an agent CLI already has in its OWN native config (flagged read-only).
+// No workspaceId => the host-wide managed view (native config is per-workspace, so it needs a directory).
+app.MapGet("/mcp/effective", async (HttpContext ctx, string? workspaceId, string? agentId,
+        IPluginRegistry<IAgentAdapter> agents, CancellationToken ct) =>
+    Authorized(ctx, tokens)
+        ? Results.Ok(await McpEffectiveConfig.PreviewAsync(mcp, agents.All, workspaceId, agentId, ct))
+        : Results.Unauthorized());
 
 app.MapPost("/mcp", (HttpContext ctx, McpServerRequest request) =>
     Authorized(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());

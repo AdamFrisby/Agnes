@@ -1264,9 +1264,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             {
                 EffectiveMcp.Clear();
                 foreach (var s in effective) { EffectiveMcp.Add(s); }
+                var native = effective.Count(s => s.NativeConfig);
                 McpPreviewStatus = effective.Count == 0
                     ? "No MCP servers would be active."
-                    : $"{effective.Count} server(s) would be active.";
+                    : native == 0
+                        ? $"{effective.Count} server(s) would be active."
+                        : $"{effective.Count} server(s) would be active ({native} read-only, from a CLI's native config).";
             });
         }
         catch (Exception ex)

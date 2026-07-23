@@ -59,6 +59,22 @@ public static class ClaudeCodeAgent
         };
     }
 
-    public static AcpAgentAdapter Create(ILoggerFactory loggerFactory, ClaudeCodeOptions? options = null)
+    public static ClaudeCodeAcpAdapter Create(ILoggerFactory loggerFactory, ClaudeCodeOptions? options = null)
         => new(CreateLaunchSpec(options), loggerFactory);
+}
+
+/// <summary>
+/// Claude Code's ACP adapter: the generic <see cref="AcpAgentAdapter"/> plus the one capability that IS
+/// Claude-Code-specific — reading the MCP servers its CLI has configured natively
+/// (<see cref="IMcpDiscoveryAdapter"/>). Other ACP CLIs use <see cref="AcpAgentAdapter"/> directly and so
+/// don't implement the interface, which is exactly the intended "no native servers surfaced" default.
+/// </summary>
+public sealed class ClaudeCodeAcpAdapter : AcpAgentAdapter, IMcpDiscoveryAdapter
+{
+    public ClaudeCodeAcpAdapter(AcpLaunchSpec spec, ILoggerFactory loggerFactory) : base(spec, loggerFactory)
+    {
+    }
+
+    public Task<IReadOnlyList<NativeMcpServer>> DetectNativeConfigAsync(string workspaceDirectory, CancellationToken ct = default)
+        => ClaudeNativeMcpConfig.DetectAsync(workspaceDirectory, ct);
 }

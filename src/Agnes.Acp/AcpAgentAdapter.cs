@@ -35,9 +35,11 @@ public sealed record AcpLaunchSpec
 
 /// <summary>
 /// Generic <see cref="IAgentAdapter"/> for any ACP-compliant CLI. Agent plugins are
-/// typically just an <see cref="AcpLaunchSpec"/> passed to this adapter.
+/// typically just an <see cref="AcpLaunchSpec"/> passed to this adapter. Not sealed so a plugin can subclass
+/// it to add an optional capability its CLI supports (e.g. Claude Code adds <see cref="IMcpDiscoveryAdapter"/>)
+/// without re-implementing the ACP launch/session plumbing.
 /// </summary>
-public sealed class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
+public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
 {
     private readonly AcpLaunchSpec _spec;
     private readonly ILoggerFactory _loggerFactory;

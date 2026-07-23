@@ -321,9 +321,15 @@
                         <ItemsControl ItemsSource="{Binding EffectiveMcp}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock Foreground="{DynamicResource FgDim}" FontSize="11" Margin="2,1,0,0">
-                                        <Run Text="{Binding Name}" /><Run Text="  ·  " /><Run Text="{Binding RunAt}" /><Run Text="  ·  " /><Run Text="{Binding ApplyScope}" />
-                                    </TextBlock>
+                                    <StackPanel Spacing="0" Margin="2,1,0,0">
+                                        <TextBlock Foreground="{DynamicResource FgDim}" FontSize="11">
+                                            <Run Text="{Binding Name}" /><Run Text="  ·  " /><Run Text="{Binding RunAt}" /><Run Text="  ·  " /><Run Text="{Binding ApplyScope}" />
+                                        </TextBlock>
+                                        <!-- Native-config servers (Agnes didn't add them) are read-only; label their origin CLI. -->
+                                        <TextBlock IsVisible="{Binding NativeConfig}" Foreground="{DynamicResource FgFaint}" FontSize="10" Margin="0,0,0,2">
+                                            <Run Text="read-only · from " /><Run Text="{Binding Source}" />
+                                        </TextBlock>
+                                    </StackPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

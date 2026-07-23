@@ -42,17 +42,32 @@ public static class McpManagement
     }
 
     /// <summary>Preview the effective, scope-filtered MCP set that WOULD be active for a workspace (a pure
-    /// read; pass null for the host-wide view). Answers "what will actually run if I start a session now."</summary>
+    /// read; pass null for the host-wide view). Answers "what will actually run if I start a session now."
+    /// The result unions the Agnes-managed servers with any an agent CLI already has in its OWN native config
+    /// (those come back flagged <see cref="McpServerInfo.NativeConfig"/> / read-only, with <see cref="McpServerInfo.Source"/>
+    /// naming the CLI). Passing <paramref name="agentId"/> restricts native detection to that one adapter.</summary>
     public static async Task<IReadOnlyList<McpServerInfo>> PreviewEffectiveAsync(
-        string hostUrl, string token, string? workspaceId = null, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+        string hostUrl, string token, string? workspaceId = null, string? agentId = null,
+        HttpClient? httpClient = null, CancellationToken cancellationToken = default)
     {
         var (client, owned) = Client(httpClient, token);
         try
         {
-            var url = hostUrl.TrimEnd('/') + "/mcp/effective";
+            var query = new List<string>();
             if (!string.IsNullOrEmpty(workspaceId))
             {
-                url += "?workspaceId=" + Uri.EscapeDataString(workspaceId);
+                query.Add("workspaceId=" + Uri.EscapeDataString(workspaceId));
+            }
+
+            if (!string.IsNullOrEmpty(agentId))
+            {
+                query.Add("agentId=" + Uri.EscapeDataString(agentId));
+            }
+
+            var url = hostUrl.TrimEnd('/') + "/mcp/effective";
+            if (query.Count > 0)
+            {
+                url += "?" + string.Join("&", query);
             }
 
             return await client.GetFromJsonAsync<IReadOnlyList<McpServerInfo>>(url, cancellationToken).ConfigureAwait(false) ?? [];
