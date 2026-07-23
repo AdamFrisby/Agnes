@@ -186,6 +186,16 @@ builder.Services.AddPluginPoint<IConnectedServiceProvider>(p => p.Id);
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.ConnectedServiceBroker(
     sp.GetRequiredService<Agnes.Host.Hosting.ConnectedServiceProfileStore>(),
     sp.GetRequiredService<IPluginRegistry<IConnectedServiceProvider>>()));
+// Quota/usage monitoring (.ideas/providers/03): a caching layer over the OPTIONAL IQuotaReportingProvider
+// capability. A provider that exposes usage (the template stub does) is read at most once per staleness
+// window and served from cache; one that doesn't implement the capability reports quota as "unavailable".
+var quotaStalenessSeconds = builder.Configuration.GetValue("Agnes:Quota:StalenessSeconds", 300);
+builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.QuotaService(
+    sp.GetRequiredService<Agnes.Host.Hosting.ConnectedServiceProfileStore>(),
+    sp.GetRequiredService<IPluginRegistry<IConnectedServiceProvider>>(),
+    sp.GetRequiredService<TimeProvider>(),
+    TimeSpan.FromSeconds(quotaStalenessSeconds),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.QuotaService>()));
 
 // ---- external attention requests (extensibility/06): the generic human-in-the-loop webhook API ----
 // A public REST surface ( /v1/attention-requests ) lets any external system create a "please ask a human"

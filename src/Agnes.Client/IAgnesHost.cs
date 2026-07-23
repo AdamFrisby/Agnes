@@ -315,6 +315,14 @@ public interface IAgnesHost : IAsyncDisposable
 
     /// <summary>Deletes a template by slash token.</summary>
     Task DeletePromptTemplateAsync(string token) => Task.CompletedTask;
+
+    // ---- connected-service quota (see .ideas/providers/03-quota-monitoring.md) ----
+    // Defaulted null so hosts/fixtures that predate quota reporting reply "unavailable" instead of failing.
+
+    /// <summary>The current quota/usage snapshot for a connected-service profile, or null when it can't be
+    /// reported. Default null for hosts without quota reporting — a client renders that as "unavailable".</summary>
+    Task<QuotaSnapshot?> GetQuotaSnapshotAsync(string profileId)
+        => Task.FromResult<QuotaSnapshot?>(null);
 }
 
 /// <summary>Creates/looks up host connections. Swap the implementation to simulate a server.</summary>

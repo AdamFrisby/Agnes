@@ -263,6 +263,17 @@ public interface IAgnesServer
 
     /// <summary>Deletes a template by slash token.</summary>
     Task DeletePromptTemplate(string token);
+
+    // ---- connected-service quota (see .ideas/providers/03-quota-monitoring.md) ----
+    // Pull-only for MVP: a client asks for a profile's usage snapshot when it wants to paint a badge; the host
+    // serves it from a per-profile cache behind a staleness window, so redrawing the badge doesn't hammer the
+    // provider's usage API. (An OnQuotaChanged push could be added later; today it's a client pull.) The
+    // QuotaSnapshot record carries no secret — only plan/meter numbers — so it crosses the wire whole.
+
+    /// <summary>The current quota/usage snapshot for a connected-service profile, or null when it can't be
+    /// reported — an unknown profile, or a provider that doesn't implement the optional quota capability.
+    /// A distinguishable "unavailable" (null) rather than an error, so a badge degrades cleanly.</summary>
+    Task<Abstractions.QuotaSnapshot?> GetQuotaSnapshot(string profileId);
 }
 
 /// <summary>

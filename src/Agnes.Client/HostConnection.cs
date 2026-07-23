@@ -314,5 +314,8 @@ public sealed class HostConnection : IAgnesHost
     public Task DeletePromptTemplateAsync(string token)
         => _hub.InvokeAsync(nameof(IAgnesServer.DeletePromptTemplate), token);
 
+    public Task<Abstractions.QuotaSnapshot?> GetQuotaSnapshotAsync(string profileId)
+        => _hub.InvokeAsync<Abstractions.QuotaSnapshot?>(nameof(IAgnesServer.GetQuotaSnapshot), profileId);
+
     public async ValueTask DisposeAsync() => await _hub.DisposeAsync();
 }

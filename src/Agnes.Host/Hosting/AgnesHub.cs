@@ -23,8 +23,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly BugReportRouter _bugReports;
     private readonly PromptLibrary _prompts;
     private readonly AttentionRequestService _attention;
+    private readonly QuotaService _quota;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, AttentionRequestService attention)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, AttentionRequestService attention, QuotaService quota)
     {
         _sessions = sessions;
         _schedule = schedule;
@@ -37,6 +38,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _bugReports = bugReports;
         _prompts = prompts;
         _attention = attention;
+        _quota = quota;
     }
 
     public override async Task OnConnectedAsync()
@@ -320,4 +322,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _prompts.DeleteTemplate(token);
         return Task.CompletedTask;
     }
+
+    // Connected-service quota: the host serves a cached snapshot behind a staleness window (see QuotaService),
+    // so redrawing a badge doesn't hammer the provider's usage endpoint. Null = "unavailable", not an error.
+    public Task<Abstractions.QuotaSnapshot?> GetQuotaSnapshot(string profileId)
+        => _quota.GetQuotaAsync(profileId);
 }
