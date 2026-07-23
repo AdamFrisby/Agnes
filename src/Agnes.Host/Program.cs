@@ -252,6 +252,33 @@ builder.Services.AddSingleton<Agnes.Host.Hosting.ClientCapabilityStore>();
 builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
 builder.Services.AddSingleton<SessionManager>();
 
+// ---- channel bridges (see .ideas/extensibility/04-channel-bridges.md) ----
+// A bridge (Telegram/Slack/…) is a plugin: no real network transport ships in-box (deferred — the interface
+// + linking/authorization + spine-driven outbound and inbound routing are what's wired here). The notifier
+// observes the spine to push permission requests to linked chats; the router funnels an authorized inbound
+// "allow" through the same approval path a paired client uses. Both are eagerly resolved at startup so their
+// subscriptions bind. A concrete IChannelBridge (with its transport) registers as an AddSingleton before the
+// plugin point below and needs no change to any of this.
+builder.Services.AddPluginPoint<IChannelBridge>(b => b.Id);
+var channelLinksFile = builder.Configuration["Agnes:ChannelLinksFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "channel-links.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Channels.ChannelLinkStore(
+    channelLinksFile, sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.ChannelLinkStore>()));
+builder.Services.AddSingleton<Agnes.Host.Channels.ChannelPromptTracker>();
+builder.Services.AddSingleton(sp => new Agnes.Host.Channels.ChannelBridgeNotifier(
+    sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
+    sp.GetRequiredService<IPluginRegistry<IChannelBridge>>(),
+    sp.GetRequiredService<Agnes.Host.Channels.ChannelLinkStore>(),
+    sp.GetRequiredService<Agnes.Host.Channels.ChannelPromptTracker>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.ChannelBridgeNotifier>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Channels.ChannelBridgeRouter(
+    sp.GetRequiredService<IPluginRegistry<IChannelBridge>>(),
+    sp.GetRequiredService<Agnes.Host.Channels.ChannelLinkStore>(),
+    sp.GetRequiredService<Agnes.Host.Channels.ChannelPromptTracker>(),
+    sp.GetRequiredService<SessionManager>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.ChannelBridgeRouter>()));
+
 // ---- scheduled / background tasks + inbox ----
 // Automation triggers are built-in plugins (AC13): interval + cron ship in-box, with a merger so a
 // webhook (or other) trigger can be added as a plugin without touching the scheduler.
@@ -516,6 +543,11 @@ _ = app.Services.GetService<Agnes.Host.Hosting.McpForwardListener>();
 
 // Restore the session catalogue so sessions (and their history) survive a host restart.
 await app.Services.GetRequiredService<SessionManager>().RestoreAsync();
+
+// Eagerly bind the channel-bridge notifier (spine observer) and router (inbound subscriptions) so a linked
+// bridge starts delivering/accepting immediately, not lazily on first use.
+_ = app.Services.GetRequiredService<Agnes.Host.Channels.ChannelBridgeNotifier>();
+_ = app.Services.GetRequiredService<Agnes.Host.Channels.ChannelBridgeRouter>();
 
 // Eagerly resolve the plugin installer so previously installed, enabled plugins reload (and merge
 // back into their registries) on this same startup, not lazily on the first plugin-management call.
