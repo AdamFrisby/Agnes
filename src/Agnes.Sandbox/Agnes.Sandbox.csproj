@@ -17,6 +17,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Agnes.Sandbox.Incus" />
     <InternalsVisibleTo Include="Agnes.Sandbox.Tests" />
+    <!-- ClaudeOAuthTokenSource in Agnes.Host reuses ClaudeCredentialProvider.TrySanitise so the
+         Claude credential-file format is parsed in exactly one place. -->
+    <InternalsVisibleTo Include="Agnes.Host" />
   </ItemGroup>
 
 </Project>

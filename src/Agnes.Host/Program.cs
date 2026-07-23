@@ -205,6 +205,30 @@ var templateServiceSecret = builder.Configuration["Agnes:ConnectedServices:Templ
 builder.Services.AddSingleton<IConnectedServiceProvider>(_ =>
     new Agnes.Host.Hosting.TemplateConnectedServiceProvider(
         secretLookup: _ => templateServiceSecret ?? "template-placeholder-token"));
+
+// The first REAL connected-service provider + quota reporter (.ideas/providers/03): Claude usage via
+// Anthropic's OAuth usage endpoint, using the host's existing ~/.claude/.credentials.json access token
+// (never the refresh token). Config-gated: usable when a Claude credential is present on the host, or when
+// explicitly forced on. A profile with ProviderId "claude" resolves to it; the template stub still backs
+// other/unknown profiles.
+var claudeHomeDir = builder.Configuration["Agnes:Quota:Claude:HomeDir"]
+    ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+var claudeCredsPath = Path.Combine(claudeHomeDir, ".claude", ".credentials.json");
+var claudeQuotaEnabled = builder.Configuration.GetValue<bool?>("Agnes:Quota:Claude:Enabled")
+    ?? File.Exists(claudeCredsPath);
+if (claudeQuotaEnabled)
+{
+    builder.Services.AddSingleton<IConnectedServiceProvider>(sp =>
+    {
+        var tokens = new Agnes.Host.Hosting.ClaudeOAuthTokenSource(claudeHomeDir);
+        return new Agnes.Host.Hosting.ClaudeQuotaProvider(
+            new HttpClient(),
+            tokens.ReadAccessTokenAsync,
+            sp.GetRequiredService<TimeProvider>(),
+            logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.ClaudeQuotaProvider>());
+    });
+}
+
 builder.Services.AddPluginPoint<IConnectedServiceProvider>(p => p.Id);
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.ConnectedServiceBroker(
     sp.GetRequiredService<Agnes.Host.Hosting.ConnectedServiceProfileStore>(),
