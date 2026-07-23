@@ -377,6 +377,37 @@ builder.Services.AddSingleton<Agnes.Host.Hosting.ClientCapabilityStore>();
 builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
 builder.Services.AddSingleton<SessionManager>();
 
+// ---- Agnes AS an MCP server (see .ideas/voice/01-voice-assistant.md) ----
+// The reverse of Agnes's MCP *management* feature (where Agnes consumes other MCP servers): here Agnes exposes
+// its OWN actions as MCP tools over Streamable HTTP, so the OpenAI Realtime voice endpoint — or any MCP client
+// — can drive it. Every tool is a thin wrapper over the SAME SessionManager path a paired client uses and is
+// gated on a valid Agnes device token per call, so voice/MCP carries no new authority. Always available to an
+// authenticated client; the OpenAI realtime service below only activates once a key is configured.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<Agnes.Host.Mcp.TranscriptPrivacyFilter>();
+builder.Services.AddSingleton<Agnes.Host.Mcp.IAgnesMcpBackend>(sp => new Agnes.Host.Mcp.SessionManagerMcpBackend(
+    sp.GetRequiredService<SessionManager>(),
+    sp.GetRequiredService<Agnes.Host.Mcp.TranscriptPrivacyFilter>()));
+builder.Services.AddSingleton<Agnes.Host.Mcp.IMcpDeviceAuthenticator>(sp =>
+    new Agnes.Host.Mcp.DeviceRegistryMcpAuthenticator(sp.GetRequiredService<DeviceRegistry>()));
+builder.Services.AddSingleton<Agnes.Host.Mcp.IMcpCallerTokenSource, Agnes.Host.Mcp.HttpContextMcpTokenSource>();
+builder.Services
+    .AddMcpServer()
+    // Stateless: each tool call is its own HTTP POST, so the device token is re-authenticated on EVERY call
+    // (matching the SignalR hub's per-connection check but at per-request granularity).
+    .WithHttpTransport(o => o.Stateless = true)
+    .WithTools<Agnes.Host.Mcp.AgnesMcpTools>();
+
+// The OpenAI Realtime voice service: assembles the realtime session config pointing the model at THIS host's
+// Agnes MCP endpoint. Config-gated — usable only when Agnes:Voice:OpenAI:ApiKey is set (the operator plugs in
+// their own key later). The API key stays a secret: it's never logged and never placed in the session config.
+builder.Services.AddSingleton(sp => Agnes.Host.Mcp.VoiceRealtimeOptions.FromConfiguration(
+    builder.Configuration,
+    defaultMcpEndpointUrl: builder.Configuration["Agnes:Voice:OpenAI:McpEndpointUrl"] is { Length: > 0 } url
+        ? url
+        : Agnes.Host.Mcp.AgnesMcpEndpoints.Path));
+builder.Services.AddSingleton<Agnes.Host.Mcp.OpenAiRealtimeVoiceService>();
+
 // ---- channel bridges (see .ideas/extensibility/04-channel-bridges.md) ----
 // A bridge (Slack/Discord/WhatsApp/…) is a plugin. The notifier observes the spine to push permission requests
 // to linked chats; the router funnels an authorized inbound "allow" through the same approval path a paired
@@ -894,10 +925,26 @@ app.Use(async (context, next) =>
         }
     }
 
+    // Agnes-as-MCP-server endpoint: gate every request (each tool call is its own POST in stateless mode) on a
+    // valid device token, read from an Authorization: Bearer header (the OpenAI Realtime MCP connector) or the
+    // access_token query. The tools re-resolve the caller identity from the same token; this is the outer wall.
+    if (context.Request.Path.StartsWithSegments(Agnes.Host.Mcp.AgnesMcpEndpoints.Path))
+    {
+        var mcpToken = Agnes.Host.Mcp.HttpContextMcpTokenSource.ExtractToken(context);
+        if (!tokens.IsValid(mcpToken))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+    }
+
     await next();
 });
 
 app.MapHub<AgnesHub>(WireProtocol.HubPath);
+
+// Map the Agnes MCP server (Streamable HTTP). Authenticated by the middleware above; tools authorize per call.
+app.MapMcp(Agnes.Host.Mcp.AgnesMcpEndpoints.Path);
 
 // ---- device auth + management ----
 // Advertise which bootstrap methods this host offers, so a client shows only the enabled ones. All

@@ -12,6 +12,15 @@ using Microsoft.Extensions.Logging;
 
 namespace Agnes.Host.Sessions;
 
+/// <summary>A lightweight per-session summary (see <see cref="SessionManager.ListSessionSummariesAsync"/>).</summary>
+public sealed record SessionListEntry(
+    string SessionId,
+    string AdapterId,
+    string? Title,
+    string Status,
+    long HeadSequence,
+    string? CurrentModeId);
+
 /// <summary>Orchestrates agent adapters and live sessions, backed by the event store.</summary>
 public sealed class SessionManager : IAsyncDisposable
 {
@@ -2123,6 +2132,35 @@ public sealed class SessionManager : IAsyncDisposable
         var info = new SessionInfo(sessionId, adapterId, workingDirectory, head,
             live?.Modes, live?.CurrentModeId, GetSandboxStatus(sessionId), skipPermissions, Project: null, ReadOnly: IsReadOnly(sessionId));
         return new SessionSnapshot(info, events, head);
+    }
+
+    /// <summary>
+    /// A lightweight listing of every known session (live or dormant-but-catalogued): its adapter, current
+    /// auto-title, coarse status (<c>working</c> while a turn is running, <c>idle</c> when live-but-quiet,
+    /// <c>dormant</c> when catalogued but not currently loaded), head sequence and current mode. Used by the
+    /// MCP server's <c>list_sessions</c>/<c>get_session_status</c> tools; a pure aggregation over existing
+    /// state that creates nothing.
+    /// </summary>
+    public async Task<IReadOnlyList<SessionListEntry>> ListSessionSummariesAsync(CancellationToken cancellationToken = default)
+    {
+        var ids = new HashSet<string>(_catalog.Keys, StringComparer.Ordinal);
+        foreach (var liveId in _sessions.Keys)
+        {
+            ids.Add(liveId);
+        }
+
+        var result = new List<SessionListEntry>(ids.Count);
+        foreach (var id in ids)
+        {
+            var live = _sessions.TryGetValue(id, out var s) ? s : null;
+            var adapterId = live?.AdapterId
+                ?? (_catalog.TryGetValue(id, out var rec) ? rec.AdapterId : "unknown");
+            var status = live is null ? "dormant" : live.IsTurnActive ? "working" : "idle";
+            var head = await _store.GetHeadAsync(id, cancellationToken).ConfigureAwait(false);
+            result.Add(new SessionListEntry(id, adapterId, StateOrNull(id)?.Title, status, head, live?.CurrentModeId));
+        }
+
+        return result;
     }
 
     /// <summary>
