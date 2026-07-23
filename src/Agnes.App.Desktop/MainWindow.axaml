@@ -144,6 +144,41 @@
                             ToolTip.Tip="A newer version of Agnes is available">
                         <TextBlock Text="{Binding UpdateVersion, StringFormat='⬆ Update {0}'}" />
                     </Button>
+                    <!-- Approvals: open permission requests across every session that need a human -->
+                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12"
+                            Command="{Binding Approvals.RefreshCommand}"
+                            IsVisible="{Binding Approvals.HasApprovals}" AutomationProperties.Name="Approvals needing you">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Text="🔔 Approvals" VerticalAlignment="Center" />
+                            <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Approvals.Count}" Foreground="#1A1200" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                        <Button.Flyout>
+                            <Flyout Placement="Bottom">
+                                <ScrollViewer MinWidth="360" MaxHeight="420" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Approvals.Approvals}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Command="{Binding $parent[ItemsControl].DataContext.Approvals.JumpCommand}"
+                                                    CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left" Background="{DynamicResource PanelAlt}"
+                                                    BorderThickness="0" Padding="8,6" Margin="0,2" CornerRadius="6" Cursor="Hand">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="Tap to jump to the session" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                </ScrollViewer>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+
                     <!-- Inbox: completed background runs -->
                     <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
                             BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12"

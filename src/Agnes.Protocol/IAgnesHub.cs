@@ -114,6 +114,10 @@ public interface IAgnesServer
     /// <summary>Completed background runs (newest first).</summary>
     Task<IReadOnlyList<InboxRun>> GetInbox();
 
+    /// <summary>Open permission requests across every session the caller is authorized to see that still
+    /// need a human, newest first — the cross-session approvals list (notifications/02 tier 1).</summary>
+    Task<IReadOnlyList<OpenApproval>> GetOpenApprovals();
+
     /// <summary>Pause / resume / delete the session's sandbox (no-op if it runs on the host).</summary>
     Task PauseSandbox(string sessionId);
     Task ResumeSandbox(string sessionId);

@@ -152,6 +152,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<IReadOnlyList<InboxRun>> GetInbox()
         => Task.FromResult(_schedule.Inbox());
 
+    public Task<IReadOnlyList<OpenApproval>> GetOpenApprovals()
+        => _sessions.GetOpenApprovalsAsync();
+
     public Task RespondPermission(PermissionResponseRequest response)
         => _sessions.RespondPermissionAsync(response.SessionId, response.RequestId, response.OptionId);
 
