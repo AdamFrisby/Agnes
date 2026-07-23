@@ -171,8 +171,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _factory.ActiveDockableChanged += (_, e) =>
         {
             UpdateWindowTitle();
+
+            // Read state: the newly-focused session becomes active (marks read); the previous one goes
+            // inactive so background activity can make it unread again.
+            var active = e.Dockable as SessionDocument;
+            foreach (var doc in AllDocuments())
+            {
+                doc.Session?.SetActive(ReferenceEquals(doc, active));
+            }
+
             // Client navigation: a plugin can track which session the user is viewing (observe-only).
-            if (e.Dockable is SessionDocument { Session.SessionId: { } sid })
+            if (active is { Session.SessionId: { } sid })
             {
                 _ = EnsureClientPlugins().EventBus.DispatchAsync(new SessionActivatedEvent(sid));
             }

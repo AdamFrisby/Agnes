@@ -38,6 +38,12 @@ public sealed class HostConnection : IAgnesHost
             AgentsChanged?.Invoke(agents);
         });
 
+        _hub.On<string, long, bool>(nameof(IAgnesClient.OnReadState), (sessionId, readSequence, stickyUnread) =>
+        {
+            ReadStateChanged?.Invoke(sessionId, readSequence, stickyUnread);
+            return Task.CompletedTask;
+        });
+
         _hub.On<InboxRun>(nameof(IAgnesClient.OnInboxRun), run =>
         {
             InboxRunReceived?.Invoke(run);
@@ -146,6 +152,13 @@ public sealed class HostConnection : IAgnesHost
         => _hub.InvokeAsync<IReadOnlyList<InboxRun>>(nameof(IAgnesServer.GetInbox));
 
     public event Action<InboxRun>? InboxRunReceived;
+    public event Action<string, long, bool>? ReadStateChanged;
+
+    public Task MarkSessionReadAsync(string sessionId, long sequence)
+        => _hub.InvokeAsync(nameof(IAgnesServer.MarkSessionRead), sessionId, sequence);
+
+    public Task MarkSessionUnreadAsync(string sessionId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.MarkSessionUnread), sessionId);
 
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RespondPermission), new PermissionResponseRequest(sessionId, requestId, optionId));

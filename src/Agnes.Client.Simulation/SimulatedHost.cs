@@ -245,6 +245,10 @@ public sealed class SimulatedHost : IAgnesHost
     public Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data)
         => Task.FromResult(".agnes/attachments/" + Path.GetFileName(fileName));
 
+    public event Action<string, long, bool>? ReadStateChanged { add { _ = value; } remove { _ = value; } }
+    public Task MarkSessionReadAsync(string sessionId, long sequence) => Task.CompletedTask;
+    public Task MarkSessionUnreadAsync(string sessionId) => Task.CompletedTask;
+
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
     {
         _committed = true;

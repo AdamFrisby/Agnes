@@ -85,6 +85,9 @@ public sealed class RecordedHost : IAgnesHost
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message) => Task.FromResult(new GitCommitResult(false, "read-only"));
 
     public Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data) => Task.FromResult(".agnes/attachments/" + fileName);
+    public event Action<string, long, bool>? ReadStateChanged { add { _ = value; } remove { _ = value; } }
+    public Task MarkSessionReadAsync(string sessionId, long sequence) => Task.CompletedTask;
+    public Task MarkSessionUnreadAsync(string sessionId) => Task.CompletedTask;
     public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request) => Task.FromResult(new ScheduledTask("", request.AdapterId, request.WorkingDirectory, request.Prompt, request.IntervalSeconds, false));
     public Task<IReadOnlyList<ScheduledTask>> ListScheduledTasksAsync() => Task.FromResult<IReadOnlyList<ScheduledTask>>([]);
     public Task RemoveScheduledTaskAsync(string taskId) => Task.CompletedTask;

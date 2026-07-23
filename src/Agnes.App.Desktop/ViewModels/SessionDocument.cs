@@ -401,6 +401,10 @@ public sealed partial class SessionDocument : Document
                 OnPropertyChanged(nameof(ActivityText));
                 OnPropertyChanged(nameof(NeedsAttention));
             }
+            else if (e.PropertyName is nameof(SessionViewModel.IsUnread))
+            {
+                OnPropertyChanged(nameof(IsUnread));
+            }
             else if (e.PropertyName is nameof(SessionViewModel.Usage)
                 or nameof(SessionViewModel.UsageSummary))
             {
@@ -426,6 +430,9 @@ public sealed partial class SessionDocument : Document
     }
 
     // ---- cross-session attention (delegates to the live session) ----
+    /// <summary>Whether this tab has unread activity (sessions/05) — shown as a dot on the tab strip.</summary>
+    public bool IsUnread => Session?.IsUnread ?? false;
+
     public SessionActivity Activity => Session?.Activity ?? SessionActivity.Idle;
     public string ActivityText => Session?.ActivityText ?? string.Empty;
     public bool NeedsAttention => Session?.NeedsAttention ?? false;

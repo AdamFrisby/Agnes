@@ -52,6 +52,11 @@ public sealed class SessionManager : IAsyncDisposable
         public (string Repo, string Worktree)? Worktree;
         public DateTimeOffset? LastRecoveryAt;
         public string? Title;
+
+        // Read state: the highest sequence a client has viewed, plus a sticky "manually marked unread" flag
+        // that keeps a session unread even while it's open until the next explicit mark-read.
+        public long ReadCursor;
+        public bool StickyUnread;
     }
 
     /// <summary>The session's metadata entry, created on first write.</summary>
@@ -1302,6 +1307,28 @@ public sealed class SessionManager : IAsyncDisposable
                 return candidate;
             }
         }
+    }
+
+    /// <summary>The session's current read state (highest-viewed sequence + sticky-unread flag).</summary>
+    public (long ReadCursor, bool StickyUnread) GetReadState(string sessionId)
+        => StateOrNull(sessionId) is { } s ? (s.ReadCursor, s.StickyUnread) : (0, false);
+
+    /// <summary>Advances the read cursor to <paramref name="sequence"/> (clearing any sticky-unread) and
+    /// syncs it to the session's subscribed clients.</summary>
+    public async Task MarkReadAsync(string sessionId, long sequence)
+    {
+        var s = State(sessionId);
+        s.ReadCursor = Math.Max(s.ReadCursor, sequence);
+        s.StickyUnread = false;
+        await _broadcaster.PublishReadStateAsync(sessionId, s.ReadCursor, s.StickyUnread).ConfigureAwait(false);
+    }
+
+    /// <summary>Marks the session unread (sticky — stays unread while open until the next mark-read).</summary>
+    public async Task MarkUnreadAsync(string sessionId)
+    {
+        var s = State(sessionId);
+        s.StickyUnread = true;
+        await _broadcaster.PublishReadStateAsync(sessionId, s.ReadCursor, s.StickyUnread).ConfigureAwait(false);
     }
 
     public async Task CancelAsync(string sessionId)

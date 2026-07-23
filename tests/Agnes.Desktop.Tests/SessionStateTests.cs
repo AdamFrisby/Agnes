@@ -720,6 +720,13 @@ internal sealed class FakeHost : IAgnesHost
         return Task.FromResult(".agnes/attachments/" + fileName);
     }
 
+    public List<(string SessionId, long Sequence)> Reads { get; } = [];
+    public List<string> Unreads { get; } = [];
+    public event Action<string, long, bool>? ReadStateChanged;
+    public void RaiseReadState(string sessionId, long seq, bool sticky) => ReadStateChanged?.Invoke(sessionId, seq, sticky);
+    public Task MarkSessionReadAsync(string sessionId, long sequence) { Reads.Add((sessionId, sequence)); return Task.CompletedTask; }
+    public Task MarkSessionUnreadAsync(string sessionId) { Unreads.Add(sessionId); return Task.CompletedTask; }
+
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
     {
         Commits.Add(message);

@@ -206,8 +206,14 @@
                                                         <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
                                                         <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                                                     </StackPanel>
-                                                    <TextBlock Grid.Column="2" Text="{Binding ActivityText}" Foreground="{DynamicResource FgDim}"
-                                                               FontSize="10" VerticalAlignment="Center" />
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                        <!-- Unread badge (sessions/05): activity you haven't looked at yet. -->
+                                                        <Border Width="7" Height="7" CornerRadius="4" VerticalAlignment="Center"
+                                                                Background="{DynamicResource Accent}" IsVisible="{Binding IsUnread}"
+                                                                ToolTip.Tip="Unread" />
+                                                        <TextBlock Text="{Binding ActivityText}" Foreground="{DynamicResource FgDim}"
+                                                                   FontSize="10" VerticalAlignment="Center" />
+                                                    </StackPanel>
                                                 </Grid>
                                             </Button>
                                         </DataTemplate>

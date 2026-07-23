@@ -107,6 +107,15 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Raised when a background run lands in the inbox.</summary>
     event Action<InboxRun>? InboxRunReceived;
 
+    /// <summary>A session's read state changed on the host (sessionId, last-viewed sequence, sticky-unread).</summary>
+    event Action<string, long, bool>? ReadStateChanged;
+
+    /// <summary>Marks a session read up to a sequence (clears unread), synced across the user's clients.</summary>
+    Task MarkSessionReadAsync(string sessionId, long sequence);
+
+    /// <summary>Marks a session unread (sticky until the next mark-read).</summary>
+    Task MarkSessionUnreadAsync(string sessionId);
+
     /// <summary>Pauses the session's sandbox (no-op if it runs on the host).</summary>
     Task PauseSandboxAsync(string sessionId);
 

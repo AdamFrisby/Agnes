@@ -81,8 +81,19 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         // Join the group BEFORE snapshotting so no event is missed; the client dedupes by
         // sequence, so an event that both lands in the snapshot and is broadcast is harmless.
         await Groups.AddToGroupAsync(Context.ConnectionId, sessionId);
-        return await _sessions.GetSnapshotAsync(sessionId, sinceSequence);
+        var snapshot = await _sessions.GetSnapshotAsync(sessionId, sinceSequence);
+
+        // Seed the joining client with the session's current read state (unread indicators).
+        var (readCursor, stickyUnread) = _sessions.GetReadState(sessionId);
+        await Clients.Caller.OnReadState(sessionId, readCursor, stickyUnread);
+        return snapshot;
     }
+
+    public Task MarkSessionRead(string sessionId, long sequence)
+        => _sessions.MarkReadAsync(sessionId, sequence);
+
+    public Task MarkSessionUnread(string sessionId)
+        => _sessions.MarkUnreadAsync(sessionId);
 
     public Task Unsubscribe(string sessionId)
         => Groups.RemoveFromGroupAsync(Context.ConnectionId, sessionId);

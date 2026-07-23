@@ -156,9 +156,50 @@ public sealed class SessionViewModel : ObservableObject
 
         _view.EventAppended += OnEvent;
         _host.StateChanged += OnHostStateChanged;
+        _host.ReadStateChanged += OnReadStateChanged;
         UpdateBanner();
         _ = RefreshGitAsync();
     }
+
+    // ---- read / unread state (sessions/05) ----
+
+    private long _readCursor;
+    private bool _stickyUnread;
+    private bool _isActive;
+
+    /// <summary>Whether this session has activity the user hasn't seen. Empty and currently-active sessions
+    /// never show unread. Synced across the user's devices via the host's read cursor.</summary>
+    public bool IsUnread => !_isActive && _view.LastSequence > 0 && (_stickyUnread || _view.LastSequence > _readCursor);
+
+    private void OnReadStateChanged(string sessionId, long readSequence, bool stickyUnread)
+    {
+        if (sessionId != SessionId)
+        {
+            return;
+        }
+
+        _dispatcher.Post(() =>
+        {
+            _readCursor = readSequence;
+            _stickyUnread = stickyUnread;
+            OnPropertyChanged(nameof(IsUnread));
+        });
+    }
+
+    /// <summary>Called by the shell when this session's tab is focused/unfocused. Focusing marks it read.</summary>
+    public void SetActive(bool active)
+    {
+        _isActive = active;
+        if (active)
+        {
+            _ = _host.MarkSessionReadAsync(SessionId, _view.LastSequence);
+        }
+
+        OnPropertyChanged(nameof(IsUnread));
+    }
+
+    /// <summary>Marks this session unread (sticky — stays unread while open until the next focus).</summary>
+    public void MarkUnread() => _ = _host.MarkSessionUnreadAsync(SessionId);
 
     public string Title { get; }
     public string SessionId => _view.SessionId;
@@ -948,6 +989,17 @@ public sealed class SessionViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(DisplayItems));
             OnPropertyChanged(nameof(IsTranscriptEmpty));
+        }
+
+        // New activity while the tab is focused keeps it read (unless the user stuck it unread); otherwise
+        // the badge may need refreshing.
+        if (_isActive && !_stickyUnread)
+        {
+            _ = _host.MarkSessionReadAsync(SessionId, _view.LastSequence);
+        }
+        else
+        {
+            OnPropertyChanged(nameof(IsUnread));
         }
     }
 

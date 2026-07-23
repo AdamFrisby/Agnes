@@ -78,6 +78,13 @@ public interface IAgnesServer
     /// returns the workspace-relative path to reference in a prompt (never inline binary).</summary>
     Task<string> UploadAttachment(string sessionId, string fileName, byte[] data);
 
+    /// <summary>Marks a session read up to <paramref name="sequence"/> (clears unread), synced to all
+    /// the user's clients.</summary>
+    Task MarkSessionRead(string sessionId, long sequence);
+
+    /// <summary>Marks a session unread (sticky until the next mark-read), synced to all clients.</summary>
+    Task MarkSessionUnread(string sessionId);
+
     /// <summary>Schedules a recurring background task; returns it with its assigned id.</summary>
     Task<ScheduledTask> ScheduleTask(ScheduleTaskRequest request);
 
@@ -141,4 +148,8 @@ public interface IAgnesClient
 
     /// <summary>A background run completed and landed in the inbox.</summary>
     Task OnInboxRun(InboxRun run);
+
+    /// <summary>A session's read state changed (last-viewed sequence + a sticky "marked unread" flag), so
+    /// unread indicators stay in sync across a user's devices.</summary>
+    Task OnReadState(string sessionId, long readSequence, bool stickyUnread);
 }

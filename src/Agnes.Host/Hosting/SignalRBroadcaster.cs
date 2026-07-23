@@ -10,4 +10,7 @@ public sealed class SignalRBroadcaster(IHubContext<AgnesHub, IAgnesClient> hub) 
 {
     public Task PublishAsync(string sessionId, SessionEvent @event)
         => hub.Clients.Group(sessionId).OnSessionEvent(sessionId, @event);
+
+    public Task PublishReadStateAsync(string sessionId, long readSequence, bool stickyUnread)
+        => hub.Clients.Group(sessionId).OnReadState(sessionId, readSequence, stickyUnread);
 }
