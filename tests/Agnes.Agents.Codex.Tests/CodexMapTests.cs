@@ -52,6 +52,26 @@ public class CodexMapTests
     }
 
     [Fact]
+    public void Reasoning_content_can_be_an_array_of_text_blocks()
+    {
+        // The other shape reasoning takes: no summary, content is an array of { text } blocks (a union the
+        // typed CodexItem keeps as JsonElement and the mapper concatenates).
+        var map = new CodexMap();
+        var events = Completed(map, "{\"type\":\"reasoning\",\"id\":\"r2\",\"content\":[{\"type\":\"text\",\"text\":\"Step one. \"},{\"type\":\"text\",\"text\":\"Step two.\"}]}");
+        var thought = Assert.IsType<ThoughtChunkEvent>(Assert.Single(events));
+        Assert.Equal("Step one. Step two.", ((TextContent)thought.Content).Text);
+    }
+
+    [Fact]
+    public void A_malformed_item_yields_no_events_rather_than_throwing()
+    {
+        // Boundary tolerance: an unexpected field type must degrade to no events, never throw.
+        var map = new CodexMap();
+        var events = Completed(map, "{\"type\":\"fileChange\",\"id\":\"bad\",\"changes\":\"not-an-array\"}");
+        Assert.Empty(events);
+    }
+
+    [Fact]
     public void User_message_is_not_echoed_back()
     {
         var map = new CodexMap();

@@ -16,6 +16,6 @@ internal static class CodexJson
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    // A standalone parser for reading loosely-typed notification payloads (JsonElement) inside the mapper.
+    // Used by CodexMap to deserialize inbound notification payloads into the typed Wire records.
     public static readonly JsonSerializerOptions Read = new(JsonSerializerDefaults.Web);
 }

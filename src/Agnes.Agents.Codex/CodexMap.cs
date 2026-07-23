@@ -8,10 +8,12 @@ namespace Agnes.Agents.Codex;
 /// <summary>
 /// Maps the Codex app-server protocol (thread/turn/item notifications) to Agnes
 /// <see cref="SessionEvent"/>s, and Agnes prompts/decisions the other way. Pure and golden-JSON
-/// testable, like <c>ClaudeCodeStreamMapper</c> and the ACP mapper. One instance per session — it
-/// remembers which message items streamed deltas (so a final <c>item/completed</c> doesn't
-/// duplicate text) and which tool items already started (so a completion updates rather than
-/// re-adds), plus the model's context window learned from token-usage notifications.
+/// testable, like <c>ClaudeCodeStreamMapper</c> and the ACP mapper. Each inbound notification is
+/// deserialized once into a typed <see cref="CodexItem"/> (etc.) and then matched on its <c>Type</c>,
+/// so the mapping works with typed objects rather than hand-traversed JSON. One instance per session —
+/// it remembers which message items streamed deltas (so a final <c>item/completed</c> doesn't duplicate
+/// text) and which tool items already started (so a completion updates rather than re-adds), plus the
+/// model's context window learned from token-usage notifications.
 /// </summary>
 internal sealed class CodexMap
 {
@@ -23,32 +25,22 @@ internal sealed class CodexMap
 
     /// <summary>An <c>item/started</c> notification: a tool call begins (messages stream via deltas).</summary>
     public IEnumerable<SessionEvent> ItemStarted(JsonElement notification)
-    {
-        if (!TryGetItem(notification, out var item, out var type))
-        {
-            yield break;
-        }
-
-        foreach (var e in ToolStart(item, type))
-        {
-            yield return e;
-        }
-    }
+        => ItemOf(notification) is { } item ? ToolStart(item) : [];
 
     /// <summary>An <c>item/completed</c> notification: final message text, or a tool call's result.</summary>
     public IEnumerable<SessionEvent> ItemCompleted(JsonElement notification)
     {
-        if (!TryGetItem(notification, out var item, out var type))
+        if (ItemOf(notification) is not { } item)
         {
             yield break;
         }
 
-        var id = Str(item, "id") ?? string.Empty;
-        switch (type)
+        var id = item.Id ?? string.Empty;
+        switch (item.Type)
         {
             case "agentMessage":
                 // Skip if it already streamed via item/agentMessage/delta (avoid duplicating the text).
-                if (!_streamedMessages.Contains(id) && Str(item, "text") is { Length: > 0 } text)
+                if (!_streamedMessages.Contains(id) && item.Text is { Length: > 0 } text)
                 {
                     yield return new MessageChunkEvent(MessageRole.Assistant, new TextContent(text));
                 }
@@ -77,7 +69,7 @@ internal sealed class CodexMap
 
             default:
                 // Any tool-like item (commandExecution/fileChange/webSearch/mcpToolCall/...): finalize it.
-                foreach (var e in ToolComplete(item, type))
+                foreach (var e in ToolComplete(item))
                 {
                     yield return e;
                 }
@@ -89,7 +81,7 @@ internal sealed class CodexMap
     /// <summary>An <c>item/agentMessage/delta</c> notification: a streamed chunk of assistant text.</summary>
     public SessionEvent? AgentMessageDelta(JsonElement notification)
     {
-        if (Str(notification, "itemId") is { Length: > 0 } id && Str(notification, "delta") is { Length: > 0 } delta)
+        if (TryDeserialize<CodexAgentMessageDeltaNotification>(notification) is { ItemId: { Length: > 0 } id, Delta: { Length: > 0 } delta })
         {
             _streamedMessages.Add(id);
             return new MessageChunkEvent(MessageRole.Assistant, new TextContent(delta));
@@ -101,22 +93,22 @@ internal sealed class CodexMap
     /// <summary>A <c>thread/tokenUsage/updated</c> notification: real token usage (never estimated).</summary>
     public SessionEvent? TokenUsage(JsonElement notification)
     {
-        if (!notification.TryGetProperty("tokenUsage", out var usage) || usage.ValueKind != JsonValueKind.Object)
+        if (TryDeserialize<CodexTokenUsageNotification>(notification)?.TokenUsage is not { } usage)
         {
             return null;
         }
 
-        if (Long(usage, "modelContextWindow") is { } window)
+        if (usage.ModelContextWindow is { } window)
         {
             _contextWindow = window;
         }
 
         // Context occupancy = the prompt-side tokens of the latest turn (fresh input + cached input).
-        var total = usage.TryGetProperty("total", out var t) && t.ValueKind == JsonValueKind.Object ? t : usage;
-        var input = Long(total, "inputTokens");
-        var cached = Long(total, "cachedInputTokens");
+        // Totals arrive nested under "total" or flattened onto the usage object; prefer the nested form.
+        var input = usage.Total?.InputTokens ?? usage.InputTokens;
+        var cached = usage.Total?.CachedInputTokens ?? usage.CachedInputTokens;
         long? context = input is null && cached is null ? null : (input ?? 0) + (cached ?? 0);
-        var output = Long(total, "outputTokens");
+        var output = usage.Total?.OutputTokens ?? usage.OutputTokens;
 
         if (context is null && output is null)
         {
@@ -128,35 +120,33 @@ internal sealed class CodexMap
 
     // ---- tool items ----
 
-    private IEnumerable<SessionEvent> ToolStart(JsonElement item, string type)
+    private IEnumerable<SessionEvent> ToolStart(CodexItem item)
     {
-        var id = Str(item, "id");
-        if (id is null)
+        if (item.Id is not { } id)
         {
             yield break;
         }
 
-        if (type == "subAgentActivity")
+        if (item.Type == "subAgentActivity")
         {
-            yield return new SubagentStartedEvent(Str(item, "agentThreadId") ?? id, Str(item, "kind") ?? "subagent");
+            yield return new SubagentStartedEvent(item.AgentThreadId ?? id, item.Kind ?? "subagent");
             yield break;
         }
 
         _startedTools.Add(id);
-        yield return new ToolCallEvent(id, ToolTitle(item, type), ToolKindFor(type), ToolCallStatus.InProgress,
-            [new TextContent(ToolDetail(item, type))]);
+        yield return new ToolCallEvent(id, ToolTitle(item), ToolKindFor(item.Type), ToolCallStatus.InProgress,
+            [new TextContent(ToolDetail(item))]);
     }
 
-    private IEnumerable<SessionEvent> ToolComplete(JsonElement item, string type)
+    private IEnumerable<SessionEvent> ToolComplete(CodexItem item)
     {
-        var id = Str(item, "id");
-        if (id is null || type == "subAgentActivity")
+        if (item.Id is not { } id || item.Type == "subAgentActivity")
         {
             yield break;
         }
 
-        var status = ToStatus(Str(item, "status"), completed: true);
-        var detail = ToolDetail(item, type);
+        var status = ToStatus(item.Status, completed: true);
+        var detail = ToolDetail(item);
 
         // If we saw the start, update it in place; otherwise surface it as a completed call.
         if (_startedTools.Remove(id))
@@ -165,11 +155,11 @@ internal sealed class CodexMap
         }
         else
         {
-            yield return new ToolCallEvent(id, ToolTitle(item, type), ToolKindFor(type), status, [new TextContent(detail)]);
+            yield return new ToolCallEvent(id, ToolTitle(item), ToolKindFor(item.Type), status, [new TextContent(detail)]);
         }
     }
 
-    private static ToolKind ToolKindFor(string type) => type switch
+    private static ToolKind ToolKindFor(string? type) => type switch
     {
         "commandExecution" => ToolKind.Execute,
         "fileChange" => ToolKind.Edit,
@@ -178,28 +168,29 @@ internal sealed class CodexMap
         _ => ToolKind.Other,
     };
 
-    private static string ToolTitle(JsonElement item, string type) => type switch
+    private static string ToolTitle(CodexItem item) => item.Type switch
     {
-        "commandExecution" => CommandText(item) is { Length: > 0 } c ? c : "command",
+        "commandExecution" => CommandText(item.Command) is { Length: > 0 } c ? c : "command",
         "fileChange" => FileChangeTitle(item),
-        "webSearch" => Str(item, "query") ?? "web search",
-        "mcpToolCall" or "dynamicToolCall" => Str(item, "tool") ?? "tool",
-        "imageView" => Str(item, "path") ?? "image",
-        _ => type,
+        "webSearch" => item.Query ?? "web search",
+        "mcpToolCall" or "dynamicToolCall" => item.Tool ?? "tool",
+        "imageView" => item.Path ?? "image",
+        _ => item.Type ?? string.Empty,
     };
 
-    private static string ToolDetail(JsonElement item, string type) => type switch
+    private static string ToolDetail(CodexItem item) => item.Type switch
     {
-        "commandExecution" => Str(item, "aggregatedOutput") ?? CommandText(item) ?? string.Empty,
+        "commandExecution" => item.AggregatedOutput ?? CommandText(item.Command) ?? string.Empty,
         "fileChange" => FileChangeSummary(item),
-        "webSearch" => Str(item, "query") ?? string.Empty,
-        "mcpToolCall" or "dynamicToolCall" => item.TryGetProperty("arguments", out var a) ? a.GetRawText() : string.Empty,
+        "webSearch" => item.Query ?? string.Empty,
+        "mcpToolCall" or "dynamicToolCall" => item.Arguments is { } a ? a.GetRawText() : string.Empty,
         _ => string.Empty,
     };
 
-    private static string? CommandText(JsonElement item)
+    // A command is a string, or an argv array of strings — the one genuinely polymorphic tool field.
+    private static string? CommandText(JsonElement? command)
     {
-        if (!item.TryGetProperty("command", out var c))
+        if (command is not { } c)
         {
             return null;
         }
@@ -217,7 +208,7 @@ internal sealed class CodexMap
         return null;
     }
 
-    private static string FileChangeTitle(JsonElement item)
+    private static string FileChangeTitle(CodexItem item)
     {
         var paths = ChangePaths(item).ToList();
         return paths.Count switch
@@ -228,7 +219,7 @@ internal sealed class CodexMap
         };
     }
 
-    private static string FileChangeSummary(JsonElement item)
+    private static string FileChangeSummary(CodexItem item)
     {
         var sb = new StringBuilder();
         foreach (var path in ChangePaths(item))
@@ -239,59 +230,55 @@ internal sealed class CodexMap
         return sb.ToString().TrimEnd('\n');
     }
 
-    private static IEnumerable<string> ChangePaths(JsonElement item)
-    {
-        if (item.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var change in changes.EnumerateArray())
-            {
-                if (Str(change, "path") is { Length: > 0 } path)
-                {
-                    yield return path;
-                }
-            }
-        }
-    }
+    private static IEnumerable<string> ChangePaths(CodexItem item)
+        => item.Changes is null
+            ? []
+            : item.Changes.Where(c => !string.IsNullOrEmpty(c.Path)).Select(c => c.Path!);
 
-    private static string ReasoningText(JsonElement item)
+    // Reasoning content is a string in some messages, an array of { text } blocks in others.
+    private static string ReasoningText(CodexItem item)
     {
-        if (Str(item, "summary") is { Length: > 0 } summary)
+        if (item.Summary is { Length: > 0 } summary)
         {
             return summary;
         }
 
-        if (item.TryGetProperty("content", out var content))
+        if (item.Content is not { } content)
         {
-            if (content.ValueKind == JsonValueKind.String)
-            {
-                return content.GetString() ?? string.Empty;
-            }
+            return string.Empty;
+        }
 
-            if (content.ValueKind == JsonValueKind.Array)
+        if (content.ValueKind == JsonValueKind.String)
+        {
+            return content.GetString() ?? string.Empty;
+        }
+
+        if (content.ValueKind == JsonValueKind.Array)
+        {
+            var sb = new StringBuilder();
+            foreach (var block in content.EnumerateArray())
             {
-                var sb = new StringBuilder();
-                foreach (var block in content.EnumerateArray())
+                if (block.ValueKind == JsonValueKind.Object && block.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
                 {
-                    sb.Append(Str(block, "text"));
+                    sb.Append(t.GetString());
                 }
-
-                return sb.ToString();
             }
+
+            return sb.ToString();
         }
 
         return string.Empty;
     }
 
-    private static IReadOnlyList<PlanEntry> PlanEntries(JsonElement item)
+    private static IReadOnlyList<PlanEntry> PlanEntries(CodexItem item)
     {
-        var text = Str(item, "text");
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(item.Text))
         {
             return [];
         }
 
         var entries = new List<PlanEntry>();
-        foreach (var raw in text.Split('\n'))
+        foreach (var raw in item.Text.Split('\n'))
         {
             var line = raw.Trim();
             if (line.Length == 0)
@@ -360,20 +347,28 @@ internal sealed class CodexMap
         _ => StopReason.EndTurn,
     };
 
-    // ---- json helpers ----
+    // ---- deserialize helpers ----
 
-    private static bool TryGetItem(JsonElement notification, out JsonElement item, out string type)
+    // The notification's typed item, or null when the payload is absent/typeless (so an unknown or malformed
+    // notification yields no events, matching the prior tolerant traversal).
+    private static CodexItem? ItemOf(JsonElement notification)
     {
-        item = default;
-        type = string.Empty;
-        if (notification.TryGetProperty("item", out item) && item.ValueKind == JsonValueKind.Object
-            && Str(item, "type") is { Length: > 0 } t)
-        {
-            type = t;
-            return true;
-        }
+        var item = TryDeserialize<CodexItemNotification>(notification)?.Item;
+        return item?.Type is { Length: > 0 } ? item : null;
+    }
 
-        return false;
+    // Boundary tolerance: the app-server's payloads are external, so a shape we don't expect must degrade to
+    // "no events", never throw. STJ can throw on an unexpected field type, so a malformed frame maps to null.
+    private static T? TryDeserialize<T>(JsonElement element)
+    {
+        try
+        {
+            return element.Deserialize<T>(CodexJson.Read);
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
     }
 
     private static ToolCallStatus ToStatus(string? status, bool completed) => status switch
@@ -383,17 +378,4 @@ internal sealed class CodexMap
         "completed" or "success" or "done" => ToolCallStatus.Completed,
         _ => completed ? ToolCallStatus.Completed : ToolCallStatus.InProgress,
     };
-
-    private static string? Str(JsonElement element, string name)
-        => element.ValueKind == JsonValueKind.Object
-           && element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String
-            ? p.GetString()
-            : null;
-
-    private static long? Long(JsonElement element, string name)
-        => element.ValueKind == JsonValueKind.Object
-           && element.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number
-           && p.TryGetInt64(out var v)
-            ? v
-            : null;
 }
