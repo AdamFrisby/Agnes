@@ -26,8 +26,7 @@ public sealed class PluginManagementService(IPluginInstaller installer, IEventBu
 
     public async Task<PluginInstallOutcome> InstallAsync(InstallPluginRequest request, CancellationToken cancellationToken = default)
     {
-        var before = await _bus.DispatchAsync(new BeforePluginInstallEvent(request.PackageId, request.Version)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new BeforePluginInstallEvent(request.PackageId, request.Version)).ConfigureAwait(false))
         {
             return new PluginInstallOutcome(Success: false, Plugin: null, ConsentRequired: false, MissingCapabilities: [], Error: "Installation was blocked by a plugin.");
         }
@@ -37,8 +36,7 @@ public sealed class PluginManagementService(IPluginInstaller installer, IEventBu
 
     public async Task<PluginInstallOutcome> UpdateAsync(string pluginId, IReadOnlyList<string> grantedCapabilities, CancellationToken cancellationToken = default)
     {
-        var before = await _bus.DispatchAsync(new BeforePluginInstallEvent(pluginId, version: null)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new BeforePluginInstallEvent(pluginId, version: null)).ConfigureAwait(false))
         {
             return new PluginInstallOutcome(Success: false, Plugin: null, ConsentRequired: false, MissingCapabilities: [], Error: "Update was blocked by a plugin.");
         }
@@ -48,8 +46,7 @@ public sealed class PluginManagementService(IPluginInstaller installer, IEventBu
 
     public async Task SetEnabledAsync(string pluginId, bool enabled, CancellationToken cancellationToken = default)
     {
-        var before = await _bus.DispatchAsync(new BeforePluginEnableChangeEvent(pluginId, enabled)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new BeforePluginEnableChangeEvent(pluginId, enabled)).ConfigureAwait(false))
         {
             return; // a plugin kept the current enabled state
         }
@@ -63,8 +60,7 @@ public sealed class PluginManagementService(IPluginInstaller installer, IEventBu
 
     public async Task UninstallAsync(string pluginId, CancellationToken cancellationToken = default)
     {
-        var before = await _bus.DispatchAsync(new BeforePluginUninstallEvent(pluginId)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new BeforePluginUninstallEvent(pluginId)).ConfigureAwait(false))
         {
             return; // a plugin kept it installed
         }

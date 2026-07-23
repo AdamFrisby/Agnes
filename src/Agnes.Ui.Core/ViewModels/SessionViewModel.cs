@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Agnes.Abstractions;
+using Agnes.Abstractions.Events;
 using Agnes.Client;
 using Agnes.Protocol;
 using Agnes.Ui.Core.Mvvm;
@@ -1338,8 +1339,7 @@ public sealed class SessionViewModel : ObservableObject
 
     private async Task CancelAsync()
     {
-        var before = await _bus.DispatchAsync(new Plugins.BeforeTurnCancelEvent(SessionId));
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new Plugins.BeforeTurnCancelEvent(SessionId)))
         {
             return; // a plugin kept the turn running
         }

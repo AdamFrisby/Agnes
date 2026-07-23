@@ -32,9 +32,8 @@ public sealed class ScheduledTaskManager
 
     public async Task<ScheduledTask> AddAsync(ScheduleTaskRequest request)
     {
-        var before = await _bus.DispatchAsync(
-            new BeforeScheduledTaskCreateEvent(request.AdapterId, request.WorkingDirectory, request.Prompt)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(
+                new BeforeScheduledTaskCreateEvent(request.AdapterId, request.WorkingDirectory, request.Prompt)).ConfigureAwait(false))
         {
             throw new InvalidOperationException("Scheduling this task was blocked by a plugin.");
         }
@@ -49,8 +48,7 @@ public sealed class ScheduledTaskManager
 
     public async Task RemoveAsync(string taskId)
     {
-        var before = await _bus.DispatchAsync(new BeforeScheduledTaskRemoveEvent(taskId)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new BeforeScheduledTaskRemoveEvent(taskId)).ConfigureAwait(false))
         {
             return; // a plugin kept the task
         }

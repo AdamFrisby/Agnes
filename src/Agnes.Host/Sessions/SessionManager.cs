@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Agnes.Abstractions;
+using Agnes.Abstractions.Events;
 using Agnes.Host.Events;
 using Agnes.Host.Hosting;
 using Agnes.Protocol;
@@ -841,8 +842,7 @@ public sealed class SessionManager : IAsyncDisposable
     /// resetting the crash-loop guard. Used to recover after auto-restart gave up.</summary>
     public async Task RestartAgentAsync(string sessionId)
     {
-        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeAgentRestartEvent(sessionId)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new Agnes.Abstractions.Events.BeforeAgentRestartEvent(sessionId)).ConfigureAwait(false))
         {
             return; // a plugin kept the current agent as-is
         }
@@ -935,8 +935,7 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task PauseSandboxAsync(string sessionId)
     {
-        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSandboxPauseEvent(sessionId)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new Agnes.Abstractions.Events.BeforeSandboxPauseEvent(sessionId)).ConfigureAwait(false))
         {
             return; // a plugin kept the sandbox running
         }
@@ -949,8 +948,7 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task ResumeSandboxAsync(string sessionId)
     {
-        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSandboxResumeEvent(sessionId)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new Agnes.Abstractions.Events.BeforeSandboxResumeEvent(sessionId)).ConfigureAwait(false))
         {
             return; // a plugin kept the sandbox paused
         }
@@ -963,8 +961,7 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task DeleteSandboxAsync(string sessionId)
     {
-        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSandboxDeleteEvent(sessionId)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new Agnes.Abstractions.Events.BeforeSandboxDeleteEvent(sessionId)).ConfigureAwait(false))
         {
             return; // a plugin protected the sandbox from destruction
         }
@@ -1003,8 +1000,7 @@ public sealed class SessionManager : IAsyncDisposable
     /// </summary>
     public async Task StopSessionAsync(string sessionId)
     {
-        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionStopEvent(sessionId)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new Agnes.Abstractions.Events.BeforeSessionStopEvent(sessionId)).ConfigureAwait(false))
         {
             return; // a plugin kept the session running
         }
@@ -1070,8 +1066,7 @@ public sealed class SessionManager : IAsyncDisposable
     /// </summary>
     public async Task<SessionInfo> ResumeSessionAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionResumeEvent(sessionId)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new Agnes.Abstractions.Events.BeforeSessionResumeEvent(sessionId)).ConfigureAwait(false))
         {
             throw new InvalidOperationException($"Resuming session '{sessionId}' was blocked by a plugin.");
         }
@@ -1235,8 +1230,7 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task CancelAsync(string sessionId)
     {
-        var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionCancelEvent(sessionId)).ConfigureAwait(false);
-        if (before.IsCanceled)
+        if (!await _bus.AllowsAsync(new Agnes.Abstractions.Events.BeforeSessionCancelEvent(sessionId)).ConfigureAwait(false))
         {
             return; // a plugin kept the turn running
         }

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Agnes.Abstractions.Events;
 using Agnes.App.Desktop.Persistence;
 using Agnes.App.Desktop.Plugins;
 using Agnes.Client;
@@ -1430,8 +1431,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         // tab has no session id, so it just closes.
         if (doc.Session?.SessionId is { } sid)
         {
-            var before = await EnsureClientPlugins().EventBus.DispatchAsync(new BeforeSessionCloseEvent(sid));
-            if (before.IsCanceled)
+            if (!await EnsureClientPlugins().EventBus.AllowsAsync(new BeforeSessionCloseEvent(sid)))
             {
                 return; // a plugin kept the tab open
             }
