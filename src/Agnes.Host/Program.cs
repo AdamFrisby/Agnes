@@ -391,9 +391,36 @@ builder.Services.AddSingleton<Agnes.Host.Notifications.IDesktopNotificationSink>
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Notifications.LoggingDesktopNotificationSink>()));
 builder.Services.AddSingleton<INotificationChannel>(sp =>
     new Agnes.Host.Notifications.DesktopNotificationChannel(sp.GetRequiredService<Agnes.Host.Notifications.IDesktopNotificationSink>()));
-builder.Services.AddSingleton<INotificationChannel>(sp =>
-    new Agnes.Host.Notifications.TemplateMobilePushChannel(
-        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Notifications.TemplateMobilePushChannel>()));
+// The mobile channel: a REAL FCM sender ("fcm") when this deployment supplies its own service-account
+// credential in settings (bring-your-own — no shared relay), otherwise the no-op TEMPLATE stub ("mobile-push")
+// so there is always a mobile channel for dev/tests. The credential comes from Agnes:Push:Fcm:ServiceAccountJson
+// (inline) or Agnes:Push:Fcm:ServiceAccountFile (a path to the JSON). The FirebaseFcmSender is constructed only
+// when a credential is present, so a deployment with no FCM setup never touches FirebaseAdmin. NOTE: the app-side
+// (Android/iOS) FCM SDK registration is the client half and is out of scope here.
+var fcmServiceAccountJson = builder.Configuration["Agnes:Push:Fcm:ServiceAccountJson"];
+var fcmServiceAccountFile = builder.Configuration["Agnes:Push:Fcm:ServiceAccountFile"];
+if (string.IsNullOrWhiteSpace(fcmServiceAccountJson)
+    && !string.IsNullOrWhiteSpace(fcmServiceAccountFile)
+    && File.Exists(fcmServiceAccountFile))
+{
+    fcmServiceAccountJson = File.ReadAllText(fcmServiceAccountFile);
+}
+
+if (!string.IsNullOrWhiteSpace(fcmServiceAccountJson))
+{
+    var fcmJson = fcmServiceAccountJson;
+    builder.Services.AddSingleton<INotificationChannel>(sp =>
+        new Agnes.Host.Notifications.FcmPushChannel(
+            new Agnes.Host.Notifications.FirebaseFcmSender(fcmJson),
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Notifications.FcmPushChannel>()));
+}
+else
+{
+    builder.Services.AddSingleton<INotificationChannel>(sp =>
+        new Agnes.Host.Notifications.TemplateMobilePushChannel(
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Notifications.TemplateMobilePushChannel>()));
+}
+
 builder.Services.AddPluginPoint<INotificationChannel>(c => c.Id);
 var pushRegistrationsFile = builder.Configuration["Agnes:PushRegistrationsFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "push-registrations.json");

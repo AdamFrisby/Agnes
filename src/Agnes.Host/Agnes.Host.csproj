@@ -24,6 +24,9 @@
          SDK, per the repo dependency policy). See .ideas/security/02-enterprise-auth.md. -->
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.14.0" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.14.0" />
+    <!-- Real FCM push delivery (Google's OFFICIAL Firebase Admin SDK — high-trust supply chain).
+         Bring-your-own service-account credential from host settings; see notifications/01-push-notifications.md. -->
+    <PackageReference Include="FirebaseAdmin" Version="3.4.0" />
   </ItemGroup>
 
   <ItemGroup>
