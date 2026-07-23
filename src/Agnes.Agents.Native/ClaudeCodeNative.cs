@@ -33,5 +33,22 @@ public static class ClaudeCodeNative
             Descriptor = Descriptor,
             Mapper = new ClaudeCodeStreamMapper(),
             McpConfigFlag = "--mcp-config",
+            CredentialFaultClassifier = IsRecoverableCredentialFault,
         }, loggerFactory);
+
+    /// <summary>
+    /// A revoked/expired Claude OAuth token surfaces as an agent error; a sandboxed claude can't refresh in
+    /// place (its token is baked into the launch env), so the host relaunches it with fresh credentials.
+    /// This recognizes those messages. It lives here (with the Claude adapter) rather than in the host, so
+    /// adding another agent whose token can expire doesn't mean editing the orchestrator.
+    /// </summary>
+    public static bool IsRecoverableCredentialFault(string message)
+    {
+        var m = message.ToLowerInvariant();
+        return m.Contains("oauth", StringComparison.Ordinal)
+            || m.Contains("token has been revoked", StringComparison.Ordinal)
+            || m.Contains("authentication_error", StringComparison.Ordinal)
+            || m.Contains("invalid bearer token", StringComparison.Ordinal)
+            || (m.Contains("401", StringComparison.Ordinal) && (m.Contains("auth", StringComparison.Ordinal) || m.Contains("token", StringComparison.Ordinal)));
+    }
 }

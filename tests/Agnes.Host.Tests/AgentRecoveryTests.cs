@@ -36,6 +36,12 @@ public class AgentRecoveryTests
             Sessions.Add(session);
             return Task.FromResult<IAgentSession>(session);
         }
+
+        // Stands in for an adapter whose credentials can expire mid-session (the real classifier lives in
+        // ClaudeCodeNative and is unit-tested there); the host now asks the adapter instead of grepping text.
+        public bool IsRecoverableCredentialFault(string errorMessage)
+            => errorMessage.Contains("OAuth", StringComparison.OrdinalIgnoreCase)
+               || errorMessage.Contains("revoked", StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class FakeSandbox : ISandbox

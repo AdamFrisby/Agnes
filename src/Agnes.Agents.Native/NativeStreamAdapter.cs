@@ -15,6 +15,11 @@ public sealed record NativeLaunchSpec
 
     /// <summary>CLI flag that loads an MCP config file (e.g. "--mcp-config"), or null if unsupported.</summary>
     public string? McpConfigFlag { get; init; }
+
+    /// <summary>Classifies whether an agent error message is a recoverable credential fault for this CLI
+    /// (see <see cref="IAgentAdapter.IsRecoverableCredentialFault"/>). Null when this CLI's credentials
+    /// can't expire mid-session.</summary>
+    public Func<string, bool>? CredentialFaultClassifier { get; init; }
 }
 
 /// <summary>
@@ -36,6 +41,8 @@ public sealed class NativeStreamAdapter : IAgentAdapter
     public AgentDescriptor Descriptor => _spec.Descriptor;
 
     public bool IsAvailable() => AgentCommand.IsOnPath(_spec.Command);
+
+    public bool IsRecoverableCredentialFault(string errorMessage) => _spec.CredentialFaultClassifier?.Invoke(errorMessage) ?? false;
 
     public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {

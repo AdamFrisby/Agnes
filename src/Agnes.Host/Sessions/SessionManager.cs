@@ -756,8 +756,9 @@ public sealed class SessionManager : IAsyncDisposable
             AgentSessionStarted = id => _ = UpdateAgentSessionIdAsync(sessionId, id),
             // After each turn, refresh the agent's auto-generated title (Claude's on-disk aiTitle).
             TurnCompleted = () => _ = MaybeUpdateTitleAsync(sessionId),
-            // A revoked/expired Claude OAuth token (e.g. after the host rotated it during a long idle):
-            // relaunch with freshly-materialized credentials so the new process picks up a valid token.
+            // A credential fault the agent classifies as recoverable (e.g. a revoked/expired OAuth token
+            // after the host rotated it): relaunch with freshly-materialized credentials so the new
+            // process picks up a valid token.
             AgentError = message => _ = MaybeRecoverCredentialsAsync(sessionId, message),
         };
         _sessions[sessionId] = session;
@@ -772,35 +773,25 @@ public sealed class SessionManager : IAsyncDisposable
         succeeded: "Agent restarted.",
         debounced: "The agent crashed again right after restarting. Automatic restart is paused — use “Restart agent” to try once more.");
 
-    // Claude's revoked/expired OAuth token surfaces as an agent error. A running sandboxed claude can't
-    // refresh in place (its token is baked into the launch env), so relaunch it with freshly-materialized
-    // credentials — which pulls the current host token. Only for sandboxed native-Claude sessions.
+    // An agent whose credentials went stale mid-session (e.g. a revoked/expired OAuth token) surfaces it as
+    // an agent error. A sandboxed agent can't refresh in place (its token is baked into the launch env), so
+    // relaunch it with freshly-materialized credentials — which pulls the current host token. The agent
+    // classifies its own faults (IsRecoverableCredentialFault); the host doesn't pattern-match error text.
     private async Task MaybeRecoverCredentialsAsync(string sessionId, string message)
     {
-        if (!IsAuthError(message)
-            || !_sessions.TryGetValue(sessionId, out var session)
-            || session.AdapterId != "claude-code-native"
-            || !_sandboxBySession.ContainsKey(sessionId))
+        if (!_sessions.TryGetValue(sessionId, out var session)
+            || !_sandboxBySession.ContainsKey(sessionId)
+            || _adapters.Find(session.AdapterId) is not { } adapter
+            || !adapter.IsRecoverableCredentialFault(message))
         {
             return;
         }
 
         await RecoverAsync(
             sessionId,
-            starting: "Claude's login token expired — refreshing credentials and reconnecting…",
+            starting: "The agent's login token expired — refreshing credentials and reconnecting…",
             succeeded: "Reconnected with refreshed credentials — resend your message to continue.",
-            debounced: "Still can’t authenticate after refreshing — the Claude login on the host may have expired. Sign in again there, then use “Restart agent”.").ConfigureAwait(false);
-    }
-
-    /// <summary>Whether an agent error message is a Claude auth/OAuth token failure worth auto-recovering.</summary>
-    private static bool IsAuthError(string message)
-    {
-        var m = message.ToLowerInvariant();
-        return m.Contains("oauth", StringComparison.Ordinal)
-            || m.Contains("token has been revoked", StringComparison.Ordinal)
-            || m.Contains("authentication_error", StringComparison.Ordinal)
-            || m.Contains("invalid bearer token", StringComparison.Ordinal)
-            || (m.Contains("401", StringComparison.Ordinal) && (m.Contains("auth", StringComparison.Ordinal) || m.Contains("token", StringComparison.Ordinal)));
+            debounced: "Still can’t authenticate after refreshing — the login on the host may have expired. Sign in again there, then use “Restart agent”.").ConfigureAwait(false);
     }
 
     // Shared recovery: tear down the current agent and relaunch + resume it (RelaunchAgentAsync

@@ -95,6 +95,14 @@ public interface IAgentAdapter
     /// launch an external process should probe for it; the default assumes availability.
     /// </summary>
     bool IsAvailable() => true;
+
+    /// <summary>
+    /// Whether an agent-reported error message means this agent's credentials went stale mid-session (e.g.
+    /// an expired/revoked OAuth token) and the fix is to re-materialize credentials and relaunch it. The
+    /// host asks the adapter rather than pattern-matching error text itself, so this knowledge lives with
+    /// the agent it's specific to. Default: agents whose credentials can't expire mid-session return false.
+    /// </summary>
+    bool IsRecoverableCredentialFault(string errorMessage) => false;
 }
 
 /// <summary>Resolves whether a launcher command exists on the host, like <c>which</c>/<c>where</c>.</summary>
