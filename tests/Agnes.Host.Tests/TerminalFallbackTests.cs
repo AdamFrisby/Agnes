@@ -34,7 +34,7 @@ public class TerminalFallbackTests
         }
     }
 
-    private sealed class FakeTerminalHandle : ITerminalHandle, ITerminalOutputSource
+    private sealed class FakeTerminalHandle : ITerminalHandle, ITerminalOutputSource, ITerminalExitSource
     {
         public FakeTerminalHandle(string id) => TerminalId = id;
 
@@ -44,8 +44,11 @@ public class TerminalFallbackTests
         public bool Disposed { get; private set; }
 
         public event Action<string, string>? OutputReceived;
+        public event Action? Exited;
 
         public void EmitOutput(string data) => OutputReceived?.Invoke(TerminalId, data);
+
+        public void EmitExit() => Exited?.Invoke();
 
         public Task WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
         {
@@ -66,16 +69,24 @@ public class TerminalFallbackTests
         }
     }
 
-    /// <summary>A scripted adapter that also exposes an interactive login command (platform/03 reuse).</summary>
+    /// <summary>A scripted adapter that also exposes an interactive login command (platform/03 reuse) and a
+    /// probe-counting auth status, so a test can assert the login flow re-checks auth on terminal exit.</summary>
     private sealed class LoginAgentAdapter : IAgentAdapter
     {
         public AgentDescriptor Descriptor { get; } = new() { Id = "login-agent", DisplayName = "Login Agent" };
         public ProviderLoginCommand Login { get; } = new("login-agent", ["auth", "login"]);
+        public int AuthProbes { get; private set; }
 
         public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
             => Task.FromResult<IAgentSession>(new ScriptedAgentSession());
 
         public ProviderLoginCommand? GetInteractiveLoginCommand() => Login;
+
+        public Task<ProviderAuthStatus?> GetAuthStatusAsync(CancellationToken cancellationToken = default)
+        {
+            AuthProbes++;
+            return Task.FromResult<ProviderAuthStatus?>(new ProviderAuthStatus(true, "user", "cli", null, DateTimeOffset.UtcNow));
+        }
     }
 
     private static async Task WaitForAsync(Func<bool> condition)
@@ -172,6 +183,73 @@ public class TerminalFallbackTests
         var options = Assert.Single(fallback.Opened);
         Assert.Equal("login-agent", options.Command);
         Assert.Equal(["auth", "login"], options.Arguments);
+    }
+
+    [Fact]
+    public async Task Provider_login_streams_terminal_output_to_the_returned_session()
+    {
+        var adapter = new LoginAgentAdapter();
+        var fallback = new FakeCliFallback();
+        var broadcaster = new CollectingBroadcaster();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), broadcaster,
+            NullLoggerFactory.Instance, cliFallback: fallback);
+
+        // The returned id doubles as the login SESSION id (subscribe here) and the login TERMINAL id (write here).
+        var loginId = await manager.BeginProviderLoginAsync("login-agent");
+        Assert.Equal("pty-1", loginId);
+
+        // The login CLI prints its prompt: it must surface on the returned session as a TerminalOutputEvent —
+        // through the same snapshot/tail path as any other event, never a bespoke channel.
+        fallback.Last!.EmitOutput("Open the browser to https://example/login and paste the code: ");
+        await WaitForAsync(() => broadcaster.Published.Any(p => p.Event is TerminalOutputEvent));
+
+        var snapshot = await manager.GetSnapshotAsync(loginId, 0);
+        var output = Assert.Single(snapshot.Events.OfType<TerminalOutputEvent>());
+        Assert.Equal(loginId, output.TerminalId);
+        Assert.Equal("Open the browser to https://example/login and paste the code: ", output.Data);
+    }
+
+    [Fact]
+    public async Task Provider_login_terminal_is_interactive_input_reaches_the_login_pty()
+    {
+        var adapter = new LoginAgentAdapter();
+        var fallback = new FakeCliFallback();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new CollectingBroadcaster(),
+            NullLoggerFactory.Instance, cliFallback: fallback);
+
+        var loginId = await manager.BeginProviderLoginAsync("login-agent");
+
+        // Unlike a read-only external-session watch, the login terminal is interactive: input the user types
+        // (and a resize) must reach the underlying login PTY handle, addressed by the login terminal id.
+        await manager.WriteTerminalAsync(loginId, loginId, "device-code-1234\n"u8.ToArray());
+        await manager.ResizeTerminalAsync(loginId, loginId, 100, 40);
+
+        var handle = fallback.Last!;
+        Assert.Equal("device-code-1234\n", System.Text.Encoding.UTF8.GetString(Assert.Single(handle.Writes)));
+        Assert.Equal((100, 40), Assert.Single(handle.Resizes));
+    }
+
+    [Fact]
+    public async Task Provider_login_refreshes_auth_status_when_the_login_terminal_exits()
+    {
+        var adapter = new LoginAgentAdapter();
+        var fallback = new FakeCliFallback();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new CollectingBroadcaster(),
+            NullLoggerFactory.Instance, cliFallback: fallback);
+
+        var loginId = await manager.BeginProviderLoginAsync("login-agent");
+        var probesBefore = adapter.AuthProbes;
+
+        // The login CLI finished: exiting must force a fresh provider auth check (so the login badge updates)
+        // and tear the scratch login session down.
+        fallback.Last!.EmitExit();
+        await WaitForAsync(() => adapter.AuthProbes > probesBefore);
+
+        Assert.True(fallback.Last!.Disposed);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.GetSnapshotAsync(loginId, 0));
     }
 
     [Fact]

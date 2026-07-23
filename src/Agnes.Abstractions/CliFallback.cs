@@ -38,3 +38,15 @@ public interface ITerminalOutputSource
     /// <summary>Raised as the PTY produces output: the terminal id and the decoded chunk.</summary>
     event Action<string, string>? OutputReceived;
 }
+
+/// <summary>
+/// Optional companion to <see cref="ITerminalHandle"/>: a fallback whose PTY reports when its process exits,
+/// so the host can react to completion — e.g. tear down the provider-login scratch session and refresh the
+/// provider's login badge (platform/03). A handle that can't observe its process exit — or a test fake that
+/// never ends — simply doesn't implement it, and the consumer just keeps the terminal open until shutdown.
+/// </summary>
+public interface ITerminalExitSource
+{
+    /// <summary>Raised once when the terminal's underlying process exits.</summary>
+    event Action? Exited;
+}
