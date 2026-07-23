@@ -13,6 +13,7 @@
     <Project Path="src/Agnes.Host/Agnes.Host.csproj" />
     <Project Path="src/Agnes.Protocol/Agnes.Protocol.csproj" />
     <Project Path="src/Agnes.Recording/Agnes.Recording.csproj" />
+    <Project Path="src/Agnes.Relay/Agnes.Relay.csproj" />
     <Project Path="src/Agnes.Sandbox/Agnes.Sandbox.csproj" />
     <Project Path="src/Agnes.Sandbox.Incus/Agnes.Sandbox.Incus.csproj" />
     <Project Path="src/Agnes.Ui.Core/Agnes.Ui.Core.csproj" />
@@ -25,6 +26,7 @@
     <Project Path="tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj" />
     <Project Path="tests/Agnes.Host.Tests/Agnes.Host.Tests.csproj" />
     <Project Path="tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj" />
+    <Project Path="tests/Agnes.Relay.Tests/Agnes.Relay.Tests.csproj" />
     <Project Path="tests/Agnes.Sandbox.Tests/Agnes.Sandbox.Tests.csproj" />
     <Project Path="tests/Agnes.TestKit/Agnes.TestKit.csproj" />
     <Project Path="tests/Agnes.TestPluginFixture/Agnes.TestPluginFixture.csproj" />

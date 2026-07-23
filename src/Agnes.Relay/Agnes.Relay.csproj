@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- The relay is a deliberately tiny brokering service: it accepts host + client TCP
+         connections, pairs them by host-id, and blind-forwards opaque bytes. It never parses
+         TLS or Agnes.Protocol, so it references NO Agnes domain projects and NO third-party
+         packages — BCL only (System.Net.Sockets, System.Security.Cryptography, System.Text.Json).
+         See .ideas/connectivity/01-relay-and-tunneling.md. -->
+    <AssemblyName>agnes-relay</AssemblyName>
+    <RootNamespace>Agnes.Relay</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Let the test project reach internal helpers without widening the public surface. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Agnes.Relay.Tests" />
+  </ItemGroup>
+
+</Project>

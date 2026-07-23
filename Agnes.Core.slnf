@@ -8,6 +8,7 @@
       "src/Agnes.Agents.Native/Agnes.Agents.Native.csproj",
       "src/Agnes.Agents.Codex/Agnes.Agents.Codex.csproj",
       "src/Agnes.Protocol/Agnes.Protocol.csproj",
+      "src/Agnes.Relay/Agnes.Relay.csproj",
       "src/Agnes.Sandbox/Agnes.Sandbox.csproj",
       "src/Agnes.Sandbox.Incus/Agnes.Sandbox.Incus.csproj",
       "src/Agnes.Host/Agnes.Host.csproj",
@@ -27,6 +28,7 @@
       "tests/Agnes.Sandbox.Tests/Agnes.Sandbox.Tests.csproj",
       "tests/Agnes.Ui.Core.Tests/Agnes.Ui.Core.Tests.csproj",
       "tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj",
+      "tests/Agnes.Relay.Tests/Agnes.Relay.Tests.csproj",
       "tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj",
       "tests/Agnes.Cli.Tests/Agnes.Cli.Tests.csproj"
     ]
