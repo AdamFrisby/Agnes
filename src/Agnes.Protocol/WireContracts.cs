@@ -155,6 +155,11 @@ public static class ClientCapabilityIds
     /// (can show one on its device); the host advertises the same id when it can trigger them. Only when
     /// both do is it <see cref="CapabilitySupport.Both"/>.</summary>
     public const string Notifications = "notifications";
+
+    /// <summary>Client-only voice control: advertised when the client has at least one registered
+    /// <c>IVoiceProvider</c>. The controller drives existing host calls, so there is no host half — voice UI
+    /// is simply hidden on clients that don't advertise it (see <c>.ideas/voice/01-voice-assistant.md</c>).</summary>
+    public const string Voice = "voice";
 }
 
 /// <summary>A plugin package a Browse/search returned — the wire shape of

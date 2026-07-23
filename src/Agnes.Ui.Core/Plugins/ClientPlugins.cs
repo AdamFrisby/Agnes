@@ -98,6 +98,7 @@ public sealed class DelegatingNotificationChannel(string channelId, INotifier no
 public sealed class ClientPluginCollector
 {
     private readonly List<IClientNotificationChannel> _notificationChannels = [];
+    private readonly List<IVoiceProvider> _voiceProviders = [];
     private readonly List<IEventBinding> _eventBindings = [];
     private readonly List<IUiContribution> _contributions = [];
     private readonly List<IConversationItemRenderer> _renderers = [];
@@ -109,6 +110,9 @@ public sealed class ClientPluginCollector
     public IEventBus Bus { get; } = new EventBus();
 
     public void AddNotificationChannel(IClientNotificationChannel channel) => _notificationChannels.Add(channel);
+
+    /// <summary>Registers a voice provider (speech in/out) into the client's voice plugin-point.</summary>
+    public void AddVoiceProvider(IVoiceProvider provider) => _voiceProviders.Add(provider);
 
     /// <summary>Registers a plugin's event bindings (interceptors/observers) onto the client bus.</summary>
     public void AddEventBinding(IEventBinding binding) => _eventBindings.Add(binding);
@@ -132,6 +136,7 @@ public sealed class ClientPluginCollector
 
         return new ClientPluginSet(
             new PluginRegistry<IClientNotificationChannel>(_notificationChannels, c => c.ChannelId),
+            new PluginRegistry<IVoiceProvider>(_voiceProviders, p => p.Id),
             Bus,
             [.. _contributions],
             [.. _renderers],
@@ -142,12 +147,17 @@ public sealed class ClientPluginCollector
 /// <summary>The client's populated plugin registries, event bus, and UI extension contributions.</summary>
 public sealed class ClientPluginSet(
     IPluginRegistry<IClientNotificationChannel> notificationChannels,
+    IPluginRegistry<IVoiceProvider> voiceProviders,
     IEventBus eventBus,
     IReadOnlyList<IUiContribution> contributions,
     IReadOnlyList<IConversationItemRenderer> conversationRenderers,
     IReadOnlyList<ICustomScreenProvider> customScreens)
 {
     public IPluginRegistry<IClientNotificationChannel> NotificationChannels { get; } = notificationChannels;
+
+    /// <summary>Registered voice providers (speech in/out). Empty on a client with no voice support, which is
+    /// how voice UI stays hidden rather than shown-but-broken (AC6).</summary>
+    public IPluginRegistry<IVoiceProvider> VoiceProviders { get; } = voiceProviders;
 
     /// <summary>The client event spine, with every plugin's bindings applied.</summary>
     public IEventBus EventBus { get; } = eventBus;
@@ -201,6 +211,12 @@ public static class ClientCapabilityBuilder
         {
             pluginPoints.Add("client.notification");
             capabilityIds.Add(ClientCapabilityIds.Notifications);
+        }
+
+        if (plugins.VoiceProviders.All.Count > 0)
+        {
+            pluginPoints.Add("client.voice");
+            capabilityIds.Add(ClientCapabilityIds.Voice);
         }
 
         return new ClientCapabilities(clientId, platform, supportsDynamicPlugins, pluginPoints, capabilityIds);
