@@ -145,6 +145,15 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task RespondPermissionAsync(string sessionId, string requestId, string optionId);
 
+    /// <summary>Registers this device's push token against a host notification channel and sets its per-trigger
+    /// toggles (notifications/01). Default no-op for hosts/fixtures without a push surface.</summary>
+    Task RegisterPushChannelAsync(string channelId, string channelToken, PushNotificationPrefs prefs)
+        => Task.CompletedTask;
+
+    /// <summary>Signals the host that this device is (or is no longer) actively viewing a session, so a push
+    /// for it is suppressed on this device only. Default no-op for hosts/fixtures without a push surface.</summary>
+    Task SetSessionViewingAsync(string sessionId, bool viewing) => Task.CompletedTask;
+
     /// <summary>Answer an external attention request (extensibility/06) from the approvals inbox. Default no-op
     /// for hosts/fixtures that don't surface external attention requests.</summary>
     Task AnswerAttentionRequestAsync(string requestId, string answer) => Task.CompletedTask;

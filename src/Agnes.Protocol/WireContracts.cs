@@ -378,6 +378,19 @@ public sealed record MemorySearchOptionsDto(int Limit = 50, string? SessionId = 
 /// <summary>A client's answer to a permission request.</summary>
 public sealed record PermissionResponseRequest(string SessionId, string RequestId, string OptionId);
 
+/// <summary>A device's per-trigger push toggles plus the master on/off — the wire twin of the host-side
+/// preferences. Each trigger is independently controllable (see <c>.ideas/notifications/01-push-notifications.md</c>).</summary>
+public sealed record PushNotificationPrefs(
+    bool Enabled = true,
+    bool TurnReady = true,
+    bool PermissionRequest = true,
+    bool UserActionRequest = true);
+
+/// <summary>A device registering (or re-registering) its push token against a notification channel, together
+/// with its toggles. <see cref="ChannelId"/> is the target <c>INotificationChannel</c> ("mobile-push",
+/// "desktop"); <see cref="ChannelToken"/> is the channel-specific token (an FCM/APNs token for mobile-push).</summary>
+public sealed record RegisterPushRequest(string ChannelId, string ChannelToken, PushNotificationPrefs Prefs);
+
 /// <summary>The user's answers to a <see cref="Agnes.Abstractions.QuestionAskedEvent"/> — one entry per
 /// question (its id, the chosen option label(s), and optional free-text notes). Empty answers = dismissed.</summary>
 public sealed record QuestionAnswerRequest(string SessionId, string RequestId, IReadOnlyList<QuestionAnswerDto> Answers);

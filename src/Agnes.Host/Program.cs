@@ -298,6 +298,40 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Channels.ChannelBridgeRouter(
     sp.GetRequiredService<SessionManager>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.ChannelBridgeRouter>()));
 
+// ---- push notifications (notifications/01) ----
+// A host-side INotificationChannel plugin point: the "reach a device that isn't connected" surface, sitting
+// alongside the channel bridges (they consume the same trigger set). Two channels ship in-box — a "desktop"
+// channel wrapping the existing OS-notifier path, and a "mobile-push" TEMPLATE stub (no-op; wire FCM/APNs
+// there). The dispatcher observes the spine (mirroring ChannelBridgeNotifier) and fans a minimized payload out
+// to eligible devices; the push registration store is keyed by device id and dropped when a pairing is revoked
+// (it observes DeviceRevokedEvent). The action router is the untrusted-host guard for interactive taps.
+builder.Services.AddSingleton<Agnes.Host.Notifications.IDesktopNotificationSink>(sp =>
+    new Agnes.Host.Notifications.LoggingDesktopNotificationSink(
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Notifications.LoggingDesktopNotificationSink>()));
+builder.Services.AddSingleton<INotificationChannel>(sp =>
+    new Agnes.Host.Notifications.DesktopNotificationChannel(sp.GetRequiredService<Agnes.Host.Notifications.IDesktopNotificationSink>()));
+builder.Services.AddSingleton<INotificationChannel>(sp =>
+    new Agnes.Host.Notifications.TemplateMobilePushChannel(
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Notifications.TemplateMobilePushChannel>()));
+builder.Services.AddPluginPoint<INotificationChannel>(c => c.Id);
+var pushRegistrationsFile = builder.Configuration["Agnes:PushRegistrationsFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "push-registrations.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Notifications.PushRegistrationStore(
+    pushRegistrationsFile,
+    sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Notifications.PushRegistrationStore>()));
+builder.Services.AddSingleton<Agnes.Host.Notifications.ActiveSessionViewTracker>();
+builder.Services.AddSingleton(sp => new Agnes.Host.Notifications.PushNotificationDispatcher(
+    sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
+    sp.GetRequiredService<IPluginRegistry<INotificationChannel>>(),
+    sp.GetRequiredService<Agnes.Host.Notifications.PushRegistrationStore>(),
+    sp.GetRequiredService<Agnes.Host.Notifications.ActiveSessionViewTracker>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Notifications.PushNotificationDispatcher>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Notifications.PushActionRouter(
+    sp.GetRequiredService<DeviceRegistry>(),
+    sp.GetRequiredService<SessionManager>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Notifications.PushActionRouter>()));
+
 // ---- scheduled / background tasks + inbox ----
 // Automation triggers are built-in plugins (AC13): interval + cron ship in-box, with a merger so a
 // webhook (or other) trigger can be added as a plugin without touching the scheduler.
@@ -567,6 +601,11 @@ await app.Services.GetRequiredService<SessionManager>().RestoreAsync();
 // bridge starts delivering/accepting immediately, not lazily on first use.
 _ = app.Services.GetRequiredService<Agnes.Host.Channels.ChannelBridgeNotifier>();
 _ = app.Services.GetRequiredService<Agnes.Host.Channels.ChannelBridgeRouter>();
+
+// Eagerly bind the push registration store (subscribes to DeviceRevokedEvent) and the dispatcher (spine
+// observer) so a revoked pairing drops its push registration and triggers start paging immediately.
+_ = app.Services.GetRequiredService<Agnes.Host.Notifications.PushRegistrationStore>();
+_ = app.Services.GetRequiredService<Agnes.Host.Notifications.PushNotificationDispatcher>();
 
 // Eagerly resolve the plugin installer so previously installed, enabled plugins reload (and merge
 // back into their registries) on this same startup, not lazily on the first plugin-management call.
