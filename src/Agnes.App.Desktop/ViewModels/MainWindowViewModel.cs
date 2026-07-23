@@ -1607,7 +1607,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     private void ActivateTabByIndex(string? oneBased)
     {
-        if (int.TryParse(oneBased, out var n))
+        if (int.TryParse(oneBased, System.Globalization.CultureInfo.InvariantCulture, out var n))
         {
             var tabs = OpenTabs().ToList();
             if (n >= 1 && n <= tabs.Count)

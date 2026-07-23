@@ -32,7 +32,7 @@ public static partial class ForkNaming
         var match = TrailingNumber().Match(name);
         string stem;
         long next;
-        if (match.Success && long.TryParse(match.Groups["num"].Value, out var current))
+        if (match.Success && long.TryParse(match.Groups["num"].Value, System.Globalization.CultureInfo.InvariantCulture, out var current))
         {
             stem = match.Groups["stem"].Value;
             next = current + 1;

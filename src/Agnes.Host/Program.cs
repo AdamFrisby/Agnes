@@ -275,7 +275,7 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
     var mcpHostAddress = ResolveBridgeAddress(builder.Configuration["Agnes:Sandbox:Incus:HostAddress"], mcpBridge);
     if (mcpHostAddress is not null)
     {
-        var mcpPort = int.TryParse(builder.Configuration["Agnes:Sandbox:Incus:McpPort"], out var configuredPort) ? configuredPort : 0;
+        var mcpPort = int.TryParse(builder.Configuration["Agnes:Sandbox:Incus:McpPort"], System.Globalization.CultureInfo.InvariantCulture, out var configuredPort) ? configuredPort : 0;
         builder.Services.AddSingleton(sp =>
         {
             var listener = new Agnes.Host.Hosting.McpForwardListener(
@@ -293,7 +293,7 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
     builder.Services.AddSingleton<Agnes.Host.Hosting.CredentialBrokerRegistry>();
     if (mcpHostAddress is not null)
     {
-        var gitPort = int.TryParse(builder.Configuration["Agnes:Sandbox:Incus:GitPort"], out var configuredGitPort) ? configuredGitPort : 0;
+        var gitPort = int.TryParse(builder.Configuration["Agnes:Sandbox:Incus:GitPort"], System.Globalization.CultureInfo.InvariantCulture, out var configuredGitPort) ? configuredGitPort : 0;
         builder.Services.AddSingleton(sp =>
         {
             var listener = new Agnes.Host.Hosting.CredentialBrokerListener(

@@ -25,3 +25,43 @@ dotnet_style_qualification_for_field = false:suggestion
 dotnet_style_qualification_for_property = false:suggestion
 # Expression-bodied members
 csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+
+# ---- Philips analyzers (Philips.CodeAnalysis.MaintainabilityAnalyzers; referenced in Directory.Build.props) ----
+# The pack ships ~80 rules; most default to Info (IDE hints only), a handful default to warning, and a few
+# default to *error*. We curate deliberately: silence the enforced-by-default rules that fight this repo's
+# idioms or misfire, and promote a set of high-value correctness rules to warning (= error, under
+# warnings-as-errors). Everything not listed keeps its pack default (mostly Info — visible in the IDE, not
+# build-breaking). Deliberately NOT referenced at all: DuplicateCodeAnalyzer (slow), Moq/MsTest analyzers.
+
+# Off — opinionated defaults that fight our idioms, or that misfire (these default to warning/error, so they
+# would otherwise break the build):
+dotnet_diagnostic.PH2021.severity = none   # Avoid inline `new` — fights fluent-builder chains and direct value construction
+dotnet_diagnostic.PH2028.severity = none   # Copyright header on every file (MIT; license lives in package metadata)
+dotnet_diagnostic.PH2029.severity = none   # Avoid #pragma — it's the standard, scoped warning-suppression escape hatch
+dotnet_diagnostic.PH2045.severity = none   # Avoid static classes (we use static helpers/extension holders deliberately)
+dotnet_diagnostic.PH2082.severity = none   # "Positive naming" — bans negative words, fights domain vocab (enable/disable, valid/invalid)
+dotnet_diagnostic.PH2089.severity = none   # "Assignment in condition" false-positives on record `with` expressions (e ​with { ... })
+dotnet_diagnostic.PH2093.severity = none   # Prefer named tuple fields — fine advice, too heavy as a hard error on every local tuple
+dotnet_diagnostic.PH2096.severity = none   # Prefer async Task over async void — ICommand.Execute must be async void
+dotnet_diagnostic.PH2097.severity = none   # Avoid empty statement blocks — fights the empty drain-loop idiom
+dotnet_diagnostic.PH2147.severity = none   # Flags variables named `_`; we use `_` as the discard idiom deliberately
+dotnet_diagnostic.PH2151.severity = none   # Avoid TODO comments — TODOs are a normal, useful marker here
+# PH2075 (AssemblyVersion must be 1.0.0.0) is an assembly-level diagnostic with no file location, so an
+# editorconfig severity here can't reach it — it's silenced via NoWarn in Directory.Build.props instead.
+# PH2098 (empty catch) defaults to warning; we lower it to suggestion rather than enforce it — our few
+# empty catches are deliberate, already-commented best-effort handlers. It stays an IDE hint for new code
+# (worth seeing) without breaking the build on the intentional ones.
+dotnet_diagnostic.PH2098.severity = suggestion
+
+# On — high-value correctness/maintainability rules promoted to warning (the codebase already complies):
+dotnet_diagnostic.PH2031.severity = warning   # TryParse without a Culture
+dotnet_diagnostic.PH2066.severity = warning   # Lock object should be readonly
+dotnet_diagnostic.PH2074.severity = warning   # Don't register (event handlers) in Dispose
+dotnet_diagnostic.PH2077.severity = warning   # Switch statement with no cases
+dotnet_diagnostic.PH2084.severity = warning   # Don't lock on a freshly-newed object
+dotnet_diagnostic.PH2086.severity = warning   # Task<T>.Result (sync-over-async deadlock risk)
+dotnet_diagnostic.PH2101.severity = warning   # Null dereference after "as"
+dotnet_diagnostic.PH2116.severity = warning   # ArrayList (use generics)
+dotnet_diagnostic.PH2117.severity = warning   # Unnecessary Where()
+dotnet_diagnostic.PH2130.severity = warning   # Implementing a finalizer
+dotnet_diagnostic.PH2146.severity = warning   # ToString() on a string

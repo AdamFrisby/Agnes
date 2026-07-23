@@ -224,7 +224,7 @@ public sealed class GitHubConnectFlow
     /// </summary>
     public async Task<string> HandleCallbackAsync(string? code, string? state, string? installationId, CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrEmpty(installationId) && long.TryParse(installationId, out var id))
+        if (!string.IsNullOrEmpty(installationId) && long.TryParse(installationId, System.Globalization.CultureInfo.InvariantCulture, out var id))
         {
             var pending = _store.PendingInstall();
             if (pending is null)

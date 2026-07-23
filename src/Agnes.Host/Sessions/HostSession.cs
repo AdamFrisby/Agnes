@@ -125,7 +125,7 @@ internal sealed class HostSession : IAsyncDisposable
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _hostPermissions[requestId] = tcs;
 
-        var target = string.IsNullOrEmpty(repo) ? host : $"{repo}";
+        var target = string.IsNullOrEmpty(repo) ? host : repo;
         var options = new[]
         {
             new PermissionOption("allow", "Allow", PermissionOptionKind.AllowOnce),

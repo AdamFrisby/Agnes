@@ -16,6 +16,23 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/AdamFrisby/Agnes</RepositoryUrl>
     <Version>0.1.0-alpha</Version>
+
+    <!-- PH2075 (Philips) demands AssemblyVersion 1.0.0.0; we're intentionally pre-1.0. It's an
+         assembly-level diagnostic with no file location, so it can't be silenced from .editorconfig
+         (which is why it lives here rather than beside the other disabled PH rules). -->
+    <NoWarn>$(NoWarn);PH2075</NoWarn>
   </PropertyGroup>
+
+  <!--
+    Philips.CodeAnalysis Roslyn analyzers (https://github.com/philips-software/roslyn-analyzers).
+    Analyzer-only reference (PrivateAssets=all → never flows to consumers of our packages).
+    Deliberately NOT referenced: DuplicateCodeAnalyzer (correct but very slow), Moq/MsTest
+    analyzers (this repo is xunit with hand-rolled fakes). SecurityAnalyzers isn't published to
+    nuget.org, so it's out too. The active rule set is curated in .editorconfig; see the
+    "Philips analyzers" block there.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Philips.CodeAnalysis.MaintainabilityAnalyzers" Version="2.0.0" PrivateAssets="all" />
+  </ItemGroup>
 
 </Project>
