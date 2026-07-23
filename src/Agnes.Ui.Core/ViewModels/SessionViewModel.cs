@@ -4,7 +4,8 @@ using Agnes.Abstractions;
 using Agnes.Abstractions.Events;
 using Agnes.Client;
 using Agnes.Protocol;
-using Agnes.Ui.Core.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Agnes.Ui.Core.Transcript;
 
 namespace Agnes.Ui.Core.ViewModels;
@@ -76,7 +77,7 @@ public sealed class SessionViewModel : ObservableObject
         AllowCommand = new AsyncRelayCommand(() => RespondAsync(allow: true));
         DenyCommand = new AsyncRelayCommand(() => RespondAsync(allow: false));
         RespondWithCommand = new RelayCommand<PermissionOption>(o => { if (o is not null) { _ = RespondWithAsync(o); } });
-        ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; Raise(nameof(ShowLeftPanel)); });
+        ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; OnPropertyChanged(nameof(ShowLeftPanel)); });
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
         ToggleFilesCommand = new RelayCommand(() => FilesExpanded = !FilesExpanded);
         ToggleToolsListCommand = new RelayCommand(() => ToolsListExpanded = !ToolsListExpanded);
@@ -87,9 +88,9 @@ public sealed class SessionViewModel : ObservableObject
         // The tools panel shows only the last N until "show all"; keep the view + label in sync.
         ToolActivity.CollectionChanged += (_, _) =>
         {
-            Raise(nameof(VisibleToolActivity));
-            Raise(nameof(HasMoreTools));
-            Raise(nameof(MoreToolsLabel));
+            OnPropertyChanged(nameof(VisibleToolActivity));
+            OnPropertyChanged(nameof(HasMoreTools));
+            OnPropertyChanged(nameof(MoreToolsLabel));
         };
         ToggleInspectorCommand = new RelayCommand(() => IsInspectorOpen = !IsInspectorOpen);
         SetModeCommand = new RelayCommand<SessionMode>(m => { if (m is not null) { _ = SetModeAsync(m); } });
@@ -109,7 +110,7 @@ public sealed class SessionViewModel : ObservableObject
         ResumeSandboxCommand = new AsyncRelayCommand(ResumeSandboxAsync, () => HasSandbox && SandboxPaused);
         DeleteSandboxCommand = new AsyncRelayCommand(DeleteSandboxAsync, () => HasSandbox);
         AddReferenceCommand = new RelayCommand(AddReference);
-        RemoveAttachmentCommand = new RelayCommand<PromptAttachment>(a => { if (a is not null) { Attachments.Remove(a); Raise(nameof(HasAttachments)); } });
+        RemoveAttachmentCommand = new RelayCommand<PromptAttachment>(a => { if (a is not null) { Attachments.Remove(a); OnPropertyChanged(nameof(HasAttachments)); } });
         ApplySlashCommand = new RelayCommand<SlashCommand>(ApplySlash);
         ToggleFullScreenCommand = new RelayCommand(() => IsPreviewFullScreen = !IsPreviewFullScreen);
         RecallPreviousCommand = new RelayCommand(RecallPrevious);
@@ -136,8 +137,8 @@ public sealed class SessionViewModel : ObservableObject
             }
         });
 
-        _transcript.PendingPermissionChanged += () => { Raise(nameof(PendingPermission)); RaiseActivity(); };
-        _transcript.PendingQuestionChanged += () => { Raise(nameof(PendingQuestion)); RaiseActivity(); };
+        _transcript.PendingPermissionChanged += () => { OnPropertyChanged(nameof(PendingPermission)); RaiseActivity(); };
+        _transcript.PendingQuestionChanged += () => { OnPropertyChanged(nameof(PendingQuestion)); RaiseActivity(); };
         AnswerQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = AnswerQuestionAsync(item); });
         DismissQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = DismissQuestionAsync(item); });
 
@@ -146,7 +147,7 @@ public sealed class SessionViewModel : ObservableObject
         _transcript.SubagentAdded += AddSubagent;
         // The ListBox observes Items directly, but the empty-state flag is a computed bool — keep it in
         // sync with the collection so "No messages yet" disappears the moment the first item arrives.
-        _transcript.Items.CollectionChanged += (_, _) => Raise(nameof(IsTranscriptEmpty));
+        _transcript.Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsTranscriptEmpty));
 
         foreach (var @event in _view.Events)
         {
@@ -171,12 +172,12 @@ public sealed class SessionViewModel : ObservableObject
         get => _agentTitle;
         private set
         {
-            if (Set(ref _agentTitle, value))
+            if (SetProperty(ref _agentTitle, value))
             {
-                Raise(nameof(HasAgentTitle));
-                Raise(nameof(DisplayTitle));
-                Raise(nameof(HasSidebarContent));
-                Raise(nameof(ShowLeftPanel));
+                OnPropertyChanged(nameof(HasAgentTitle));
+                OnPropertyChanged(nameof(DisplayTitle));
+                OnPropertyChanged(nameof(HasSidebarContent));
+                OnPropertyChanged(nameof(ShowLeftPanel));
             }
         }
     }
@@ -251,7 +252,7 @@ public sealed class SessionViewModel : ObservableObject
         var parent = sub.ParentAgentId is { } pid && _agentNodes.TryGetValue(pid, out var p) ? p : _mainAgentNode;
         parent.Children.Add(node);
         _agentNodes[sub.SubagentId] = node;
-        Raise(nameof(HasSubagents));
+        OnPropertyChanged(nameof(HasSubagents));
         RaisePanels();
     }
 
@@ -264,8 +265,8 @@ public sealed class SessionViewModel : ObservableObject
             node.IsSelected = node.Id == agentId;
         }
 
-        Raise(nameof(DisplayItems));
-        Raise(nameof(IsTranscriptEmpty));
+        OnPropertyChanged(nameof(DisplayItems));
+        OnPropertyChanged(nameof(IsTranscriptEmpty));
         ScrollToBottomRequested?.Invoke(); // switching conversations lands at the latest, not the top
     }
 
@@ -314,14 +315,14 @@ public sealed class SessionViewModel : ObservableObject
     public PlanItemView? Plan
     {
         get => _plan;
-        private set { if (Set(ref _plan, value)) { RaisePanels(); } }
+        private set { if (SetProperty(ref _plan, value)) { RaisePanels(); } }
     }
 
     // Right column
     public PreviewViewModel? SelectedPreview
     {
         get => _selectedPreview;
-        private set { if (Set(ref _selectedPreview, value)) { Raise(nameof(ShowRightPanel)); } }
+        private set { if (SetProperty(ref _selectedPreview, value)) { OnPropertyChanged(nameof(ShowRightPanel)); } }
     }
 
     public bool HasFiles => ModifiedFiles.Count > 0;
@@ -334,7 +335,7 @@ public sealed class SessionViewModel : ObservableObject
     public bool ShowAllTools
     {
         get => _showAllTools;
-        set { if (Set(ref _showAllTools, value)) { Raise(nameof(VisibleToolActivity)); Raise(nameof(HasMoreTools)); } }
+        set { if (SetProperty(ref _showAllTools, value)) { OnPropertyChanged(nameof(VisibleToolActivity)); OnPropertyChanged(nameof(HasMoreTools)); } }
     }
 
     /// <summary>The tool calls to show — the most recent <see cref="ToolDisplayLimit"/> until "show all".</summary>
@@ -347,10 +348,10 @@ public sealed class SessionViewModel : ObservableObject
     public string MoreToolsLabel => $"Show all {ToolActivity.Count}";
 
     private bool _filesExpanded = true;
-    public bool FilesExpanded { get => _filesExpanded; set => Set(ref _filesExpanded, value); }
+    public bool FilesExpanded { get => _filesExpanded; set => SetProperty(ref _filesExpanded, value); }
 
     private bool _toolsListExpanded = true;
-    public bool ToolsListExpanded { get => _toolsListExpanded; set => Set(ref _toolsListExpanded, value); }
+    public bool ToolsListExpanded { get => _toolsListExpanded; set => SetProperty(ref _toolsListExpanded, value); }
 
     public System.Windows.Input.ICommand ToggleFilesCommand { get; }
     public System.Windows.Input.ICommand ToggleToolsListCommand { get; }
@@ -399,13 +400,13 @@ public sealed class SessionViewModel : ObservableObject
     public bool ToolsExpanded
     {
         get => _toolsExpanded;
-        set => Set(ref _toolsExpanded, value);
+        set => SetProperty(ref _toolsExpanded, value);
     }
 
     public bool IsPreviewFullScreen
     {
         get => _previewFullScreen;
-        set { if (Set(ref _previewFullScreen, value)) { Raise(nameof(ShowLeftPanel)); Raise(nameof(ShowChat)); } }
+        set { if (SetProperty(ref _previewFullScreen, value)) { OnPropertyChanged(nameof(ShowLeftPanel)); OnPropertyChanged(nameof(ShowChat)); } }
     }
 
     /// <summary>Chat (and left panel) are hidden while reviewing a preview full-screen.</summary>
@@ -417,11 +418,11 @@ public sealed class SessionViewModel : ObservableObject
         get => _banner;
         private set
         {
-            if (Set(ref _banner, value))
+            if (SetProperty(ref _banner, value))
             {
-                Raise(nameof(ShowBanner));
-                Raise(nameof(BannerText));
-                Raise(nameof(CanRetry));
+                OnPropertyChanged(nameof(ShowBanner));
+                OnPropertyChanged(nameof(BannerText));
+                OnPropertyChanged(nameof(CanRetry));
             }
         }
     }
@@ -435,11 +436,11 @@ public sealed class SessionViewModel : ObservableObject
         get => _turnActive;
         private set
         {
-            if (Set(ref _turnActive, value))
+            if (SetProperty(ref _turnActive, value))
             {
-                CancelCommand.RaiseCanExecuteChanged();
+                CancelCommand.NotifyCanExecuteChanged();
                 RaiseActivity();
-                Raise(nameof(SendGestureHint));
+                OnPropertyChanged(nameof(SendGestureHint));
             }
         }
     }
@@ -474,9 +475,9 @@ public sealed class SessionViewModel : ObservableObject
 
     private void RaiseActivity()
     {
-        Raise(nameof(Activity));
-        Raise(nameof(NeedsAttention));
-        Raise(nameof(ActivityText));
+        OnPropertyChanged(nameof(Activity));
+        OnPropertyChanged(nameof(NeedsAttention));
+        OnPropertyChanged(nameof(ActivityText));
     }
 
     /// <summary>
@@ -489,9 +490,9 @@ public sealed class SessionViewModel : ObservableObject
         get => _usage;
         private set
         {
-            if (Set(ref _usage, value))
+            if (SetProperty(ref _usage, value))
             {
-                Raise(nameof(UsageSummary));
+                OnPropertyChanged(nameof(UsageSummary));
             }
         }
     }
@@ -521,7 +522,7 @@ public sealed class SessionViewModel : ObservableObject
     public bool IsInspectorOpen
     {
         get => _isInspectorOpen;
-        set => Set(ref _isInspectorOpen, value);
+        set => SetProperty(ref _isInspectorOpen, value);
     }
 
     // Search within the session (deep-links each hit by anchor).
@@ -533,13 +534,13 @@ public sealed class SessionViewModel : ObservableObject
     public bool IsSearchOpen
     {
         get => _isSearchOpen;
-        set => Set(ref _isSearchOpen, value);
+        set => SetProperty(ref _isSearchOpen, value);
     }
 
     public string SearchQuery
     {
         get => _searchQuery;
-        set { if (Set(ref _searchQuery, value)) { RunSearch(); } }
+        set { if (SetProperty(ref _searchQuery, value)) { RunSearch(); } }
     }
 
     public string MatchSummary => Matches.Count > 0
@@ -551,11 +552,11 @@ public sealed class SessionViewModel : ObservableObject
         get => _promptText;
         set
         {
-            if (Set(ref _promptText, value))
+            if (SetProperty(ref _promptText, value))
             {
-                SendCommand.RaiseCanExecuteChanged();
-                SendNowCommand.RaiseCanExecuteChanged();
-                ScheduleCommand.RaiseCanExecuteChanged();
+                SendCommand.NotifyCanExecuteChanged();
+                SendNowCommand.NotifyCanExecuteChanged();
+                ScheduleCommand.NotifyCanExecuteChanged();
                 _prompts.SaveDraft(SessionId, value);
                 UpdateSlash();
             }
@@ -589,13 +590,13 @@ public sealed class SessionViewModel : ObservableObject
     public bool ShowSlash
     {
         get => _showSlash;
-        private set => Set(ref _showSlash, value);
+        private set => SetProperty(ref _showSlash, value);
     }
 
     public string ReferenceInput
     {
         get => _referenceInput;
-        set => Set(ref _referenceInput, value);
+        set => SetProperty(ref _referenceInput, value);
     }
 
     public ICommand AddReferenceCommand { get; }
@@ -613,7 +614,7 @@ public sealed class SessionViewModel : ObservableObject
     public string? CurrentModeId
     {
         get => _currentModeId;
-        private set { if (Set(ref _currentModeId, value)) { Raise(nameof(CurrentModeName)); } }
+        private set { if (SetProperty(ref _currentModeId, value)) { OnPropertyChanged(nameof(CurrentModeName)); } }
     }
 
     public string CurrentModeName => Modes.FirstOrDefault(m => m.Id == _currentModeId)?.Name ?? _currentModeId ?? string.Empty;
@@ -654,18 +655,18 @@ public sealed class SessionViewModel : ObservableObject
         if (index >= 0)
         {
             _rewindIndex = index;
-            Raise(nameof(IsRewound));
-            Raise(nameof(DisplayItems));
-            Raise(nameof(IsTranscriptEmpty));
+            OnPropertyChanged(nameof(IsRewound));
+            OnPropertyChanged(nameof(DisplayItems));
+            OnPropertyChanged(nameof(IsTranscriptEmpty));
         }
     }
 
     private void Resume()
     {
         _rewindIndex = -1;
-        Raise(nameof(IsRewound));
-        Raise(nameof(DisplayItems));
-        Raise(nameof(IsTranscriptEmpty));
+        OnPropertyChanged(nameof(IsRewound));
+        OnPropertyChanged(nameof(DisplayItems));
+        OnPropertyChanged(nameof(IsTranscriptEmpty));
     }
 
     // ---- git (host working directory) ----
@@ -679,13 +680,13 @@ public sealed class SessionViewModel : ObservableObject
         get => _git;
         private set
         {
-            if (Set(ref _git, value))
+            if (SetProperty(ref _git, value))
             {
-                Raise(nameof(HasGit));
-                Raise(nameof(GitBranch));
-                Raise(nameof(GitDirty));
-                Raise(nameof(GitSummary));
-                CommitCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(HasGit));
+                OnPropertyChanged(nameof(GitBranch));
+                OnPropertyChanged(nameof(GitDirty));
+                OnPropertyChanged(nameof(GitSummary));
+                CommitCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -699,14 +700,14 @@ public sealed class SessionViewModel : ObservableObject
         get => _sandbox;
         private set
         {
-            if (Set(ref _sandbox, value))
+            if (SetProperty(ref _sandbox, value))
             {
-                Raise(nameof(HasSandbox));
-                Raise(nameof(SandboxPaused));
-                Raise(nameof(SandboxSummary));
-                PauseSandboxCommand.RaiseCanExecuteChanged();
-                ResumeSandboxCommand.RaiseCanExecuteChanged();
-                DeleteSandboxCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(HasSandbox));
+                OnPropertyChanged(nameof(SandboxPaused));
+                OnPropertyChanged(nameof(SandboxSummary));
+                PauseSandboxCommand.NotifyCanExecuteChanged();
+                ResumeSandboxCommand.NotifyCanExecuteChanged();
+                DeleteSandboxCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -750,7 +751,7 @@ public sealed class SessionViewModel : ObservableObject
     public string CommitMessage
     {
         get => _commitMessage;
-        set { if (Set(ref _commitMessage, value)) { CommitCommand.RaiseCanExecuteChanged(); } }
+        set { if (SetProperty(ref _commitMessage, value)) { CommitCommand.NotifyCanExecuteChanged(); } }
     }
 
     private async Task RefreshGitAsync()
@@ -785,7 +786,7 @@ public sealed class SessionViewModel : ObservableObject
     public void Attach(PromptAttachment attachment)
     {
         Attachments.Add(attachment);
-        Raise(nameof(HasAttachments));
+        OnPropertyChanged(nameof(HasAttachments));
         _ = _bus.DispatchAsync(new Plugins.AttachmentAddedEvent(SessionId)); // observe-only
     }
 
@@ -881,7 +882,7 @@ public sealed class SessionViewModel : ObservableObject
             case PermissionResolvedEvent rr:
                 var title = _permissionTitles.TryGetValue(rr.RequestId, out var t) ? t : "Permission";
                 Approvals.Insert(0, new PermissionAuditEntry(title, rr.Outcome, rr.OptionId, @event.Timestamp));
-                Raise(nameof(HasApprovals));
+                OnPropertyChanged(nameof(HasApprovals));
                 RaisePanels();
                 break;
 
@@ -913,13 +914,13 @@ public sealed class SessionViewModel : ObservableObject
 
             case McpToolCallEvent mcp:
                 McpCalls.Insert(0, new McpCallEntry(mcp.Server, mcp.Tool, @event.Timestamp));
-                Raise(nameof(HasMcpCalls));
+                OnPropertyChanged(nameof(HasMcpCalls));
                 RaisePanels();
                 break;
 
             case GitCredentialEvent gc:
                 CredentialUses.Insert(0, new CredentialUseEntry(gc.Host, gc.Repo, gc.Allowed, @event.Timestamp));
-                Raise(nameof(HasCredentialUses));
+                OnPropertyChanged(nameof(HasCredentialUses));
                 RaisePanels();
                 break;
 
@@ -937,8 +938,8 @@ public sealed class SessionViewModel : ObservableObject
         // While filtered to a subagent, refresh the (snapshot) view as its events arrive.
         if (_selectedAgentId is not null)
         {
-            Raise(nameof(DisplayItems));
-            Raise(nameof(IsTranscriptEmpty));
+            OnPropertyChanged(nameof(DisplayItems));
+            OnPropertyChanged(nameof(IsTranscriptEmpty));
         }
     }
 
@@ -1105,7 +1106,7 @@ public sealed class SessionViewModel : ObservableObject
             ScrollToRequested?.Invoke(Matches[0].AnchorId);
         }
 
-        Raise(nameof(MatchSummary));
+        OnPropertyChanged(nameof(MatchSummary));
     }
 
     private void StepMatch(int direction)
@@ -1117,7 +1118,7 @@ public sealed class SessionViewModel : ObservableObject
 
         _matchCursor = ((_matchCursor + direction) % Matches.Count + Matches.Count) % Matches.Count;
         ScrollToRequested?.Invoke(Matches[_matchCursor].AnchorId);
-        Raise(nameof(MatchSummary));
+        OnPropertyChanged(nameof(MatchSummary));
     }
 
     private void SelectHit(SearchHit? hit)
@@ -1131,7 +1132,7 @@ public sealed class SessionViewModel : ObservableObject
         if (index >= 0)
         {
             _matchCursor = index;
-            Raise(nameof(MatchSummary));
+            OnPropertyChanged(nameof(MatchSummary));
         }
 
         ScrollToRequested?.Invoke(hit.AnchorId);
@@ -1166,10 +1167,10 @@ public sealed class SessionViewModel : ObservableObject
 
     private void RaisePanels()
     {
-        Raise(nameof(HasFiles));
-        Raise(nameof(HasTools));
-        Raise(nameof(HasSidebarContent));
-        Raise(nameof(ShowLeftPanel));
+        OnPropertyChanged(nameof(HasFiles));
+        OnPropertyChanged(nameof(HasTools));
+        OnPropertyChanged(nameof(HasSidebarContent));
+        OnPropertyChanged(nameof(ShowLeftPanel));
         RaiseActivity();
     }
 
@@ -1242,7 +1243,7 @@ public sealed class SessionViewModel : ObservableObject
         if (IsTurnActive)
         {
             PendingPrompts.Add(new QueuedPrompt(text));
-            Raise(nameof(HasQueue));
+            OnPropertyChanged(nameof(HasQueue));
             return;
         }
 
@@ -1298,7 +1299,7 @@ public sealed class SessionViewModel : ObservableObject
         if (Attachments.Count > 0)
         {
             Attachments.Clear();
-            Raise(nameof(HasAttachments));
+            OnPropertyChanged(nameof(HasAttachments));
         }
 
         try
@@ -1333,7 +1334,7 @@ public sealed class SessionViewModel : ObservableObject
 
         var next = PendingPrompts[0];
         PendingPrompts.RemoveAt(0);
-        Raise(nameof(HasQueue));
+        OnPropertyChanged(nameof(HasQueue));
         _ = SubmitAsync(next.Text);
     }
 
@@ -1352,7 +1353,7 @@ public sealed class SessionViewModel : ObservableObject
     {
         if (item is not null && PendingPrompts.Remove(item))
         {
-            Raise(nameof(HasQueue));
+            OnPropertyChanged(nameof(HasQueue));
         }
     }
 
@@ -1370,7 +1371,7 @@ public sealed class SessionViewModel : ObservableObject
         }
 
         PromptText = item.Text;
-        Raise(nameof(HasQueue));
+        OnPropertyChanged(nameof(HasQueue));
     }
 
     private void MoveQueued(QueuedPrompt? item, int direction)

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Agnes.Client;
-using Agnes.Ui.Core.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.Ui.Core.ViewModels;
 #pragma warning disable CA1001 // stores/notifier are not owned/disposable here
@@ -40,26 +41,26 @@ public sealed class WorkspaceViewModel : ObservableObject
     public string HostUrl
     {
         get => _hostUrl;
-        set { if (Set(ref _hostUrl, value)) { ConnectCommand.RaiseCanExecuteChanged(); } }
+        set { if (SetProperty(ref _hostUrl, value)) { ConnectCommand.NotifyCanExecuteChanged(); } }
     }
 
     public string Token
     {
         get => _token;
-        set => Set(ref _token, value);
+        set => SetProperty(ref _token, value);
     }
 
     /// <summary>Working directory (on the host) for new sessions.</summary>
     public string WorkingDirectory
     {
         get => _workingDirectory;
-        set => Set(ref _workingDirectory, value);
+        set => SetProperty(ref _workingDirectory, value);
     }
 
     public string Status
     {
         get => _status;
-        set => Set(ref _status, value);
+        set => SetProperty(ref _status, value);
     }
 
     public ObservableCollection<AgentEntryViewModel> Agents { get; } = [];
@@ -67,7 +68,7 @@ public sealed class WorkspaceViewModel : ObservableObject
     public SessionViewModel? ActiveSession
     {
         get => _activeSession;
-        private set { if (Set(ref _activeSession, value)) { Raise(nameof(HasActiveSession)); } }
+        private set { if (SetProperty(ref _activeSession, value)) { OnPropertyChanged(nameof(HasActiveSession)); } }
     }
 
     public AsyncRelayCommand ConnectCommand { get; }

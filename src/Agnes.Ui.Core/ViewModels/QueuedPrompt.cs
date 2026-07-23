@@ -1,4 +1,5 @@
-using Agnes.Ui.Core.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.Ui.Core.ViewModels;
 
@@ -12,6 +13,6 @@ public sealed class QueuedPrompt : ObservableObject
     public string Text
     {
         get => _text;
-        set => Set(ref _text, value);
+        set => SetProperty(ref _text, value);
     }
 }

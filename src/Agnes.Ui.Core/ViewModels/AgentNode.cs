@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
-using Agnes.Ui.Core.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.Ui.Core.ViewModels;
 
@@ -29,7 +30,7 @@ public sealed class AgentNode : ObservableObject
     public bool IsSelected
     {
         get => _isSelected;
-        set => Set(ref _isSelected, value);
+        set => SetProperty(ref _isSelected, value);
     }
 
     public ICommand SelectCommand { get; }

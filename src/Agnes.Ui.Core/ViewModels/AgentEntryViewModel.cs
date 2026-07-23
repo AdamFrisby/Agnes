@@ -1,6 +1,7 @@
 using Agnes.Client;
 using Agnes.Protocol;
-using Agnes.Ui.Core.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.Ui.Core.ViewModels;
 

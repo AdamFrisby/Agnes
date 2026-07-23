@@ -1,5 +1,6 @@
 using Agnes.Abstractions;
-using Agnes.Ui.Core.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.Ui.Core.Transcript;
 
@@ -36,10 +37,10 @@ public sealed class MessageBubbleItem : TranscriptItem
         get => _text;
         set
         {
-            if (Set(ref _text, value))
+            if (SetProperty(ref _text, value))
             {
-                Raise(nameof(IsLong));
-                Raise(nameof(CondensedText));
+                OnPropertyChanged(nameof(IsLong));
+                OnPropertyChanged(nameof(CondensedText));
             }
         }
     }
@@ -78,7 +79,7 @@ public sealed class ToolCallItem : TranscriptItem
     public DateTimeOffset? CompletedAt
     {
         get => _completedAt;
-        set { if (Set(ref _completedAt, value)) { Raise(nameof(HasDuration)); Raise(nameof(DurationText)); } }
+        set { if (SetProperty(ref _completedAt, value)) { OnPropertyChanged(nameof(HasDuration)); OnPropertyChanged(nameof(DurationText)); } }
     }
 
     public bool HasDuration => CompletedAt is { } end && end > StartedAt;
@@ -107,7 +108,7 @@ public sealed class ToolCallItem : TranscriptItem
     public ToolCallStatus Status
     {
         get => _status;
-        set { if (Set(ref _status, value)) { Raise(nameof(StatusText)); Raise(nameof(ShowStatus)); } }
+        set { if (SetProperty(ref _status, value)) { OnPropertyChanged(nameof(StatusText)); OnPropertyChanged(nameof(ShowStatus)); } }
     }
 
     public string StatusText => Status.ToString();
@@ -120,10 +121,10 @@ public sealed class ToolCallItem : TranscriptItem
         get => _detail;
         set
         {
-            if (Set(ref _detail, value))
+            if (SetProperty(ref _detail, value))
             {
-                Raise(nameof(Summary));
-                Raise(nameof(HasDetail));
+                OnPropertyChanged(nameof(Summary));
+                OnPropertyChanged(nameof(HasDetail));
             }
         }
     }
@@ -150,7 +151,7 @@ public sealed class PlanItemView : TranscriptItem
     public IReadOnlyList<PlanEntry> Entries
     {
         get => _entries;
-        set => Set(ref _entries, value);
+        set => SetProperty(ref _entries, value);
     }
 }
 
@@ -223,13 +224,13 @@ public sealed class PermissionItem : TranscriptItem
     public bool Resolved
     {
         get => _resolved;
-        set => Set(ref _resolved, value);
+        set => SetProperty(ref _resolved, value);
     }
 
     public string? ResolutionText
     {
         get => _resolutionText;
-        set => Set(ref _resolutionText, value);
+        set => SetProperty(ref _resolutionText, value);
     }
 }
 
@@ -264,7 +265,7 @@ public sealed class QuestionItem : TranscriptItem
     public bool Resolved
     {
         get => _resolved;
-        set => Set(ref _resolved, value);
+        set => SetProperty(ref _resolved, value);
     }
 
     /// <summary>The answers to submit — chosen labels + any notes, per question.</summary>
@@ -303,7 +304,7 @@ public sealed class QuestionView : ObservableObject
     public string Notes
     {
         get => _notes;
-        set => Set(ref _notes, value);
+        set => SetProperty(ref _notes, value);
     }
 }
 
@@ -324,6 +325,6 @@ public sealed class QuestionOptionView : ObservableObject
     public bool IsSelected
     {
         get => _isSelected;
-        set => Set(ref _isSelected, value);
+        set => SetProperty(ref _isSelected, value);
     }
 }

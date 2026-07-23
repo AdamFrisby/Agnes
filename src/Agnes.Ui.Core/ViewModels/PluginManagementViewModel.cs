@@ -6,7 +6,8 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Agnes.Client;
 using Agnes.Protocol;
-using Agnes.Ui.Core.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.Ui.Core.ViewModels;
 
@@ -48,21 +49,21 @@ public sealed class PluginManagementViewModel : ObservableObject
     public ObservableCollection<PluginSearchRow> SearchResults { get; } = [];
 
     private string _searchQuery = string.Empty;
-    public string SearchQuery { get => _searchQuery; set => Set(ref _searchQuery, value); }
+    public string SearchQuery { get => _searchQuery; set => SetProperty(ref _searchQuery, value); }
 
     private string _status = string.Empty;
-    public string Status { get => _status; set => Set(ref _status, value); }
+    public string Status { get => _status; set => SetProperty(ref _status, value); }
 
     private bool _isBusy;
-    public bool IsBusy { get => _isBusy; set => Set(ref _isBusy, value); }
+    public bool IsBusy { get => _isBusy; set => SetProperty(ref _isBusy, value); }
 
     /// <summary>False = Installed tab, true = Browse tab.</summary>
     private bool _showBrowse;
-    public bool ShowBrowse { get => _showBrowse; set => Set(ref _showBrowse, value); }
+    public bool ShowBrowse { get => _showBrowse; set => SetProperty(ref _showBrowse, value); }
 
     /// <summary>The row shown in the detail pane (an <see cref="InstalledPluginRow"/> or <see cref="PluginSearchRow"/>).</summary>
     private object? _selected;
-    public object? Selected { get => _selected; set => Set(ref _selected, value); }
+    public object? Selected { get => _selected; set => SetProperty(ref _selected, value); }
 
     /// <summary>Set when the host refuses an install/update pending consent to new capabilities; the UI shows
     /// a consent prompt and <see cref="ConfirmConsentCommand"/> retries with them granted.</summary>
@@ -70,7 +71,7 @@ public sealed class PluginManagementViewModel : ObservableObject
     public PendingConsent? PendingConsent
     {
         get => _pendingConsent;
-        set { if (Set(ref _pendingConsent, value)) { Raise(nameof(HasPendingConsent)); } }
+        set { if (SetProperty(ref _pendingConsent, value)) { OnPropertyChanged(nameof(HasPendingConsent)); } }
     }
 
     /// <summary>Whether a consent prompt is currently pending (bindable for the UI, avoids a null converter).</summary>
@@ -295,13 +296,13 @@ public sealed class InstalledPluginRow : ObservableObject
     public IReadOnlyList<string> GrantedCapabilities { get; }
 
     private string _version;
-    public string Version { get => _version; set => Set(ref _version, value); }
+    public string Version { get => _version; set => SetProperty(ref _version, value); }
 
     private bool _enabled;
-    public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
+    public bool Enabled { get => _enabled; set => SetProperty(ref _enabled, value); }
 
     private bool _updateAvailable;
-    public bool UpdateAvailable { get => _updateAvailable; set => Set(ref _updateAvailable, value); }
+    public bool UpdateAvailable { get => _updateAvailable; set => SetProperty(ref _updateAvailable, value); }
 
     /// <summary>Editable flat settings for the Configure panel. Empty unless the UI populates it.</summary>
     public ObservableCollection<PluginSettingRow> Settings { get; } = [];
@@ -324,7 +325,7 @@ public sealed class PluginSettingRow : ObservableObject
     public string Key { get; }
 
     private string _value;
-    public string Value { get => _value; set => Set(ref _value, value); }
+    public string Value { get => _value; set => SetProperty(ref _value, value); }
 }
 
 /// <summary>A search hit from a host's NuGet source(s), as a bindable row.</summary>

@@ -1,6 +1,7 @@
 using System.Windows.Input;
 using Agnes.Ui.Core.Diff;
-using Agnes.Ui.Core.Mvvm;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.Ui.Core.ViewModels;
 
@@ -48,7 +49,7 @@ public sealed class PreviewViewModel : ObservableObject
     public bool IsSplit
     {
         get => _split;
-        set { if (Set(ref _split, value)) { Raise(nameof(ShowUnified)); Raise(nameof(ShowSplit)); } }
+        set { if (SetProperty(ref _split, value)) { OnPropertyChanged(nameof(ShowUnified)); OnPropertyChanged(nameof(ShowSplit)); } }
     }
 
     public bool ShowUnified => IsDiff && !IsSplit;
@@ -77,13 +78,13 @@ public sealed class ToolEntry : ObservableObject
     public string StatusText
     {
         get => _statusText;
-        set => Set(ref _statusText, value);
+        set => SetProperty(ref _statusText, value);
     }
 
     /// <summary>Full detail (e.g. a diff) shown in the preview when this entry is opened.</summary>
     public string Detail
     {
         get => _detail;
-        set => Set(ref _detail, value);
+        set => SetProperty(ref _detail, value);
     }
 }
