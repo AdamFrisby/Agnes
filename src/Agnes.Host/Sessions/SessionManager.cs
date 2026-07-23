@@ -29,18 +29,49 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly SandboxImageManager? _images;
     private readonly Projects.ProjectStore? _projects;
     private readonly SandboxRegistry? _sandboxRegistry;
-    private readonly ConcurrentDictionary<string, Projects.Project> _projectBySession = new();
     private readonly CredentialBrokerRegistry? _credentialBroker;
     private readonly CredentialBrokerListener? _credentialListener;
-    private readonly ConcurrentDictionary<string, string> _forwardTokenBySession = new();
-    private readonly ConcurrentDictionary<string, string> _credentialTokenBySession = new();
+    // Live handles keep their own maps — they have distinct lifetimes (a stopped session keeps its sandbox
+    // for resume) and hotter concurrency than the metadata below.
     private readonly ConcurrentDictionary<string, HostSession> _sessions = new();
-    private readonly ConcurrentDictionary<string, (string Repo, string Worktree)> _worktrees = new();
     private readonly ConcurrentDictionary<string, ISandbox> _sandboxBySession = new();
     private readonly ConcurrentDictionary<string, SessionRecord> _catalog = new();
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastRecoveryAt = new();
-    private readonly ConcurrentDictionary<string, string> _titleBySession = new();
+    // All other per-session state, bundled so teardown is one operation (Forget) rather than wiping N
+    // parallel dictionaries by hand — the leak seed that let a removed session linger in half its stores.
+    private readonly ConcurrentDictionary<string, SessionState> _state = new();
     private readonly SemaphoreSlim _attachGate = new(1, 1);
+
+    /// <summary>Mutable per-session metadata (brokered-credential tokens, resolved project, git worktree,
+    /// recovery debounce, last title). Bundled into one entry per session id.</summary>
+    private sealed class SessionState
+    {
+        public Projects.Project? Project;
+        public string? ForwardToken;
+        public string? CredentialToken;
+        public (string Repo, string Worktree)? Worktree;
+        public DateTimeOffset? LastRecoveryAt;
+        public string? Title;
+    }
+
+    /// <summary>The session's metadata entry, created on first write.</summary>
+    private SessionState State(string sessionId) => _state.GetOrAdd(sessionId, _ => new SessionState());
+
+    /// <summary>The session's metadata entry if it exists, else null (a non-creating read).</summary>
+    private SessionState? StateOrNull(string sessionId) => _state.TryGetValue(sessionId, out var s) ? s : null;
+
+    /// <summary>Idempotent teardown of one session's brokered wiring and metadata — the single place that
+    /// forgets a session so no store is left holding a stale entry. Callers additionally handle the live
+    /// handles (dispose the <see cref="HostSession"/>, stop/delete the sandbox) per their own semantics.</summary>
+    private void Forget(string sessionId)
+    {
+        if (_state.TryRemove(sessionId, out var state))
+        {
+            if (state.ForwardToken is { } ft) { _forward?.Unregister(ft); }
+            if (state.CredentialToken is { } ct) { _credentialBroker?.Unregister(ct); }
+        }
+
+        _gitConsent.Forget(sessionId); // drop this session's per-repo git consents.
+    }
 
     /// <summary>If a just-restarted agent dies again within this window, stop auto-restarting and ask the
     /// user to restart manually — so a genuinely crash-looping agent doesn't thrash.</summary>
@@ -268,7 +299,7 @@ public sealed class SessionManager : IAsyncDisposable
             if (worktree is not null)
             {
                 effectiveDirectory = worktree;
-                _worktrees[sessionId] = (workingDirectory, worktree);
+                State(sessionId).Worktree = (workingDirectory, worktree);
                 _logger.LogInformation("Session {SessionId} isolated in worktree {Worktree}", sessionId, worktree);
             }
         }
@@ -305,7 +336,7 @@ public sealed class SessionManager : IAsyncDisposable
             var remote = await _git.GetRemoteUrlAsync(effectiveDirectory, cancellationToken).ConfigureAwait(false);
             var repoKey = GitRemote.TryParse(remote, out var remoteHost, out var remoteRepo) ? $"{remoteHost}/{remoteRepo}" : string.Empty;
             project = _projects.Resolve(repoKey);
-            _projectBySession[sessionId] = project;
+            State(sessionId).Project = project;
             _logger.LogInformation("Session {SessionId} uses project '{Project}' ({Scope}).",
                 sessionId, project.Name, repoKey.Length == 0 ? "default" : repoKey);
         }
@@ -503,7 +534,7 @@ public sealed class SessionManager : IAsyncDisposable
             files.Add(new SandboxCredentialFile(McpForward.ShimHomeRelativePath, McpForward.ShimScript));
 
             var token = _forward!.Register(hostServers, sessionId);
-            _forwardTokenBySession[sessionId] = token;
+            State(sessionId).ForwardToken = token;
             env["AGNES_MCP_HOST"] = _forwardListener!.AdvertiseHost;
             env["AGNES_MCP_PORT"] = _forwardListener.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
             env["AGNES_MCP_TOKEN"] = token;
@@ -562,7 +593,7 @@ public sealed class SessionManager : IAsyncDisposable
 
         var mode = string.Equals(gitCredentialMode, "Trust", StringComparison.OrdinalIgnoreCase) ? "Trust" : "Ask";
         var token = _credentialBroker.Register(new CredentialGrant(sessionId, host, "*", mode));
-        _credentialTokenBySession[sessionId] = token;
+        State(sessionId).CredentialToken = token;
 
         env["AGNES_GIT_HOST"] = _credentialListener.AdvertiseHost;
         env["AGNES_GIT_PORT"] = _credentialListener.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -807,13 +838,13 @@ public sealed class SessionManager : IAsyncDisposable
             }
 
             var now = DateTimeOffset.UtcNow;
-            if (_lastRecoveryAt.TryGetValue(sessionId, out var last) && now - last < RecoveryDebounce)
+            if (State(sessionId).LastRecoveryAt is { } last && now - last < RecoveryDebounce)
             {
                 await AppendNoticeAsync(sessionId, debounced, isError: true).ConfigureAwait(false);
                 return;
             }
 
-            _lastRecoveryAt[sessionId] = now;
+            State(sessionId).LastRecoveryAt = now;
             await AppendNoticeAsync(sessionId, starting).ConfigureAwait(false);
             await RelaunchAgentAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
             await AppendNoticeAsync(sessionId, succeeded).ConfigureAwait(false);
@@ -846,7 +877,7 @@ public sealed class SessionManager : IAsyncDisposable
                 await old.DisposeAsync().ConfigureAwait(false);
             }
 
-            _lastRecoveryAt.TryRemove(sessionId, out _);
+            State(sessionId).LastRecoveryAt = null;
             await AppendNoticeAsync(sessionId, "Restarting the agent…").ConfigureAwait(false);
             await RelaunchAgentAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
             await AppendNoticeAsync(sessionId, "Agent restarted.").ConfigureAwait(false);
@@ -906,12 +937,12 @@ public sealed class SessionManager : IAsyncDisposable
                 title = File.Exists(path) ? ClaudeTitle.ParseLatestTitle(await File.ReadAllTextAsync(path).ConfigureAwait(false)) : null;
             }
 
-            if (string.IsNullOrWhiteSpace(title) || _titleBySession.TryGetValue(sessionId, out var last) && last == title)
+            if (string.IsNullOrWhiteSpace(title) || State(sessionId).Title == title)
             {
                 return;
             }
 
-            _titleBySession[sessionId] = title;
+            State(sessionId).Title = title;
             var stored = await _store.AppendAsync(sessionId, new SessionTitleEvent(title)).ConfigureAwait(false);
             await _broadcaster.PublishAsync(sessionId, stored).ConfigureAwait(false);
             _logger.LogInformation("Session {SessionId} titled '{Title}'", sessionId, title);
@@ -957,17 +988,7 @@ public sealed class SessionManager : IAsyncDisposable
             return; // a plugin protected the sandbox from destruction
         }
 
-        if (_forwardTokenBySession.TryRemove(sessionId, out var token))
-        {
-            _forward?.Unregister(token);
-        }
-
-        if (_credentialTokenBySession.TryRemove(sessionId, out var credentialToken))
-        {
-            _credentialBroker?.Unregister(credentialToken);
-        }
-
-        _gitConsent.Forget(sessionId); // drop this session's per-repo git consents.
+        Forget(sessionId); // unregister brokered tokens + git consents, drop metadata.
 
         if (_sandboxBySession.TryRemove(sessionId, out var sandbox))
         {
@@ -1096,7 +1117,7 @@ public sealed class SessionManager : IAsyncDisposable
         await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionResumedEvent(sessionId)).ConfigureAwait(false);
         var sandbox = _sandboxBySession.TryGetValue(sessionId, out var sb) ? sb : null;
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        var project = _projectBySession.TryGetValue(sessionId, out var p) ? p : null;
+        var project = StateOrNull(sessionId)?.Project;
         return new SessionInfo(sessionId, record.AdapterId, "/work", head, session.Modes, session.CurrentModeId,
             MapSandbox(sandbox), record.SkipPermissions, project?.Name);
     }
@@ -1112,7 +1133,7 @@ public sealed class SessionManager : IAsyncDisposable
         var remote = await _git.GetRemoteUrlAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
         var repoKey = GitRemote.TryParse(remote, out var host, out var repo) ? $"{host}/{repo}" : string.Empty;
         var project = _projects.Resolve(repoKey);
-        _projectBySession[sessionId] = project;
+        State(sessionId).Project = project;
         return project;
     }
 
@@ -1318,9 +1339,12 @@ public sealed class SessionManager : IAsyncDisposable
             await session.DisposeAsync().ConfigureAwait(false);
         }
 
-        foreach (var (repo, worktree) in _worktrees.Values)
+        foreach (var state in _state.Values)
         {
-            await _git.RemoveWorktreeAsync(repo, worktree).ConfigureAwait(false);
+            if (state.Worktree is { } w)
+            {
+                await _git.RemoveWorktreeAsync(w.Repo, w.Worktree).ConfigureAwait(false);
+            }
         }
 
         _attachGate.Dispose();
