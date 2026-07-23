@@ -30,9 +30,11 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly Notifications.PushRegistrationStore _pushRegistrations;
     private readonly Notifications.ActiveSessionViewTracker _views;
     private readonly IPluginRegistry<INotificationChannel> _channels;
+    private readonly Social.FriendService _friends;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.FriendService friends)
     {
+        _friends = friends;
         _launchProfiles = launchProfiles;
         _pushRegistrations = pushRegistrations;
         _views = views;
@@ -493,4 +495,75 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     // so redrawing a badge doesn't hammer the provider's usage endpoint. Null = "unavailable", not an error.
     public Task<Abstractions.QuotaSnapshot?> GetQuotaSnapshot(string profileId)
         => _quota.GetQuotaAsync(profileId);
+
+    // ---- friends & social (collaboration/01) ----
+    // All owner-only: managing the friend directory and minting/revoking access grants is a host-owner action.
+    // A non-owner caller is refused up front (before any GitHub round-trip), so a paired-but-not-owner device
+    // can neither enumerate the owner's friends nor grant itself access. The acting owner's GitHub login (from
+    // their device subject) is the eligibility "actor"; it may be null for a non-GitHub-paired owner, in which
+    // case only the explicit-friend eligibility path is available.
+
+    public Task<IReadOnlyList<Abstractions.Friend>> ListFriends()
+    {
+        RequireOwner();
+        return Task.FromResult(_friends.ListFriends());
+    }
+
+    public Task<Abstractions.Friend> AddFriend(AddFriendRequest request)
+    {
+        RequireOwner();
+        return _friends.AddFriendAsync(request.GitHubLogin, request.DisplayName, Context.ConnectionAborted);
+    }
+
+    public Task RemoveFriend(string gitHubLogin)
+    {
+        RequireOwner();
+        _friends.RemoveFriend(gitHubLogin);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> CheckEligibility(string gitHubLogin)
+    {
+        RequireOwner();
+        return _friends.IsEligibleAsync(OwnerGitHubLogin() ?? string.Empty, gitHubLogin, Context.ConnectionAborted);
+    }
+
+    public Task<IReadOnlyList<Abstractions.AccessGrant>> ListGrants()
+    {
+        RequireOwner();
+        return Task.FromResult(_friends.ListGrants());
+    }
+
+    public Task<Abstractions.AccessGrant> GrantAccess(GrantAccessRequest request)
+    {
+        var deviceId = RequireOwner();
+        return _friends.GrantAsync(OwnerGitHubLogin() ?? string.Empty, request.GranteeLogin, request.Resource, request.Scope, deviceId, Context.ConnectionAborted);
+    }
+
+    public Task RevokeGrant(string grantId)
+    {
+        RequireOwner();
+        _friends.RevokeGrant(grantId);
+        return Task.CompletedTask;
+    }
+
+    // Asserts the caller is the host owner, returning their stable device id; throws otherwise so the client
+    // sees a hub error rather than a silent no-op. Owner resolution reuses DeviceRegistry.IsOwner.
+    private string RequireOwner()
+    {
+        var caller = CallerId();
+        if (!_tokens.IsOwner(caller))
+        {
+            throw new HubException("Only the host owner can manage friends and access grants.");
+        }
+
+        return caller!;
+    }
+
+    // The acting owner's GitHub login (from their device subject), or null if they didn't pair via GitHub.
+    private string? OwnerGitHubLogin()
+    {
+        var token = Context.GetHttpContext()?.Request.Query[WireProtocol.TokenParameter].ToString();
+        return _tokens.ResolveGitHubLogin(token);
+    }
 }

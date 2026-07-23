@@ -187,6 +187,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             new SettingsCategoryVm("bugreport", "Report a bug", "🐞", "bug report issue github feedback problem crash diagnostics support help"),
             new SettingsCategoryVm("prompts", "Prompts", "📝", "prompt prompts template templates slash token library saved snippet reuse review insert send"),
             new SettingsCategoryVm("profiles", "Launch profiles", "🚀", "launch profile profiles preset saved reusable session config agent permissions sandbox model new session"),
+            new SettingsCategoryVm("friends", "Friends", "🤝", "friend friends social contact collaborator github handle org organization team eligible grant access share revoke"),
         ];
         SettingsCategories[0].IsSelected = true;
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
@@ -234,6 +235,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         BugReport = new BugReportViewModel(ActiveHost, _dispatcher, OpenInBrowser);
         PromptLibrary = new PromptLibraryViewModel(ActiveHost, _dispatcher);
         LaunchProfiles = new LaunchProfilesViewModel(ActiveHost, _dispatcher);
+        Friends = new FriendsViewModel(ActiveHost, _dispatcher);
     }
 
     /// <summary>The plugin-management surface for the active host (Browse / install / configure / enable).</summary>
@@ -264,6 +266,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     /// <summary>The launch-profiles management surface for the active host (list / rename / delete).</summary>
     public LaunchProfilesViewModel LaunchProfiles { get; }
+
+    /// <summary>The friends &amp; access-grants surface for the active host (owner-only; collaboration/01).</summary>
+    public FriendsViewModel Friends { get; }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
     public IRelayCommand ClosePaletteCommand { get; }
@@ -681,6 +686,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatBugReport => SettingsCategory == "bugreport";
     public bool CatPrompts => SettingsCategory == "prompts";
     public bool CatProfiles => SettingsCategory == "profiles";
+    public bool CatFriends => SettingsCategory == "friends";
 
     /// <summary>The connected host these host-scoped settings apply to (e.g. GitHub, Devices, Projects).</summary>
     public string ActiveHostName => ActiveHttpHost() is { } t
@@ -705,6 +711,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatBugReport));
         OnPropertyChanged(nameof(CatPrompts));
         OnPropertyChanged(nameof(CatProfiles));
+        OnPropertyChanged(nameof(CatFriends));
         OnPropertyChanged(nameof(ActiveHostName));
         if (value == "projects" && SelectedProject is null)
         {
@@ -730,6 +737,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         else if (value == "profiles")
         {
             _ = LaunchProfiles.RefreshAsync();
+        }
+        else if (value == "friends")
+        {
+            _ = Friends.RefreshAsync();
         }
         else if (value == "bugreport")
         {

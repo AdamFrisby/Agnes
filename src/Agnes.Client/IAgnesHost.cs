@@ -426,6 +426,35 @@ public interface IAgnesHost : IAsyncDisposable
     /// reported. Default null for hosts without quota reporting — a client renders that as "unavailable".</summary>
     Task<QuotaSnapshot?> GetQuotaSnapshotAsync(string profileId)
         => Task.FromResult<QuotaSnapshot?>(null);
+
+    // ---- friends & social (collaboration/01) ----
+    // Owner-only friend directory + explicit, revocable access grants. Defaulted so hosts/fixtures that
+    // predate the feature (or a non-owner client) reply empty / refuse writes instead of failing.
+
+    /// <summary>The host owner's friend directory. Default empty for hosts without the feature.</summary>
+    Task<IReadOnlyList<Friend>> ListFriendsAsync()
+        => Task.FromResult<IReadOnlyList<Friend>>([]);
+
+    /// <summary>Adds a friend by GitHub handle (verified real host-side). Default: unsupported.</summary>
+    Task<Friend> AddFriendAsync(string gitHubLogin, string? displayName = null)
+        => throw new NotSupportedException("This host does not support friends.");
+
+    /// <summary>Removes a friend by GitHub handle. Default no-op.</summary>
+    Task RemoveFriendAsync(string gitHubLogin) => Task.CompletedTask;
+
+    /// <summary>Whether a GitHub handle is currently eligible for a grant (recomputed live). Default false.</summary>
+    Task<bool> CheckEligibilityAsync(string gitHubLogin) => Task.FromResult(false);
+
+    /// <summary>The active (non-revoked) access grants. Default empty for hosts without the feature.</summary>
+    Task<IReadOnlyList<AccessGrant>> ListGrantsAsync()
+        => Task.FromResult<IReadOnlyList<AccessGrant>>([]);
+
+    /// <summary>Grants an eligible GitHub user access to a resource at a scope. Default: unsupported.</summary>
+    Task<AccessGrant> GrantAccessAsync(string granteeLogin, string resource, GrantScope scope)
+        => throw new NotSupportedException("This host does not support access grants.");
+
+    /// <summary>Revokes an access grant by id — immediate and permanent. Default no-op.</summary>
+    Task RevokeGrantAsync(string grantId) => Task.CompletedTask;
 }
 
 /// <summary>Creates/looks up host connections. Swap the implementation to simulate a server.</summary>

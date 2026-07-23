@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:sys="using:System"
+             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
              x:Class="Agnes.App.Desktop.Views.SettingsTabView">
 
@@ -804,6 +805,84 @@
                                                 </StackPanel>
                                                 <Button Grid.Column="1" Content="Delete" Classes="seg"
                                                         Command="{Binding $parent[ItemsControl].DataContext.DeleteCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Friends & access grants (collaboration/01) -->
+                    <StackPanel IsVisible="{Binding CatFriends}">
+                        <StackPanel DataContext="{Binding Friends}" Spacing="14">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Friends" />
+                                <Button Grid.Column="2" Content="Refresh" Command="{Binding RefreshCommand}" Classes="seg" />
+                            </Grid>
+                            <TextBlock Classes="scopeNote"
+                                       Text="A friend is a GitHub-verified user. Being a friend (or sharing a configured org/team) only makes someone eligible — it shares nothing on its own. Access is conferred only by an explicit, revocable grant below. Owner-only." />
+
+                            <!-- Add a friend by GitHub handle, with a live eligibility hint -->
+                            <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="8">
+                                <TextBox Grid.Column="0" Text="{Binding NewFriendHandle, Mode=TwoWay}" PlaceholderText="GitHub handle" />
+                                <TextBox Grid.Column="1" Text="{Binding NewFriendDisplayName, Mode=TwoWay}" PlaceholderText="Display name (optional)" />
+                                <Button Grid.Column="2" Content="Check" Command="{Binding CheckEligibilityCommand}" Classes="seg" />
+                                <Button Grid.Column="3" Content="Add friend" Command="{Binding AddFriendCommand}" Classes="seg" />
+                            </Grid>
+                            <TextBlock Text="{Binding EligibilityHint}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                       IsVisible="{Binding EligibilityHint, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+                            <ItemsControl ItemsSource="{Binding Friends}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding GitHubLogin}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                    <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Remove" Classes="seg"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.RemoveFriendCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Grant access to an eligible friend -->
+                            <TextBlock Classes="sectionTitle" Text="Access grants" Margin="0,6,0,0" />
+                            <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="8">
+                                <ComboBox Grid.Column="0" ItemsSource="{Binding Friends}" SelectedItem="{Binding SelectedFriend, Mode=TwoWay}"
+                                          PlaceholderText="Friend" HorizontalAlignment="Stretch">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding GitHubLogin}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <TextBox Grid.Column="1" Text="{Binding GrantResource, Mode=TwoWay}" PlaceholderText="Resource id (e.g. host:main)" />
+                                <ComboBox Grid.Column="2" ItemsSource="{Binding Scopes}" SelectedItem="{Binding NewGrantScope, Mode=TwoWay}" />
+                                <Button Grid.Column="3" Content="Grant" Command="{Binding GrantCommand}" Classes="seg" />
+                            </Grid>
+
+                            <ItemsControl ItemsSource="{Binding Grants}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding GranteeLogin}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                    <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
+                                                        <Run Text="{Binding Resource}" /><Run Text=" · " /><Run Text="{Binding Scope}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Revoke" Classes="seg"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.RevokeGrantCommand}" CommandParameter="{Binding}" />
                                             </Grid>
                                         </Border>
                                     </DataTemplate>

@@ -244,6 +244,32 @@ builder.Services.AddHostedService(sp => new Agnes.Host.Attention.AttentionTimeou
     sp.GetRequiredService<Agnes.Host.Attention.AttentionRequestService>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Attention.AttentionTimeoutSweeper>()));
 
+// ---- friends & social + explicit access grants (collaboration/01) ----
+// A GitHub-verified friend directory, live eligibility (shared org/team OR explicit friend, recomputed on
+// every check — never cached as trust), and explicit, revocable access grants enforced by IFriendAuthorizer.
+// Reuses the security/02 GitHub identity/membership lookup for all live checks. The grant + authorizer pair
+// is the seam collaboration/02 session-sharing consumes. See .ideas/collaboration/01-friends-and-social.md.
+var socialDir = builder.Configuration["Agnes:SocialDir"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+builder.Services.AddSingleton(sp => new Agnes.Host.Social.FriendStore(
+    socialDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Social.FriendStore>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Social.GrantStore(
+    socialDir, sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Social.GrantStore>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Social.FriendEligibilityService(
+    sp.GetRequiredService<Agnes.Host.Social.FriendStore>(),
+    sp.GetRequiredService<IGitHubUserLookup>(),
+    sp.GetRequiredService<GitHubAuthOptions>()));
+builder.Services.AddSingleton<Agnes.Host.Social.IFriendAuthorizer>(sp => new Agnes.Host.Social.FriendAuthorizer(
+    sp.GetRequiredService<Agnes.Host.Social.GrantStore>(),
+    sp.GetRequiredService<IGitHubUserLookup>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Social.FriendService(
+    sp.GetRequiredService<Agnes.Host.Social.FriendStore>(),
+    sp.GetRequiredService<Agnes.Host.Social.GrantStore>(),
+    sp.GetRequiredService<Agnes.Host.Social.FriendEligibilityService>(),
+    sp.GetRequiredService<IGitHubUserLookup>(),
+    sp.GetRequiredService<TimeProvider>()));
+
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
 var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandboxes.json");

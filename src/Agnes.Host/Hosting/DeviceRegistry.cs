@@ -129,6 +129,31 @@ public sealed class DeviceRegistry
         return null;
     }
 
+    /// <summary>
+    /// Resolves a bearer token to the GitHub login of the paired device, or null when the device wasn't paired
+    /// via GitHub (its <c>Subject</c> isn't <c>github:&lt;login&gt;</c>) or the token is unknown. This is how the
+    /// social/friends layer learns "who" a caller is on GitHub — the login the GitHub exchange recorded on the
+    /// device record — without a fresh GitHub round-trip. Never records last-seen (a pure identity read).
+    /// </summary>
+    public string? ResolveGitHubLogin(string? token)
+    {
+        if (string.IsNullOrEmpty(token))
+        {
+            return null;
+        }
+
+        return _devices.TryGetValue(Hash(token), out var device) ? GitHubLoginFromSubject(device.Subject) : null;
+    }
+
+    /// <summary>The GitHub login recorded on a device subject (<c>github:&lt;login&gt;</c>), or null.</summary>
+    internal static string? GitHubLoginFromSubject(string? subject)
+    {
+        const string prefix = "github:";
+        return subject is not null && subject.StartsWith(prefix, StringComparison.Ordinal) && subject.Length > prefix.Length
+            ? subject[prefix.Length..]
+            : null;
+    }
+
     /// <summary>Pairs a new device given the current pairing code; returns its durable token.</summary>
     public PairingResult? TryPair(string? code, string? deviceName)
     {

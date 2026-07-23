@@ -365,6 +365,37 @@ public interface IAgnesServer
     /// reported — an unknown profile, or a provider that doesn't implement the optional quota capability.
     /// A distinguishable "unavailable" (null) rather than an error, so a badge degrades cleanly.</summary>
     Task<Abstractions.QuotaSnapshot?> GetQuotaSnapshot(string profileId);
+
+    // ---- friends & social (collaboration/01) ----
+    // Owner-only management of the host owner's friend directory and the explicit, revocable access grants
+    // that sit on top of it. A "friend" is a GitHub-verified user; eligibility (shared org/team OR explicit
+    // friend) is recomputed live and never stored as trust; every grant is explicit and revocable and is the
+    // seam collaboration/02 session-sharing consumes. Non-owner callers are refused. See
+    // <c>.ideas/collaboration/01-friends-and-social.md</c>.
+
+    /// <summary>The host owner's friend directory (owner-only).</summary>
+    Task<IReadOnlyList<Abstractions.Friend>> ListFriends();
+
+    /// <summary>Adds a friend by GitHub handle after verifying it is a real GitHub user (owner-only). A
+    /// non-existent handle is refused.</summary>
+    Task<Abstractions.Friend> AddFriend(AddFriendRequest request);
+
+    /// <summary>Removes a friend by GitHub handle (owner-only). Never revokes an already-issued grant.</summary>
+    Task RemoveFriend(string gitHubLogin);
+
+    /// <summary>Whether a GitHub handle is currently eligible for the owner to grant access to — an explicit
+    /// friend, or a shared configured org/team (recomputed live). Drives the add/grant eligibility hint.</summary>
+    Task<bool> CheckEligibility(string gitHubLogin);
+
+    /// <summary>The active (non-revoked) access grants (owner-only).</summary>
+    Task<IReadOnlyList<Abstractions.AccessGrant>> ListGrants();
+
+    /// <summary>Grants an eligible GitHub user access to a resource at a scope (owner-only). Refused if the
+    /// grantee is not currently eligible.</summary>
+    Task<Abstractions.AccessGrant> GrantAccess(GrantAccessRequest request);
+
+    /// <summary>Revokes an access grant by id — immediate and permanent (owner-only).</summary>
+    Task RevokeGrant(string grantId);
 }
 
 /// <summary>

@@ -48,6 +48,24 @@ public interface IGitHubUserLookup
     Task<string?> GetLoginAsync(string token, CancellationToken cancellationToken);
     Task<bool> IsOrgMemberAsync(string token, string org, CancellationToken cancellationToken);
     Task<bool> IsTeamMemberAsync(string token, string org, string team, string login, CancellationToken cancellationToken);
+
+    // ---- by-login probes (collaboration/01 friends & eligibility) ----
+    // The three above answer "who is *this token's owner*, and is *it* a member". The friends feature needs
+    // to reason about *other* logins (a friend handle, a prospective grantee) with no token of theirs in hand,
+    // so these probe by login name. They are defaulted (false) so existing fakes/implementers keep compiling;
+    // the real GitHubUserLookup overrides them with live API calls.
+
+    /// <summary>Whether a GitHub login resolves to a real user account — the friend-add verification. Live,
+    /// never cached as trust. Default false for fakes that don't model it.</summary>
+    Task<bool> UserExistsAsync(string login, CancellationToken cancellationToken) => Task.FromResult(false);
+
+    /// <summary>Whether <paramref name="login"/> is a visible member of <paramref name="org"/> — the by-login
+    /// org-membership probe used for live eligibility (vs. the token-owner check above). Default false.</summary>
+    Task<bool> IsOrgMemberByLoginAsync(string org, string login, CancellationToken cancellationToken) => Task.FromResult(false);
+
+    /// <summary>Whether <paramref name="login"/> is a member of <paramref name="org"/>/<paramref name="team"/> —
+    /// the by-login team-membership probe used for live eligibility. Default false.</summary>
+    Task<bool> IsTeamMemberByLoginAsync(string org, string team, string login, CancellationToken cancellationToken) => Task.FromResult(false);
 }
 
 /// <summary>
@@ -161,10 +179,60 @@ public sealed class GitHubUserLookup(HttpClient http) : IGitHubUserLookup
         return string.Equals(m?.State, "active", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static HttpRequestMessage Request(HttpMethod method, string url, string token)
+    public async Task<bool> UserExistsAsync(string login, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(login))
+        {
+            return false;
+        }
+
+        // Public account lookup — 200 = exists, 404 = no such user. Unauthenticated (no per-user token here).
+        using var req = Request(HttpMethod.Get, $"{Api}/users/{Uri.EscapeDataString(login)}", token: null);
+        using var res = await http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        return res.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> IsOrgMemberByLoginAsync(string org, string login, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(org) || string.IsNullOrWhiteSpace(login))
+        {
+            return false;
+        }
+
+        // 204 = member, 404 = not a member / not visible. (Private memberships need the host's own credentials
+        // to be visible; a first cut probes unauthenticated, which sees public membership.)
+        using var req = Request(HttpMethod.Get, $"{Api}/orgs/{Uri.EscapeDataString(org)}/members/{Uri.EscapeDataString(login)}", token: null);
+        using var res = await http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        return res.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> IsTeamMemberByLoginAsync(string org, string team, string login, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(org) || string.IsNullOrWhiteSpace(team) || string.IsNullOrWhiteSpace(login))
+        {
+            return false;
+        }
+
+        using var req = Request(HttpMethod.Get,
+            $"{Api}/orgs/{Uri.EscapeDataString(org)}/teams/{Uri.EscapeDataString(team)}/memberships/{Uri.EscapeDataString(login)}", token: null);
+        using var res = await http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        if (!res.IsSuccessStatusCode)
+        {
+            return false;
+        }
+
+        var m = await res.Content.ReadFromJsonAsync<GitHubMembership>(cancellationToken).ConfigureAwait(false);
+        return string.Equals(m?.State, "active", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static HttpRequestMessage Request(HttpMethod method, string url, string? token)
     {
         var req = new HttpRequestMessage(method, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (!string.IsNullOrEmpty(token))
+        {
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
         req.Headers.Accept.ParseAdd("application/vnd.github+json");
         req.Headers.UserAgent.ParseAdd("Agnes"); // GitHub rejects requests without a User-Agent.
         return req;

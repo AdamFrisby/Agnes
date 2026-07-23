@@ -634,3 +634,16 @@ public sealed record BugReportDto(
     string? CurrentBehavior,
     string? ExpectedBehavior,
     bool AttachDiagnostics = false);
+
+// ---- friends & social (collaboration/01) ----
+// The domain records (Friend, AccessGrant, GrantScope) live in Agnes.Abstractions and cross the wire whole —
+// they carry no secret. These two are the small request shapes the owner-only management calls take.
+
+/// <summary>Adds a GitHub handle to the owner's friend directory. The host verifies the handle is a real
+/// GitHub user before storing it.</summary>
+public sealed record AddFriendRequest(string GitHubLogin, string? DisplayName = null);
+
+/// <summary>Grants a GitHub user access to a resource (a host, or later a session id) at a scope. The host
+/// rejects the grant unless the grantee is currently eligible (an explicit friend, or a shared configured
+/// org/team, recomputed live).</summary>
+public sealed record GrantAccessRequest(string GranteeLogin, string Resource, GrantScope Scope);
