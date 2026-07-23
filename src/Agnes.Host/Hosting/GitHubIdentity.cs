@@ -23,6 +23,25 @@ public sealed record GitHubAuthOptions
         && (AllowedUsers.Length > 0 || AllowedOrgs.Length > 0);
 }
 
+/// <summary>Why a GitHub token exchange succeeded or failed. Distinguishes a plain bad/expired token from a
+/// GitHub login that authenticated fine but is gated out by the org/team allowlist — so the latter can be
+/// surfaced with a specific error rather than a generic auth failure (AC3).</summary>
+public enum GitHubAuthOutcome
+{
+    /// <summary>The login is allowed — mint a token.</summary>
+    Allowed,
+
+    /// <summary>The GitHub token was missing/invalid/expired, or sign-in isn't configured.</summary>
+    InvalidToken,
+
+    /// <summary>Authenticated as a real GitHub user, but that account is not on the org/team allowlist.</summary>
+    NotAllowlisted,
+}
+
+/// <summary>Result of a GitHub token exchange: the outcome plus the resolved login (when one was found,
+/// even if it was ultimately gated out).</summary>
+public sealed record GitHubAuthResult(GitHubAuthOutcome Outcome, string? Login);
+
 /// <summary>Looks identity up at GitHub with a user access token. Abstracted so tests can fake it.</summary>
 public interface IGitHubUserLookup
 {
@@ -40,22 +59,38 @@ public sealed class GitHubIdentity(IGitHubUserLookup lookup, GitHubAuthOptions o
 {
     public GitHubAuthOptions Options { get; } = options;
 
+    /// <summary>Back-compat helper: the resolved login when allowed, else null (collapses both rejection
+    /// reasons). Prefer <see cref="VerifyDetailedAsync"/> at call sites that need to distinguish a gated-out
+    /// account from a bad token.</summary>
     public async Task<string?> VerifyAsync(string? token, CancellationToken cancellationToken = default)
+    {
+        var result = await VerifyDetailedAsync(token, cancellationToken).ConfigureAwait(false);
+        return result.Outcome == GitHubAuthOutcome.Allowed ? result.Login : null;
+    }
+
+    /// <summary>
+    /// Verifies a GitHub user access token against the allowlist, distinguishing the outcomes: a bad/expired
+    /// token (or a host without GitHub configured) is <see cref="GitHubAuthOutcome.InvalidToken"/>; a valid
+    /// GitHub account that isn't in any allowed org/team is <see cref="GitHubAuthOutcome.NotAllowlisted"/>;
+    /// otherwise <see cref="GitHubAuthOutcome.Allowed"/>. The token is used only to check identity and is
+    /// never stored.
+    /// </summary>
+    public async Task<GitHubAuthResult> VerifyDetailedAsync(string? token, CancellationToken cancellationToken = default)
     {
         if (!Options.IsUsable || string.IsNullOrWhiteSpace(token))
         {
-            return null;
+            return new GitHubAuthResult(GitHubAuthOutcome.InvalidToken, null);
         }
 
         var login = await lookup.GetLoginAsync(token, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(login))
         {
-            return null;
+            return new GitHubAuthResult(GitHubAuthOutcome.InvalidToken, null);
         }
 
         if (Options.AllowedUsers.Any(u => string.Equals(u.Trim(), login, StringComparison.OrdinalIgnoreCase)))
         {
-            return login;
+            return new GitHubAuthResult(GitHubAuthOutcome.Allowed, login);
         }
 
         foreach (var spec in Options.AllowedOrgs)
@@ -71,12 +106,12 @@ public sealed class GitHubIdentity(IGitHubUserLookup lookup, GitHubAuthOptions o
                 : await lookup.IsTeamMemberAsync(token, parts[0], parts[1], login, cancellationToken).ConfigureAwait(false);
             if (allowed)
             {
-                return login;
+                return new GitHubAuthResult(GitHubAuthOutcome.Allowed, login);
             }
         }
 
         logger?.LogWarning("GitHub login '{Login}' is not on the allowlist — rejecting", login);
-        return null;
+        return new GitHubAuthResult(GitHubAuthOutcome.NotAllowlisted, login);
     }
 }
 

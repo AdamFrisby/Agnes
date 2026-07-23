@@ -16,12 +16,28 @@ public sealed record PairResponse(string DeviceId, string DeviceName, string Tok
 
 /// <summary>Which bootstrap auth methods a host offers (advertised at <c>GET /auth/methods</c>) so a
 /// client shows only the enabled ones. <see cref="GitHubClientId"/> is a public OAuth client id for the
-/// device flow — never a secret.</summary>
-public sealed record AuthMethods(bool Pairing, bool GitHub, string? GitHubClientId, bool Keypair);
+/// device flow — never a secret. The enterprise methods (<see cref="Oidc"/>, <see cref="Mtls"/>) are
+/// trailing-optional so this stays wire-compatible with clients that predate them.</summary>
+public sealed record AuthMethods(
+    bool Pairing,
+    bool GitHub,
+    string? GitHubClientId,
+    bool Keypair,
+    bool Oidc = false,
+    string? OidcIssuer = null,
+    bool Mtls = false);
 
 /// <summary>Exchange a GitHub user access token (obtained by the client via the device flow) for an Agnes
 /// device token. The host verifies the identity against its allowlist and discards the GitHub token.</summary>
 public sealed record GitHubExchangeRequest(string Token, string DeviceName);
+
+/// <summary>Exchange an OIDC-issued token (validated against the configured issuer's JWKS/audience) for an
+/// Agnes device token. The OIDC token is verified then discarded.</summary>
+public sealed record OidcExchangeRequest(string Token, string DeviceName);
+
+/// <summary>Complete mTLS pairing once a valid client certificate has been presented on the TLS
+/// connection; the certificate is the credential, so the body carries only a device name.</summary>
+public sealed record MtlsPairRequest(string DeviceName);
 
 /// <summary>A one-time challenge nonce for keypair auth (from <c>GET /auth/keypair/challenge</c>).</summary>
 public sealed record KeypairChallenge(string Nonce);

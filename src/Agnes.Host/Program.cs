@@ -89,10 +89,40 @@ var keypairAuthOptions = new KeypairAuthOptions
 builder.Services.AddSingleton(sp => new KeypairAuth(
     keypairAuthOptions, sp.GetRequiredService<ILoggerFactory>().CreateLogger<KeypairAuth>()));
 
+// ---- OIDC token validation (enterprise) — optional; validates an issuer-signed JWT and mints a device
+// token. Fail-closed: enabled-but-incomplete config leaves IsUsable false, so it isn't advertised and the
+// exchange endpoint 400s. The interactive authorization-code redirect is out of scope (token-validation
+// core only); see .ideas/security/02-enterprise-auth.md. ----
+var oidcOptions = new OidcOptions
+{
+    Enabled = builder.Configuration.GetValue("Agnes:Auth:Oidc:Enabled", false),
+    Issuer = builder.Configuration["Agnes:Auth:Oidc:Issuer"],
+    Audience = builder.Configuration["Agnes:Auth:Oidc:Audience"],
+    JwksJson = builder.Configuration["Agnes:Auth:Oidc:JwksJson"],
+    JwksUri = builder.Configuration["Agnes:Auth:Oidc:JwksUri"],
+    DisplayName = builder.Configuration["Agnes:Auth:Oidc:DisplayName"] ?? "OIDC",
+};
+builder.Services.AddSingleton(sp => new OidcIdentity(
+    oidcOptions, new HttpClient(), sp.GetRequiredService<ILoggerFactory>().CreateLogger<OidcIdentity>()));
+
+// ---- mTLS client-certificate auth (enterprise) — optional; a certificate that chains to the configured
+// CA or matches a pin is the sole credential. Fail-closed the same way as OIDC above. ----
+var mtlsOptions = new MtlsOptions
+{
+    Enabled = builder.Configuration.GetValue("Agnes:Auth:Mtls:Enabled", false),
+    TrustAnchorPem = builder.Configuration["Agnes:Auth:Mtls:TrustAnchorPem"],
+    PinnedThumbprints = builder.Configuration.GetSection("Agnes:Auth:Mtls:PinnedThumbprints").Get<string[]>() ?? [],
+    DisplayName = builder.Configuration["Agnes:Auth:Mtls:DisplayName"] ?? "Client certificate",
+};
+builder.Services.AddSingleton(sp => new MtlsIdentity(
+    mtlsOptions, sp.GetRequiredService<ILoggerFactory>().CreateLogger<MtlsIdentity>()));
+
 // ---- auth methods as built-in plugins (AC13): /auth/methods is driven from this registry ----
 builder.Services.AddSingleton<IAuthMethodProvider>(sp => new PairingAuthMethodProvider(sp.GetRequiredService<DeviceRegistry>()));
 builder.Services.AddSingleton<IAuthMethodProvider>(sp => new GitHubAuthMethodProvider(sp.GetRequiredService<GitHubIdentity>()));
 builder.Services.AddSingleton<IAuthMethodProvider>(sp => new KeypairAuthMethodProvider(sp.GetRequiredService<KeypairAuth>()));
+builder.Services.AddSingleton<IAuthMethodProvider>(sp => new OidcAuthMethodProvider(sp.GetRequiredService<OidcIdentity>()));
+builder.Services.AddSingleton<IAuthMethodProvider>(sp => new MtlsAuthMethodProvider(sp.GetRequiredService<MtlsIdentity>()));
 builder.Services.AddPluginPoint<IAuthMethodProvider>(m => m.MethodId);
 
 // ---- rate limiting: cap the auth bootstrap endpoints per-IP and globally ----
@@ -530,11 +560,16 @@ app.MapHub<AgnesHub>(WireProtocol.HubPath);
 app.MapGet("/auth/methods", (IPluginRegistry<IAuthMethodProvider> methods) =>
 {
     var github = methods.Find("github");
+    var oidc = methods.Find("oidc");
+    var mtls = methods.Find("mtls");
     return Results.Ok(new AuthMethods(
         Pairing: methods.Find("pairing")?.IsEnabled ?? false,
         GitHub: github?.IsEnabled ?? false,
         GitHubClientId: (github?.IsEnabled ?? false) ? github!.ClientMetadata.GetValueOrDefault("clientId") : null,
-        Keypair: methods.Find("keypair")?.IsEnabled ?? false));
+        Keypair: methods.Find("keypair")?.IsEnabled ?? false,
+        Oidc: oidc?.IsEnabled ?? false,
+        OidcIssuer: (oidc?.IsEnabled ?? false) ? oidc!.ClientMetadata.GetValueOrDefault("issuer") : null,
+        Mtls: mtls?.IsEnabled ?? false));
 });
 
 // Pair a new device with the current code; returns a durable per-device token (shown once).
@@ -564,14 +599,65 @@ app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHu
         return Results.Json(new { error = "GitHub sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
     }
 
-    var login = await github.VerifyAsync(request.Token, ct);
-    if (login is null)
+    var verified = await github.VerifyDetailedAsync(request.Token, ct);
+    if (verified.Outcome == GitHubAuthOutcome.NotAllowlisted)
+    {
+        // Distinguishable from a bad token (AC3): the account authenticated but is gated out by the org/team allowlist.
+        return Results.Json(
+            new { error = $"GitHub account '{verified.Login}' is not a member of an organization or team allowed on this host.", code = "org_not_allowed" },
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    if (verified.Outcome != GitHubAuthOutcome.Allowed || verified.Login is null)
     {
         return Results.Json(new { error = "This GitHub account isn't allowed to connect to this host." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
+    var login = verified.Login;
     var result = tokens.IssueDeviceToken(request.DeviceName, subject: "github:" + login, kind: "github");
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "github", "github:" + login));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+});
+
+// Exchange an OIDC-issued token (validated against the configured issuer's JWKS + audience) for an Agnes
+// device token. Token-validation core only — the interactive authorization-code redirect is out of scope.
+app.MapPost("/auth/oidc/exchange", async (OidcExchangeRequest request, OidcIdentity oidc, CancellationToken ct) =>
+{
+    if (!oidc.Options.IsUsable)
+    {
+        return Results.Json(new { error = "OIDC sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    var validated = await oidc.ValidateAsync(request.Token, ct);
+    if (!validated.Ok || validated.Subject is null)
+    {
+        return Results.Json(new { error = validated.Reason ?? "The OIDC token is invalid." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "oidc:" + validated.Subject, kind: "oidc");
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "oidc", "oidc:" + validated.Subject));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+});
+
+// mTLS: the client certificate presented on the TLS connection is the credential. Validate it against the
+// configured trust anchor / pin allowlist and mint a device token. (Requires the listener to request a
+// client certificate; when TLS is terminated upstream this endpoint isn't reachable with a cert.)
+app.MapPost("/auth/mtls", async (MtlsPairRequest request, HttpContext ctx, MtlsIdentity mtls, CancellationToken ct) =>
+{
+    if (!mtls.Options.IsUsable)
+    {
+        return Results.Json(new { error = "Client-certificate sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    var clientCert = await ctx.Connection.GetClientCertificateAsync(ct);
+    var validated = mtls.Validate(clientCert);
+    if (!validated.Ok || validated.Subject is null)
+    {
+        return Results.Json(new { error = validated.Reason ?? "The client certificate is not trusted." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "mtls:" + validated.Subject, kind: "mtls");
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "mtls", "mtls:" + validated.Subject));
     return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
 });
 
