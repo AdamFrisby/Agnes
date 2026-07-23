@@ -146,13 +146,30 @@ if (!string.IsNullOrWhiteSpace(databasePath))
 }
 builder.Services.AddSingleton<IPluginRegistry<IEventStoreProvider>>(sp =>
     new PluginRegistry<IEventStoreProvider>(sp.GetServices<IEventStoreProvider>(), p => p.Name));
+
+// ---- memory search index (see .ideas/ops/02-memory-search.md) ----
+// A per-host full-text index over every session's transcript, exposed as a plugin point so an
+// embeddings-backed provider can be added later without touching core. The text-only FTS5 provider shares
+// the event store's SQLite file, so it only exists when a durable database is configured (an in-memory
+// host has no file to index). When present, the event store is wrapped so every append is indexed.
+if (!string.IsNullOrWhiteSpace(databasePath))
+{
+    builder.Services.AddSingleton<IMemoryIndexProvider>(new SqliteMemoryIndexProvider(databasePath));
+}
+builder.Services.AddPluginPoint<IMemoryIndexProvider>(p => p.Id);
+
 builder.Services.AddSingleton<IEventStore>(sp =>
 {
     var registry = sp.GetRequiredService<IPluginRegistry<IEventStoreProvider>>();
     var provider = registry.Find(eventStoreName)
         ?? throw new InvalidOperationException(
             $"No event-store provider named '{eventStoreName}' is registered (have: {string.Join(", ", registry.All.Select(p => p.Name))}).");
-    return provider.Create();
+    var store = provider.Create();
+
+    var memoryIndex = sp.GetRequiredService<IPluginRegistry<IMemoryIndexProvider>>().All.FirstOrDefault();
+    return memoryIndex is null
+        ? store
+        : new IndexingEventStore(store, memoryIndex, sp.GetRequiredService<ILoggerFactory>().CreateLogger<IndexingEventStore>());
 });
 
 // ---- event spine (see .ideas/00d-event-spine-and-ui-extensibility.md) ----

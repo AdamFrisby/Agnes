@@ -224,6 +224,11 @@
                         </Button.Flyout>
                     </Button>
 
+                    <!-- Search: opens a first-class tab searching every recorded session's transcript -->
+                    <Button Content="🔍" Command="{Binding OpenSearchCommand}" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Search history" />
+
                     <!-- Settings: opens a first-class, searchable Settings tab -->
                     <Button Content="⚙" Command="{Binding OpenSettingsCommand}" Background="Transparent" Foreground="{DynamicResource FgDim}"
                             BorderBrush="{DynamicResource Line}" BorderThickness="1"

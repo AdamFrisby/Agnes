@@ -77,6 +77,12 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content);
 
+    /// <summary>Full-text search over this host's session transcripts, ranked best-first with a highlighted
+    /// snippet. Default empty for hosts/fixtures without a memory index (see
+    /// <c>.ideas/ops/02-memory-search.md</c>).</summary>
+    Task<IReadOnlyList<Agnes.Abstractions.MemorySearchResult>> SearchMemoryAsync(string query, Agnes.Abstractions.MemorySearchOptions options)
+        => Task.FromResult<IReadOnlyList<Agnes.Abstractions.MemorySearchResult>>([]);
+
     /// <summary>Cancels the in-flight turn for a session (Stop).</summary>
     Task CancelAsync(string sessionId);
 

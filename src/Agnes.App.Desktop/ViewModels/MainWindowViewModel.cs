@@ -188,10 +188,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         };
 
         Plugins = new PluginManagementViewModel(ActiveHost, _dispatcher);
+
+        MemorySearch = new MemorySearchViewModel(ActiveHost, _dispatcher);
+        MemorySearch.OpenRequested += OpenMemoryResult;
+        OpenSearchCommand = new RelayCommand(OpenSearch);
     }
 
     /// <summary>The plugin-management surface for the active host (Browse / install / configure / enable).</summary>
     public PluginManagementViewModel Plugins { get; }
+
+    /// <summary>Host-backed transcript search across every recorded session (the Search tab).</summary>
+    public MemorySearchViewModel MemorySearch { get; }
+
+    public IRelayCommand OpenSearchCommand { get; }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
     public IRelayCommand ClosePaletteCommand { get; }
@@ -776,6 +785,45 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         dock.ActiveDockable = existing;
         _factory.SetActiveDockable(existing);
         _factory.SetFocusedDockable(dock, existing);
+    }
+
+    private void OpenSearch()
+    {
+        if (_factory.DocumentDock is not { } dock)
+        {
+            return;
+        }
+
+        var existing = dock.VisibleDockables?.OfType<SearchDocument>().FirstOrDefault();
+        if (existing is null)
+        {
+            existing = new SearchDocument(MemorySearch);
+            _factory.AddDockable(dock, existing);
+        }
+
+        dock.ActiveDockable = existing;
+        _factory.SetActiveDockable(existing);
+        _factory.SetFocusedDockable(dock, existing);
+    }
+
+    // Jump from a memory-search hit to its session. If that session is open as a tab, activate it (and
+    // scroll to the newest match of the query so the user lands near the hit); otherwise say it isn't open —
+    // opening a closed session straight from search is a follow-up (it needs a rebuilt session descriptor).
+    private void OpenMemoryResult(MemorySearchResultRow row)
+    {
+        var doc = OpenTabs().FirstOrDefault(d => d.Session?.SessionId == row.SessionId);
+        if (doc is null)
+        {
+            MemorySearch.Status = "That session isn't open — open it from the sessions list to view the match.";
+            return;
+        }
+
+        _factory.SetActiveDockable(doc);
+        foreach (var hit in doc.Session?.Find(MemorySearch.Query, doc.Title) ?? [])
+        {
+            doc.Session?.ScrollTo(hit.AnchorId);
+            break;
+        }
     }
 
     // ---- Projects: per-repo bundles on the connected host (sandbox + MCP + GitHub account + defaults) ----

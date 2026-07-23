@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Agnes.App.Desktop.Views.SearchView">
+
+    <!-- DataContext is a SearchDocument; narrow it to its MemorySearchViewModel so bindings are direct. -->
+    <Grid DataContext="{Binding Search}" RowDefinitions="Auto,Auto,*" Margin="16">
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+            <TextBox Width="360"
+                     Text="{Binding Query, Mode=TwoWay}"
+                     Watermark="Search every session's history…">
+                <TextBox.KeyBindings>
+                    <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
+                </TextBox.KeyBindings>
+            </TextBox>
+            <Button Content="Search" Command="{Binding SearchCommand}" IsEnabled="{Binding !IsBusy}" />
+        </StackPanel>
+
+        <TextBlock Grid.Row="1" Margin="0,10,0,6"
+                   Text="{Binding Status}"
+                   Foreground="{DynamicResource FgDim}" />
+
+        <ListBox Grid.Row="2" ItemsSource="{Binding Results}" Background="Transparent">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Button HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Background="Transparent"
+                            Padding="8,6"
+                            Command="{Binding $parent[ListBox].DataContext.OpenResultCommand}"
+                            CommandParameter="{Binding}">
+                        <StackPanel Spacing="2">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{Binding When}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                <TextBlock Text="{Binding SessionId}" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="220" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding Snippet}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Button>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</UserControl>

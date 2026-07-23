@@ -1,3 +1,4 @@
+using Agnes.Abstractions;
 using Agnes.Host.Plugins;
 using Agnes.Host.Projects;
 using Agnes.Host.Sessions;
@@ -16,8 +17,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly PluginManagementService _plugins;
     private readonly ClientCapabilityStore _clientCaps;
     private readonly ReviewCommentStore _reviewComments;
+    private readonly IPluginRegistry<IMemoryIndexProvider> _memoryIndexes;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes)
     {
         _sessions = sessions;
         _schedule = schedule;
@@ -26,6 +28,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _plugins = plugins;
         _clientCaps = clientCaps;
         _reviewComments = reviewComments;
+        _memoryIndexes = memoryIndexes;
     }
 
     public override async Task OnConnectedAsync()
@@ -64,6 +67,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         // Plugin management is always available on a host built with the installer wired up (it is,
         // unconditionally, in Program.cs). Fail-open: a client without it just hides the Plugins screen.
         caps.Add(new HostCapability(HostCapabilityIds.PluginManagement, Available: true, FailClosed: false));
+        // Transcript search is only usable when an index is configured (a durable SQLite store); without one
+        // a search returns empty, so a client can simply hide the screen. Fail-open.
+        caps.Add(new HostCapability(HostCapabilityIds.MemorySearch, _memoryIndexes.All.Count > 0, FailClosed: false));
         return caps;
     }
 
@@ -109,6 +115,14 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task Prompt(PromptRequest request)
         => _sessions.PromptAsync(request.SessionId, request.Content);
+
+    public Task<IReadOnlyList<MemorySearchResult>> SearchMemory(string query, MemorySearchOptionsDto options)
+    {
+        var index = _memoryIndexes.All.FirstOrDefault();
+        return index is null
+            ? Task.FromResult<IReadOnlyList<MemorySearchResult>>([])
+            : index.SearchAsync(query, new MemorySearchOptions(options.Limit, options.SessionId));
+    }
 
     public Task Cancel(string sessionId)
         => _sessions.CancelAsync(sessionId);

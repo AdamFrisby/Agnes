@@ -61,6 +61,11 @@ public interface IAgnesServer
 
     Task Prompt(PromptRequest request);
 
+    /// <summary>Full-text search over this host's session transcripts (see
+    /// <c>.ideas/ops/02-memory-search.md</c>). Returns ranked hits with a highlighted snippet; an empty
+    /// list on a host without a memory index configured.</summary>
+    Task<IReadOnlyList<Abstractions.MemorySearchResult>> SearchMemory(string query, MemorySearchOptionsDto options);
+
     /// <summary>Cancels the in-flight turn for a session (maps to ACP <c>session/cancel</c>).</summary>
     Task Cancel(string sessionId);
 
