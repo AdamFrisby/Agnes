@@ -43,6 +43,22 @@ public class CodexMapTests
         Assert.Equal("Done.", ((TextContent)m.Content).Text);
     }
 
+    // Golden mapping: every Codex item type → the canonical ToolKind taxonomy; an unknown type → Other.
+    [Theory]
+    [InlineData("commandExecution", ToolKind.Execute)]
+    [InlineData("fileChange", ToolKind.Edit)]
+    [InlineData("webSearch", ToolKind.Fetch)]
+    [InlineData("imageView", ToolKind.Read)]
+    [InlineData("mcpToolCall", ToolKind.Other)]
+    [InlineData("somethingNew", ToolKind.Other)]
+    public void Tool_types_map_to_the_canonical_taxonomy(string type, ToolKind expected)
+    {
+        var map = new CodexMap();
+        var events = Started(map, $"{{\"type\":\"{type}\",\"id\":\"x\"}}");
+        var tc = Assert.IsType<ToolCallEvent>(Assert.Single(events));
+        Assert.Equal(expected, tc.Kind);
+    }
+
     [Fact]
     public void Reasoning_becomes_a_thought()
     {

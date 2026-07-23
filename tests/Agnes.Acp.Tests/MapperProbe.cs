@@ -30,4 +30,21 @@ public class MapperProbe
         Assert.Equal("a", diff.OldText);
         Assert.Equal("b", diff.NewText);
     }
+
+    // Golden mapping: every ACP tool `kind` string → the canonical ToolKind taxonomy; unknown/absent → Other.
+    // Locks the convention so a future edit to the switch (or a new ToolKind) can't silently drift.
+    [Theory]
+    [InlineData("read", ToolKind.Read)]
+    [InlineData("edit", ToolKind.Edit)]
+    [InlineData("delete", ToolKind.Delete)]
+    [InlineData("move", ToolKind.Move)]
+    [InlineData("search", ToolKind.Search)]
+    [InlineData("execute", ToolKind.Execute)]
+    [InlineData("think", ToolKind.Think)]
+    [InlineData("fetch", ToolKind.Fetch)]
+    [InlineData("other", ToolKind.Other)]
+    [InlineData("something-new", ToolKind.Other)]
+    [InlineData(null, ToolKind.Other)]
+    public void ToToolKind_maps_acp_kinds_to_the_canonical_taxonomy(string? kind, ToolKind expected)
+        => Assert.Equal(expected, Agnes.Acp.AcpMap.ToToolKind(kind));
 }

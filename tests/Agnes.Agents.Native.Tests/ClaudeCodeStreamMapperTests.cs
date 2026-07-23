@@ -52,6 +52,27 @@ public class ClaudeCodeStreamMapperTests
         Assert.Contains("src/a.cs", tc.Title);
     }
 
+    // Golden mapping: every Claude tool name → the canonical ToolKind taxonomy; an unknown tool → Other.
+    [Theory]
+    [InlineData("Read", ToolKind.Read)]
+    [InlineData("Edit", ToolKind.Edit)]
+    [InlineData("Write", ToolKind.Edit)]
+    [InlineData("MultiEdit", ToolKind.Edit)]
+    [InlineData("NotebookEdit", ToolKind.Edit)]
+    [InlineData("Bash", ToolKind.Execute)]
+    [InlineData("BashOutput", ToolKind.Execute)]
+    [InlineData("Grep", ToolKind.Search)]
+    [InlineData("Glob", ToolKind.Search)]
+    [InlineData("WebFetch", ToolKind.Fetch)]
+    [InlineData("WebSearch", ToolKind.Fetch)]
+    [InlineData("SomeCustomMcpTool", ToolKind.Other)] // an unknown tool falls back to Other (Task is special — it's a subagent)
+    public void Tool_names_map_to_the_canonical_taxonomy(string name, ToolKind expected)
+    {
+        var e = Map($"{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"tool_use\",\"id\":\"t\",\"name\":\"{name}\",\"input\":{{}}}}]}}}}");
+        var tc = Assert.Single(e.OfType<ToolCallEvent>());
+        Assert.Equal(expected, tc.Kind);
+    }
+
     [Fact]
     public void Task_tool_becomes_a_subagent()
     {

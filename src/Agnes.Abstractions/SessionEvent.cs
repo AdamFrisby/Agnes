@@ -2,7 +2,13 @@ using System.Text.Json.Serialization;
 
 namespace Agnes.Abstractions;
 
-/// <summary>How a tool call is classified, for iconography and grouping.</summary>
+/// <summary>
+/// The canonical, cross-adapter classification of a tool call, for iconography and grouping. Every agent
+/// adapter maps its own tool vocabulary onto this taxonomy (ACP <c>kind</c> strings, Codex item types,
+/// Claude tool names), falling back to <see cref="Other"/> for anything it doesn't recognize — each
+/// mapping is locked by golden tests in that adapter's test project. Add a kind here only when a genuinely
+/// new category of tool needs distinct treatment in the UI.
+/// </summary>
 public enum ToolKind
 {
     Read,
