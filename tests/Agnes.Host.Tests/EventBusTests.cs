@@ -116,4 +116,33 @@ public class EventBusTests
         Assert.False(result.IsCanceled);
         Assert.Equal("unchanged", result.Payload);
     }
+
+    [Fact]
+    public async Task A_handler_registered_after_a_warm_dispatch_still_takes_effect()
+    {
+        // Guards the per-type handler cache: the first dispatch warms it, a later registration must
+        // invalidate it so the second dispatch sees the new handler.
+        var bus = new EventBus();
+        await bus.DispatchAsync(new ThingHappened("warm")); // populate the cache for this type with zero handlers
+
+        string? observed = null;
+        bus.Observe(new Observer(e => observed = e.What));
+        await bus.DispatchAsync(new ThingHappened("after"));
+
+        Assert.Equal("after", observed);
+    }
+
+    [Fact]
+    public async Task Equal_order_interceptors_run_in_registration_order()
+    {
+        var bus = new EventBus();
+        var seen = new List<int>();
+        bus.Intercept(new Interceptor(0, e => { seen.Add(1); return ValueTask.CompletedTask; }));
+        bus.Intercept(new Interceptor(0, e => { seen.Add(2); return ValueTask.CompletedTask; }));
+        bus.Intercept(new Interceptor(0, e => { seen.Add(3); return ValueTask.CompletedTask; }));
+
+        await bus.DispatchAsync(new BeforeThing("x"));
+
+        Assert.Equal([1, 2, 3], seen); // stable tiebreak, never load-order-dependent
+    }
 }

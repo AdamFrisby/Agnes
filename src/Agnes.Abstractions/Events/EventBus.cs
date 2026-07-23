@@ -22,7 +22,14 @@ public abstract class CancelableEvent : IAgnesEvent
 }
 
 /// <summary>Runs before an action commits; may mutate the event or cancel it. Lower <see cref="Order"/>
-/// runs first.</summary>
+/// runs first; interceptors with equal <see cref="Order"/> run in registration order (a stable, documented
+/// tiebreak — never load-order-dependent).
+/// <para>
+/// Order convention (so independently-authored plugins compose predictably): negative bands are for
+/// system/security policy that must run first (e.g. an allow-list vetoing before anything else),
+/// <c>0</c> is the default for ordinary plugins, and positive bands are for late/decorative handlers that
+/// want to see the final mutated payload. Keep to these bands rather than inventing arbitrary numbers.
+/// </para></summary>
 public interface IEventInterceptor<in TEvent> where TEvent : IAgnesEvent
 {
     int Order => 0;
@@ -69,6 +76,13 @@ public interface IEventBus
 /// Default thread-safe <see cref="IEventBus"/>. Handlers are matched by assignability (an interceptor for
 /// a base event type runs for derived events, per the contravariant interfaces). Observer exceptions are
 /// isolated so one failing observer can't abort the action or the others.
+/// <para>
+/// The same bus carries both the vetoable command spine and the high-frequency inbound agent-event stream
+/// (every <c>SessionEvent</c> is dispatched here). To keep that hot path cheap, the matched+ordered handler
+/// set is cached per concrete event type; the cache is invalidated (by a generation bump) only when a
+/// handler is registered or unregistered — rare, versus dispatch which is per event. A dispatch for a type
+/// with no matching handlers therefore costs a dictionary lookup, not a locked scan of every registration.
+/// </para>
 /// </summary>
 public sealed class EventBus(Action<Exception>? onObserverError = null) : IEventBus
 {
@@ -77,21 +91,18 @@ public sealed class EventBus(Action<Exception>? onObserverError = null) : IEvent
     private readonly List<Registration> _observers = [];
     private readonly Action<Exception>? _onObserverError = onObserverError;
 
+    // Matched+ordered handlers per concrete event type, rebuilt lazily when the registration generation
+    // changes. ConcurrentDictionary so warm dispatches read without taking _gate.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Match> _cache = new();
+    private long _generation;   // bumped under _gate on every register/unregister
+    private long _sequence;     // monotonic registration id, for a stable Order tiebreak
+
     public async Task<TEvent> DispatchAsync<TEvent>(TEvent evt, CancellationToken cancellationToken = default)
         where TEvent : IAgnesEvent
     {
-        var actualType = evt!.GetType();
+        var match = MatchFor(evt!.GetType());
 
-        Registration[] interceptors;
-        lock (_gate)
-        {
-            interceptors = _interceptors
-                .Where(r => r.EventType.IsAssignableFrom(actualType))
-                .OrderBy(r => r.Order)
-                .ToArray();
-        }
-
-        foreach (var interceptor in interceptors)
+        foreach (var interceptor in match.Interceptors)
         {
             await interceptor.Invoke(evt, cancellationToken).ConfigureAwait(false);
             if (evt is CancelableEvent { IsCanceled: true })
@@ -100,13 +111,7 @@ public sealed class EventBus(Action<Exception>? onObserverError = null) : IEvent
             }
         }
 
-        Registration[] observers;
-        lock (_gate)
-        {
-            observers = _observers.Where(r => r.EventType.IsAssignableFrom(actualType)).ToArray();
-        }
-
-        foreach (var observer in observers)
+        foreach (var observer in match.Observers)
         {
             try
             {
@@ -121,21 +126,61 @@ public sealed class EventBus(Action<Exception>? onObserverError = null) : IEvent
         return evt;
     }
 
-    public IDisposable Intercept<TEvent>(IEventInterceptor<TEvent> interceptor) where TEvent : IAgnesEvent
-        => Add(_interceptors, new Registration(typeof(TEvent), interceptor.Order,
-            (evt, ct) => interceptor.InterceptAsync((TEvent)evt, ct)));
-
-    public IDisposable Observe<TEvent>(IEventObserver<TEvent> observer) where TEvent : IAgnesEvent
-        => Add(_observers, new Registration(typeof(TEvent), 0,
-            (evt, ct) => observer.ObserveAsync((TEvent)evt, ct)));
-
-    private IDisposable Add(List<Registration> list, Registration registration)
+    // Returns the cached matched handler set for a concrete event type, recomputing under the lock only when
+    // the cache is empty for this type or a registration change has bumped the generation since it was built.
+    private Match MatchFor(Type actualType)
     {
-        lock (_gate) { list.Add(registration); }
-        return new Unsubscriber(() => { lock (_gate) { list.Remove(registration); } });
+        if (_cache.TryGetValue(actualType, out var cached) && cached.Generation == Interlocked.Read(ref _generation))
+        {
+            return cached;
+        }
+
+        Match rebuilt;
+        lock (_gate)
+        {
+            rebuilt = new Match(
+                _generation,
+                _interceptors.Where(r => r.EventType.IsAssignableFrom(actualType)).OrderBy(r => r.Order).ThenBy(r => r.Sequence).ToArray(),
+                _observers.Where(r => r.EventType.IsAssignableFrom(actualType)).OrderBy(r => r.Sequence).ToArray());
+        }
+
+        _cache[actualType] = rebuilt;
+        return rebuilt;
     }
 
-    private sealed record Registration(Type EventType, int Order, Func<IAgnesEvent, CancellationToken, ValueTask> Invoke);
+    public IDisposable Intercept<TEvent>(IEventInterceptor<TEvent> interceptor) where TEvent : IAgnesEvent
+        => Add(_interceptors, typeof(TEvent), interceptor.Order,
+            (evt, ct) => interceptor.InterceptAsync((TEvent)evt, ct));
+
+    public IDisposable Observe<TEvent>(IEventObserver<TEvent> observer) where TEvent : IAgnesEvent
+        => Add(_observers, typeof(TEvent), 0,
+            (evt, ct) => observer.ObserveAsync((TEvent)evt, ct));
+
+    private IDisposable Add(List<Registration> list, Type eventType, int order, Func<IAgnesEvent, CancellationToken, ValueTask> invoke)
+    {
+        Registration registration;
+        lock (_gate)
+        {
+            registration = new Registration(eventType, order, ++_sequence, invoke);
+            list.Add(registration);
+            _generation++; // invalidate the per-type cache
+        }
+
+        return new Unsubscriber(() =>
+        {
+            lock (_gate)
+            {
+                if (list.Remove(registration))
+                {
+                    _generation++;
+                }
+            }
+        });
+    }
+
+    private sealed record Registration(Type EventType, int Order, long Sequence, Func<IAgnesEvent, CancellationToken, ValueTask> Invoke);
+
+    private sealed record Match(long Generation, Registration[] Interceptors, Registration[] Observers);
 
     private sealed class Unsubscriber(Action dispose) : IDisposable
     {
