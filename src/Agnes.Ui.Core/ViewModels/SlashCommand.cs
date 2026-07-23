@@ -1,7 +1,11 @@
 namespace Agnes.Ui.Core.ViewModels;
 
-/// <summary>A reusable prompt invoked by typing "/name" in the composer.</summary>
-public sealed record SlashCommand(string Name, string Description, string Expansion)
+/// <summary>
+/// A reusable prompt invoked by typing "/name" in the composer. Built-ins expand inline; a library
+/// <see cref="Agnes.Abstractions.PromptTemplate"/> also carries <see cref="SendImmediately"/> (InsertAndSend)
+/// and <see cref="IsBroken"/> (its referenced prompt was deleted — surfaced, never silently empty).
+/// </summary>
+public sealed record SlashCommand(string Name, string Description, string Expansion, bool SendImmediately = false, bool IsBroken = false)
 {
     /// <summary>Built-in commands available in every session.</summary>
     public static readonly IReadOnlyList<SlashCommand> BuiltIns =

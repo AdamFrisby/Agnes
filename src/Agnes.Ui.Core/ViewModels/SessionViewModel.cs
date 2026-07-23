@@ -24,6 +24,10 @@ public sealed class SessionViewModel : ObservableObject
     private readonly IUiDispatcher _dispatcher;
     private readonly IPromptStore _prompts;
     private readonly IPermissionPolicy _policy;
+
+    // The host's prompt library, loaded lazily so typing a template's slash token (e.g. /review) expands it.
+    private IReadOnlyList<Agnes.Abstractions.LibraryPrompt> _libraryPrompts = [];
+    private IReadOnlyList<Agnes.Abstractions.PromptTemplate> _promptTemplates = [];
     private readonly TranscriptBuilder _transcript = new();
     private readonly Dictionary<string, ToolEntry> _tools = new();
     private readonly Dictionary<string, string> _permissionTitles = new();
@@ -172,6 +176,30 @@ public sealed class SessionViewModel : ObservableObject
         };
         ModifiedFiles.CollectionChanged += (_, _) => SyncReviewDiffs();
         _ = ReviewComments.LoadAsync();
+        _ = LoadPromptTemplatesAsync();
+    }
+
+    /// <summary>
+    /// Loads the host's saved prompts + slash-token templates so typing a template's token in the composer
+    /// expands it. Best-effort: a host without a library simply has none, so failures are swallowed.
+    /// </summary>
+    private async Task LoadPromptTemplatesAsync()
+    {
+        try
+        {
+            var prompts = await _host.GetPromptsAsync().ConfigureAwait(false);
+            var templates = await _host.GetPromptTemplatesAsync().ConfigureAwait(false);
+            _dispatcher.Post(() =>
+            {
+                _libraryPrompts = prompts;
+                _promptTemplates = templates;
+                UpdateSlash();
+            });
+        }
+        catch
+        {
+            // Templates are a convenience; a host without a prompt library just offers none.
+        }
     }
 
     /// <summary>The project-scoped review comments surfaced for this session (grouped by file).</summary>
@@ -886,9 +914,23 @@ public sealed class SessionViewModel : ObservableObject
 
     private void ApplySlash(SlashCommand? command)
     {
-        if (command is not null)
+        if (command is null)
         {
-            PromptText = command.Expansion;
+            return;
+        }
+
+        if (command.IsBroken)
+        {
+            // The referenced prompt is gone: surface the breakage in the composer rather than inserting
+            // nothing (AC: a broken template is visibly broken, never silently empty).
+            PromptText = $"[broken template /{command.Name}: referenced prompt was deleted]";
+            return;
+        }
+
+        PromptText = command.Expansion;
+        if (command.SendImmediately && SendCommand.CanExecute(null))
+        {
+            SendCommand.Execute(null);
         }
     }
 
@@ -902,6 +944,26 @@ public sealed class SessionViewModel : ObservableObject
             foreach (var c in SlashCommand.BuiltIns.Where(c => c.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase)))
             {
                 SlashSuggestions.Add(c);
+            }
+
+            foreach (var template in _promptTemplates)
+            {
+                var token = template.SlashToken.TrimStart('/');
+                if (!token.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var prompt = _libraryPrompts.FirstOrDefault(p => p.Id == template.PromptId);
+                if (prompt is null)
+                {
+                    SlashSuggestions.Add(new SlashCommand(token, "⚠ broken template — referenced prompt was deleted", string.Empty, IsBroken: true));
+                }
+                else
+                {
+                    var send = template.Behavior == Agnes.Abstractions.TemplateBehavior.InsertAndSend;
+                    SlashSuggestions.Add(new SlashCommand(token, send ? $"{prompt.Title} (send)" : prompt.Title, prompt.MarkdownBody, SendImmediately: send));
+                }
             }
         }
 

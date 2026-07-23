@@ -653,6 +653,89 @@
                                 </ItemsControl>
                             </StackPanel>
 
+                    <!-- Prompts: saved reusable prompts + slash-token templates that expand them -->
+                    <StackPanel IsVisible="{Binding CatPrompts}">
+                        <StackPanel DataContext="{Binding PromptLibrary}" Spacing="14">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Prompts" />
+                                <Button Grid.Column="2" Content="Refresh" Command="{Binding RefreshCommand}" Classes="seg" />
+                            </Grid>
+                            <TextBlock Classes="scopeNote"
+                                       Text="Save prompts you retype, then bind a slash token (e.g. /review) that inserts one in the composer — or inserts and sends it." />
+
+                            <!-- Prompt editor -->
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Title" />
+                                <TextBox Text="{Binding PromptTitle, Mode=TwoWay}" Watermark="e.g. Security review" FontSize="12" Padding="8,5" CornerRadius="6" />
+                                <TextBlock Classes="fieldLabel" Text="Prompt body" />
+                                <TextBox Text="{Binding PromptBody, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"
+                                         Watermark="Review this diff for security issues…" FontSize="12" Padding="8,5" CornerRadius="6" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Content="Save prompt" Command="{Binding SavePromptCommand}" Classes="seg" />
+                                    <Button Content="New" Command="{Binding NewPromptCommand}" Classes="seg" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Saved prompts -->
+                            <ItemsControl ItemsSource="{Binding Prompts}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                                <TextBlock Grid.Column="0" Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Content="Edit" Classes="seg"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.EditPromptCommand}" CommandParameter="{Binding}" />
+                                                <Button Grid.Column="2" Content="Delete" Classes="seg" Margin="6,0,0,0"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.DeletePromptCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Template editor -->
+                            <TextBlock Classes="sectionTitle" Text="Templates" FontSize="14" />
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Slash token" />
+                                <TextBox Text="{Binding TemplateToken, Mode=TwoWay}" Watermark="/review" FontSize="12" Padding="8,5" CornerRadius="6"
+                                         FontFamily="{StaticResource MonoFont}" />
+                                <TextBlock Classes="fieldLabel" Text="Inserts prompt" />
+                                <ComboBox ItemsSource="{Binding Prompts}" SelectedValue="{Binding TemplatePromptId, Mode=TwoWay}"
+                                          SelectedValueBinding="{Binding Id}" HorizontalAlignment="Stretch" FontSize="12">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Title}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <CheckBox IsChecked="{Binding TemplateSendImmediately, Mode=TwoWay}" Content="Send immediately (Insert and send)" FontSize="12" />
+                                <Button Content="Save template" Command="{Binding SaveTemplateCommand}" Classes="seg" HorizontalAlignment="Left" />
+                            </StackPanel>
+
+                            <!-- Saved templates -->
+                            <ItemsControl ItemsSource="{Binding Templates}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                                <TextBlock Grid.Column="0" Text="{Binding SlashToken, StringFormat='/{0}'}" Foreground="{DynamicResource Accent}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="12" Width="90" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="{Binding TargetLabel}" FontSize="12" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource FgDim}" IsVisible="{Binding !IsBroken}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding TargetLabel}" FontSize="12" VerticalAlignment="Center"
+                                                           Foreground="#E5484D" IsVisible="{Binding IsBroken}" />
+                                                <TextBlock Grid.Column="2" Text="send" FontSize="10" Foreground="{DynamicResource Good}" Margin="0,0,8,0"
+                                                           VerticalAlignment="Center" IsVisible="{Binding SendImmediately}" />
+                                                <Button Grid.Column="3" Content="Delete" Classes="seg"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.DeleteTemplateCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
                             <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
                         </StackPanel>
                     </StackPanel>

@@ -20,8 +20,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly ReviewCommentStore _reviewComments;
     private readonly IPluginRegistry<IMemoryIndexProvider> _memoryIndexes;
     private readonly BugReportRouter _bugReports;
+    private readonly PromptLibrary _prompts;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts)
     {
         _sessions = sessions;
         _schedule = schedule;
@@ -32,6 +33,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _reviewComments = reviewComments;
         _memoryIndexes = memoryIndexes;
         _bugReports = bugReports;
+        _prompts = prompts;
     }
 
     public override async Task OnConnectedAsync()
@@ -233,4 +235,27 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<Abstractions.BugReportResult> SubmitBugReport(BugReportDto report)
         => _bugReports.SubmitAsync(new Abstractions.BugReport(
             report.Title, report.Summary, report.CurrentBehavior, report.ExpectedBehavior, DiagnosticPayload: null));
+    public Task<IReadOnlyList<Abstractions.LibraryPrompt>> GetPrompts()
+        => Task.FromResult(_prompts.List());
+
+    public Task<Abstractions.LibraryPrompt> SavePrompt(Abstractions.LibraryPrompt prompt)
+        => Task.FromResult(_prompts.Save(prompt));
+
+    public Task DeletePrompt(string id)
+    {
+        _prompts.Delete(id);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<Abstractions.PromptTemplate>> GetPromptTemplates()
+        => Task.FromResult(_prompts.ListTemplates());
+
+    public Task<Abstractions.PromptTemplate> SavePromptTemplate(Abstractions.PromptTemplate template)
+        => Task.FromResult(_prompts.SaveTemplate(template));
+
+    public Task DeletePromptTemplate(string token)
+    {
+        _prompts.DeleteTemplate(token);
+        return Task.CompletedTask;
+    }
 }

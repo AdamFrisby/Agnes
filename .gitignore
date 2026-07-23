@@ -499,3 +499,6 @@ scratch-shots/
 
 # Native app bundles produced by build.sh / build.ps1
 /builds/
+
+# Claude Code local worktrees, settings, and scratch
+.claude/

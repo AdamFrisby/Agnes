@@ -174,6 +174,27 @@ public interface IAgnesServer
     /// <summary>Submits a user-authored bug report to the host's configured sink. The typed result carries a
     /// created issue URL, a prefilled browser-fallback URL, and/or likely-duplicate issues to comment on.</summary>
     Task<Abstractions.BugReportResult> SubmitBugReport(BugReportDto report);
+    // ---- prompt library (see .ideas/extensibility/02-prompts-skills-library.md) ----
+    // Host-persisted saved prompts + slash-token templates, driven over the wire so any paired client can
+    // manage the library on the host. The abstractions records are simple and cross the wire directly.
+
+    /// <summary>The host's saved prompts.</summary>
+    Task<IReadOnlyList<Abstractions.LibraryPrompt>> GetPrompts();
+
+    /// <summary>Upserts a saved prompt (assigning an id when blank) and returns the stored prompt.</summary>
+    Task<Abstractions.LibraryPrompt> SavePrompt(Abstractions.LibraryPrompt prompt);
+
+    /// <summary>Deletes a saved prompt by id.</summary>
+    Task DeletePrompt(string id);
+
+    /// <summary>The host's slash-token templates.</summary>
+    Task<IReadOnlyList<Abstractions.PromptTemplate>> GetPromptTemplates();
+
+    /// <summary>Upserts a template keyed by its slash token and returns the stored template.</summary>
+    Task<Abstractions.PromptTemplate> SavePromptTemplate(Abstractions.PromptTemplate template);
+
+    /// <summary>Deletes a template by slash token.</summary>
+    Task DeletePromptTemplate(string token);
 }
 
 /// <summary>

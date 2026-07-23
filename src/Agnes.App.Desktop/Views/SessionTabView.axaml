@@ -1380,7 +1380,10 @@
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
                                                         <TextBlock Text="{Binding Name, StringFormat='/{0}'}" Foreground="{DynamicResource Accent}"
                                                                    FontFamily="{StaticResource MonoFont}" FontSize="12" Width="90" />
-                                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="12" />
+                                                        <TextBlock Text="{Binding Description}" FontSize="12"
+                                                                   Foreground="{DynamicResource FgDim}" IsVisible="{Binding !IsBroken}" />
+                                                        <TextBlock Text="{Binding Description}" FontSize="12"
+                                                                   Foreground="#E5484D" IsVisible="{Binding IsBroken}" />
                                                     </StackPanel>
                                                 </Button>
                                             </DataTemplate>

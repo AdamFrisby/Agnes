@@ -164,6 +164,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             new SettingsCategoryVm("plugins", "Plugins", "🧩", "plugin plugins extension nuget install uninstall browse marketplace capability consent provider adapter transport voice notification enable disable configure"),
             // Help
             new SettingsCategoryVm("bugreport", "Report a bug", "🐞", "bug report issue github feedback problem crash diagnostics support help"),
+            new SettingsCategoryVm("prompts", "Prompts", "📝", "prompt prompts template templates slash token library saved snippet reuse review insert send"),
         ];
         SettingsCategories[0].IsSelected = true;
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
@@ -209,6 +210,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         MemorySearch.OpenRequested += OpenMemoryResult;
         OpenSearchCommand = new RelayCommand(OpenSearch);
         BugReport = new BugReportViewModel(ActiveHost, _dispatcher, OpenInBrowser);
+        PromptLibrary = new PromptLibraryViewModel(ActiveHost, _dispatcher);
     }
 
     /// <summary>The plugin-management surface for the active host (Browse / install / configure / enable).</summary>
@@ -234,6 +236,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // Opening the browser is best-effort.
         }
     }
+    /// <summary>The prompt-library surface for the active host (saved prompts + slash-token templates).</summary>
+    public PromptLibraryViewModel PromptLibrary { get; }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
     public IRelayCommand ClosePaletteCommand { get; }
@@ -593,6 +597,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatProjects => SettingsCategory == "projects";
     public bool CatPlugins => SettingsCategory == "plugins";
     public bool CatBugReport => SettingsCategory == "bugreport";
+    public bool CatPrompts => SettingsCategory == "prompts";
 
     /// <summary>The connected host these host-scoped settings apply to (e.g. GitHub, Devices, Projects).</summary>
     public string ActiveHostName => ActiveHttpHost() is { } t
@@ -615,6 +620,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatProjects));
         OnPropertyChanged(nameof(CatPlugins));
         OnPropertyChanged(nameof(CatBugReport));
+        OnPropertyChanged(nameof(CatPrompts));
         OnPropertyChanged(nameof(ActiveHostName));
         if (value == "projects" && SelectedProject is null)
         {
@@ -632,6 +638,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         else if (value == "plugins")
         {
             _ = Plugins.RefreshInstalledAsync();
+        }
+        else if (value == "prompts")
+        {
+            _ = PromptLibrary.RefreshAsync();
         }
     }
 
