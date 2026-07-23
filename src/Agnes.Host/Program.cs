@@ -168,6 +168,25 @@ var promptLibraryDir = builder.Configuration["Agnes:PromptLibraryDir"]
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.PromptLibrary(
     promptLibraryDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.PromptLibrary>()));
 
+// ---- connected services: named, multi-profile provider credentials (.ideas/providers/02) ----
+// A parallel surface to the sandbox git-credential broker (NOT a replacement): a user connects a provider
+// account once, names it as a ConnectedServiceProfile, and any host can materialise a short-lived credential
+// for it just-in-time. The template provider is a harmless placeholder stub (no network) that proves the
+// plugin point end-to-end; a real provider (GitHub/Linear/…) is added as another IConnectedServiceProvider
+// with NO change to the broker. The profile store holds identity/routing only — never a secret.
+var connectedServicesDir = builder.Configuration["Agnes:ConnectedServicesDir"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.ConnectedServiceProfileStore(
+    connectedServicesDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.ConnectedServiceProfileStore>()));
+var templateServiceSecret = builder.Configuration["Agnes:ConnectedServices:Template:Token"];
+builder.Services.AddSingleton<IConnectedServiceProvider>(_ =>
+    new Agnes.Host.Hosting.TemplateConnectedServiceProvider(
+        secretLookup: _ => templateServiceSecret ?? "template-placeholder-token"));
+builder.Services.AddPluginPoint<IConnectedServiceProvider>(p => p.Id);
+builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.ConnectedServiceBroker(
+    sp.GetRequiredService<Agnes.Host.Hosting.ConnectedServiceProfileStore>(),
+    sp.GetRequiredService<IPluginRegistry<IConnectedServiceProvider>>()));
+
 // ---- external attention requests (extensibility/06): the generic human-in-the-loop webhook API ----
 // A public REST surface ( /v1/attention-requests ) lets any external system create a "please ask a human"
 // entry that surfaces in the SAME approvals inbox as internal session permissions; the answer is delivered
