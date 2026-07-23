@@ -233,6 +233,9 @@ public sealed class HostConnection : IAgnesHost
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RespondPermission), new PermissionResponseRequest(sessionId, requestId, optionId));
 
+    public Task AnswerAttentionRequestAsync(string requestId, string answer)
+        => _hub.InvokeAsync(nameof(IAgnesServer.AnswerAttentionRequest), new AttentionAnswerRequest(requestId, answer));
+
     public Task AnswerQuestionAsync(string sessionId, string requestId, IReadOnlyList<Agnes.Abstractions.QuestionAnswer> answers)
         => _hub.InvokeAsync(nameof(IAgnesServer.AnswerQuestion), new QuestionAnswerRequest(sessionId, requestId,
             answers.Select(a => new QuestionAnswerDto(a.QuestionId, a.SelectedLabels, a.Notes)).ToList()));

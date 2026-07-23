@@ -426,15 +426,38 @@ public sealed record InboxRun(
     string Summary,
     DateTimeOffset CompletedAt);
 
-/// <summary>An open permission request still waiting on a human, surfaced in the cross-session approvals
-/// list (notifications/02 tier 1). Aggregated from a session's <c>PermissionRequestedEvent</c>s that have no
-/// matching <c>PermissionResolvedEvent</c>; carries the originating session so a client can jump to it.</summary>
+/// <summary>What produced an open approval: an in-session agent permission request, or an external
+/// attention request created over the public REST API (extensibility/06). Lets one inbox carry both.</summary>
+public enum OpenApprovalKind
+{
+    /// <summary>An agent tool-call permission request originating inside an Agnes session.</summary>
+    SessionPermission,
+
+    /// <summary>An external system's "ask a human" request created over <c>/v1/attention-requests</c>.</summary>
+    ExternalAttention,
+}
+
+/// <summary>An open request still waiting on a human, surfaced in the cross-session approvals list
+/// (notifications/02 tier 1). Aggregated from a session's <c>PermissionRequestedEvent</c>s that have no
+/// matching <c>PermissionResolvedEvent</c> — and, additively, from Pending external attention requests
+/// (extensibility/06). The trailing <paramref name="Kind"/>/<paramref name="Source"/>/<paramref name="Options"/>
+/// fields are optional with back-compatible defaults, so an existing consumer that only reads the first five
+/// (and treats every entry as a session permission) is unaffected. For an external request
+/// <paramref name="SessionId"/> is null (there is no session to jump to), <paramref name="Kind"/> is
+/// <see cref="OpenApprovalKind.ExternalAttention"/>, and <paramref name="Source"/> labels the caller.</summary>
 public sealed record OpenApproval(
-    string SessionId,
+    string? SessionId,
     string RequestId,
     string Title,
     string ToolCallId,
-    DateTimeOffset RequestedAt);
+    DateTimeOffset RequestedAt,
+    OpenApprovalKind Kind = OpenApprovalKind.SessionPermission,
+    string? Source = null,
+    IReadOnlyList<string>? Options = null);
+
+/// <summary>A human's answer to an external attention request, sent from any Agnes client. Answered by
+/// request id alone (there is no session) with the chosen option text.</summary>
+public sealed record AttentionAnswerRequest(string RequestId, string Answer);
 
 /// <summary>A user-authored bug report sent from a client. Deliberately has NO diagnostic-payload field:
 /// the owner-only host-log attachment is deferred, so the client never sends one and the host maps this to a
