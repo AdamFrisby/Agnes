@@ -1,6 +1,8 @@
 using System.Windows.Input;
+using Agnes.Abstractions;
 using Agnes.App.Desktop.Persistence;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.App.Desktop.ViewModels;
 
@@ -36,6 +38,10 @@ public interface ITabController
     /// <summary>Whether a host can be removed by the user (built-in Simulated/Recorded hosts can't).</summary>
     bool IsForgettableHost(string url);
     Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true);
+
+    /// <summary>Force a fresh (cache-bypassing) provider login-state check for one agent on the tab's host,
+    /// returning its refreshed status (or null when the agent has no reliable signal).</summary>
+    Task<ProviderAuthStatus?> CheckAgentAuthAsync(SessionDocument doc, string adapterId);
     void BackToHosts(SessionDocument doc);
 
     /// <summary>Persist tab metadata (rename / pin / tag) after an in-tab change.</summary>
@@ -105,11 +111,19 @@ public sealed record PaletteItem(string Label, string Hint, System.Action Invoke
 /// the session only opens when the user presses "Start session" (no surprise auto-progress).</summary>
 public sealed partial class AgentChoice : ObservableObject
 {
-    public AgentChoice(string displayName, string adapterId, bool available = true)
+    // Forces a fresh (cache-bypassing) auth check on the host and returns the refreshed status, or null when
+    // the agent has no reliable login signal. Null delegate = this host doesn't support auth checks.
+    private readonly Func<Task<ProviderAuthStatus?>>? _checkAuth;
+
+    public AgentChoice(string displayName, string adapterId, bool available = true,
+        ProviderAuthStatus? auth = null, Func<Task<ProviderAuthStatus?>>? checkAuth = null)
     {
         DisplayName = displayName;
         AdapterId = adapterId;
         Available = available;
+        _auth = auth;
+        _checkAuth = checkAuth;
+        CheckAuthCommand = new AsyncRelayCommand(CheckAuthAsync, () => _checkAuth is not null && !IsChecking);
     }
 
     public string DisplayName { get; }
@@ -123,4 +137,61 @@ public sealed partial class AgentChoice : ObservableObject
     private bool _isSelected;
 
     public string StatusText => Available ? AdapterId : $"{AdapterId} · not installed on host";
+
+    // ---- provider login state (only shown when the adapter reports a reliable signal) ----
+
+    /// <summary>The CLI's machine-local login state, or null when the adapter has no reliable signal (no badge).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAuth))]
+    [NotifyPropertyChangedFor(nameof(IsLoggedIn))]
+    [NotifyPropertyChangedFor(nameof(IsLoggedOut))]
+    [NotifyPropertyChangedFor(nameof(AuthBadgeText))]
+    [NotifyPropertyChangedFor(nameof(AuthTooltip))]
+    private ProviderAuthStatus? _auth;
+
+    /// <summary>True while a "Check now" probe is in flight (disables the button, shows progress).</summary>
+    [ObservableProperty]
+    private bool _isChecking;
+
+    partial void OnIsCheckingChanged(bool value) => CheckAuthCommand.NotifyCanExecuteChanged();
+
+    /// <summary>Forces a fresh login-state check (bypassing any cached status).</summary>
+    public IAsyncRelayCommand CheckAuthCommand { get; }
+
+    /// <summary>Whether this host can check login state at all (drives the "Check now" button's visibility).</summary>
+    public bool CanCheckAuth => _checkAuth is not null;
+
+    /// <summary>Whether there's a login badge to show — false means "no reliable signal", so show nothing.</summary>
+    public bool HasAuth => Auth is not null;
+
+    public bool IsLoggedIn => Auth is { IsLoggedIn: true };
+    public bool IsLoggedOut => Auth is { IsLoggedIn: false };
+
+    public string AuthBadgeText => Auth is null ? string.Empty : Auth.IsLoggedIn ? "signed in" : "not signed in";
+
+    public string? AuthTooltip => Auth switch
+    {
+        null => null,
+        { IsLoggedIn: true } a => a.Method is { Length: > 0 } m ? $"Signed in ({m})" : "Signed in",
+        { Issue: { Length: > 0 } issue } => issue,
+        _ => "Not signed in",
+    };
+
+    private async Task CheckAuthAsync()
+    {
+        if (_checkAuth is null)
+        {
+            return;
+        }
+
+        IsChecking = true;
+        try
+        {
+            Auth = await _checkAuth().ConfigureAwait(true);
+        }
+        finally
+        {
+            IsChecking = false;
+        }
+    }
 }

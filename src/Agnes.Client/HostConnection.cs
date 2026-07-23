@@ -88,6 +88,9 @@ public sealed class HostConnection : IAgnesHost
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync()
         => _hub.InvokeAsync<IReadOnlyList<AgentInfo>>(nameof(IAgnesServer.ListAgents));
 
+    public Task<AgentInfo> CheckAuthStatusAsync(string adapterId)
+        => _hub.InvokeAsync<AgentInfo>(nameof(IAgnesServer.CheckAuthStatus), adapterId);
+
     public Task<IReadOnlyList<HostCapability>> GetCapabilitiesAsync()
         => _hub.InvokeAsync<IReadOnlyList<HostCapability>>(nameof(IAgnesServer.GetCapabilities));
 

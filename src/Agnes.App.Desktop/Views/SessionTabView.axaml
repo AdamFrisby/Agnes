@@ -612,8 +612,27 @@
                                                 <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
                                                            FontFamily="{StaticResource MonoFont}" />
                                             </StackPanel>
-                                            <TextBlock Grid.Column="1" Text="✓" Foreground="{DynamicResource Accent}" FontWeight="Bold"
-                                                       FontSize="14" VerticalAlignment="Center" IsVisible="{Binding IsSelected}" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <!-- Login badge: only shown when the adapter reports a reliable signal (HasAuth).
+                                                     Dot goes green when signed in; the label + tooltip carry the detail. -->
+                                                <Border IsVisible="{Binding HasAuth}" CornerRadius="9" Padding="7,2" VerticalAlignment="Center"
+                                                        Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                        ToolTip.Tip="{Binding AuthTooltip}">
+                                                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                                        <Border Classes="dot" Classes.on="{Binding IsLoggedIn}" Width="7" Height="7"
+                                                                CornerRadius="4" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding AuthBadgeText}" Foreground="{DynamicResource FgDim}" FontSize="10" />
+                                                    </StackPanel>
+                                                </Border>
+                                                <!-- Force a fresh, cache-bypassing login check. -->
+                                                <Button Content="Check now" Command="{Binding CheckAuthCommand}" IsVisible="{Binding CanCheckAuth}"
+                                                        Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
+                                                        BorderThickness="1" CornerRadius="6" Padding="8,2" FontSize="10" VerticalAlignment="Center"
+                                                        ToolTip.Tip="Check whether this agent is signed in on the host"
+                                                        AutomationProperties.Name="Check login status" />
+                                                <TextBlock Text="✓" Foreground="{DynamicResource Accent}" FontWeight="Bold"
+                                                           FontSize="14" VerticalAlignment="Center" IsVisible="{Binding IsSelected}" />
+                                            </StackPanel>
                                         </Grid>
                                     </Button>
                                 </DataTemplate>

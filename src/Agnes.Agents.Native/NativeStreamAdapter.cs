@@ -20,6 +20,10 @@ public sealed record NativeLaunchSpec
     /// (see <see cref="IAgentAdapter.IsRecoverableCredentialFault"/>). Null when this CLI's credentials
     /// can't expire mid-session.</summary>
     public Func<string, bool>? CredentialFaultClassifier { get; init; }
+
+    /// <summary>Probes the CLI's machine-local login state (see <see cref="IAgentAdapter.GetAuthStatusAsync"/>).
+    /// Null when this CLI has no reliable login signal — the adapter then reports no auth status (no badge).</summary>
+    public Func<CancellationToken, Task<ProviderAuthStatus?>>? AuthStatusProbe { get; init; }
 }
 
 /// <summary>
@@ -43,6 +47,9 @@ public sealed class NativeStreamAdapter : IAgentAdapter
     public bool IsAvailable() => AgentCommand.IsOnPath(_spec.Command);
 
     public bool IsRecoverableCredentialFault(string errorMessage) => _spec.CredentialFaultClassifier?.Invoke(errorMessage) ?? false;
+
+    public Task<ProviderAuthStatus?> GetAuthStatusAsync(CancellationToken cancellationToken = default)
+        => _spec.AuthStatusProbe?.Invoke(cancellationToken) ?? Task.FromResult<ProviderAuthStatus?>(null);
 
     public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {

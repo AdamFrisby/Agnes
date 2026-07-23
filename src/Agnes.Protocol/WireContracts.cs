@@ -61,12 +61,15 @@ public sealed record UsageInfo(UsageMetrics Metrics)
     [JsonIgnore] public string? Summary => Metrics.CostUsd is > 0 ? $"${Metrics.CostUsd:0.####}" : null;
 }
 
-/// <summary>An agent kind available on a host (a loaded adapter plugin).</summary>
+/// <summary>An agent kind available on a host (a loaded adapter plugin). <see cref="Auth"/> is the CLI's
+/// machine-local login state when the adapter reports one, or null when it has no reliable signal — in which
+/// case the picker shows no auth badge (only the installed/not-installed <see cref="Available"/> signal).</summary>
 public sealed record AgentInfo(
     string AdapterId,
     string DisplayName,
     string? Version,
-    bool Available);
+    bool Available,
+    ProviderAuthStatus? Auth = null);
 
 /// <summary>
 /// Whether one plugin-point id is populated on this host, from <c>GetCapabilities()</c>. Lets a

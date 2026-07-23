@@ -1681,6 +1681,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             doc.Host = agnesHost;
             _ = NegotiateCapabilitiesAsync(agnesHost);
             WireStatus(doc, agnesHost);
+            // Keep this tab's picker badges live: a background probe or another client's "Check now" pushes
+            // OnAgentsChanged, which we fold back into the agent list.
+            agnesHost.AgentsChanged += agents => _dispatcher.Post(() => doc.UpdateAgentsAuth(agents));
 
             var agents = await agnesHost.ListAgentsAsync();
             // Learn whether this host can sandbox, so the new-session screen can default the toggle on.
@@ -1701,6 +1704,25 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         finally
         {
             _dispatcher.Post(() => doc.IsConnectingHost = false);
+        }
+    }
+
+    public async Task<Agnes.Abstractions.ProviderAuthStatus?> CheckAgentAuthAsync(SessionDocument doc, string adapterId)
+    {
+        if (doc.Host is not { } host)
+        {
+            return null;
+        }
+
+        try
+        {
+            var info = await host.CheckAuthStatusAsync(adapterId);
+            return info.Auth;
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => doc.StatusText = $"Couldn't check login status — {ex.Message}");
+            return null;
         }
     }
 
