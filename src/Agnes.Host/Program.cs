@@ -22,6 +22,18 @@ builder.Services.AddSignalR(o => o.EnableDetailedErrors = true);
 // or tunnel transport can be added as a plugin. This governs reachability/address advertisement only — the
 // SignalR hub binding below is unchanged.
 builder.Services.AddSingleton<ITransportProvider, DirectTransportProvider>();
+// Tailscale: one-click tailnet exposure via `tailscale serve` (tailnet-only, default) or `tailscale funnel`
+// (public, opt-in). Registered as a plugin so Agnes:Transport:Provider=tailscale selects it; Direct stays
+// the default. See .ideas/connectivity/01-relay-and-tunneling.md.
+builder.Services.AddSingleton<ITailscaleCli>(_ => new TailscaleCli());
+builder.Services.AddSingleton(new TailscaleTransportOptions
+{
+    Funnel = builder.Configuration.GetValue("Agnes:Transport:Tailscale:Funnel", false),
+    HttpsPort = builder.Configuration.GetValue("Agnes:Transport:Tailscale:HttpsPort", 443),
+    HubPort = builder.Configuration.GetValue<int?>("Agnes:Transport:Tailscale:HubPort", null),
+});
+builder.Services.AddSingleton<ITransportProvider>(sp =>
+    new TailscaleTransportProvider(sp.GetRequiredService<ITailscaleCli>(), sp.GetRequiredService<TailscaleTransportOptions>()));
 builder.Services.AddPluginPoint<ITransportProvider>(t => t.Id);
 
 // CORS for a browser-hosted frontend (Uno WASM) reaching the hub cross-origin. The web client
@@ -1392,10 +1404,23 @@ var transport = transports.Find(transportName)
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     var bound = app.Urls.Count > 0 ? app.Urls.ToArray() : ["(host default binding)"];
-    var endpoint = transport.Describe(new HostExposureContext(bound));
-    app.Logger.LogInformation("Transport '{Transport}' ({Hint}): clients reach this host at {Addresses}.",
-        transport.DisplayName, endpoint.DisplayHint, string.Join(", ", endpoint.ClientAddresses));
+    try
+    {
+        // ExposeAsync actively brings a tunnel transport up (e.g. runs `tailscale serve`); Direct just
+        // echoes the bound addresses. Block here so a misconfigured transport fails loudly at startup with an
+        // actionable error rather than silently leaving the host unreachable/unintended (AC6).
+        var endpoint = transport.ExposeAsync(new HostExposureContext(bound)).GetAwaiter().GetResult();
+        app.Logger.LogInformation("Transport '{Transport}' ({Hint}): clients reach this host at {Addresses}.",
+            transport.DisplayName, endpoint.DisplayHint, string.Join(", ", endpoint.ClientAddresses));
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogCritical(ex, "Transport '{Transport}' could not be exposed — stopping. {Message}",
+            transport.DisplayName, ex.Message);
+        app.Lifetime.StopApplication();
+    }
 });
+app.Lifetime.ApplicationStopping.Register(() => transport.StopAsync().GetAwaiter().GetResult());
 
 app.Run();
 

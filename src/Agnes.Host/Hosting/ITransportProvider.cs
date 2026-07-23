@@ -29,6 +29,20 @@ public interface ITransportProvider
 
     /// <summary>Describes the address(es) clients should be given for this transport.</summary>
     TransportEndpoint Describe(HostExposureContext context);
+
+    /// <summary>
+    /// Actively brings this transport up and returns the address(es) clients should dial. For a passive
+    /// transport (e.g. <see cref="DirectTransportProvider"/>) this is just <see cref="Describe"/>; a tunnel
+    /// transport that has to configure an external tool (e.g. <c>tailscale serve</c>) does the real work here
+    /// and must throw a clear, actionable error rather than silently falling back if it cannot expose the host
+    /// (see <c>.ideas/connectivity/01-relay-and-tunneling.md</c> AC6). Default: passive — returns
+    /// <see cref="Describe"/>.
+    /// </summary>
+    Task<TransportEndpoint> ExposeAsync(HostExposureContext context, CancellationToken ct = default)
+        => Task.FromResult(Describe(context));
+
+    /// <summary>Tears down anything <see cref="ExposeAsync"/> established. Default: nothing to tear down.</summary>
+    Task StopAsync(CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>Built-in: clients connect directly to the host's own bound listener (today's behavior).</summary>
