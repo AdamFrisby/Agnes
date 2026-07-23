@@ -221,6 +221,27 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<string> UploadAttachment(string sessionId, string fileName, byte[] data)
         => _sessions.UploadAttachmentAsync(sessionId, fileName, data);
 
+    public Task<IReadOnlyList<FileEntry>> ListDirectory(string sessionId, string relativePath)
+        => _sessions.ListDirectoryAsync(sessionId, relativePath);
+
+    public Task<FileContent> ReadFile(string sessionId, string relativePath)
+        => _sessions.ReadFileAsync(sessionId, relativePath);
+
+    public Task WriteFile(string sessionId, string relativePath, string content)
+        => _sessions.WriteFileAsync(sessionId, relativePath, content);
+
+    public Task CreateDirectory(string sessionId, string relativePath)
+        => _sessions.CreateDirectoryAsync(sessionId, relativePath);
+
+    public Task RenameEntry(string sessionId, string fromRelativePath, string toRelativePath)
+        => _sessions.RenameEntryAsync(sessionId, fromRelativePath, toRelativePath);
+
+    public Task DeleteEntry(string sessionId, string relativePath)
+        => _sessions.DeleteEntryAsync(sessionId, relativePath);
+
+    public Task<byte[]> DownloadFile(string sessionId, string relativePath)
+        => _sessions.DownloadFileAsync(sessionId, relativePath);
+
     public Task<ScheduledTask> ScheduleTask(ScheduleTaskRequest request)
         => _schedule.AddAsync(request);
 

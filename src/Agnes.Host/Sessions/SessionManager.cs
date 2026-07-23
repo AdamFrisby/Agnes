@@ -1650,6 +1650,51 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
+    // ---- file browser (see .ideas/git-and-files/03-attachments-and-file-browser.md) ----
+    // Structured file ops over the session's working directory. Each delegates to Files.WorkspaceBrowser,
+    // which routes every client-supplied relative path through the shared Files.WorkspacePaths guard, so a
+    // `..`-escaping path is rejected before any disk access — the same guard UploadAttachmentAsync uses.
+
+    /// <summary>Lists a directory in the session's workspace (empty path = the root), directories first.</summary>
+    public Task<IReadOnlyList<Agnes.Protocol.FileEntry>> ListDirectoryAsync(string sessionId, string relativePath)
+        => Task.FromResult(Files.WorkspaceBrowser.List(WorkingDirectoryOf(sessionId), relativePath));
+
+    /// <summary>Reads a file in the session's workspace for preview (text, or bytes + mime for an image).</summary>
+    public Task<Agnes.Protocol.FileContent> ReadFileAsync(string sessionId, string relativePath)
+        => Task.FromResult(Files.WorkspaceBrowser.Read(WorkingDirectoryOf(sessionId), relativePath));
+
+    /// <summary>Writes UTF-8 text to a file in the session's workspace (quick edit without an agent turn).</summary>
+    public Task WriteFileAsync(string sessionId, string relativePath, string content)
+    {
+        Files.WorkspaceBrowser.Write(WorkingDirectoryOf(sessionId), relativePath, content);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Creates a directory (and any missing parents) in the session's workspace.</summary>
+    public Task CreateDirectoryAsync(string sessionId, string relativePath)
+    {
+        Files.WorkspaceBrowser.CreateDirectory(WorkingDirectoryOf(sessionId), relativePath);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Renames/moves a file or directory within the session's workspace.</summary>
+    public Task RenameEntryAsync(string sessionId, string fromRelativePath, string toRelativePath)
+    {
+        Files.WorkspaceBrowser.Rename(WorkingDirectoryOf(sessionId), fromRelativePath, toRelativePath);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Deletes a file or directory (recursively) from the session's workspace.</summary>
+    public Task DeleteEntryAsync(string sessionId, string relativePath)
+    {
+        Files.WorkspaceBrowser.Delete(WorkingDirectoryOf(sessionId), relativePath);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Reads a workspace file's raw bytes for download.</summary>
+    public Task<byte[]> DownloadFileAsync(string sessionId, string relativePath)
+        => Task.FromResult(Files.WorkspaceBrowser.Download(WorkingDirectoryOf(sessionId), relativePath));
+
     /// <summary>The session's current read state (highest-viewed sequence + sticky-unread flag).</summary>
     public (long ReadCursor, bool StickyUnread) GetReadState(string sessionId)
         => StateOrNull(sessionId) is { } s ? (s.ReadCursor, s.StickyUnread) : (0, false);

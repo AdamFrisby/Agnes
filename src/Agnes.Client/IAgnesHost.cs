@@ -213,6 +213,34 @@ public interface IAgnesHost : IAsyncDisposable
     /// workspace-relative path to reference in a prompt.</summary>
     Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data);
 
+    // ---- file browser (see .ideas/git-and-files/03-attachments-and-file-browser.md) ----
+    // Structured file ops over the session's working directory. Defaulted so hosts/fixtures that predate the
+    // file browser stay compilable: reads default empty/unavailable, mutations no-op.
+
+    /// <summary>Lists a directory in the session's workspace (empty path = the root), directories first.
+    /// Default empty for hosts without a file browser.</summary>
+    Task<IReadOnlyList<FileEntry>> ListDirectoryAsync(string sessionId, string relativePath)
+        => Task.FromResult<IReadOnlyList<FileEntry>>([]);
+
+    /// <summary>Reads a file in the session's workspace for preview.</summary>
+    Task<FileContent> ReadFileAsync(string sessionId, string relativePath)
+        => throw new NotSupportedException("This host does not support the file browser.");
+
+    /// <summary>Writes UTF-8 text to a workspace file (quick edit without an agent turn).</summary>
+    Task WriteFileAsync(string sessionId, string relativePath, string content) => Task.CompletedTask;
+
+    /// <summary>Creates a directory (and any missing parents) in the workspace.</summary>
+    Task CreateDirectoryAsync(string sessionId, string relativePath) => Task.CompletedTask;
+
+    /// <summary>Renames/moves a file or directory within the workspace.</summary>
+    Task RenameEntryAsync(string sessionId, string fromRelativePath, string toRelativePath) => Task.CompletedTask;
+
+    /// <summary>Deletes a file or directory (recursively) from the workspace.</summary>
+    Task DeleteEntryAsync(string sessionId, string relativePath) => Task.CompletedTask;
+
+    /// <summary>Reads a workspace file's raw bytes for download. Default empty for hosts without a browser.</summary>
+    Task<byte[]> DownloadFileAsync(string sessionId, string relativePath) => Task.FromResult<byte[]>([]);
+
     /// <summary>Schedules a recurring background task.</summary>
     Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request);
 

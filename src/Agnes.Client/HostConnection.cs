@@ -209,6 +209,27 @@ public sealed class HostConnection : IAgnesHost
     public Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data)
         => _hub.InvokeAsync<string>(nameof(IAgnesServer.UploadAttachment), sessionId, fileName, data);
 
+    public Task<IReadOnlyList<FileEntry>> ListDirectoryAsync(string sessionId, string relativePath)
+        => _hub.InvokeAsync<IReadOnlyList<FileEntry>>(nameof(IAgnesServer.ListDirectory), sessionId, relativePath);
+
+    public Task<FileContent> ReadFileAsync(string sessionId, string relativePath)
+        => _hub.InvokeAsync<FileContent>(nameof(IAgnesServer.ReadFile), sessionId, relativePath);
+
+    public Task WriteFileAsync(string sessionId, string relativePath, string content)
+        => _hub.InvokeAsync(nameof(IAgnesServer.WriteFile), sessionId, relativePath, content);
+
+    public Task CreateDirectoryAsync(string sessionId, string relativePath)
+        => _hub.InvokeAsync(nameof(IAgnesServer.CreateDirectory), sessionId, relativePath);
+
+    public Task RenameEntryAsync(string sessionId, string fromRelativePath, string toRelativePath)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RenameEntry), sessionId, fromRelativePath, toRelativePath);
+
+    public Task DeleteEntryAsync(string sessionId, string relativePath)
+        => _hub.InvokeAsync(nameof(IAgnesServer.DeleteEntry), sessionId, relativePath);
+
+    public Task<byte[]> DownloadFileAsync(string sessionId, string relativePath)
+        => _hub.InvokeAsync<byte[]>(nameof(IAgnesServer.DownloadFile), sessionId, relativePath);
+
     public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request)
         => _hub.InvokeAsync<ScheduledTask>(nameof(IAgnesServer.ScheduleTask), request);
 

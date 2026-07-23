@@ -435,6 +435,28 @@ public sealed record GitOperationResult(bool Success, string Message);
 /// <summary>A request to leave a review comment on a project's file at a specific line.</summary>
 public sealed record AddReviewCommentRequest(string ProjectId, string FilePath, int LineNumber, string LineHash, string Text);
 
+// ---- file browser (see .ideas/git-and-files/03-attachments-and-file-browser.md) ----
+// A structured RPC surface over the session's working directory. Every path is workspace-relative and is
+// validated host-side (WorkspacePaths.ResolveWithin) before touching disk, so a `..`-escaping path is
+// rejected rather than served.
+
+/// <summary>One entry in a browsed directory. <see cref="RelativePath"/> is workspace-relative and
+/// POSIX-separated; <see cref="Size"/> is 0 for directories; times are UTC.</summary>
+public sealed record FileEntry(string Name, string RelativePath, bool IsDirectory, long Size, DateTimeOffset ModifiedAt);
+
+/// <summary>How a browsed file's body is carried back to the client for preview (text + image only for a
+/// first version; anything else is reported as opaque <see cref="Binary"/> with no body).</summary>
+public enum FileContentKind
+{
+    Text,
+    Image,
+    Binary,
+}
+
+/// <summary>The content of a browsed file. Text files carry <see cref="Text"/>; recognised images carry
+/// <see cref="Bytes"/> + <see cref="MimeType"/>; opaque binaries carry neither (only <see cref="Size"/>).</summary>
+public sealed record FileContent(string RelativePath, FileContentKind Kind, string? Text, byte[]? Bytes, string? MimeType, long Size);
+
 /// <summary>
 /// A recurring background task: run <see cref="Prompt"/> on a schedule. <see cref="Kind"/> selects the
 /// trigger — <c>interval</c> (every <see cref="IntervalSeconds"/>) or <c>cron</c> (<see cref="CronExpression"/>

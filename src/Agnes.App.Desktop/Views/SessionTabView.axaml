@@ -170,6 +170,10 @@
                                 Content="Event log" Background="Transparent" Foreground="{DynamicResource FgDim}"
                                 BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Show the raw event log" AutomationProperties.Name="Toggle raw event log" />
+                        <Button Command="{Binding Session.ToggleFileBrowserCommand}"
+                                Content="Files" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                ToolTip.Tip="Browse the session's working directory" AutomationProperties.Name="Toggle file browser" />
                         <!-- real context-window usage the agent reported (bar only when the window is known) -->
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                     IsVisible="{Binding Usage.HasAnyContext, FallbackValue=false}"
@@ -1870,6 +1874,16 @@
                 Background="{DynamicResource Bg}"
                 BorderBrush="{DynamicResource Panel}" BorderThickness="0,1,0,0">
             <views:TerminalPanelView DataContext="{Binding Session.Terminal}" />
+        </Border>
+
+        <!-- Workspace file browser (git-and-files/03): a right-docked, show/hide panel over the session.
+             All list/read/write/rename/delete/download + path-safety lives host-side; the framework-agnostic
+             FileBrowserViewModel drives it. -->
+        <Border Grid.Row="1" HorizontalAlignment="Right" Width="520"
+                IsVisible="{Binding Session.IsFileBrowserVisible}"
+                Background="{DynamicResource Bg}"
+                BorderBrush="{DynamicResource Panel}" BorderThickness="1,0,0,0">
+            <views:FileBrowserView DataContext="{Binding Session.FileBrowser}" />
         </Border>
     </Grid>
 </UserControl>
