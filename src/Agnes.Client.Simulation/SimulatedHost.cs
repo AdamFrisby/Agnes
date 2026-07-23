@@ -81,6 +81,19 @@ public sealed class SimulatedHost : IAgnesHost
     public SimulatedHost(string hostUrl = "sim://demo") => HostUrl = hostUrl;
 
     public string HostUrl { get; }
+
+    /// <summary>Each simulated host is a distinct server in the client's aggregate, so its URL doubles as its
+    /// stable id (matching the real host default). Two <see cref="SimulatedHost"/>s with different URLs are two
+    /// independent servers.</summary>
+    public string HostId => HostUrl;
+
+    /// <summary>The transport this host would be reached through, classified from its URL — so an
+    /// <c>agnes-relay://</c>-addressed simulated host reports Relay and a tailnet name reports Tailscale.</summary>
+    public ClientTransportKind Transport => ClientTransport.Classify(HostUrl);
+
+    /// <summary>The sessions currently open/subscribed on this host, for the cross-host session aggregate.</summary>
+    public IReadOnlyCollection<SessionView> Sessions => _sessions.Values.Select(s => s.View).ToArray();
+
     public AgnesConnectionState State { get; private set; } = AgnesConnectionState.Disconnected;
     public event Action<AgnesConnectionState>? StateChanged;
 

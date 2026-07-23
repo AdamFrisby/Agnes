@@ -22,6 +22,20 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>The host's base URL (also used as the pool key).</summary>
     string HostUrl { get; }
 
+    /// <summary>Stable, transport-agnostic identity of this host — what a session is attributed to so a
+    /// same-named session reached through two different servers is never conflated (multi-server support,
+    /// <c>connectivity/02</c>). Defaults to <see cref="HostUrl"/> for hosts/fixtures that don't advertise a
+    /// distinct id; a relay connection reports the routed host-id instead of the synthetic relay URL.</summary>
+    string HostId => HostUrl;
+
+    /// <summary>Which client transport reaches this host, read off its address scheme (Direct LAN URL,
+    /// <c>agnes-relay://</c>, or a tailnet <c>*.ts.net</c> name). Defaults to classifying <see cref="HostUrl"/>.</summary>
+    ClientTransportKind Transport => ClientTransport.Classify(HostUrl);
+
+    /// <summary>The sessions this connection currently holds a live view of, for the client's cross-host
+    /// session aggregate. Default empty for hosts/fixtures that don't track subscribed views.</summary>
+    IReadOnlyCollection<SessionView> Sessions => [];
+
     AgnesConnectionState State { get; }
 
     /// <summary>Raised when <see cref="State"/> changes.</summary>
@@ -494,4 +508,8 @@ public interface IAgnesConnector
 
     /// <summary>Currently known hosts.</summary>
     IReadOnlyCollection<IAgnesHost> Hosts { get; }
+
+    /// <summary>Removes a host from the pool and disposes its connection, leaving every other host untouched.
+    /// Default no-op for connectors that don't support removal.</summary>
+    Task RemoveAsync(string hostUrl) => Task.CompletedTask;
 }

@@ -15,6 +15,30 @@ public sealed class AgnesClient : IAsyncDisposable
     /// <summary>All currently connected hosts, keyed by URL.</summary>
     public IReadOnlyCollection<HostConnection> Hosts => _hosts.Values.ToArray();
 
+    /// <summary>
+    /// A per-host status snapshot across the pool — the host-list surface. Each entry carries the host's
+    /// identity, the transport reaching it (which can differ host to host — one Direct-LAN, one via relay, one
+    /// via Tailscale), its independent connection state, and its session count.
+    /// </summary>
+    public IReadOnlyList<HostStatus> HostStatuses =>
+        _hosts.Values
+            .Select(h => new HostStatus(h.HostId, h.HostUrl, h.Transport, h.State, h.Sessions.Count))
+            .ToArray();
+
+    /// <summary>
+    /// The union of sessions across every pooled host, each tagged with the host it lives on. Because a session
+    /// id is unique only within a host, the tag is what keeps a same-named session on two different hosts
+    /// distinct in the aggregate.
+    /// </summary>
+    public IReadOnlyList<HostSessionRef> AllSessions =>
+        _hosts.Values
+            .SelectMany(h => h.Sessions.Select(s => new HostSessionRef(h.HostId, h.HostUrl, h.Transport, s)))
+            .ToArray();
+
+    /// <summary>Looks up a pooled host by the URL it was added with, or null if it isn't in the pool.</summary>
+    public HostConnection? FindHost(string hostUrl)
+        => _hosts.TryGetValue(hostUrl.TrimEnd('/'), out var host) ? host : null;
+
     /// <summary>Adds and connects a host. Returns the existing connection if already added.</summary>
     public async Task<HostConnection> AddHostAsync(
         string hostUrl,
@@ -55,6 +79,27 @@ public sealed class AgnesClient : IAsyncDisposable
         {
             await connection.DisposeAsync();
         }
+    }
+
+    /// <summary>
+    /// Reconnects a single pooled host in place, independently of the others. Auto-reconnect already covers
+    /// transient drops; this is the explicit path for when it has given up (or a host is re-added). One host's
+    /// reconnect never disturbs another's connection — each <see cref="HostConnection"/> owns its own hub.
+    /// Returns the (re)connected host, or null if <paramref name="hostUrl"/> isn't in the pool.
+    /// </summary>
+    public async Task<HostConnection?> ReconnectHostAsync(string hostUrl, CancellationToken cancellationToken = default)
+    {
+        if (!_hosts.TryGetValue(hostUrl.TrimEnd('/'), out var connection))
+        {
+            return null;
+        }
+
+        if (connection.State != AgnesConnectionState.Connected)
+        {
+            await connection.ConnectAsync(cancellationToken);
+        }
+
+        return connection;
     }
 
     public async ValueTask DisposeAsync()
