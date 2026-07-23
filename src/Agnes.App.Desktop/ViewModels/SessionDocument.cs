@@ -15,7 +15,7 @@ namespace Agnes.App.Desktop.ViewModels;
 /// session — so the host is a per-tab primitive, not a window-wide setting. Also carries the
 /// per-tab status (connection state + usage) for the tab's status bar.
 /// </summary>
-public sealed partial class SessionDocument : Document
+public sealed partial class SessionDocument : Document, ITraySession
 {
     private readonly ITabController _controller;
 
@@ -543,4 +543,8 @@ public sealed partial class SessionDocument : Document
     public SessionActivity Activity => Session?.Activity ?? SessionActivity.Idle;
     public string ActivityText => Session?.ActivityText ?? string.Empty;
     public bool NeedsAttention => Session?.NeedsAttention ?? false;
+
+    /// <summary>The live session's id, or empty until one is attached (ITraySession — feeds the tray's
+    /// jump-to-session menu).</summary>
+    public string SessionId => Session?.SessionId ?? string.Empty;
 }

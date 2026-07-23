@@ -1639,6 +1639,26 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         return false;
     }
 
+    /// <summary>Brings the given session's tab to the front (main window or a detached window). Used by the
+    /// system-tray menu to jump straight to a session needing attention. Returns true if a session was found
+    /// and activated.</summary>
+    public bool ActivateSessionById(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            return false;
+        }
+
+        var doc = AllDocuments().FirstOrDefault(d => d.Session?.SessionId == sessionId);
+        if (doc is null)
+        {
+            return false;
+        }
+
+        FocusDocument(doc);
+        return true;
+    }
+
     private static void RevealAnchor(SessionDocument doc, AppNotification notification)
     {
         if (!string.IsNullOrEmpty(notification.AnchorId))

@@ -10,6 +10,10 @@ namespace Agnes.App.Desktop;
 
 public partial class App : Application
 {
+    // Held for the app's lifetime so the tray icon + its menu aren't garbage-collected. Null when the
+    // platform has no usable system tray (the app still runs, just without a tray presence).
+    private TrayPresence? _tray;
+
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
@@ -47,6 +51,11 @@ public partial class App : Application
             window.Closing += (_, _) => SaveWindowGeometry(window, viewModel);
 
             desktop.MainWindow = window;
+
+            // Additive system-tray presence: aggregate session status + jump-to-session, and close-to-tray.
+            // Fully guarded — a desktop environment without tray support just gets no tray, no crash.
+            _tray = TrayPresence.TryInstall(this, desktop, window, viewModel);
+
             _ = viewModel.RestoreAsync();
             _ = viewModel.CheckForUpdatesAsync();
         }
