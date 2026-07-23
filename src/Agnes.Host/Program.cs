@@ -1,6 +1,7 @@
 using Agnes.Abstractions;
 using Agnes.Acp;
 using Agnes.Host.Attention;
+using Agnes.Host.Channels;
 using Agnes.Agents.ClaudeCode;
 using Agnes.Agents.OpenCode;
 using Agnes.Host.Events;
@@ -353,12 +354,34 @@ builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
 builder.Services.AddSingleton<SessionManager>();
 
 // ---- channel bridges (see .ideas/extensibility/04-channel-bridges.md) ----
-// A bridge (Telegram/Slack/…) is a plugin: no real network transport ships in-box (deferred — the interface
-// + linking/authorization + spine-driven outbound and inbound routing are what's wired here). The notifier
-// observes the spine to push permission requests to linked chats; the router funnels an authorized inbound
-// "allow" through the same approval path a paired client uses. Both are eagerly resolved at startup so their
-// subscriptions bind. A concrete IChannelBridge (with its transport) registers as an AddSingleton before the
-// plugin point below and needs no change to any of this.
+// A bridge (Slack/Discord/WhatsApp/…) is a plugin. The notifier observes the spine to push permission requests
+// to linked chats; the router funnels an authorized inbound "allow" through the same approval path a paired
+// client uses. Both are eagerly resolved at startup so their subscriptions bind. A concrete IChannelBridge
+// (with its transport) registers as an AddSingleton<IChannelBridge> before the plugin point below and needs no
+// change to any of this. Each real bridge is CONFIG-GATED: it is only registered when its credential block is
+// present under Agnes:Channels:<Bridge>:*, so an unconfigured bridge simply doesn't exist (its webhook 404s).
+// All tokens/secrets come from host settings — see appsettings / FromConfiguration on each options record.
+if (Agnes.Host.Channels.SlackBridgeOptions.FromConfiguration(builder.Configuration) is { } slackOptions)
+{
+    builder.Services.AddSingleton<IChannelBridge>(sp => new Agnes.Host.Channels.SlackBridge(
+        new HttpClient(), slackOptions, sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.SlackBridge>()));
+}
+
+if (Agnes.Host.Channels.DiscordBridgeOptions.FromConfiguration(builder.Configuration) is { } discordOptions)
+{
+    builder.Services.AddSingleton<IChannelBridge>(sp => new Agnes.Host.Channels.DiscordBridge(
+        new HttpClient(), discordOptions,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.DiscordBridge>()));
+}
+
+if (Agnes.Host.Channels.WhatsAppBridgeOptions.FromConfiguration(builder.Configuration) is { } whatsAppOptions)
+{
+    builder.Services.AddSingleton<IChannelBridge>(sp => new Agnes.Host.Channels.WhatsAppBridge(
+        new HttpClient(), whatsAppOptions,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.WhatsAppBridge>()));
+}
+
 builder.Services.AddPluginPoint<IChannelBridge>(b => b.Id);
 var channelLinksFile = builder.Configuration["Agnes:ChannelLinksFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "channel-links.json");
@@ -1007,6 +1030,12 @@ app.MapDelete("/devices/{id}", async (HttpContext ctx, string id) =>
 // Authenticated with an Agnes device token and scoped per caller (a request is only readable via the token
 // that created it). Answering happens over the hub, from the shared approvals inbox.
 app.MapAttentionEndpoints(tokens, app.Services.GetRequiredService<Agnes.Host.Attention.AttentionRequestService>());
+
+// ---- channel-bridge inbound webhooks (extensibility/04) ----
+// One endpoint per real bridge (Slack events, Discord interactions, WhatsApp Cloud API). Each verifies its
+// platform signature inside the bridge before raising an inbound message; an unconfigured bridge isn't in the
+// registry, so its endpoint 404s. Authorization of a verified message stays in ChannelBridgeRouter.
+app.MapChannelBridgeEndpoints(app.Services.GetRequiredService<IPluginRegistry<IChannelBridge>>());
 
 // ---- MCP server management (requires a valid token; mirrors /devices) ----
 var mcp = app.Services.GetRequiredService<McpRegistry>();
