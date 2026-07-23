@@ -36,6 +36,10 @@ public sealed partial class SessionDocument : Document, ITraySession
         SelectAgentChoiceCommand = new RelayCommand<AgentChoice>(SelectAgentChoice);
         SelectModelChoiceCommand = new RelayCommand<ModelChoice>(SelectModelChoice);
         StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => SelectedAgent is { Available: true });
+        // Direct/watch sessions (sessions/02): find sessions a CLI created outside Agnes, then watch one read-only.
+        DiscoverExternalSessionsCommand = new AsyncRelayCommand(() => _controller.DiscoverExternalSessionsAsync(this));
+        WatchExternalSessionCommand = new AsyncRelayCommand<Agnes.Abstractions.ExternalSessionInfo>(
+            e => e is null ? Task.CompletedTask : _controller.WatchExternalSessionAsync(this, e));
 
         Tags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTags));
 
@@ -315,6 +319,37 @@ public sealed partial class SessionDocument : Document, ITraySession
     public IRelayCommand<AgentChoice> SelectAgentChoiceCommand { get; }
     public IAsyncRelayCommand StartSessionCommand { get; }
     public IRelayCommand BackCommand { get; }
+
+    // ---- Direct/watch sessions (sessions/02): sessions a CLI created outside Agnes ----
+    public IAsyncRelayCommand DiscoverExternalSessionsCommand { get; }
+    public IAsyncRelayCommand<Agnes.Abstractions.ExternalSessionInfo> WatchExternalSessionCommand { get; }
+
+    /// <summary>Sessions the CLI created outside Agnes for this working directory (from
+    /// <see cref="DiscoverExternalSessionsCommand"/>) — each offers a read-only "Watch".</summary>
+    public ObservableCollection<Agnes.Abstractions.ExternalSessionInfo> DiscoveredSessions { get; } = [];
+
+    public bool HasDiscoveredSessions => DiscoveredSessions.Count > 0;
+
+    private string _discoverStatus = string.Empty;
+
+    /// <summary>A short status line for the discovery action (count found / none / error).</summary>
+    public string DiscoverStatus
+    {
+        get => _discoverStatus;
+        set => SetProperty(ref _discoverStatus, value);
+    }
+
+    /// <summary>Replaces the discovered-session list (marshalled onto the UI thread by the caller).</summary>
+    public void ShowDiscoveredSessions(IEnumerable<Agnes.Abstractions.ExternalSessionInfo> sessions)
+    {
+        DiscoveredSessions.Clear();
+        foreach (var session in sessions)
+        {
+            DiscoveredSessions.Add(session);
+        }
+
+        OnPropertyChanged(nameof(HasDiscoveredSessions));
+    }
 
     // ---- session management: rename / pin / tag / archive / duplicate / fork ----
     public IRelayCommand BeginRenameCommand { get; }

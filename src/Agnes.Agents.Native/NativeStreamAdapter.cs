@@ -31,7 +31,7 @@ public sealed record NativeLaunchSpec
 /// and drives it via a <see cref="INativeStreamMapper"/>. Mirrors the ACP adapter's process handling
 /// but reads the CLI's JSONL stdout itself. Reusable across CLIs (Claude Code today; others next).
 /// </summary>
-public sealed class NativeStreamAdapter : IAgentAdapter
+public class NativeStreamAdapter : IAgentAdapter
 {
     private readonly NativeLaunchSpec _spec;
     private readonly ILoggerFactory _loggerFactory;

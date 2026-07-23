@@ -105,6 +105,12 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
         => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox, request.ModelId);
 
+    public Task<IReadOnlyList<Abstractions.ExternalSessionInfo>> DiscoverExternalSessions(string workspaceDirectory)
+        => _sessions.DiscoverExternalSessionsAsync(workspaceDirectory);
+
+    public Task<SessionInfo> AttachExternalSession(string adapterId, string externalId)
+        => _sessions.AttachExternalSessionAsync(adapterId, externalId);
+
     public Task<ForkPlan?> ProposeFork(string sessionId)
         => Task.FromResult(_sessions.ProposeFork(sessionId));
 

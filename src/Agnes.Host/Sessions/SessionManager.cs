@@ -80,6 +80,10 @@ public sealed class SessionManager : IAsyncDisposable
         // The send policy applied to a busy-send. Durable per session (survives an agent relaunch, which
         // rebuilds the live HostSession); re-applied to the live session on (re)attach.
         public SendPolicy SendPolicy = SendPolicy.QueueInAgent;
+
+        // Direct/watch session: a read-only live tail of a CLI session Agnes did not start (sessions/02). Its
+        // agent handle only tails an on-disk log — sending to it is rejected, and no crash-recovery is wired.
+        public bool ReadOnly;
     }
 
     /// <summary>The session's metadata entry, created on first write.</summary>
@@ -87,6 +91,9 @@ public sealed class SessionManager : IAsyncDisposable
 
     /// <summary>The session's metadata entry if it exists, else null (a non-creating read).</summary>
     private SessionState? StateOrNull(string sessionId) => _state.TryGetValue(sessionId, out var s) ? s : null;
+
+    /// <summary>Whether the session is a read-only Direct/watch of a CLI session Agnes did not start (sessions/02).</summary>
+    private bool IsReadOnly(string sessionId) => StateOrNull(sessionId)?.ReadOnly ?? false;
 
     /// <summary>Idempotent teardown of one session's brokered wiring and metadata — the single place that
     /// forgets a session so no store is left holding a stale entry. Callers additionally handle the live
@@ -444,6 +451,87 @@ public sealed class SessionManager : IAsyncDisposable
         await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionOpenedEvent(info.SessionId, adapterId), cancellationToken).ConfigureAwait(false);
         return info;
     }
+
+    // ---- Direct (external / "watch") sessions — .ideas/sessions/02-direct-vs-synced-sessions.md ----
+    // Discovery + read-only watch of sessions a CLI created OUTSIDE Agnes (from the CLI's own on-disk logs).
+    // Discovery unions across discovery-capable adapters; a watch tails the CLI's log into a fresh, read-only
+    // Agnes session so all the normal snapshot/tail/multi-client machinery applies — without ever writing to
+    // the underlying CLI.
+
+    private const string ReadOnlyRejectionMessage =
+        "This is a read-only view of a session running outside Agnes — watching only, so sending is disabled. " +
+        "Adopt it to continue the conversation in Agnes.";
+
+    /// <summary>
+    /// Discovers sessions the installed CLIs created on their own (outside Agnes) for
+    /// <paramref name="workspaceDirectory"/>, unioned across every adapter that implements
+    /// <see cref="IExternalSessionSource"/>. Adapters without the capability contribute nothing (graceful), and
+    /// a failing adapter is skipped rather than failing the whole query. Most-recent first.
+    /// </summary>
+    public async Task<IReadOnlyList<ExternalSessionInfo>> DiscoverExternalSessionsAsync(string workspaceDirectory, CancellationToken cancellationToken = default)
+    {
+        var discovered = new List<ExternalSessionInfo>();
+        foreach (var adapter in _adapters.All)
+        {
+            if (adapter is not IExternalSessionSource source)
+            {
+                continue;
+            }
+
+            try
+            {
+                discovered.AddRange(await source.DiscoverAsync(workspaceDirectory, cancellationToken).ConfigureAwait(false));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "External-session discovery failed for adapter {AdapterId}", adapter.Descriptor.Id);
+            }
+        }
+
+        return discovered.OrderByDescending(s => s.LastActivity).ToArray();
+    }
+
+    /// <summary>
+    /// Opens a live, <b>read-only</b> Agnes session that watches the external CLI session
+    /// <paramref name="externalId"/> (from <see cref="DiscoverExternalSessionsAsync"/>): the adapter tails the
+    /// CLI's own log and its events are pumped into a new Agnes session log, so snapshot/tail/multi-client all
+    /// work — but the session is flagged read-only, so prompts are rejected and the underlying CLI is never
+    /// disturbed. The watch is live-only (not persisted for cross-restart resume): a Direct session is honestly
+    /// unavailable once the host is offline.
+    /// </summary>
+    public async Task<SessionInfo> AttachExternalSessionAsync(string adapterId, string externalId, CancellationToken cancellationToken = default)
+    {
+        if (_adapters.Find(adapterId) is not IExternalSessionSource source)
+        {
+            throw new InvalidOperationException($"Agent '{adapterId}' can't watch externally-created sessions.");
+        }
+
+        var attachment = await source.AttachExternalSessionAsync(externalId, cancellationToken).ConfigureAwait(false);
+        var sessionId = Guid.NewGuid().ToString("n");
+        State(sessionId).ReadOnly = true;
+
+        var session = TrackSession(sessionId, adapterId, attachment.WorkspaceDirectory, attachment.Session, wireLifecycle: false);
+        _logger.LogInformation("Watching external session {ExternalId} on {AdapterId} as read-only session {SessionId}", externalId, adapterId, sessionId);
+
+        var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        return new SessionInfo(sessionId, adapterId, attachment.WorkspaceDirectory, head,
+            session.Modes, session.CurrentModeId, Sandbox: null, SkipPermissions: false, Project: null, ReadOnly: true);
+    }
+
+    /// <summary>
+    /// SEAM (stretch, sessions/02): promote a read-only external watch into a fully-owned, <b>writable</b> Agnes
+    /// session going forward — importing its transcript into a new event-sourced session and resuming the CLI's
+    /// conversation under Agnes's control. The read-only import (discover + watch) is complete; the
+    /// write-continuation is deliberately left unimplemented rather than faked, because it needs the adapter to
+    /// resume a conversation from an <em>external</em> id, which no adapter yet exposes as a resume source (a
+    /// CLI-log id isn't the same as the agent-reported session id Agnes resumes with today). Wiring this is the
+    /// natural next step: import the watched session's events, then <c>StartSessionAsync</c> with a
+    /// resume-from-external option once an adapter offers one.
+    /// </summary>
+    public Task<SessionInfo> AdoptExternalSessionAsync(string adapterId, string externalId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            "Folding an external session into a writable Agnes session isn't supported yet: watching it read-only " +
+            "works now, but continuing it requires the adapter to resume the external conversation id, which isn't yet exposed.");
 
     /// <summary>
     /// The shared open path: resolve the project, ensure a checkout, provision (or adopt) a sandbox,
@@ -1002,23 +1090,29 @@ public sealed class SessionManager : IAsyncDisposable
     private static bool LooksResumable(string? agentSessionId)
         => !string.IsNullOrEmpty(agentSessionId) && agentSessionId.Contains('-', StringComparison.Ordinal);
 
-    /// <summary>Builds a <see cref="HostSession"/>, wires crash-recovery, and tracks it as the live session.</summary>
-    private HostSession TrackSession(string sessionId, string adapterId, string workingDirectory, IAgentSession agent)
+    /// <summary>Builds a <see cref="HostSession"/>, wires crash-recovery, and tracks it as the live session.
+    /// <paramref name="wireLifecycle"/> is false for a read-only Direct/watch session (sessions/02): its agent
+    /// only tails an on-disk log, so crash-recovery, id-persistence, title-refresh and credential-recovery must
+    /// NOT fire (they'd try to relaunch a real CLI). The event pump still appends + broadcasts the tailed
+    /// events, so snapshot/tail/multi-client all work.</summary>
+    private HostSession TrackSession(string sessionId, string adapterId, string workingDirectory, IAgentSession agent, bool wireLifecycle = true)
     {
         var session = new HostSession(
             sessionId, adapterId, workingDirectory, agent, _store, _broadcaster,
-            _loggerFactory.CreateLogger<HostSession>(), _bus)
+            _loggerFactory.CreateLogger<HostSession>(), _bus);
+        if (wireLifecycle)
         {
-            Faulted = () => _ = RecoverAgentAsync(sessionId),
+            session.Faulted = () => _ = RecoverAgentAsync(sessionId);
             // Persist the agent's real session id the moment it reports one, so --resume works reliably.
-            AgentSessionStarted = id => _ = UpdateAgentSessionIdAsync(sessionId, id),
+            session.AgentSessionStarted = id => _ = UpdateAgentSessionIdAsync(sessionId, id);
             // After each turn, refresh the agent's auto-generated title (Claude's on-disk aiTitle).
-            TurnCompleted = () => _ = MaybeUpdateTitleAsync(sessionId),
+            session.TurnCompleted = () => _ = MaybeUpdateTitleAsync(sessionId);
             // A credential fault the agent classifies as recoverable (e.g. a revoked/expired OAuth token
             // after the host rotated it): relaunch with freshly-materialized credentials so the new
             // process picks up a valid token.
-            AgentError = message => _ = MaybeRecoverCredentialsAsync(sessionId, message),
-        };
+            session.AgentError = message => _ = MaybeRecoverCredentialsAsync(sessionId, message);
+        }
+
         // Re-apply the session's chosen send policy to the (possibly freshly rebuilt) live session.
         if (StateOrNull(sessionId) is { } state)
         {
@@ -1441,6 +1535,14 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
     {
+        // A read-only Direct/watch session (sessions/02) must never send to the underlying CLI — reject the
+        // prompt before it can reach the (tail-only) agent handle, surfacing why in the session log.
+        if (IsReadOnly(sessionId))
+        {
+            await AppendNoticeAsync(sessionId, ReadOnlyRejectionMessage, isError: true).ConfigureAwait(false);
+            return;
+        }
+
         // The event spine: a plugin interceptor may rewrite the prompt or veto it before it's sent.
         var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforePromptEvent(sessionId, content)).ConfigureAwait(false);
         if (before.IsCanceled)
@@ -1571,7 +1673,15 @@ public sealed class SessionManager : IAsyncDisposable
 
     /// <summary>Submits a message under the session's send policy: queued, sent now, or interrupt-and-send.</summary>
     public async Task EnqueuePendingMessageAsync(string sessionId, IReadOnlyList<ContentBlock> content)
-        => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).SubmitAsync(content).ConfigureAwait(false);
+    {
+        if (IsReadOnly(sessionId))
+        {
+            await AppendNoticeAsync(sessionId, ReadOnlyRejectionMessage, isError: true).ConfigureAwait(false);
+            return;
+        }
+
+        await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).SubmitAsync(content).ConfigureAwait(false);
+    }
 
     /// <summary>Moves a queued message to a new position in the session's pending queue.</summary>
     public async Task ReorderPendingMessageAsync(string sessionId, string messageId, int newIndex)
@@ -1944,7 +2054,7 @@ public sealed class SessionManager : IAsyncDisposable
             : (_catalog[sessionId].AdapterId, _catalog[sessionId].WorkingDirectory);
         var skipPermissions = _catalog.TryGetValue(sessionId, out var rec) && rec.SkipPermissions;
         var info = new SessionInfo(sessionId, adapterId, workingDirectory, head,
-            live?.Modes, live?.CurrentModeId, GetSandboxStatus(sessionId), skipPermissions);
+            live?.Modes, live?.CurrentModeId, GetSandboxStatus(sessionId), skipPermissions, Project: null, ReadOnly: IsReadOnly(sessionId));
         return new SessionSnapshot(info, events, head);
     }
 

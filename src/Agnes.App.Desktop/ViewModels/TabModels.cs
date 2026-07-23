@@ -39,6 +39,13 @@ public interface ITabController
     bool IsForgettableHost(string url);
     Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
 
+    /// <summary>Finds sessions a CLI created outside Agnes for the tab's working directory (from the CLI's own
+    /// on-disk logs) and lists them on the tab for a read-only "Watch" (sessions/02).</summary>
+    Task DiscoverExternalSessionsAsync(SessionDocument doc);
+
+    /// <summary>Opens a live, read-only watch of a discovered external session in this tab.</summary>
+    Task WatchExternalSessionAsync(SessionDocument doc, ExternalSessionInfo external);
+
     /// <summary>Loads the models offered for an agent (live or static) and reconciles them against the user's
     /// favorites, populating the tab's model picker. No-op when the host reports no models.</summary>
     Task LoadModelsAsync(SessionDocument doc, string adapterId);

@@ -676,6 +676,45 @@
                         </Grid>
                     </Border>
 
+                    <!-- Discovered sessions: sessions a CLI created OUTSIDE Agnes for this folder, offered for a
+                         read-only "Watch" (sessions/02). Hidden until Look is pressed and something is found. -->
+                    <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Grid.Column="0" Text="RUNNING OUTSIDE AGNES" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="{Binding DiscoverStatus}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" TextTrimming="CharacterEllipsis" />
+                            <Button Grid.Column="2" Content="Look for sessions" Command="{Binding DiscoverExternalSessionsCommand}"
+                                    Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
+                                    BorderThickness="1" CornerRadius="6" Padding="8,3" FontSize="11"
+                                    ToolTip.Tip="Find sessions a CLI started outside Agnes in this folder"
+                                    AutomationProperties.Name="Look for external sessions" />
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding DiscoveredSessions}" IsVisible="{Binding HasDiscoveredSessions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,2" CornerRadius="8" Padding="12,8" Background="{DynamicResource Panel}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{Binding Preview}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                                <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}">
+                                                    <Run Text="{Binding AdapterId}" /><Run Text=" · " /><Run Text="{Binding MessageCount}" /><Run Text=" msgs · " /><Run Text="{Binding LastActivity}" />
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="Watch" VerticalAlignment="Center"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.WatchExternalSessionCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="12,4" FontSize="11"
+                                                    ToolTip.Tip="Open a live, read-only view of this session" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
                     <!-- Agent: label + search (scales past a handful) + selectable list; opens only on Start -->
                     <StackPanel Spacing="6">
                         <Grid ColumnDefinitions="Auto,*">
@@ -1694,7 +1733,18 @@
                                     </StackPanel>
                                 </WrapPanel>
 
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                <!-- Read-only Direct/watch (sessions/02): no composer — a live tail of a session
+                                     running outside Agnes. A clear indicator replaces the send box. -->
+                                <Border IsVisible="{Binding IsReadOnly}" CornerRadius="10" Padding="12,10"
+                                        Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <TextBlock Text="👁" FontSize="14" VerticalAlignment="Center" />
+                                        <TextBlock Text="Watching (read-only) — this session is running outside Agnes, so sending is disabled."
+                                                   Foreground="{DynamicResource FgDim}" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding !IsReadOnly}">
                                     <StackPanel Grid.Column="0" Spacing="4">
                                     <TextBox x:Name="Composer" Text="{Binding PromptText, Mode=TwoWay}"
                                              Watermark="Message the agent…    (drag files or paste an image/file to attach)"

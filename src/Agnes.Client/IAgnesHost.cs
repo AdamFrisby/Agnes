@@ -63,6 +63,17 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
 
+    /// <summary>Sessions the installed CLIs created on their own (outside Agnes) for a working directory, read
+    /// from those CLIs' on-disk logs (see <c>.ideas/sessions/02-direct-vs-synced-sessions.md</c>). Default empty
+    /// for hosts/fixtures without the feature.</summary>
+    Task<IReadOnlyList<ExternalSessionInfo>> DiscoverExternalSessionsAsync(string workspaceDirectory)
+        => Task.FromResult<IReadOnlyList<ExternalSessionInfo>>([]);
+
+    /// <summary>Opens a live, read-only Agnes session that watches (tails) an externally-created CLI session.
+    /// The returned <see cref="SessionInfo"/> has <see cref="SessionInfo.ReadOnly"/> set. Default: unsupported.</summary>
+    Task<SessionInfo> AttachExternalSessionAsync(string adapterId, string externalId)
+        => throw new NotSupportedException("This host does not support watching external sessions.");
+
     /// <summary>Compute a fork plan (proposed target folder + sandbox-copy capability) for a session, or
     /// null if the session/host doesn't support forking. Default null for hosts without the feature.</summary>
     Task<ForkPlan?> ProposeForkAsync(string sessionId) => Task.FromResult<ForkPlan?>(null);

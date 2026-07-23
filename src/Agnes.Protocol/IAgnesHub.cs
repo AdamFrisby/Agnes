@@ -48,6 +48,17 @@ public interface IAgnesServer
 
     Task<SessionInfo> OpenSession(OpenSessionRequest request);
 
+    // ---- Direct (external / "watch") sessions — .ideas/sessions/02-direct-vs-synced-sessions.md ----
+
+    /// <summary>Sessions the installed CLIs created on their own (outside Agnes) for a working directory,
+    /// read from those CLIs' on-disk logs. Empty when no adapter can discover them.</summary>
+    Task<IReadOnlyList<Abstractions.ExternalSessionInfo>> DiscoverExternalSessions(string workspaceDirectory);
+
+    /// <summary>Opens a live, read-only Agnes session that watches (tails) an externally-created CLI session,
+    /// returning its <see cref="SessionInfo"/> (with <see cref="SessionInfo.ReadOnly"/> set). Watch-only — it
+    /// never sends to the underlying CLI.</summary>
+    Task<SessionInfo> AttachExternalSession(string adapterId, string externalId);
+
     /// <summary>Compute a fork plan (proposed target folder + sandbox-copy capability) for a session.
     /// Returns null if the session is unknown.</summary>
     Task<ForkPlan?> ProposeFork(string sessionId);

@@ -27,7 +27,7 @@ public static class ClaudeCodeNative
     public static readonly string[] DefaultArguments =
         ["--print", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose"];
 
-    public static NativeStreamAdapter Create(ILoggerFactory loggerFactory, string? command = null, IReadOnlyList<string>? arguments = null)
+    public static ClaudeCodeNativeAdapter Create(ILoggerFactory loggerFactory, string? command = null, IReadOnlyList<string>? arguments = null, string? claudeHome = null)
         => new(new NativeLaunchSpec
         {
             Command = command ?? "claude",
@@ -37,7 +37,11 @@ public static class ClaudeCodeNative
             McpConfigFlag = "--mcp-config",
             CredentialFaultClassifier = IsRecoverableCredentialFault,
             AuthStatusProbe = _ => Task.FromResult<ProviderAuthStatus?>(ProbeAuthStatus(DefaultCredentialsPath)),
-        }, loggerFactory);
+        }, loggerFactory, claudeHome ?? DefaultClaudeHome);
+
+    /// <summary>The user's home directory, under which Claude keeps its own on-disk state (<c>~/.claude/...</c>).
+    /// A parameter on <see cref="Create"/> so tests can point it at a temp directory instead of the real home.</summary>
+    public static string DefaultClaudeHome => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     /// <summary>The host's Claude OAuth credentials file (<c>~/.claude/.credentials.json</c>).</summary>
     public static string DefaultCredentialsPath => Path.Combine(
@@ -103,4 +107,30 @@ public static class ClaudeCodeNative
             || m.Contains("invalid bearer token", StringComparison.Ordinal)
             || (m.Contains("401", StringComparison.Ordinal) && (m.Contains("auth", StringComparison.Ordinal) || m.Contains("token", StringComparison.Ordinal)));
     }
+}
+
+/// <summary>
+/// Claude Code's native adapter: the generic <see cref="NativeStreamAdapter"/> plus the one Claude-specific
+/// capability that reads sessions the <c>claude</c> CLI created on its own from its on-disk transcripts
+/// (<see cref="IExternalSessionSource"/>). Mirrors how <c>ClaudeCodeAcpAdapter</c> layers
+/// <c>IMcpDiscoveryAdapter</c> onto the generic ACP adapter — other native CLIs use
+/// <see cref="NativeStreamAdapter"/> directly and so surface no external sessions (the graceful default).
+/// </summary>
+public sealed class ClaudeCodeNativeAdapter : NativeStreamAdapter, IExternalSessionSource
+{
+    private readonly string _claudeHome;
+    private readonly ILogger _logger;
+
+    public ClaudeCodeNativeAdapter(NativeLaunchSpec spec, ILoggerFactory loggerFactory, string claudeHome)
+        : base(spec, loggerFactory)
+    {
+        _claudeHome = claudeHome;
+        _logger = loggerFactory.CreateLogger<ClaudeCodeNativeAdapter>();
+    }
+
+    public Task<IReadOnlyList<ExternalSessionInfo>> DiscoverAsync(string workspaceDirectory, CancellationToken ct = default)
+        => ClaudeCodeExternalSessions.DiscoverAsync(_claudeHome, workspaceDirectory, ct);
+
+    public Task<ExternalSessionAttachment> AttachExternalSessionAsync(string externalId, CancellationToken ct = default)
+        => Task.FromResult(ClaudeCodeExternalSessions.Attach(externalId, _logger));
 }

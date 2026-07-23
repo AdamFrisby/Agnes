@@ -2311,6 +2311,77 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
+    /// <summary>Finds sessions a CLI created outside Agnes for the tab's working directory (from the CLI's own
+    /// on-disk logs) and lists them on the tab (sessions/02). Best-effort — a host without the capability just
+    /// reports none.</summary>
+    public async Task DiscoverExternalSessionsAsync(SessionDocument doc)
+    {
+        if (doc.Host is null)
+        {
+            return;
+        }
+
+        var workingDirectory = string.IsNullOrWhiteSpace(doc.WorkingDirectory) ? DefaultWorkingDirectory : doc.WorkingDirectory.Trim();
+        IReadOnlyList<Agnes.Abstractions.ExternalSessionInfo> found;
+        try
+        {
+            found = await doc.Host.DiscoverExternalSessionsAsync(workingDirectory);
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => doc.DiscoverStatus = "Couldn't look for external sessions: " + ex.Message);
+            return;
+        }
+
+        _dispatcher.Post(() =>
+        {
+            doc.ShowDiscoveredSessions(found);
+            doc.DiscoverStatus = found.Count == 0
+                ? "No sessions running outside Agnes were found in this folder."
+                : $"{found.Count} session(s) running outside Agnes.";
+        });
+    }
+
+    /// <summary>Opens a live, read-only watch of a discovered external session in the tab: it tails the CLI's
+    /// own log into an Agnes session (composer disabled) — the "Direct" ownership model (sessions/02).</summary>
+    public async Task WatchExternalSessionAsync(SessionDocument doc, Agnes.Abstractions.ExternalSessionInfo external)
+    {
+        if (doc.Host is null)
+        {
+            return;
+        }
+
+        _dispatcher.Post(() =>
+        {
+            doc.StatusText = "Attaching to the external session…";
+            doc.Stage = TabStage.Starting;
+        });
+
+        try
+        {
+            var info = await doc.Host.AttachExternalSessionAsync(external.AdapterId, external.ExternalId);
+            var view = await doc.Host.SubscribeAsync(info.SessionId);
+            var title = ProjectTitle(info.WorkingDirectory, "Watching");
+            _dispatcher.Post(() =>
+            {
+                doc.AgentName = external.AdapterId;
+                doc.Title = title;
+                doc.AttachSession(CreateSession(doc.Host!, view, title));
+                doc.Descriptor = new SessionDescriptor(
+                    doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, external.AdapterId, title);
+                SaveState();
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() =>
+            {
+                doc.StatusText = "Couldn't watch that session: " + ex.Message;
+                doc.Stage = TabStage.PickAgent;
+            });
+        }
+    }
+
     public async Task LoadModelsAsync(SessionDocument doc, string adapterId)
     {
         if (doc.Host is null)

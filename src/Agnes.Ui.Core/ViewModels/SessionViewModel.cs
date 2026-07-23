@@ -83,8 +83,8 @@ public sealed class SessionViewModel : ObservableObject
         _history = [.. _prompts.LoadHistory(view.SessionId)];
         _historyIndex = _history.Count;
 
-        SendCommand = new AsyncRelayCommand(SendAsync, () => !string.IsNullOrWhiteSpace(PromptText));
-        SendNowCommand = new AsyncRelayCommand(SendNowAsync, () => !string.IsNullOrWhiteSpace(PromptText));
+        SendCommand = new AsyncRelayCommand(SendAsync, () => !string.IsNullOrWhiteSpace(PromptText) && !IsReadOnly);
+        SendNowCommand = new AsyncRelayCommand(SendNowAsync, () => !string.IsNullOrWhiteSpace(PromptText) && !IsReadOnly);
         CancelCommand = new AsyncRelayCommand(CancelAsync, () => IsTurnActive);
         RemoveQueuedCommand = new RelayCommand<QueuedPrompt>(RemoveQueued);
         EditQueuedCommand = new RelayCommand<QueuedPrompt>(EditQueued);
@@ -1060,6 +1060,10 @@ public sealed class SessionViewModel : ObservableObject
 
     /// <summary>Whether this session runs autonomously (tool calls without asking). Shown as a chip.</summary>
     public bool IsAutonomous => _view.Info?.SkipPermissions == true;
+
+    /// <summary>Whether this is a read-only Direct/watch of a session running outside Agnes (sessions/02): the
+    /// composer/send is disabled and a "watching (read-only)" indicator is shown.</summary>
+    public bool IsReadOnly => _view.Info?.ReadOnly == true;
 
     public bool HasSandbox => _sandbox is not null;
     public bool SandboxPaused => string.Equals(_sandbox?.State, "Paused", StringComparison.OrdinalIgnoreCase);

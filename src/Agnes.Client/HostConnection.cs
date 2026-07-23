@@ -109,6 +109,12 @@ public sealed class HostConnection : IAgnesHost
     public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
         => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox, modelId));
 
+    public Task<IReadOnlyList<ExternalSessionInfo>> DiscoverExternalSessionsAsync(string workspaceDirectory)
+        => _hub.InvokeAsync<IReadOnlyList<ExternalSessionInfo>>(nameof(IAgnesServer.DiscoverExternalSessions), workspaceDirectory);
+
+    public Task<SessionInfo> AttachExternalSessionAsync(string adapterId, string externalId)
+        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.AttachExternalSession), adapterId, externalId);
+
     public Task<ForkPlan?> ProposeForkAsync(string sessionId)
         => _hub.InvokeAsync<ForkPlan?>(nameof(IAgnesServer.ProposeFork), sessionId);
 
