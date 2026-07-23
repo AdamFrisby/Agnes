@@ -39,6 +39,12 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task<IReadOnlyList<AgentInfo>> ListAgentsAsync();
 
+    /// <summary>Forces a fresh (cache-bypassing) auth-status check for one adapter and returns its refreshed
+    /// <see cref="AgentInfo"/>; the host also pushes <see cref="AgentsChanged"/> to every client. Default:
+    /// unsupported (hosts/fixtures without auth detection).</summary>
+    Task<AgentInfo> CheckAuthStatusAsync(string adapterId)
+        => throw new NotSupportedException("This host does not support auth-status checks.");
+
     /// <summary>Which host-level plugin-point capabilities are populated on this host. Default empty
     /// for hosts/fixtures that don't report capabilities — a client should treat an id absent from the
     /// list the same as one explicitly reported unavailable.</summary>

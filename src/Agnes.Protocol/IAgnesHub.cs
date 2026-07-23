@@ -26,6 +26,11 @@ public interface IAgnesServer
 
     Task<IReadOnlyList<AgentInfo>> ListAgents();
 
+    /// <summary>Forces a fresh (cache-bypassing) auth-status check for one adapter and returns its refreshed
+    /// <see cref="AgentInfo"/>. The host also broadcasts <see cref="IAgnesClient.OnAgentsChanged"/> so every
+    /// connected client's picker updates. See <c>.ideas/providers/06-provider-authentication-detection.md</c>.</summary>
+    Task<AgentInfo> CheckAuthStatus(string adapterId);
+
     /// <summary>Which host-level plugin-point capabilities are actually populated on this host (see
     /// <see cref="HostCapability"/>), so a client can hide/degrade a feature up front instead of
     /// discovering its absence via a failed call.</summary>

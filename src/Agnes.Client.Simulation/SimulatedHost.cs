@@ -84,10 +84,10 @@ public sealed class SimulatedHost : IAgnesHost
     public AgnesConnectionState State { get; private set; } = AgnesConnectionState.Disconnected;
     public event Action<AgnesConnectionState>? StateChanged;
 
-    // The simulated host never changes its agent set; required by the interface.
-#pragma warning disable CS0067
     public event Action<IReadOnlyList<AgentInfo>>? AgentsChanged;
-#pragma warning restore CS0067
+
+    // Per-adapter auth status the simulated "Check now" fills in, so the picker badge is exercisable offline.
+    private readonly ConcurrentDictionary<string, ProviderAuthStatus> _auth = new();
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -100,7 +100,21 @@ public sealed class SimulatedHost : IAgnesHost
         => Task.FromResult(new HostInfo("sim-host", "Simulated Host", "0.1.0"));
 
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync()
-        => Task.FromResult<IReadOnlyList<AgentInfo>>(Agents);
+        => Task.FromResult<IReadOnlyList<AgentInfo>>(AgentsWithAuth());
+
+    private AgentInfo[] AgentsWithAuth()
+        => Agents.Select(a => _auth.TryGetValue(a.AdapterId, out var s) ? a with { Auth = s } : a).ToArray();
+
+    public Task<AgentInfo> CheckAuthStatusAsync(string adapterId)
+    {
+        // The simulator has no real credentials; report a signed-in OAuth identity so the badge is visible.
+        _auth[adapterId] = new ProviderAuthStatus(true, "OAuth", "OAuth", null, DateTimeOffset.UtcNow);
+        var agents = AgentsWithAuth();
+        AgentsChanged?.Invoke(agents);
+        var info = agents.FirstOrDefault(a => a.AdapterId == adapterId)
+            ?? new AgentInfo(adapterId, adapterId, null, true, _auth[adapterId]);
+        return Task.FromResult(info);
+    }
 
     public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true)
     {

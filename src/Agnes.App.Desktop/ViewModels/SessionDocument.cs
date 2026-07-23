@@ -375,7 +375,9 @@ public sealed partial class SessionDocument : Document
 
     public void ShowAgents(IEnumerable<AgentInfo> agents)
     {
-        _allAgents = agents.Select(a => new AgentChoice(a.DisplayName, a.AdapterId, a.Available)).ToList();
+        _allAgents = agents.Select(a => new AgentChoice(
+            a.DisplayName, a.AdapterId, a.Available, a.Auth,
+            () => _controller.CheckAgentAuthAsync(this, a.AdapterId))).ToList();
         SelectedAgent = null;
         AgentFilter = string.Empty;
         // Preselect the first available agent so Start is reachable without a click, but never auto-open.
@@ -383,6 +385,20 @@ public sealed partial class SessionDocument : Document
         ApplyAgentFilter();
         Stage = TabStage.PickAgent;
         StatusText = string.Empty;
+    }
+
+    /// <summary>Refreshes the picker's login badges from a host-pushed agent list (OnAgentsChanged), so a
+    /// "Check now" on one client — or a background probe — updates every client's picker.</summary>
+    public void UpdateAgentsAuth(IReadOnlyList<AgentInfo> agents)
+    {
+        foreach (var choice in _allAgents)
+        {
+            var match = agents.FirstOrDefault(a => a.AdapterId == choice.AdapterId);
+            if (match is not null)
+            {
+                choice.Auth = match.Auth;
+            }
+        }
     }
 
     public void AttachSession(SessionViewModel session)

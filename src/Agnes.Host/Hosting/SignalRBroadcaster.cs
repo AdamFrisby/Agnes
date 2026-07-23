@@ -13,4 +13,7 @@ public sealed class SignalRBroadcaster(IHubContext<AgnesHub, IAgnesClient> hub) 
 
     public Task PublishReadStateAsync(string sessionId, long readSequence, bool stickyUnread)
         => hub.Clients.Group(sessionId).OnReadState(sessionId, readSequence, stickyUnread);
+
+    public Task PublishAgentsChangedAsync(IReadOnlyList<AgentInfo> agents)
+        => hub.Clients.All.OnAgentsChanged(agents);
 }

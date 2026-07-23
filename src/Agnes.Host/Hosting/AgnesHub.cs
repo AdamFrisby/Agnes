@@ -49,6 +49,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<IReadOnlyList<AgentInfo>> ListAgents()
         => Task.FromResult(_sessions.ListAgents());
 
+    public Task<AgentInfo> CheckAuthStatus(string adapterId)
+        => _sessions.CheckAuthStatusAsync(adapterId);
+
     public Task<IReadOnlyList<HostCapability>> GetCapabilities()
         => Task.FromResult(HostCapabilityList());
 

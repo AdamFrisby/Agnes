@@ -51,6 +51,11 @@ public sealed class RecordedHost : IAgnesHost
         => Task.FromResult<IReadOnlyList<AgentInfo>>(
             _byId.Select(kv => new AgentInfo(kv.Key, kv.Value.Name, "recording", Available: true)).ToArray());
 
+    // Recordings carry no credentials, so there's no reliable login signal — no auth badge (Auth stays null).
+    public Task<AgentInfo> CheckAuthStatusAsync(string adapterId)
+        => Task.FromResult(new AgentInfo(
+            adapterId, _byId.TryGetValue(adapterId, out var r) ? r.Name : adapterId, "recording", Available: true));
+
     public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true)
     {
         var recording = _byId.TryGetValue(adapterId, out var r) ? r : _byId.Values.FirstOrDefault();

@@ -103,7 +103,30 @@ public interface IAgentAdapter
     /// the agent it's specific to. Default: agents whose credentials can't expire mid-session return false.
     /// </summary>
     bool IsRecoverableCredentialFault(string errorMessage) => false;
+
+    /// <summary>
+    /// The CLI's machine-local login state, when this adapter has an honestly reliable way to tell (e.g. a
+    /// direct <c>auth status</c> command or a well-defined credentials file). This is distinct from
+    /// <see cref="IsAvailable"/> (installed / resolvable) — a CLI can be installed but not logged in.
+    /// Default: <c>null</c>, meaning "no reliable signal" — the picker shows no auth badge at all rather
+    /// than a confidently-wrong "not logged in". Adapters that can answer confidently override this.
+    /// </summary>
+    Task<ProviderAuthStatus?> GetAuthStatusAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<ProviderAuthStatus?>(null);
 }
+
+/// <summary>
+/// Whether a coding CLI is logged in to its provider on this host, as reported by an adapter that has a
+/// reliable signal (see <see cref="IAgentAdapter.GetAuthStatusAsync"/>). <see cref="Identity"/> and
+/// <see cref="Method"/> describe who / how when known; <see cref="Issue"/> carries a human-readable reason
+/// when not logged in; <see cref="CheckedAt"/> records when the check ran.
+/// </summary>
+public sealed record ProviderAuthStatus(
+    bool IsLoggedIn,
+    string? Identity,
+    string? Method,
+    string? Issue,
+    DateTimeOffset CheckedAt);
 
 /// <summary>Resolves whether a launcher command exists on the host, like <c>which</c>/<c>where</c>.</summary>
 public static class AgentCommand

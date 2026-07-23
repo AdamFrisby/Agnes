@@ -259,15 +259,88 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
+    // Last-known auth status per adapter, populated lazily/in the background so ListAgents stays sync+fast.
+    // Absence = not yet probed; a stored null = probed and the adapter has no reliable login signal (no badge).
+    private readonly ConcurrentDictionary<string, ProviderAuthStatus?> _authStatus = new();
+    private readonly ConcurrentDictionary<string, byte> _authProbing = new();
+
     public IReadOnlyList<AgentInfo> ListAgents()
-        => _adapters.All
-            // When agents run in a sandbox, availability reflects the baked image (host PATH is
-            // irrelevant — the agent runs in the VM, not on the host).
-            .Select(a => new AgentInfo(a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version,
-                Available: _images is not null
-                    ? (_projects is not null ? _images.ImageHasAgent(_projects.Default(), a.Descriptor.Id) : _images.ImageHasAgent(a.Descriptor.Id))
-                    : a.IsAvailable()))
-            .ToArray();
+    {
+        // Kick off a one-time background probe per adapter so the badge fills in without a manual check.
+        foreach (var adapter in _adapters.All)
+        {
+            if (!_authStatus.ContainsKey(adapter.Descriptor.Id))
+            {
+                _ = ProbeAuthInBackgroundAsync(adapter);
+            }
+        }
+
+        return AgentSnapshot();
+    }
+
+    /// <summary>Builds the current agent list from cached auth status, without triggering probes (so it's
+    /// safe to call from a broadcast).</summary>
+    private IReadOnlyList<AgentInfo> AgentSnapshot() => _adapters.All.Select(BuildAgentInfo).ToArray();
+
+    private AgentInfo BuildAgentInfo(IAgentAdapter a) => new(
+        a.Descriptor.Id, a.Descriptor.DisplayName, a.Descriptor.Version,
+        // When agents run in a sandbox, availability reflects the baked image (host PATH is
+        // irrelevant — the agent runs in the VM, not on the host).
+        Available: _images is not null
+            ? (_projects is not null ? _images.ImageHasAgent(_projects.Default(), a.Descriptor.Id) : _images.ImageHasAgent(a.Descriptor.Id))
+            : a.IsAvailable(),
+        Auth: _authStatus.TryGetValue(a.Descriptor.Id, out var status) ? status : null);
+
+    /// <summary>Probes one adapter's auth status once, caches it, and broadcasts an updated agent list when
+    /// the adapter reports a status (so the picker gains its badge). Best-effort — failures cache null.</summary>
+    private async Task ProbeAuthInBackgroundAsync(IAgentAdapter adapter)
+    {
+        var id = adapter.Descriptor.Id;
+        if (!_authProbing.TryAdd(id, 0))
+        {
+            return; // a probe for this adapter is already in flight.
+        }
+
+        try
+        {
+            var status = await adapter.GetAuthStatusAsync().ConfigureAwait(false);
+            _authStatus[id] = status;
+            if (status is not null)
+            {
+                await _broadcaster.PublishAgentsChangedAsync(AgentSnapshot()).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Auth-status probe failed for {AdapterId}", id);
+            _authStatus[id] = null;
+        }
+        finally
+        {
+            _authProbing.TryRemove(id, out _);
+        }
+    }
+
+    /// <summary>Forces a fresh (cache-bypassing) auth-status check for one adapter, updates the cache, tells
+    /// every client (so all pickers refresh), and returns the refreshed <see cref="AgentInfo"/>.</summary>
+    public async Task<AgentInfo> CheckAuthStatusAsync(string adapterId, CancellationToken cancellationToken = default)
+    {
+        var adapter = _adapters.Find(adapterId)
+            ?? throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
+
+        try
+        {
+            _authStatus[adapterId] = await adapter.GetAuthStatusAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Forced auth-status check failed for {AdapterId}", adapterId);
+            _authStatus[adapterId] = null;
+        }
+
+        await _broadcaster.PublishAgentsChangedAsync(AgentSnapshot()).ConfigureAwait(false);
+        return BuildAgentInfo(adapter);
+    }
 
     /// <summary>Whether this host can isolate sessions in per-session sandbox VMs (a provider is configured).</summary>
     public bool SandboxAvailable => _sandboxes is not null;
