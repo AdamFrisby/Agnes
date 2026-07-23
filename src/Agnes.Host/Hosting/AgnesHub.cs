@@ -149,6 +149,24 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task RemoveScheduledTask(string taskId)
         => _schedule.RemoveAsync(taskId);
 
+    public Task PauseScheduledTask(string taskId)
+    {
+        _schedule.SetEnabled(taskId, enabled: false);
+        return Task.CompletedTask;
+    }
+
+    public Task ResumeScheduledTask(string taskId)
+    {
+        _schedule.SetEnabled(taskId, enabled: true);
+        return Task.CompletedTask;
+    }
+
+    public Task RunScheduledTaskNow(string taskId)
+    {
+        _schedule.RunNow(taskId);
+        return Task.CompletedTask;
+    }
+
     public Task<IReadOnlyList<InboxRun>> GetInbox()
         => Task.FromResult(_schedule.Inbox());
 

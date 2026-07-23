@@ -111,6 +111,15 @@ public interface IAgnesServer
     /// <summary>Removes a scheduled task.</summary>
     Task RemoveScheduledTask(string taskId);
 
+    /// <summary>Pauses a scheduled task: its schedule stops firing until resumed (persisted state).</summary>
+    Task PauseScheduledTask(string taskId);
+
+    /// <summary>Resumes a paused task on its existing schedule (no re-creation).</summary>
+    Task ResumeScheduledTask(string taskId);
+
+    /// <summary>Runs a scheduled task once immediately, out of band, without disturbing its regular schedule.</summary>
+    Task RunScheduledTaskNow(string taskId);
+
     /// <summary>Completed background runs (newest first).</summary>
     Task<IReadOnlyList<InboxRun>> GetInbox();
 

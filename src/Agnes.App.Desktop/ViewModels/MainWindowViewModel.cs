@@ -131,6 +131,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ResumeSandboxRecordCommand = new AsyncRelayCommand<SandboxRecordDto>(ResumeSandboxRecordAsync);
         FindOrphansCommand = new AsyncRelayCommand(FindOrphansAsync);
         ReapOrphansCommand = new AsyncRelayCommand(ReapOrphansAsync);
+        PauseAutomationCommand = new AsyncRelayCommand<AutomationRow>(PauseAutomationAsync);
+        ResumeAutomationCommand = new AsyncRelayCommand<AutomationRow>(ResumeAutomationAsync);
+        RunAutomationNowCommand = new AsyncRelayCommand<AutomationRow>(RunAutomationNowAsync);
+        RemoveAutomationCommand = new AsyncRelayCommand<AutomationRow>(RemoveAutomationAsync);
         LoadProjectsCommand = new AsyncRelayCommand(LoadProjectsAsync);
         SelectProjectCommand = new RelayCommand<ProjectDto>(SelectProject);
         SaveProjectCommand = new AsyncRelayCommand(SaveProjectAsync);
@@ -2119,6 +2123,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             host.InboxRunReceived += run => _dispatcher.Post(() => AddInboxRun(run));
             _ = LoadInboxAsync(host);
+            _ = RefreshAutomationsAsync();
         }
     }
 
@@ -2158,6 +2163,110 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             // best-effort
         }
+    }
+
+    // ---- automations: scheduled tasks (pause · resume · run-now · delete, across hosts) ----
+
+    /// <summary>One scheduled task bound to the host it lives on, so the row's buttons act on the right host.</summary>
+    public sealed class AutomationRow(ScheduledTask task, IAgnesHost host)
+    {
+        public ScheduledTask Task { get; } = task;
+
+        public IAgnesHost Host { get; } = host;
+
+        public string Id => Task.Id;
+
+        public string Prompt => Task.Prompt;
+
+        public bool Enabled => Task.Enabled;
+
+        public bool Paused => !Task.Enabled;
+
+        /// <summary>Human-readable cadence, e.g. "every 300s" or "cron 0 9 * * 1-5 (America/New_York)".</summary>
+        public string Schedule => string.Equals(Task.Kind, "cron", StringComparison.OrdinalIgnoreCase)
+            ? $"cron {Task.CronExpression}" + (string.IsNullOrWhiteSpace(Task.Timezone) ? "" : $" ({Task.Timezone})")
+            : $"every {Task.IntervalSeconds}s";
+    }
+
+    public System.Collections.ObjectModel.ObservableCollection<AutomationRow> ScheduledTasks { get; } = [];
+    public int ScheduledTaskCount => ScheduledTasks.Count;
+    public bool HasScheduledTasks => ScheduledTasks.Count > 0;
+
+    public IAsyncRelayCommand<AutomationRow> PauseAutomationCommand { get; }
+    public IAsyncRelayCommand<AutomationRow> ResumeAutomationCommand { get; }
+    public IAsyncRelayCommand<AutomationRow> RunAutomationNowCommand { get; }
+    public IAsyncRelayCommand<AutomationRow> RemoveAutomationCommand { get; }
+
+    private async Task RefreshAutomationsAsync()
+    {
+        var rows = new List<AutomationRow>();
+        foreach (var host in _inboxHosts.ToArray())
+        {
+            try
+            {
+                foreach (var task in await host.ListScheduledTasksAsync())
+                {
+                    rows.Add(new AutomationRow(task, host));
+                }
+            }
+            catch
+            {
+                // best-effort; a host that can't list its tasks just contributes none
+            }
+        }
+
+        _dispatcher.Post(() =>
+        {
+            ScheduledTasks.Clear();
+            foreach (var row in rows)
+            {
+                ScheduledTasks.Add(row);
+            }
+
+            OnPropertyChanged(nameof(ScheduledTaskCount));
+            OnPropertyChanged(nameof(HasScheduledTasks));
+        });
+    }
+
+    private async Task PauseAutomationAsync(AutomationRow? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        await row.Host.PauseScheduledTaskAsync(row.Id);
+        await RefreshAutomationsAsync();
+    }
+
+    private async Task ResumeAutomationAsync(AutomationRow? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        await row.Host.ResumeScheduledTaskAsync(row.Id);
+        await RefreshAutomationsAsync();
+    }
+
+    private async Task RunAutomationNowAsync(AutomationRow? row)
+    {
+        if (row is not null)
+        {
+            await row.Host.RunScheduledTaskNowAsync(row.Id);
+        }
+    }
+
+    private async Task RemoveAutomationAsync(AutomationRow? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        await row.Host.RemoveScheduledTaskAsync(row.Id);
+        await RefreshAutomationsAsync();
     }
 
     private void SaveState()

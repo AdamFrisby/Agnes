@@ -17,6 +17,9 @@
     <PackageReference Include="NuGet.Protocol" Version="7.6.0" />
     <PackageReference Include="NuGet.Packaging" Version="7.6.0" />
     <PackageReference Include="NuGet.Versioning" Version="7.6.0" />
+    <!-- Cron-expression scheduling for automations (HangfireIO/Cronos, MIT) — a widely-used, well-tested
+         parser so timezone/DST edge cases stay out of Agnes's own code. See .ideas/extensibility/03-automations.md. -->
+    <PackageReference Include="Cronos" Version="0.13.0" />
   </ItemGroup>
 
   <ItemGroup>

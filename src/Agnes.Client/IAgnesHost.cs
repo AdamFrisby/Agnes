@@ -125,6 +125,15 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Removes a scheduled task.</summary>
     Task RemoveScheduledTaskAsync(string taskId);
 
+    /// <summary>Pauses a scheduled task until it is resumed. Hosts that don't support automations no-op.</summary>
+    Task PauseScheduledTaskAsync(string taskId) => Task.CompletedTask;
+
+    /// <summary>Resumes a paused task on its existing schedule.</summary>
+    Task ResumeScheduledTaskAsync(string taskId) => Task.CompletedTask;
+
+    /// <summary>Runs a scheduled task once immediately, out of band, leaving its schedule intact.</summary>
+    Task RunScheduledTaskNowAsync(string taskId) => Task.CompletedTask;
+
     /// <summary>Completed background runs (newest first).</summary>
     Task<IReadOnlyList<InboxRun>> GetInboxAsync();
 

@@ -58,13 +58,18 @@ public sealed class ScheduledRunner : BackgroundService
     {
         try
         {
-            var info = await _sessions.OpenSessionAsync(task.AdapterId, task.WorkingDirectory, cancellationToken: cancellationToken).ConfigureAwait(false);
-            await _sessions.PromptAsync(info.SessionId, [new TextContent(task.Prompt)]).ConfigureAwait(false);
+            // Target an existing live session when the task asks for it (PromptAsync resumes it if needed);
+            // otherwise open a fresh session per run, the original behavior.
+            var sessionId = string.Equals(task.TargetKind, "existing", StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrWhiteSpace(task.TargetSessionId)
+                ? task.TargetSessionId
+                : (await _sessions.OpenSessionAsync(task.AdapterId, task.WorkingDirectory, cancellationToken: cancellationToken).ConfigureAwait(false)).SessionId;
+            await _sessions.PromptAsync(sessionId, [new TextContent(task.Prompt)]).ConfigureAwait(false);
 
             var summary = "…";
             for (var i = 0; i < 120 && !cancellationToken.IsCancellationRequested; i++)
             {
-                var snapshot = await _sessions.GetSnapshotAsync(info.SessionId, 0, cancellationToken).ConfigureAwait(false);
+                var snapshot = await _sessions.GetSnapshotAsync(sessionId, 0, cancellationToken).ConfigureAwait(false);
                 var lastAssistant = snapshot.Events.OfType<MessageChunkEvent>()
                     .LastOrDefault(m => m.Role == MessageRole.Assistant);
                 if (lastAssistant?.Content is TextContent text)

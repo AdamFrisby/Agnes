@@ -328,21 +328,37 @@ public sealed record GitCommitResult(bool Success, string Message);
 /// <summary>A request to leave a review comment on a project's file at a specific line.</summary>
 public sealed record AddReviewCommentRequest(string ProjectId, string FilePath, int LineNumber, string LineHash, string Text);
 
-/// <summary>A recurring background task: run <see cref="Prompt"/> on an interval.</summary>
+/// <summary>
+/// A recurring background task: run <see cref="Prompt"/> on a schedule. <see cref="Kind"/> selects the
+/// trigger — <c>interval</c> (every <see cref="IntervalSeconds"/>) or <c>cron</c> (<see cref="CronExpression"/>
+/// evaluated in <see cref="Timezone"/>). <see cref="TargetKind"/> chooses whether a run opens a new session
+/// (<c>new</c>) or prompts an existing live one (<c>existing</c>, identified by <see cref="TargetSessionId"/>).
+/// The trailing fields are optional so pre-cron callers keep compiling unchanged.
+/// </summary>
 public sealed record ScheduledTask(
     string Id,
     string AdapterId,
     string WorkingDirectory,
     string Prompt,
     int IntervalSeconds,
-    bool Enabled);
+    bool Enabled,
+    string Kind = "interval",
+    string? CronExpression = null,
+    string? Timezone = null,
+    string TargetKind = "new",
+    string? TargetSessionId = null);
 
-/// <summary>A request to schedule a recurring task.</summary>
+/// <summary>A request to schedule a recurring task (see <see cref="ScheduledTask"/> for the field meanings).</summary>
 public sealed record ScheduleTaskRequest(
     string AdapterId,
     string WorkingDirectory,
     string Prompt,
-    int IntervalSeconds);
+    int IntervalSeconds,
+    string Kind = "interval",
+    string? CronExpression = null,
+    string? Timezone = null,
+    string TargetKind = "new",
+    string? TargetSessionId = null);
 
 /// <summary>A completed background run, collected in the inbox.</summary>
 public sealed record InboxRun(
