@@ -150,6 +150,12 @@ public interface IAgnesServer
 
     /// <summary>Every installed plugin and its state.</summary>
     Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPlugins();
+
+    // ---- bug reports (see .ideas/ops/01-bug-reports-and-diagnostics.md) ----
+
+    /// <summary>Submits a user-authored bug report to the host's configured sink. The typed result carries a
+    /// created issue URL, a prefilled browser-fallback URL, and/or likely-duplicate issues to comment on.</summary>
+    Task<Abstractions.BugReportResult> SubmitBugReport(BugReportDto report);
 }
 
 /// <summary>

@@ -222,5 +222,8 @@ public sealed class HostConnection : IAgnesHost
     public Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPluginsAsync()
         => _hub.InvokeAsync<IReadOnlyList<InstalledPluginDto>>(nameof(IAgnesServer.ListInstalledPlugins));
 
+    public Task<Abstractions.BugReportResult> SubmitBugReportAsync(BugReportDto report)
+        => _hub.InvokeAsync<Abstractions.BugReportResult>(nameof(IAgnesServer.SubmitBugReport), report);
+
     public async ValueTask DisposeAsync() => await _hub.DisposeAsync();
 }

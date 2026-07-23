@@ -351,3 +351,10 @@ public sealed record InboxRun(
     string Title,
     string Summary,
     DateTimeOffset CompletedAt);
+
+/// <summary>A user-authored bug report sent from a client. Deliberately has NO diagnostic-payload field:
+/// the owner-only host-log attachment is deferred, so the client never sends one and the host maps this to a
+/// domain <c>BugReport</c> with a null payload. The typed result is
+/// <see cref="Agnes.Abstractions.BugReportResult"/> (a created URL, a browser-fallback URL, and/or likely
+/// duplicates).</summary>
+public sealed record BugReportDto(string Title, string Summary, string? CurrentBehavior, string? ExpectedBehavior);

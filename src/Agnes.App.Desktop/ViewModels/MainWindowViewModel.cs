@@ -148,6 +148,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // Per-project
             new SettingsCategoryVm("projects", "Projects", "📁", "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
             new SettingsCategoryVm("plugins", "Plugins", "🧩", "plugin plugins extension nuget install uninstall browse marketplace capability consent provider adapter transport voice notification enable disable configure"),
+            // Help
+            new SettingsCategoryVm("bugreport", "Report a bug", "🐞", "bug report issue github feedback problem crash diagnostics support help"),
         ];
         SettingsCategories[0].IsSelected = true;
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });
@@ -188,10 +190,27 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         };
 
         Plugins = new PluginManagementViewModel(ActiveHost, _dispatcher);
+        BugReport = new BugReportViewModel(ActiveHost, _dispatcher, OpenInBrowser);
     }
 
     /// <summary>The plugin-management surface for the active host (Browse / install / configure / enable).</summary>
     public PluginManagementViewModel Plugins { get; }
+
+    /// <summary>The "Report a bug" surface for the active host (falls back to the public GitHub flow).</summary>
+    public BugReportViewModel BugReport { get; }
+
+    /// <summary>Opens a URL in the user's default browser (best-effort; used by the update + bug-report flows).</summary>
+    private static void OpenInBrowser(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Opening the browser is best-effort.
+        }
+    }
 
     public IRelayCommand RunTopPaletteItemCommand { get; }
     public IRelayCommand ClosePaletteCommand { get; }
@@ -546,6 +565,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatSandboxes => SettingsCategory == "sandboxes";
     public bool CatProjects => SettingsCategory == "projects";
     public bool CatPlugins => SettingsCategory == "plugins";
+    public bool CatBugReport => SettingsCategory == "bugreport";
 
     /// <summary>The connected host these host-scoped settings apply to (e.g. GitHub, Devices, Projects).</summary>
     public string ActiveHostName => ActiveHttpHost() is { } t
@@ -566,6 +586,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatSandboxes));
         OnPropertyChanged(nameof(CatProjects));
         OnPropertyChanged(nameof(CatPlugins));
+        OnPropertyChanged(nameof(CatBugReport));
         OnPropertyChanged(nameof(ActiveHostName));
         if (value == "projects" && SelectedProject is null)
         {
