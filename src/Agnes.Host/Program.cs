@@ -357,7 +357,26 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.GitHubConnectFlow(
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.GitHubConnectFlow>()));
 
 // ---- git forges as built-in plugins (AC13): GitHub today, GitLab/Bitbucket addable as plugins ----
-builder.Services.AddSingleton<IGitHostProvider, GitHubGitHostProvider>();
+// The GitHub provider lists PRs anonymously for public repos, and mints a repo-scoped token via the linked
+// GitHub App (through the credential source) when one is available for private repos / higher rate limits.
+builder.Services.AddSingleton<IGitHostProvider>(sp =>
+{
+    var sources = sp.GetService<Agnes.Host.Hosting.CredentialSourceRegistry>();
+    return new GitHubGitHostProvider(
+        new HttpClient(),
+        async (host, repo, ct) =>
+        {
+            var source = sources?.For(host);
+            if (source is null)
+            {
+                return null;
+            }
+
+            var credential = await source.ResolveAsync(
+                new Agnes.Sandbox.Credentials.CredentialRequest("https", host, repo, "get"), ct).ConfigureAwait(false);
+            return credential?.Password;
+        });
+});
 builder.Services.AddPluginPoint<IGitHostProvider>(p => p.Id);
 
 // ---- bug-report sinks as built-in plugins (see .ideas/ops/01-bug-reports-and-diagnostics.md) ----

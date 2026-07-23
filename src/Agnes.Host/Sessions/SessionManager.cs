@@ -21,6 +21,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<SessionManager> _logger;
     private readonly Git.GitService _git = new();
+    private readonly IReadOnlyList<IGitHostProvider> _gitHosts;
     private readonly ISandboxProvider? _sandboxes;
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
     private readonly ClaudeTokenRotationPusher? _rotationPusher;
@@ -105,9 +106,11 @@ public sealed class SessionManager : IAsyncDisposable
         Projects.ProjectStore? projects = null,
         SandboxRegistry? sandboxRegistry = null,
         Agnes.Abstractions.Events.IEventBus? eventBus = null,
-        McpOptions? mcpOptions = null)
+        McpOptions? mcpOptions = null,
+        IPluginRegistry<IGitHostProvider>? gitHosts = null)
     {
         _adapters = adapters;
+        _gitHosts = gitHosts?.All.ToArray() ?? [];
         _store = store;
         _broadcaster = broadcaster;
         _loggerFactory = loggerFactory;
@@ -1578,6 +1581,65 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         return result;
+    }
+
+    // DEFERRED (deep-git-integration): changed-file scoping ("this turn" / "this session" / "whole repo") is
+    // intentionally not built here. It needs the NormalizedToolCall timeline query from
+    // sessions/06-tool-timeline-normalization.md — once that lands it's a filter over the event log by file
+    // path + time range, not a new subsystem. DEFERRED: agent-generated commit messages, which should reuse a
+    // shared one-shot-agent primitive (spin up a bounded session over the staged diff, take its output, tear
+    // it down) rather than a bespoke summarization call — build that primitive once and share it.
+
+    /// <summary>Stashes the session working tree's uncommitted changes; null when there's nothing to stash.</summary>
+    public Task<Agnes.Protocol.GitStashInfo?> GitStashAsync(string sessionId)
+        => _git.StashAsync(WorkingDirectoryOf(sessionId));
+
+    /// <summary>Restores a previously created stash (by its sha) in the session working directory.</summary>
+    public Task<Agnes.Protocol.GitOperationResult> GitPopStashAsync(string sessionId, string stashId)
+        => _git.PopStashAsync(WorkingDirectoryOf(sessionId), stashId);
+
+    /// <summary>Switches the session working directory to another branch, optionally carrying a stash across.</summary>
+    public Task<Agnes.Protocol.GitSwitchResult> GitSwitchBranchAsync(string sessionId, string branch, bool carryStash)
+        => _git.SwitchBranchAsync(WorkingDirectoryOf(sessionId), branch, carryStash);
+
+    /// <summary>Fast-forward-only pull; a diverged remote is refused with a typed error (never merged/rebased).</summary>
+    public Task<Agnes.Protocol.GitPullResult> GitPullAsync(string sessionId)
+        => _git.FastForwardPullAsync(WorkingDirectoryOf(sessionId));
+
+    /// <summary>Pushes the session's current branch, publishing it upstream when requested.</summary>
+    public Task<Agnes.Protocol.GitOperationResult> GitPushAsync(string sessionId, bool publishBranch)
+        => _git.PushAsync(WorkingDirectoryOf(sessionId), publishBranch);
+
+    /// <summary>Open pull requests on the forge that owns the session's <c>origin</c> remote; empty if the
+    /// remote isn't recognized by any registered forge provider.</summary>
+    public async Task<IReadOnlyList<Agnes.Abstractions.PullRequestInfo>> ListPullRequestsAsync(string sessionId)
+    {
+        var (provider, remote) = await ResolveForgeAsync(sessionId).ConfigureAwait(false);
+        return provider is null || remote is null ? [] : await provider.ListOpenPullRequestsAsync(remote).ConfigureAwait(false);
+    }
+
+    /// <summary>Fetches and checks out a PR into the session's working directory, via its forge provider.</summary>
+    public async Task<Agnes.Protocol.GitOperationResult> CheckoutPullRequestAsync(string sessionId, string pullRequestId)
+    {
+        var (provider, remote) = await ResolveForgeAsync(sessionId).ConfigureAwait(false);
+        if (provider is null || remote is null)
+        {
+            return new Agnes.Protocol.GitOperationResult(false, "No forge provider matches this session's git remote.");
+        }
+
+        return await provider.CheckoutPullRequestAsync(WorkingDirectoryOf(sessionId), pullRequestId).ConfigureAwait(false);
+    }
+
+    /// <summary>Resolves the session's <c>origin</c> remote and the forge provider that owns its host.</summary>
+    private async Task<(IGitHostProvider? Provider, string? Remote)> ResolveForgeAsync(string sessionId)
+    {
+        var remote = await _git.GetRemoteUrlAsync(WorkingDirectoryOf(sessionId)).ConfigureAwait(false);
+        if (remote is null || !GitRemote.TryParse(remote, out var host, out _))
+        {
+            return (null, null);
+        }
+
+        return (_gitHosts.FirstOrDefault(p => p.Matches(host)), remote);
     }
 
     public async Task RespondPermissionAsync(string sessionId, string requestId, string optionId)

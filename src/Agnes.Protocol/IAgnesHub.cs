@@ -106,6 +106,27 @@ public interface IAgnesServer
     /// <summary>Stages all changes and commits them in the session's working directory.</summary>
     Task<GitCommitResult> GitCommit(string sessionId, string message);
 
+    /// <summary>Stashes the working tree's uncommitted changes; null if there was nothing to stash.</summary>
+    Task<GitStashInfo?> GitStash(string sessionId);
+
+    /// <summary>Restores a previously created stash by its id (sha).</summary>
+    Task<GitOperationResult> GitPopStash(string sessionId, string stashId);
+
+    /// <summary>Switches branch, optionally carrying uncommitted changes across as a stash.</summary>
+    Task<GitSwitchResult> GitSwitchBranch(string sessionId, string branch, bool carryStash);
+
+    /// <summary>Fast-forward-only pull. A diverged remote is refused server-side with a typed error.</summary>
+    Task<GitPullResult> GitPull(string sessionId);
+
+    /// <summary>Pushes the current branch, publishing it upstream when requested.</summary>
+    Task<GitOperationResult> GitPush(string sessionId, bool publishBranch);
+
+    /// <summary>Open pull requests on the forge owning the session's git remote (empty if unrecognized).</summary>
+    Task<IReadOnlyList<Abstractions.PullRequestInfo>> ListPullRequests(string sessionId);
+
+    /// <summary>Fetches and checks out a pull request into the session's working directory.</summary>
+    Task<GitOperationResult> CheckoutPullRequest(string sessionId, string pullRequestId);
+
     /// <summary>Review comments left on a project's files (durable across the sessions run against it).</summary>
     Task<IReadOnlyList<Abstractions.ReviewComment>> ListReviewComments(string projectId);
 

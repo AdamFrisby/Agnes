@@ -159,6 +159,27 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<GitCommitResult> GitCommit(string sessionId, string message)
         => _sessions.GitCommitAsync(sessionId, message);
 
+    public Task<GitStashInfo?> GitStash(string sessionId)
+        => _sessions.GitStashAsync(sessionId);
+
+    public Task<GitOperationResult> GitPopStash(string sessionId, string stashId)
+        => _sessions.GitPopStashAsync(sessionId, stashId);
+
+    public Task<GitSwitchResult> GitSwitchBranch(string sessionId, string branch, bool carryStash)
+        => _sessions.GitSwitchBranchAsync(sessionId, branch, carryStash);
+
+    public Task<GitPullResult> GitPull(string sessionId)
+        => _sessions.GitPullAsync(sessionId);
+
+    public Task<GitOperationResult> GitPush(string sessionId, bool publishBranch)
+        => _sessions.GitPushAsync(sessionId, publishBranch);
+
+    public Task<IReadOnlyList<Abstractions.PullRequestInfo>> ListPullRequests(string sessionId)
+        => _sessions.ListPullRequestsAsync(sessionId);
+
+    public Task<GitOperationResult> CheckoutPullRequest(string sessionId, string pullRequestId)
+        => _sessions.CheckoutPullRequestAsync(sessionId, pullRequestId);
+
     public Task<IReadOnlyList<Abstractions.ReviewComment>> ListReviewComments(string projectId)
         => Task.FromResult(_reviewComments.ListForProject(projectId));
 

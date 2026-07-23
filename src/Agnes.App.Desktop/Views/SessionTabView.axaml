@@ -302,6 +302,81 @@
                                         <Button Content="Commit all changes" Command="{Binding Session.CommitCommand}"
                                                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                                 Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="10,6" FontWeight="SemiBold" />
+
+                                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,2" />
+
+                                        <!-- Stash / restore -->
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                            <Button Grid.Column="0" Content="Stash changes" Command="{Binding Session.StashCommand}"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="8,5" FontSize="12" />
+                                            <Button Grid.Column="1" Content="Restore stash" Command="{Binding Session.PopStashCommand}"
+                                                    IsVisible="{Binding Session.HasStash}"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="8,5" FontSize="12" />
+                                        </Grid>
+
+                                        <!-- Branch switcher (carry-stash optional) -->
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <TextBox Grid.Column="0" Text="{Binding Session.TargetBranch, Mode=TwoWay}" Watermark="Switch to branch…"
+                                                     Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                     BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
+                                                     AutomationProperties.Name="Target branch" />
+                                            <Button Grid.Column="1" Content="Switch" Command="{Binding Session.SwitchBranchCommand}"
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12" />
+                                        </Grid>
+                                        <CheckBox IsChecked="{Binding Session.CarryStash, Mode=TwoWay}" Content="Carry uncommitted changes across"
+                                                  Foreground="{DynamicResource FgDim}" FontSize="11" />
+
+                                        <!-- Pull (fast-forward only) / push -->
+                                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                                            <Button Grid.Column="0" Content="Pull (FF)" Command="{Binding Session.PullCommand}"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="8,5" FontSize="12" />
+                                            <Button Grid.Column="1" Content="Push" Command="{Binding Session.PushCommand}"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="8,5" FontSize="12" />
+                                            <Button Grid.Column="2" Content="Publish" Command="{Binding Session.PublishBranchCommand}"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="8,5" FontSize="12" />
+                                        </Grid>
+
+                                        <!-- Last git-operation status (a refused pull renders in the accent/error tone) -->
+                                        <TextBlock Text="{Binding Session.GitOpMessage}" IsVisible="{Binding Session.HasGitOpMessage}"
+                                                   TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource FgDim}" />
+
+                                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,2" />
+
+                                        <!-- Pull requests on the session's forge -->
+                                        <Button Content="Load pull requests" Command="{Binding Session.RefreshPullRequestsCommand}"
+                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="8,5" FontSize="12" />
+                                        <ItemsControl ItemsSource="{Binding Session.PullRequests}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid ColumnDefinitions="*,Auto" Margin="0,2" ColumnSpacing="6">
+                                                        <StackPanel Grid.Column="0">
+                                                            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding SourceBranch}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                        <Button Grid.Column="1" Content="Checkout"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.Session.CheckoutPullRequestCommand}"
+                                                                CommandParameter="{Binding}"
+                                                                Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="8,4" FontSize="11" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                     </StackPanel>
                                 </Flyout>
                             </Button.Flyout>
