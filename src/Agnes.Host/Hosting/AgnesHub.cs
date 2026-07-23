@@ -31,10 +31,18 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly Notifications.ActiveSessionViewTracker _views;
     private readonly IPluginRegistry<INotificationChannel> _channels;
     private readonly Social.FriendService _friends;
+    private readonly Sharing.SessionSharingService _sharing;
+    private readonly Sharing.SessionAccessAuthorizer _access;
+    private readonly Sharing.PublicLinkStore _publicLinks;
+    private readonly Sharing.PublicViewerTracker _publicViewers;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.FriendService friends)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.FriendService friends, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers)
     {
         _friends = friends;
+        _sharing = sharing;
+        _access = access;
+        _publicLinks = publicLinks;
+        _publicViewers = publicViewers;
         _launchProfiles = launchProfiles;
         _pushRegistrations = pushRegistrations;
         _views = views;
@@ -57,19 +65,34 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public override async Task OnConnectedAsync()
     {
-        var token = Context.GetHttpContext()?.Request.Query[WireProtocol.TokenParameter].ToString();
-        if (!_tokens.IsValid(token))
+        var query = Context.GetHttpContext()?.Request.Query;
+        var token = query?[WireProtocol.TokenParameter].ToString();
+        if (_tokens.IsValid(token))
         {
-            Context.Abort();
+            await base.OnConnectedAsync();
             return;
         }
 
-        await base.OnConnectedAsync();
+        // No valid device token: a public-link viewer may still connect if it presents a valid link token for a
+        // specific session (collaboration/02). Such a connection is marked read-only and scoped to that one
+        // session — every write path rejects it. Consuming the link here counts one use against its MaxUses.
+        var linkToken = query?[WireProtocol.PublicLinkTokenParameter].ToString();
+        var linkSession = query?[WireProtocol.PublicLinkSessionParameter].ToString();
+        if (!string.IsNullOrEmpty(linkToken) && !string.IsNullOrEmpty(linkSession)
+            && _publicLinks.Validate(linkSession, linkToken) == Sharing.PublicLinkValidation.Valid)
+        {
+            _publicViewers.Mark(Context.ConnectionId, linkSession);
+            await base.OnConnectedAsync();
+            return;
+        }
+
+        Context.Abort();
     }
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
         _clientCaps.Remove(Context.ConnectionId);
+        _publicViewers.Remove(Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
     }
 
@@ -145,6 +168,21 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public async Task<SessionSnapshot> Subscribe(string sessionId, long sinceSequence)
     {
+        // collaboration/02 enforcement point: only the owner, a shared recipient (any level), or a valid
+        // public-link viewer scoped to this session may watch it. An unshared device is rejected here — the
+        // gate is server-side, so no client can bypass it. Unshared sessions stay owner-only (additive).
+        if (_publicViewers.IsPublicViewer(Context.ConnectionId))
+        {
+            if (!_publicViewers.CanView(Context.ConnectionId, sessionId))
+            {
+                throw new HubException("This public link only grants access to a single session.");
+            }
+        }
+        else if (!_access.CanSubscribe(sessionId, CallerContext()))
+        {
+            throw new HubException("You do not have access to this session.");
+        }
+
         // Join the group BEFORE snapshotting so no event is missed; the client dedupes by
         // sequence, so an event that both lands in the snapshot and is broadcast is harmless.
         await Groups.AddToGroupAsync(Context.ConnectionId, sessionId);
@@ -166,7 +204,12 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         => Groups.RemoveFromGroupAsync(Context.ConnectionId, sessionId);
 
     public Task Prompt(PromptRequest request)
-        => _sessions.PromptAsync(request.SessionId, request.Content);
+    {
+        // Send/drive requires CanEdit or higher — a view-only recipient (or any public viewer) is rejected
+        // server-side, not merely hidden in the UI (AC1).
+        RequireWrite(request.SessionId, _access.CanPrompt, "You do not have permission to send messages to this session.");
+        return _sessions.PromptAsync(request.SessionId, request.Content);
+    }
 
     public Task<string> OpenTerminal(string sessionId, OpenTerminalRequest request)
         => _sessions.OpenTerminalAsync(sessionId, request.Command, request.Arguments, request.WorkingDirectory, request.Columns, request.Rows);
@@ -315,7 +358,12 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         => _sessions.GetOpenApprovalsAsync();
 
     public Task RespondPermission(PermissionResponseRequest response)
-        => _sessions.RespondPermissionAsync(response.SessionId, response.RequestId, response.OptionId);
+    {
+        // Answering a tool-permission prompt is the orthogonal, separately-granted capability — gated on the
+        // share's AllowPermissionApprovals flag, independent of access level (AC2). A public viewer never has it.
+        RequireWrite(response.SessionId, _access.CanApprovePermissions, "You are not permitted to approve permissions on this session.");
+        return _sessions.RespondPermissionAsync(response.SessionId, response.RequestId, response.OptionId);
+    }
 
     public async Task RegisterPushChannel(RegisterPushRequest request)
     {
@@ -568,5 +616,84 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     {
         var token = Context.GetHttpContext()?.Request.Query[WireProtocol.TokenParameter].ToString();
         return _tokens.ResolveGitHubLogin(token);
+    }
+
+    // ---- session sharing & public links (collaboration/02) ----
+    // Two deliberately-separate mechanisms. Managing either (creating/revoking a share or link) is gated to the
+    // session owner or a CanManage collaborator; the read/write enforcement itself lives in Subscribe/Prompt/
+    // RespondPermission above. A public viewer can never reach these — it is rejected before any of them.
+
+    public Task<Abstractions.SessionShare> ShareSession(ShareSessionRequest request)
+    {
+        var caller = RequireManage(request.SessionId);
+        try
+        {
+            return _sharing.ShareWithAsync(request.SessionId, request.RecipientId, request.Level, request.AllowPermissionApprovals, caller.DeviceId ?? string.Empty, Context.ConnectionAborted);
+        }
+        catch (Sharing.SharingException ex)
+        {
+            // A domain refusal (e.g. approvals on a view-only/inactive share) surfaces as a hub error, not a fault.
+            throw new HubException(ex.Message);
+        }
+    }
+
+    public Task RevokeShare(string sessionId, string recipientId)
+    {
+        RequireManage(sessionId);
+        return _sharing.RevokeAsync(sessionId, recipientId, Context.ConnectionAborted);
+    }
+
+    public Task<IReadOnlyList<Abstractions.SessionShare>> ListShares(string sessionId)
+    {
+        RequireManage(sessionId);
+        return Task.FromResult(_sharing.ListShares(sessionId));
+    }
+
+    public Task<Abstractions.PublicSessionLink> CreatePublicLink(CreatePublicLinkRequest request)
+    {
+        RequireManage(request.SessionId);
+        return _sharing.CreatePublicLinkAsync(request.SessionId, request.Options, Context.ConnectionAborted);
+    }
+
+    public Task RevokePublicLink(string sessionId)
+    {
+        RequireManage(sessionId);
+        return _sharing.RevokePublicLinkAsync(sessionId, Context.ConnectionAborted);
+    }
+
+    // Resolves the connection's identities (device id + GitHub login + owner flag) as the sharing layer sees it.
+    private Sharing.SharingCaller CallerContext()
+    {
+        var token = Context.GetHttpContext()?.Request.Query[WireProtocol.TokenParameter].ToString();
+        var deviceId = _tokens.ResolveCallerId(token);
+        return new Sharing.SharingCaller(deviceId, _tokens.ResolveGitHubLogin(token), _tokens.IsOwner(deviceId));
+    }
+
+    // Rejects a write on a session unless the caller passes the given access check. A public-link viewer never
+    // holds a device identity, so it fails every write check here — the read-only guarantee is structural.
+    private void RequireWrite(string sessionId, Func<string, Sharing.SharingCaller, bool> check, string message)
+    {
+        if (_publicViewers.IsPublicViewer(Context.ConnectionId) || !check(sessionId, CallerContext()))
+        {
+            throw new HubException(message);
+        }
+    }
+
+    // Asserts the caller may manage sharing on this session (owner or a CanManage collaborator); returns their
+    // caller context. A CanEdit collaborator cannot re-share — this throws for them.
+    private Sharing.SharingCaller RequireManage(string sessionId)
+    {
+        if (_publicViewers.IsPublicViewer(Context.ConnectionId))
+        {
+            throw new HubException("A public link cannot manage session sharing.");
+        }
+
+        var caller = CallerContext();
+        if (!_access.CanManage(sessionId, caller))
+        {
+            throw new HubException("Only the session owner or a manager can change sharing on this session.");
+        }
+
+        return caller;
     }
 }

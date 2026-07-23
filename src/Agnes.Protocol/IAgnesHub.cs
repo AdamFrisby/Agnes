@@ -14,6 +14,14 @@ public static class WireProtocol
 
     /// <summary>Query-string / header key carrying the device bearer token.</summary>
     public const string TokenParameter = "access_token";
+
+    /// <summary>Query-string key carrying a public-link raw token (collaboration/02). A viewer opening a public
+    /// link connects with this — and <see cref="PublicLinkSessionParameter"/> — instead of a device token, and
+    /// is granted a strictly read-only view of that one session.</summary>
+    public const string PublicLinkTokenParameter = "public_link";
+
+    /// <summary>Query-string key carrying the session id a <see cref="PublicLinkTokenParameter"/> is scoped to.</summary>
+    public const string PublicLinkSessionParameter = "public_session";
 }
 
 /// <summary>
@@ -400,6 +408,29 @@ public interface IAgnesServer
 
     /// <summary>Revokes an access grant by id — immediate and permanent (owner-only).</summary>
     Task RevokeGrant(string grantId);
+
+    // ---- session sharing & public links (collaboration/02) ----
+    // Two deliberately-separate mechanisms, gated to the session owner or a CanManage collaborator: direct
+    // sharing with an identified recipient (three access levels + an orthogonal permission-approval toggle),
+    // and an always-view-only public link. The enforcement lives host-side (Subscribe/Prompt/RespondPermission),
+    // never in the client UI. See <c>.ideas/collaboration/02-session-sharing-and-public-links.md</c>.
+
+    /// <summary>Shares a session with an identified recipient (owner or CanManage only). Rejected server-side if
+    /// permission-approvals is requested for a view-only or inactive share.</summary>
+    Task<Abstractions.SessionShare> ShareSession(ShareSessionRequest request);
+
+    /// <summary>Revokes a recipient's share on a session — immediate (owner or CanManage only).</summary>
+    Task RevokeShare(string sessionId, string recipientId);
+
+    /// <summary>The active direct shares on a session (owner or CanManage only).</summary>
+    Task<IReadOnlyList<Abstractions.SessionShare>> ListShares(string sessionId);
+
+    /// <summary>Creates (or reissues) an always-view-only public link for a session (owner or CanManage only).
+    /// The raw token is returned once, embedded in the URL.</summary>
+    Task<Abstractions.PublicSessionLink> CreatePublicLink(CreatePublicLinkRequest request);
+
+    /// <summary>Invalidates a session's public link immediately (owner or CanManage only).</summary>
+    Task RevokePublicLink(string sessionId);
 }
 
 /// <summary>

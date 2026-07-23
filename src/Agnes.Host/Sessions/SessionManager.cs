@@ -2165,6 +2165,11 @@ public sealed class SessionManager : IAsyncDisposable
     public bool KnowsSession(string sessionId)
         => _sessions.ContainsKey(sessionId) || _catalog.ContainsKey(sessionId);
 
+    /// <summary>Whether the session is currently live (loaded with a running agent handle), as opposed to
+    /// dormant/catalogued-only. This is the "active session" the sharing layer requires before permission-approval
+    /// rights can be granted to a collaborator — a dormant session has no tool prompts to answer.</summary>
+    public bool IsSessionLive(string sessionId) => _sessions.ContainsKey(sessionId);
+
     public async Task<SessionSnapshot> GetSnapshotAsync(string sessionId, long sinceSequence, CancellationToken cancellationToken = default)
     {
         // Served from the durable log — works for live and dormant (restored-but-not-yet-prompted) sessions.

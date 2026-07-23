@@ -656,3 +656,21 @@ public sealed record AddFriendRequest(string GitHubLogin, string? DisplayName = 
 /// rejects the grant unless the grantee is currently eligible (an explicit friend, or a shared configured
 /// org/team, recomputed live).</summary>
 public sealed record GrantAccessRequest(string GranteeLogin, string Resource, GrantScope Scope);
+
+// ---- session sharing & public links (collaboration/02) ----
+// The domain records (SessionShare, PublicSessionLink, PublicLinkOptions, SessionAccessLevel) live in
+// Agnes.Abstractions and cross the wire whole — none carries a secret (a public link's raw token is delivered
+// only inside its one-time URL, never re-listed).
+
+/// <summary>Shares a session with an identified recipient — a GitHub login (a friend) or a paired device id — at
+/// an access level, optionally granting the orthogonal right to answer this session's permission prompts.</summary>
+public sealed record ShareSessionRequest(
+    string SessionId,
+    string RecipientId,
+    Abstractions.SessionAccessLevel Level,
+    bool AllowPermissionApprovals = false);
+
+/// <summary>Creates an always-view-only public link for a session with the given limits (expiry / max-uses /
+/// consent gate). There is deliberately no access-level field here — a public link cannot be anything but
+/// read-only.</summary>
+public sealed record CreatePublicLinkRequest(string SessionId, Abstractions.PublicLinkOptions Options);

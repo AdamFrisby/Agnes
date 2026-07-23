@@ -318,6 +318,26 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Social.FriendService(
     sp.GetRequiredService<IGitHubUserLookup>(),
     sp.GetRequiredService<TimeProvider>()));
 
+// ---- session sharing & public links (collaboration/02) ----
+// Two deliberately-separate stores persisted alongside the social ledger; a share IS a session-scoped grant,
+// a public link is always view-only by construction. Enforcement is host-side (AgnesHub), never UI-only.
+builder.Services.AddSingleton(sp => new Agnes.Host.Sharing.SessionShareStore(
+    socialDir, sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sharing.SessionShareStore>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Sharing.PublicLinkStore(
+    socialDir, sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sharing.PublicLinkStore>()));
+builder.Services.AddSingleton<Agnes.Host.Sharing.ISessionActivityProbe>(sp =>
+    new Agnes.Host.Sharing.SessionManagerActivityProbe(sp.GetRequiredService<Agnes.Host.Sessions.SessionManager>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Sharing.SessionSharingService(
+    sp.GetRequiredService<Agnes.Host.Sharing.SessionShareStore>(),
+    sp.GetRequiredService<Agnes.Host.Sharing.PublicLinkStore>(),
+    sp.GetRequiredService<Agnes.Host.Sharing.ISessionActivityProbe>(),
+    Uri.TryCreate(builder.Configuration["Agnes:PublicBaseUrl"], UriKind.Absolute, out var publicBase) ? publicBase : null));
+builder.Services.AddSingleton(sp => new Agnes.Host.Sharing.SessionAccessAuthorizer(
+    sp.GetRequiredService<Agnes.Host.Sharing.SessionShareStore>()));
+builder.Services.AddSingleton<Agnes.Host.Sharing.PublicViewerTracker>();
+
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
 var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandboxes.json");

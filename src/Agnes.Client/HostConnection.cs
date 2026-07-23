@@ -411,5 +411,22 @@ public sealed class HostConnection : IAgnesHost
     public Task RevokeGrantAsync(string grantId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RevokeGrant), grantId);
 
+    // ---- session sharing & public links (collaboration/02) ----
+
+    public Task<Abstractions.SessionShare> ShareSessionAsync(string sessionId, string recipientId, Abstractions.SessionAccessLevel level, bool allowPermissionApprovals = false)
+        => _hub.InvokeAsync<Abstractions.SessionShare>(nameof(IAgnesServer.ShareSession), new ShareSessionRequest(sessionId, recipientId, level, allowPermissionApprovals));
+
+    public Task RevokeShareAsync(string sessionId, string recipientId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RevokeShare), sessionId, recipientId);
+
+    public Task<IReadOnlyList<Abstractions.SessionShare>> ListSharesAsync(string sessionId)
+        => _hub.InvokeAsync<IReadOnlyList<Abstractions.SessionShare>>(nameof(IAgnesServer.ListShares), sessionId);
+
+    public Task<Abstractions.PublicSessionLink> CreatePublicLinkAsync(string sessionId, Abstractions.PublicLinkOptions options)
+        => _hub.InvokeAsync<Abstractions.PublicSessionLink>(nameof(IAgnesServer.CreatePublicLink), new CreatePublicLinkRequest(sessionId, options));
+
+    public Task RevokePublicLinkAsync(string sessionId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RevokePublicLink), sessionId);
+
     public async ValueTask DisposeAsync() => await _hub.DisposeAsync();
 }

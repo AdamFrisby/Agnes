@@ -459,6 +459,31 @@ public interface IAgnesHost : IAsyncDisposable
 
     /// <summary>Revokes an access grant by id — immediate and permanent. Default no-op.</summary>
     Task RevokeGrantAsync(string grantId) => Task.CompletedTask;
+
+    // ---- session sharing & public links (collaboration/02) ----
+    // Owner-or-CanManage management of a single session's sharing: direct shares with an identified recipient
+    // (three access levels + an orthogonal permission-approval toggle) and an always-view-only public link.
+    // Defaulted so hosts/fixtures that predate the feature reply empty / refuse writes rather than fail.
+
+    /// <summary>Shares a session with an identified recipient at an access level, optionally granting the
+    /// orthogonal permission-approval right. Default: unsupported.</summary>
+    Task<SessionShare> ShareSessionAsync(string sessionId, string recipientId, SessionAccessLevel level, bool allowPermissionApprovals = false)
+        => throw new NotSupportedException("This host does not support session sharing.");
+
+    /// <summary>Revokes a recipient's share on a session — immediate. Default no-op.</summary>
+    Task RevokeShareAsync(string sessionId, string recipientId) => Task.CompletedTask;
+
+    /// <summary>The active direct shares on a session. Default empty.</summary>
+    Task<IReadOnlyList<SessionShare>> ListSharesAsync(string sessionId)
+        => Task.FromResult<IReadOnlyList<SessionShare>>([]);
+
+    /// <summary>Creates (or reissues) an always-view-only public link for a session. The raw token is returned
+    /// once, inside the URL. Default: unsupported.</summary>
+    Task<PublicSessionLink> CreatePublicLinkAsync(string sessionId, PublicLinkOptions options)
+        => throw new NotSupportedException("This host does not support public links.");
+
+    /// <summary>Invalidates a session's public link immediately. Default no-op.</summary>
+    Task RevokePublicLinkAsync(string sessionId) => Task.CompletedTask;
 }
 
 /// <summary>Creates/looks up host connections. Swap the implementation to simulate a server.</summary>
