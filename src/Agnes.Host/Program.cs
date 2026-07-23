@@ -6,6 +6,7 @@ using Agnes.Host.Events;
 using Agnes.Host.Hosting;
 using Agnes.Host.Sessions;
 using Agnes.Protocol;
+using Agnes.Host.Plugins;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,12 +20,7 @@ builder.Services.AddSignalR(o => o.EnableDetailedErrors = true);
 // or tunnel transport can be added as a plugin. This governs reachability/address advertisement only — the
 // SignalR hub binding below is unchanged.
 builder.Services.AddSingleton<ITransportProvider, DirectTransportProvider>();
-builder.Services.AddSingleton<PluginRegistry<ITransportProvider>>(sp =>
-    new PluginRegistry<ITransportProvider>(sp.GetServices<ITransportProvider>(), t => t.Id));
-builder.Services.AddSingleton<IPluginRegistry<ITransportProvider>>(sp => sp.GetRequiredService<PluginRegistry<ITransportProvider>>());
-builder.Services.AddSingleton<IMutablePluginRegistry<ITransportProvider>>(sp => sp.GetRequiredService<PluginRegistry<ITransportProvider>>());
-builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
-    new Agnes.Host.Plugins.PluginPointMerger<ITransportProvider>(sp.GetRequiredService<IMutablePluginRegistry<ITransportProvider>>(), t => t.Id));
+builder.Services.AddPluginPoint<ITransportProvider>(t => t.Id);
 
 // CORS for a browser-hosted frontend (Uno WASM) reaching the hub cross-origin. The web client
 // served from this same origin needs no CORS; only configure origins when it's hosted elsewhere.
@@ -97,12 +93,7 @@ builder.Services.AddSingleton(sp => new KeypairAuth(
 builder.Services.AddSingleton<IAuthMethodProvider>(sp => new PairingAuthMethodProvider(sp.GetRequiredService<DeviceRegistry>()));
 builder.Services.AddSingleton<IAuthMethodProvider>(sp => new GitHubAuthMethodProvider(sp.GetRequiredService<GitHubIdentity>()));
 builder.Services.AddSingleton<IAuthMethodProvider>(sp => new KeypairAuthMethodProvider(sp.GetRequiredService<KeypairAuth>()));
-builder.Services.AddSingleton<PluginRegistry<IAuthMethodProvider>>(sp =>
-    new PluginRegistry<IAuthMethodProvider>(sp.GetServices<IAuthMethodProvider>(), m => m.MethodId));
-builder.Services.AddSingleton<IPluginRegistry<IAuthMethodProvider>>(sp => sp.GetRequiredService<PluginRegistry<IAuthMethodProvider>>());
-builder.Services.AddSingleton<IMutablePluginRegistry<IAuthMethodProvider>>(sp => sp.GetRequiredService<PluginRegistry<IAuthMethodProvider>>());
-builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
-    new Agnes.Host.Plugins.PluginPointMerger<IAuthMethodProvider>(sp.GetRequiredService<IMutablePluginRegistry<IAuthMethodProvider>>(), m => m.MethodId));
+builder.Services.AddPluginPoint<IAuthMethodProvider>(m => m.MethodId);
 
 // ---- rate limiting: cap the auth bootstrap endpoints per-IP and globally ----
 var authRateLimit = new AuthRateLimitOptions
@@ -122,12 +113,7 @@ builder.Services.AddSingleton(sp => new McpRegistry(
 
 // ---- MCP presets as built-in plugins (AC13): curated quick-install templates, extensible by plugins ----
 builder.Services.AddSingleton<IMcpPresetProvider, CuratedMcpPresetProvider>();
-builder.Services.AddSingleton<PluginRegistry<IMcpPresetProvider>>(sp =>
-    new PluginRegistry<IMcpPresetProvider>(sp.GetServices<IMcpPresetProvider>(), p => p.Id));
-builder.Services.AddSingleton<IPluginRegistry<IMcpPresetProvider>>(sp => sp.GetRequiredService<PluginRegistry<IMcpPresetProvider>>());
-builder.Services.AddSingleton<IMutablePluginRegistry<IMcpPresetProvider>>(sp => sp.GetRequiredService<PluginRegistry<IMcpPresetProvider>>());
-builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
-    new Agnes.Host.Plugins.PluginPointMerger<IMcpPresetProvider>(sp.GetRequiredService<IMutablePluginRegistry<IMcpPresetProvider>>(), p => p.Id));
+builder.Services.AddPluginPoint<IMcpPresetProvider>(p => p.Id);
 
 // ---- projects: per-repo bundles (sandbox + MCP + GitHub account + defaults) a session inherits ----
 var projectsFile = builder.Configuration["Agnes:ProjectsFile"]
@@ -181,12 +167,7 @@ builder.Services.AddSingleton<SessionManager>();
 // Automation triggers are built-in plugins (AC13): the interval trigger is the only kind today, with a
 // merger so a cron/webhook trigger can be added as a plugin.
 builder.Services.AddSingleton<IAutomationTrigger, IntervalAutomationTrigger>();
-builder.Services.AddSingleton<PluginRegistry<IAutomationTrigger>>(sp =>
-    new PluginRegistry<IAutomationTrigger>(sp.GetServices<IAutomationTrigger>(), t => t.Kind));
-builder.Services.AddSingleton<IPluginRegistry<IAutomationTrigger>>(sp => sp.GetRequiredService<PluginRegistry<IAutomationTrigger>>());
-builder.Services.AddSingleton<IMutablePluginRegistry<IAutomationTrigger>>(sp => sp.GetRequiredService<PluginRegistry<IAutomationTrigger>>());
-builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
-    new Agnes.Host.Plugins.PluginPointMerger<IAutomationTrigger>(sp.GetRequiredService<IMutablePluginRegistry<IAutomationTrigger>>(), t => t.Kind));
+builder.Services.AddPluginPoint<IAutomationTrigger>(t => t.Kind);
 builder.Services.AddSingleton(sp => new ScheduledTaskManager(
     sp.GetRequiredService<IPluginRegistry<IAutomationTrigger>>(),
     sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>()));
@@ -237,12 +218,7 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Codex.CodexAppSe
 // Registered once as the concrete type, then exposed under both the read-only and mutable interfaces
 // so IPluginInstaller can merge a NuGet-installed plugin's adapters into the exact same instance
 // SessionManager already resolves — no separate "plugin adapters" list to keep in sync.
-builder.Services.AddSingleton(sp =>
-    new PluginRegistry<IAgentAdapter>(sp.GetServices<IAgentAdapter>(), a => a.Descriptor.Id));
-builder.Services.AddSingleton<IPluginRegistry<IAgentAdapter>>(sp => sp.GetRequiredService<PluginRegistry<IAgentAdapter>>());
-builder.Services.AddSingleton<IMutablePluginRegistry<IAgentAdapter>>(sp => sp.GetRequiredService<PluginRegistry<IAgentAdapter>>());
-builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
-    new Agnes.Host.Plugins.PluginPointMerger<IAgentAdapter>(sp.GetRequiredService<IMutablePluginRegistry<IAgentAdapter>>(), a => a.Descriptor.Id));
+builder.Services.AddPluginPoint<IAgentAdapter>(a => a.Descriptor.Id);
 
 // ---- sandboxing (opt-in) ----
 // When Agnes:Sandbox:Provider=incus, agents run inside per-session Incus VMs with their
@@ -320,12 +296,7 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
 // A typed, DI-resolvable registry over every ISandboxProvider configured above (today: zero or one —
 // "Agnes:Sandbox:Provider" selects which backend is active). Registered unconditionally so the plugin
 // pattern (and capability negotiation) holds even when no sandbox backend is configured (AC2/AC3).
-builder.Services.AddSingleton(sp =>
-    new PluginRegistry<Agnes.Sandbox.ISandboxProvider>(sp.GetServices<Agnes.Sandbox.ISandboxProvider>(), p => p.Name));
-builder.Services.AddSingleton<IPluginRegistry<Agnes.Sandbox.ISandboxProvider>>(sp => sp.GetRequiredService<PluginRegistry<Agnes.Sandbox.ISandboxProvider>>());
-builder.Services.AddSingleton<IMutablePluginRegistry<Agnes.Sandbox.ISandboxProvider>>(sp => sp.GetRequiredService<PluginRegistry<Agnes.Sandbox.ISandboxProvider>>());
-builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
-    new Agnes.Host.Plugins.PluginPointMerger<Agnes.Sandbox.ISandboxProvider>(sp.GetRequiredService<IMutablePluginRegistry<Agnes.Sandbox.ISandboxProvider>>(), p => p.Name));
+builder.Services.AddPluginPoint<Agnes.Sandbox.ISandboxProvider>(p => p.Name);
 
 // Credential sources + the Connect-GitHub flow are always available (a user can link GitHub before
 // they ever open a sandbox); the broker above only consumes what's registered here.
@@ -339,12 +310,7 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.GitHubConnectFlow(
 
 // ---- git forges as built-in plugins (AC13): GitHub today, GitLab/Bitbucket addable as plugins ----
 builder.Services.AddSingleton<IGitHostProvider, GitHubGitHostProvider>();
-builder.Services.AddSingleton<PluginRegistry<IGitHostProvider>>(sp =>
-    new PluginRegistry<IGitHostProvider>(sp.GetServices<IGitHostProvider>(), p => p.Id));
-builder.Services.AddSingleton<IPluginRegistry<IGitHostProvider>>(sp => sp.GetRequiredService<PluginRegistry<IGitHostProvider>>());
-builder.Services.AddSingleton<IMutablePluginRegistry<IGitHostProvider>>(sp => sp.GetRequiredService<PluginRegistry<IGitHostProvider>>());
-builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
-    new Agnes.Host.Plugins.PluginPointMerger<IGitHostProvider>(sp.GetRequiredService<IMutablePluginRegistry<IGitHostProvider>>(), p => p.Id));
+builder.Services.AddPluginPoint<IGitHostProvider>(p => p.Id);
 
 // ---- plugin installer: NuGet-packaged third-party plugins (see .ideas/00-plugin-architecture.md) ----
 // The scoped service a plugin gets when it declares (and is granted) the "credentials" capability.
