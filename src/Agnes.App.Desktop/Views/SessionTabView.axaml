@@ -1366,6 +1366,70 @@
                                     </ScrollViewer>
                                 </StackPanel>
 
+                                <!-- Host-side pending queue (sessions/03): the authoritative, multi-client
+                                     queue synced from PendingQueueEvent — reorder / remove / send-now act on
+                                     the host so every connected client converges. -->
+                                <StackPanel Spacing="4" IsVisible="{Binding HasHostPending}">
+                                    <TextBlock Text="PENDING (SHARED)" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+                                    <ScrollViewer MaxHeight="168" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding HostPending}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
+                                                        BorderThickness="1" CornerRadius="8" Padding="10,5" Margin="0,2">
+                                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+                                                        <TextBlock Grid.Column="0" Text="⋮" Foreground="{DynamicResource FgFaint}"
+                                                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
+                                                                   FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                        <Button Grid.Column="2" Content="↑" Padding="6,1" FontSize="11" Background="Transparent"
+                                                                Foreground="{DynamicResource FgDim}" BorderThickness="0" Cursor="Hand"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.HostMoveUpCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Move up" />
+                                                        <Button Grid.Column="3" Content="↓" Padding="6,1" FontSize="11" Background="Transparent"
+                                                                Foreground="{DynamicResource FgDim}" BorderThickness="0" Cursor="Hand"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.HostMoveDownCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Move down" />
+                                                        <Button Grid.Column="4" Content="⏵" Padding="6,1" FontSize="11" Background="Transparent"
+                                                                Foreground="{DynamicResource Accent}" BorderThickness="0" Cursor="Hand"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.HostSendNowCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Send now"
+                                                                ToolTip.Tip="Interrupt the current turn and send this now" />
+                                                        <Button Grid.Column="5" Content="✕" Padding="6,1" FontSize="11" Background="Transparent"
+                                                                Foreground="{DynamicResource FgFaint}" BorderThickness="0" Cursor="Hand"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.HostRemoveCommand}"
+                                                                CommandParameter="{Binding}" AutomationProperties.Name="Remove from queue" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    </ScrollViewer>
+                                </StackPanel>
+
+                                <!-- Discarded: written-but-undeliverable messages (never silently dropped),
+                                     collapsed by default so they stay visible and copyable. -->
+                                <StackPanel Spacing="4" IsVisible="{Binding HasDiscarded}">
+                                    <Button Command="{Binding ToggleDiscardedCommand}" HorizontalAlignment="Left"
+                                            Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                                            AutomationProperties.Name="Toggle discarded messages">
+                                        <TextBlock Text="DISCARDED" Foreground="{DynamicResource FgFaint}" FontSize="10" FontWeight="SemiBold" />
+                                    </Button>
+                                    <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto" IsVisible="{Binding ShowDiscarded}">
+                                    <ItemsControl ItemsSource="{Binding DiscardedMessages}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="Transparent" BorderBrush="{DynamicResource Line}"
+                                                        BorderThickness="1" CornerRadius="8" Padding="10,5" Margin="0,2">
+                                                    <TextBlock Text="{Binding Text}" Foreground="{DynamicResource FgFaint}"
+                                                               FontSize="12" TextTrimming="CharacterEllipsis" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    </ScrollViewer>
+                                </StackPanel>
+
                                 <!-- Slash-command suggestions -->
                                 <Border IsVisible="{Binding ShowSlash}" Background="{DynamicResource PanelAlt}"
                                         BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="4">
@@ -1457,6 +1521,14 @@
                                         </ItemsControl>
                                         <TextBlock Text="{Binding CurrentModeName}" Foreground="{DynamicResource Accent}" FontSize="11"
                                                    FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0" />
+                                    </StackPanel>
+
+                                    <!-- Send policy: what "send" does while a turn is active (sessions/03). -->
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="4,0,0,6">
+                                        <TextBlock Text="When busy" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
+                                        <ComboBox ItemsSource="{Binding SendPolicies}" SelectedItem="{Binding SendPolicy, Mode=TwoWay}"
+                                                  FontSize="12" MinHeight="30" Padding="8,2"
+                                                  AutomationProperties.Name="Send policy while a turn is active" />
                                     </StackPanel>
                                 </WrapPanel>
 

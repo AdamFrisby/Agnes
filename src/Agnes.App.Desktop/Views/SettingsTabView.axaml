@@ -652,6 +652,8 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
 
                     <!-- Prompts: saved reusable prompts + slash-token templates that expand them -->
                     <StackPanel IsVisible="{Binding CatPrompts}">

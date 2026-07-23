@@ -61,6 +61,25 @@ public interface IAgnesServer
 
     Task Prompt(PromptRequest request);
 
+    // ---- pending queue & send policy (sessions/03) ----
+    // One ordered queue per SESSION (not per client), owned host-side; its state rides the session event
+    // log as PendingQueueEvent snapshots, so no bespoke queue-sync channel is needed. Additive/trailing.
+
+    /// <summary>Sets the session's send policy — what a send does while a turn is active.</summary>
+    Task SetSendPolicy(string sessionId, Abstractions.SendPolicy policy);
+
+    /// <summary>Submits a message under the session's send policy (queued, sent now, or interrupt-and-send).</summary>
+    Task EnqueuePendingMessage(string sessionId, IReadOnlyList<Abstractions.ContentBlock> content);
+
+    /// <summary>Moves a queued message to a new position in the session's pending queue.</summary>
+    Task ReorderPendingMessage(string sessionId, string messageId, int newIndex);
+
+    /// <summary>Interrupts the current turn and sends the named queued message ahead of the rest.</summary>
+    Task SendPendingNow(string sessionId, string messageId);
+
+    /// <summary>Removes a queued message from the session's pending queue.</summary>
+    Task RemovePendingMessage(string sessionId, string messageId);
+
     /// <summary>Full-text search over this host's session transcripts (see
     /// <c>.ideas/ops/02-memory-search.md</c>). Returns ranked hits with a highlighted snippet; an empty
     /// list on a host without a memory index configured.</summary>

@@ -77,6 +77,27 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content);
 
+    // ---- pending queue & send policy (sessions/03) ----
+    // Defaulted so hosts/fixtures (SimulatedHost/RecordedHost/FakeHost) that predate the queue keep
+    // compiling: a policy set is a no-op and an enqueue degrades to an immediate send.
+
+    /// <summary>Sets the session's send policy (what a send does while a turn is active). Default no-op.</summary>
+    Task SetSendPolicyAsync(string sessionId, SendPolicy policy) => Task.CompletedTask;
+
+    /// <summary>Submits a message under the session's send policy (queued, sent now, or interrupt-and-send).
+    /// Default: send immediately, so a host without the queue still delivers the message.</summary>
+    Task EnqueuePendingMessageAsync(string sessionId, IReadOnlyList<ContentBlock> content)
+        => PromptAsync(sessionId, content);
+
+    /// <summary>Moves a queued message to a new position in the session's pending queue. Default no-op.</summary>
+    Task ReorderPendingMessageAsync(string sessionId, string messageId, int newIndex) => Task.CompletedTask;
+
+    /// <summary>Interrupts the current turn and sends the named queued message ahead of the rest. Default no-op.</summary>
+    Task SendPendingNowAsync(string sessionId, string messageId) => Task.CompletedTask;
+
+    /// <summary>Removes a queued message from the session's pending queue. Default no-op.</summary>
+    Task RemovePendingMessageAsync(string sessionId, string messageId) => Task.CompletedTask;
+
     /// <summary>Full-text search over this host's session transcripts, ranked best-first with a highlighted
     /// snippet. Default empty for hosts/fixtures without a memory index (see
     /// <c>.ideas/ops/02-memory-search.md</c>).</summary>

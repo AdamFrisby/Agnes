@@ -56,6 +56,8 @@ public sealed class SessionViewModel : ObservableObject
     private int _matchCursor = -1;
     private int _promptCursor = -1;
     private int _changeCursor = -1;
+    private bool _showDiscarded;
+    private SendPolicy _sendPolicy = SendPolicy.QueueInAgent;
 
     public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null, Agnes.Abstractions.Events.IEventBus? eventBus = null)
     {
@@ -78,6 +80,11 @@ public sealed class SessionViewModel : ObservableObject
         EditQueuedCommand = new RelayCommand<QueuedPrompt>(EditQueued);
         MoveQueuedUpCommand = new RelayCommand<QueuedPrompt>(p => MoveQueued(p, -1));
         MoveQueuedDownCommand = new RelayCommand<QueuedPrompt>(p => MoveQueued(p, +1));
+        HostSendNowCommand = new RelayCommand<PendingMessageView>(p => { if (p is not null) { _ = _host.SendPendingNowAsync(SessionId, p.Id); } });
+        HostRemoveCommand = new RelayCommand<PendingMessageView>(p => { if (p is not null) { _ = _host.RemovePendingMessageAsync(SessionId, p.Id); } });
+        HostMoveUpCommand = new RelayCommand<PendingMessageView>(p => MoveHostPending(p, -1));
+        HostMoveDownCommand = new RelayCommand<PendingMessageView>(p => MoveHostPending(p, +1));
+        ToggleDiscardedCommand = new RelayCommand(() => ShowDiscarded = !ShowDiscarded);
         AllowCommand = new AsyncRelayCommand(() => RespondAsync(allow: true));
         DenyCommand = new AsyncRelayCommand(() => RespondAsync(allow: false));
         RespondWithCommand = new RelayCommand<PermissionOption>(o => { if (o is not null) { _ = RespondWithAsync(o); } });
@@ -680,6 +687,95 @@ public sealed class SessionViewModel : ObservableObject
 
     public bool HasQueue => PendingPrompts.Count > 0;
 
+    // ---- host-side pending queue (sessions/03) ----
+    // The authoritative, multi-client queue owned host-side. These mirror the latest PendingQueueEvent
+    // snapshot, so every client on the session sees the same queued/discarded messages in the same order.
+
+    public ICommand HostSendNowCommand { get; }
+    public ICommand HostRemoveCommand { get; }
+    public ICommand HostMoveUpCommand { get; }
+    public ICommand HostMoveDownCommand { get; }
+    public ICommand ToggleDiscardedCommand { get; }
+
+    /// <summary>The session's host-side pending queue (in send order), synced from PendingQueueEvent.</summary>
+    public ObservableCollection<PendingMessageView> HostPending { get; } = [];
+
+    /// <summary>Messages that could no longer be delivered (e.g. the session was torn down before the queue
+    /// drained) — kept visible and copyable rather than silently dropped.</summary>
+    public ObservableCollection<PendingMessageView> DiscardedMessages { get; } = [];
+
+    public bool HasHostPending => HostPending.Count > 0;
+    public bool HasDiscarded => DiscardedMessages.Count > 0;
+
+    public bool ShowDiscarded
+    {
+        get => _showDiscarded;
+        set => SetProperty(ref _showDiscarded, value);
+    }
+
+    /// <summary>The send policies offered by the composer's policy selector.</summary>
+    public IReadOnlyList<SendPolicy> SendPolicies { get; } = [SendPolicy.QueueInAgent, SendPolicy.InterruptAndSend, SendPolicy.PendingUntilReady];
+
+    /// <summary>What a send does while a turn is active. Setting it pushes the choice to the host (a
+    /// per-session setting); the default is <see cref="SendPolicy.QueueInAgent"/>.</summary>
+    public SendPolicy SendPolicy
+    {
+        get => _sendPolicy;
+        set
+        {
+            if (SetProperty(ref _sendPolicy, value))
+            {
+                _ = _host.SetSendPolicyAsync(SessionId, value);
+                OnPropertyChanged(nameof(SendGestureHint));
+            }
+        }
+    }
+
+    // Rebuilds the host queue + discarded projections from a snapshot, then refreshes the derived flags.
+    private void ApplyPendingQueue(PendingQueueEvent snapshot)
+    {
+        HostPending.Clear();
+        foreach (var m in snapshot.Queue)
+        {
+            HostPending.Add(new PendingMessageView(m.Id, PreviewText(m.Content)));
+        }
+
+        DiscardedMessages.Clear();
+        foreach (var m in snapshot.Discarded)
+        {
+            DiscardedMessages.Add(new PendingMessageView(m.Id, PreviewText(m.Content)));
+        }
+
+        OnPropertyChanged(nameof(HasHostPending));
+        OnPropertyChanged(nameof(HasDiscarded));
+    }
+
+    private static string PreviewText(IReadOnlyList<ContentBlock> content)
+        => string.Concat(content.Select(b => b switch
+        {
+            TextContent t => t.Text,
+            DiffContent d => d.Path,
+            ResourceLinkContent r => r.Name ?? r.Uri,
+            _ => string.Empty,
+        }));
+
+    // Reorder a host-queue entry by asking the host to move it; the resulting PendingQueueEvent re-syncs
+    // every client's view (we don't mutate the local collection optimistically — the host is authoritative).
+    private void MoveHostPending(PendingMessageView? item, int direction)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        var index = HostPending.IndexOf(item);
+        var target = index + direction;
+        if (index >= 0 && target >= 0 && target < HostPending.Count)
+        {
+            _ = _host.ReorderPendingMessageAsync(SessionId, item.Id, target);
+        }
+    }
+
     // ---- composer context: attachments + slash commands ----
 
     /// <summary>Context attached to the next prompt (references / images), shown as chips.</summary>
@@ -1057,6 +1153,10 @@ public sealed class SessionViewModel : ObservableObject
                 CurrentModeId = mode.ModeId;
                 break;
 
+            case PendingQueueEvent queue:
+                ApplyPendingQueue(queue);
+                break;
+
             case McpToolCallEvent mcp:
                 McpCalls.Insert(0, new McpCallEntry(mcp.Server, mcp.Tool, @event.Timestamp));
                 OnPropertyChanged(nameof(HasMcpCalls));
@@ -1396,6 +1496,16 @@ public sealed class SessionViewModel : ObservableObject
         Record(text);
         PromptText = string.Empty;
 
+        // Non-default send policies are host-authoritative: the host applies the policy (queue / hold /
+        // interrupt-and-send) and every connected client converges on the result via PendingQueueEvent
+        // (mirrored in HostPending / DiscardedMessages). The default QueueInAgent keeps the lightweight
+        // client-local queue below (unchanged behaviour); switch policy to engage the shared host queue.
+        if (SendPolicy != SendPolicy.QueueInAgent)
+        {
+            await _host.EnqueuePendingMessageAsync(SessionId, BuildPromptBlocks(text));
+            return;
+        }
+
         if (IsTurnActive)
         {
             PendingPrompts.Add(new QueuedPrompt(text));
@@ -1434,6 +1544,22 @@ public sealed class SessionViewModel : ObservableObject
         _lastPrompt = text;
     }
 
+    // Builds the outgoing content blocks (any attached context first, then the typed text) and clears the
+    // attachment chips. Shared by the immediate-send path and the host-policy enqueue path.
+    private List<ContentBlock> BuildPromptBlocks(string text)
+    {
+        var blocks = new List<ContentBlock>(Attachments.Count + 1);
+        blocks.AddRange(Attachments.Select(a => a.Content));
+        blocks.Add(new TextContent(text));
+        if (Attachments.Count > 0)
+        {
+            Attachments.Clear();
+            OnPropertyChanged(nameof(HasAttachments));
+        }
+
+        return blocks;
+    }
+
     private async Task SubmitAsync(string text)
     {
         // Client event spine: a client plugin may rewrite the outgoing message or veto it before it leaves
@@ -1449,14 +1575,7 @@ public sealed class SessionViewModel : ObservableObject
         UpdateBanner();
         IsTurnActive = true;
 
-        var blocks = new List<ContentBlock>(Attachments.Count + 1);
-        blocks.AddRange(Attachments.Select(a => a.Content));
-        blocks.Add(new TextContent(text));
-        if (Attachments.Count > 0)
-        {
-            Attachments.Clear();
-            OnPropertyChanged(nameof(HasAttachments));
-        }
+        var blocks = BuildPromptBlocks(text);
 
         try
         {

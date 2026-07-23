@@ -558,6 +558,48 @@ public class SessionStateTests
         Assert.Equal(["a"], vm.PendingPrompts.Select(p => p.Text));
     }
 
+    [Fact]
+    public void Host_pending_queue_and_discarded_mirror_the_PendingQueueEvent_snapshot()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        // A snapshot pushed from the host (multi-client sync) populates the shared queue + discarded lists.
+        view.Apply(Seq(new PendingQueueEvent(
+            [new PendingMessage("m1", [new TextContent("queued one")]), new PendingMessage("m2", [new TextContent("queued two")])],
+            [new PendingMessage("d1", [new TextContent("dropped")])]), 1));
+
+        Assert.Equal(["queued one", "queued two"], vm.HostPending.Select(m => m.Text));
+        Assert.True(vm.HasHostPending);
+        Assert.Equal(["dropped"], vm.DiscardedMessages.Select(m => m.Text));
+        Assert.True(vm.HasDiscarded);
+
+        // A later snapshot fully replaces the projection (queue drained, still one discarded).
+        view.Apply(Seq(new PendingQueueEvent([], [new PendingMessage("d1", [new TextContent("dropped")])]), 2));
+        Assert.False(vm.HasHostPending);
+        Assert.True(vm.HasDiscarded);
+    }
+
+    [Fact]
+    public void A_non_default_send_policy_routes_the_send_through_the_host_queue()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode")
+        {
+            SendPolicy = SendPolicy.InterruptAndSend,
+        };
+
+        vm.PromptText = "steer this";
+        vm.SendCommand.Execute(null);
+
+        // The host applies the policy (the fake host's EnqueuePendingMessage default forwards to a send);
+        // the client does NOT use its local queue for a non-default policy.
+        Assert.Equal(["steer this"], host.Prompts);
+        Assert.Empty(vm.PendingPrompts);
+    }
+
     // ---- notifications ----
 
     [Fact]

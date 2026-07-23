@@ -127,6 +127,21 @@ public sealed class HostConnection : IAgnesHost
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
         => _hub.InvokeAsync(nameof(IAgnesServer.Prompt), new PromptRequest(sessionId, content));
 
+    public Task SetSendPolicyAsync(string sessionId, SendPolicy policy)
+        => _hub.InvokeAsync(nameof(IAgnesServer.SetSendPolicy), sessionId, policy);
+
+    public Task EnqueuePendingMessageAsync(string sessionId, IReadOnlyList<ContentBlock> content)
+        => _hub.InvokeAsync(nameof(IAgnesServer.EnqueuePendingMessage), sessionId, content);
+
+    public Task ReorderPendingMessageAsync(string sessionId, string messageId, int newIndex)
+        => _hub.InvokeAsync(nameof(IAgnesServer.ReorderPendingMessage), sessionId, messageId, newIndex);
+
+    public Task SendPendingNowAsync(string sessionId, string messageId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.SendPendingNow), sessionId, messageId);
+
+    public Task RemovePendingMessageAsync(string sessionId, string messageId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RemovePendingMessage), sessionId, messageId);
+
     public Task<IReadOnlyList<Agnes.Abstractions.MemorySearchResult>> SearchMemoryAsync(string query, Agnes.Abstractions.MemorySearchOptions options)
         => _hub.InvokeAsync<IReadOnlyList<Agnes.Abstractions.MemorySearchResult>>(
             nameof(IAgnesServer.SearchMemory), query, new MemorySearchOptionsDto(options.Limit, options.SessionId));

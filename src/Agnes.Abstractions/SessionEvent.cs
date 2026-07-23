@@ -72,6 +72,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(McpToolCallEvent), "mcp_tool_call")]
 [JsonDerivedType(typeof(GitCredentialEvent), "git_credential")]
 [JsonDerivedType(typeof(SessionTitleEvent), "session_title")]
+[JsonDerivedType(typeof(PendingQueueEvent), "pending_queue")]
 public abstract record SessionEvent : Events.IAgnesEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -187,6 +188,26 @@ public sealed record GitCredentialEvent(string Host, string? Repo, bool Allowed)
 
 /// <summary>The agent (or adapter) reported an error.</summary>
 public sealed record AgentErrorEvent(string Message) : SessionEvent;
+
+/// <summary>
+/// One message a user has queued to send to a session, held host-side (never per-client) until it is
+/// delivered — auto-sent when the current turn ends, or sent explicitly via "send now". <see cref="Id"/>
+/// is a stable, host-assigned handle so clients can reorder/remove/send-now a specific entry. See
+/// <c>sessions/03</c>.
+/// </summary>
+public sealed record PendingMessage(string Id, IReadOnlyList<ContentBlock> Content);
+
+/// <summary>
+/// A snapshot of a session's single pending-message <see cref="Queue"/> and its <see cref="Discarded"/>
+/// list (messages that could no longer be delivered — e.g. the session was torn down before the queue
+/// drained — kept visible rather than silently dropped). Appended whenever either list changes, so every
+/// subscribed client converges on the same queue state for free from Agnes's event-sourced sync model,
+/// with no bespoke queue-sync channel. One snapshot per change keeps clients consistent. See
+/// <c>sessions/03</c>.
+/// </summary>
+public sealed record PendingQueueEvent(
+    IReadOnlyList<PendingMessage> Queue,
+    IReadOnlyList<PendingMessage> Discarded) : SessionEvent;
 
 /// <summary>
 /// The main agent spawned a subagent (e.g. via a Task/delegation tool). Subsequent events

@@ -58,6 +58,10 @@ public sealed class SessionManager : IAsyncDisposable
         // that keeps a session unread even while it's open until the next explicit mark-read.
         public long ReadCursor;
         public bool StickyUnread;
+
+        // The send policy applied to a busy-send. Durable per session (survives an agent relaunch, which
+        // rebuilds the live HostSession); re-applied to the live session on (re)attach.
+        public SendPolicy SendPolicy = SendPolicy.QueueInAgent;
     }
 
     /// <summary>The session's metadata entry, created on first write.</summary>
@@ -963,6 +967,12 @@ public sealed class SessionManager : IAsyncDisposable
             // process picks up a valid token.
             AgentError = message => _ = MaybeRecoverCredentialsAsync(sessionId, message),
         };
+        // Re-apply the session's chosen send policy to the (possibly freshly rebuilt) live session.
+        if (StateOrNull(sessionId) is { } state)
+        {
+            session.SendPolicy = state.SendPolicy;
+        }
+
         _sessions[sessionId] = session;
         return session;
     }
@@ -1396,6 +1406,39 @@ public sealed class SessionManager : IAsyncDisposable
         // --resume. Codex reports its id synchronously at open, so the catalogue is already correct there.
         await session.PromptAsync(content).ConfigureAwait(false);
     }
+
+    // ---- pending queue & send policy (sessions/03) ----
+    // One ordered queue per SESSION (not per client), owned by the live HostSession; queue mutations ride
+    // the event log as PendingQueueEvent snapshots, so multi-client sync is automatic.
+
+    /// <summary>Sets the session's send policy (what a send does while a turn is active). Stored durably so
+    /// it survives an agent relaunch, and applied to the live session immediately.</summary>
+    public async Task SetSendPolicyAsync(string sessionId, SendPolicy policy)
+    {
+        State(sessionId).SendPolicy = policy;
+        if (_sessions.TryGetValue(sessionId, out var live))
+        {
+            live.SendPolicy = policy;
+        }
+
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    /// <summary>Submits a message under the session's send policy: queued, sent now, or interrupt-and-send.</summary>
+    public async Task EnqueuePendingMessageAsync(string sessionId, IReadOnlyList<ContentBlock> content)
+        => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).SubmitAsync(content).ConfigureAwait(false);
+
+    /// <summary>Moves a queued message to a new position in the session's pending queue.</summary>
+    public async Task ReorderPendingMessageAsync(string sessionId, string messageId, int newIndex)
+        => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).ReorderPendingAsync(messageId, newIndex).ConfigureAwait(false);
+
+    /// <summary>Interrupts the current turn and sends the named queued message ahead of the rest.</summary>
+    public async Task SendPendingNowAsync(string sessionId, string messageId)
+        => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).SendPendingNowAsync(messageId).ConfigureAwait(false);
+
+    /// <summary>Removes a queued message from the session's pending queue.</summary>
+    public async Task RemovePendingMessageAsync(string sessionId, string messageId)
+        => await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).RemovePendingAsync(messageId).ConfigureAwait(false);
 
     // Persist the agent's real session id once it reports one (a native CLI's init line) so the agent can
     // be resumed (--resume) after a crash or restart. Only overwrites a different, non-empty id.

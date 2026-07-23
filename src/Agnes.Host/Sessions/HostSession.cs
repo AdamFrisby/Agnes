@@ -26,6 +26,16 @@ internal sealed class HostSession : IAsyncDisposable
 
     private readonly Agnes.Abstractions.Events.IEventBus _bus;
 
+    // The session's single pending-message queue + discarded list, owned host-side (never per-client), plus
+    // the current send policy and turn-active flag. All guarded by _queueGate — kept local and explicit to
+    // this session rather than any ambient/shared state. Queue mutations are published as a single
+    // PendingQueueEvent snapshot (see PublishQueueAsync), so multi-client sync rides the event log for free.
+    private readonly object _queueGate = new();
+    private readonly List<PendingMessage> _queue = [];
+    private readonly List<PendingMessage> _discarded = [];
+    private bool _turnActive;
+    private SendPolicy _sendPolicy = SendPolicy.QueueInAgent;
+
     public HostSession(
         string sessionId,
         string adapterId,
@@ -78,9 +88,27 @@ internal sealed class HostSession : IAsyncDisposable
     /// <summary>Sets the fork seed prepended (invisibly) to this session's next prompt.</summary>
     public void SetPendingSeed(IReadOnlyList<ContentBlock> seed) => _pendingSeed = seed;
 
-    /// <summary>Records a user prompt in the log, then drives an agent turn in the background.</summary>
+    /// <summary>Whether an agent turn is currently in flight (set on prompt, cleared on <see cref="TurnEndedEvent"/>).</summary>
+    public bool IsTurnActive { get { lock (_queueGate) { return _turnActive; } } }
+
+    /// <summary>The send policy applied to a busy-send (see <see cref="SubmitAsync"/>). Defaults to
+    /// <see cref="SendPolicy.QueueInAgent"/>.</summary>
+    public SendPolicy SendPolicy
+    {
+        get { lock (_queueGate) { return _sendPolicy; } }
+        set { lock (_queueGate) { _sendPolicy = value; } }
+    }
+
+    /// <summary>Records a user prompt in the log, then drives an agent turn in the background. This is the
+    /// unconditional immediate send — it starts a turn regardless of the send policy (the policy is applied
+    /// by <see cref="SubmitAsync"/>, and this is also the auto-send target when a queued message is drained).</summary>
     public async Task PromptAsync(IReadOnlyList<ContentBlock> content)
     {
+        lock (_queueGate)
+        {
+            _turnActive = true;
+        }
+
         foreach (var block in content)
         {
             await AppendAndPublishAsync(new MessageChunkEvent(MessageRole.User, block)).ConfigureAwait(false);
@@ -107,6 +135,204 @@ internal sealed class HostSession : IAsyncDisposable
                 await AppendAndPublishAsync(new AgentErrorEvent(ex.Message)).ConfigureAwait(false);
             }
         });
+    }
+
+    /// <summary>
+    /// Applies the session's <see cref="SendPolicy"/> to a user-submitted message — the single policy seam,
+    /// so every client and both the idle/busy races resolve the same way host-side:
+    /// <list type="bullet">
+    /// <item><see cref="SendPolicy.QueueInAgent"/>: queue while a turn is active, else send immediately.</item>
+    /// <item><see cref="SendPolicy.PendingUntilReady"/>: always queue (never auto-sends).</item>
+    /// <item><see cref="SendPolicy.InterruptAndSend"/>: cancel the in-flight turn then send now.</item>
+    /// </list>
+    /// </summary>
+    public async Task SubmitAsync(IReadOnlyList<ContentBlock> content)
+    {
+        bool queued;
+        bool interrupt;
+        lock (_queueGate)
+        {
+            if (_sendPolicy == SendPolicy.PendingUntilReady || (_sendPolicy == SendPolicy.QueueInAgent && _turnActive))
+            {
+                _queue.Add(new PendingMessage(Guid.NewGuid().ToString("n"), content));
+                queued = true;
+                interrupt = false;
+            }
+            else
+            {
+                queued = false;
+                interrupt = _sendPolicy == SendPolicy.InterruptAndSend && _turnActive;
+            }
+        }
+
+        if (queued)
+        {
+            await PublishQueueAsync().ConfigureAwait(false);
+            return;
+        }
+
+        if (interrupt)
+        {
+            // Cancel-then-resend: the always-available steering fallback. True mid-turn injection
+            // (ISteerableSession) is deferred — no adapter's CLI supports receiving new input mid-turn yet.
+            await CancelAsync().ConfigureAwait(false);
+        }
+
+        await PromptAsync(content).ConfigureAwait(false);
+    }
+
+    /// <summary>Enqueues a message unconditionally (used by "send now" reinsertion / policy-agnostic paths).</summary>
+    public Task EnqueueAsync(IReadOnlyList<ContentBlock> content)
+    {
+        lock (_queueGate)
+        {
+            _queue.Add(new PendingMessage(Guid.NewGuid().ToString("n"), content));
+        }
+
+        return PublishQueueAsync();
+    }
+
+    /// <summary>Removes a queued message by id (no-op if it already left the queue).</summary>
+    public Task RemovePendingAsync(string messageId)
+    {
+        bool removed;
+        lock (_queueGate)
+        {
+            var index = _queue.FindIndex(m => m.Id == messageId);
+            removed = index >= 0;
+            if (removed)
+            {
+                _queue.RemoveAt(index);
+            }
+        }
+
+        return removed ? PublishQueueAsync() : Task.CompletedTask;
+    }
+
+    /// <summary>Moves a queued message to <paramref name="newIndex"/> (clamped into range).</summary>
+    public Task ReorderPendingAsync(string messageId, int newIndex)
+    {
+        bool moved;
+        lock (_queueGate)
+        {
+            var index = _queue.FindIndex(m => m.Id == messageId);
+            moved = index >= 0;
+            if (moved)
+            {
+                var target = Math.Clamp(newIndex, 0, _queue.Count - 1);
+                var item = _queue[index];
+                _queue.RemoveAt(index);
+                _queue.Insert(target, item);
+            }
+        }
+
+        return moved ? PublishQueueAsync() : Task.CompletedTask;
+    }
+
+    /// <summary>Interrupts the current turn (cancel-then-resend) and sends the named queued message ahead of
+    /// the rest of the queue. No-op if the message already left the queue.</summary>
+    public async Task SendPendingNowAsync(string messageId)
+    {
+        PendingMessage? message;
+        bool wasActive;
+        lock (_queueGate)
+        {
+            var index = _queue.FindIndex(m => m.Id == messageId);
+            if (index < 0)
+            {
+                message = null;
+                wasActive = false;
+            }
+            else
+            {
+                message = _queue[index];
+                _queue.RemoveAt(index);
+                wasActive = _turnActive;
+            }
+        }
+
+        if (message is null)
+        {
+            return;
+        }
+
+        await PublishQueueAsync().ConfigureAwait(false); // reflect the removal from the queue first
+        if (wasActive)
+        {
+            await CancelAsync().ConfigureAwait(false);
+        }
+
+        await PromptAsync(message.Content).ConfigureAwait(false);
+    }
+
+    /// <summary>Moves every still-queued message to the discarded list (visible, never silently dropped) and
+    /// publishes the snapshot. Called when the session is torn down while the queue is non-empty.</summary>
+    public async Task DiscardQueuedAsync()
+    {
+        bool changed;
+        lock (_queueGate)
+        {
+            changed = _queue.Count > 0;
+            if (changed)
+            {
+                _discarded.AddRange(_queue);
+                _queue.Clear();
+            }
+        }
+
+        if (changed)
+        {
+            try
+            {
+                await PublishQueueAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Best-effort during teardown: the store/broadcaster may already be shutting down. The
+                // messages are still preserved in the in-memory discarded list; only the re-broadcast is lost.
+                _logger.LogDebug(ex, "Publishing discarded queue failed during teardown for session {SessionId}", SessionId);
+            }
+        }
+    }
+
+    // A single snapshot event per change keeps every client consistent without a bespoke queue-sync
+    // channel — a joining/replaying client simply converges on the latest PendingQueueEvent in the log.
+    private Task PublishQueueAsync()
+    {
+        PendingQueueEvent snapshot;
+        lock (_queueGate)
+        {
+            snapshot = new PendingQueueEvent([.. _queue], [.. _discarded]);
+        }
+
+        return AppendAndPublishAsync(snapshot);
+    }
+
+    // Turn just ended: clear the busy flag, and under the default QueueInAgent policy auto-send the head of
+    // the queue (seamlessly continuing into the next turn so a concurrent submit can't slip in between).
+    private async Task OnTurnEndedAsync()
+    {
+        PendingMessage? next;
+        lock (_queueGate)
+        {
+            if (_sendPolicy == SendPolicy.QueueInAgent && _queue.Count > 0)
+            {
+                next = _queue[0];
+                _queue.RemoveAt(0);
+                _turnActive = true; // continue straight into the drained message's turn
+            }
+            else
+            {
+                next = null;
+                _turnActive = false;
+            }
+        }
+
+        if (next is not null)
+        {
+            await PublishQueueAsync().ConfigureAwait(false);
+            await PromptAsync(next.Content).ConfigureAwait(false);
+        }
     }
 
     public Task CancelAsync() => _agent.CancelAsync(_cts.Token);
@@ -185,6 +411,7 @@ internal sealed class HostSession : IAsyncDisposable
                 if (@event is TurnEndedEvent)
                 {
                     TurnCompleted?.Invoke();
+                    await OnTurnEndedAsync().ConfigureAwait(false);
                 }
                 else if (@event is AgentErrorEvent error)
                 {
@@ -248,6 +475,10 @@ internal sealed class HostSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Session teardown: any still-queued message can no longer be delivered, so move it to the discarded
+        // list (visible, not silently dropped) BEFORE cancelling _cts — the append uses that token.
+        await DiscardQueuedAsync().ConfigureAwait(false);
+
         await _cts.CancelAsync().ConfigureAwait(false);
         try
         {

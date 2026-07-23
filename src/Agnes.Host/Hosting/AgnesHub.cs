@@ -121,6 +121,21 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task Prompt(PromptRequest request)
         => _sessions.PromptAsync(request.SessionId, request.Content);
 
+    public Task SetSendPolicy(string sessionId, SendPolicy policy)
+        => _sessions.SetSendPolicyAsync(sessionId, policy);
+
+    public Task EnqueuePendingMessage(string sessionId, IReadOnlyList<ContentBlock> content)
+        => _sessions.EnqueuePendingMessageAsync(sessionId, content);
+
+    public Task ReorderPendingMessage(string sessionId, string messageId, int newIndex)
+        => _sessions.ReorderPendingMessageAsync(sessionId, messageId, newIndex);
+
+    public Task SendPendingNow(string sessionId, string messageId)
+        => _sessions.SendPendingNowAsync(sessionId, messageId);
+
+    public Task RemovePendingMessage(string sessionId, string messageId)
+        => _sessions.RemovePendingMessageAsync(sessionId, messageId);
+
     public Task<IReadOnlyList<MemorySearchResult>> SearchMemory(string query, MemorySearchOptionsDto options)
     {
         var index = _memoryIndexes.All.FirstOrDefault();
