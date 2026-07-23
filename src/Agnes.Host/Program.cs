@@ -623,6 +623,41 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.GitHubConnectFlow(
     new HttpClient(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.GitHubConnectFlow>()));
 
+// ---- GitHub connected-service provider (.ideas/providers/02, the first REAL provider) ----
+// Registered alongside (and as unconditionally as) the GitHub credential infrastructure above — it is the
+// connected-services analogue of that always-available machinery and self-gates at resolve time, minting a
+// short-lived credential ONLY when a GitHub App is actually linked or a token configured, and otherwise
+// failing loud. It reuses the SAME sources as the sandbox git path (no new GitHub OAuth flow): a linked App
+// mints a short-lived installation token; a stored PAT/OAuth token (from config or the runtime
+// /credentials/token endpoint) is the fallback. The App private key and any refresh material stay inside
+// those sources and NEVER cross into the resolved credential. The template provider stays registered too.
+var gitHubConnectedServiceToken = builder.Configuration["Agnes:ConnectedServices:GitHub:Token"];
+var gitHubConnectedServiceHttp = new HttpClient();
+builder.Services.AddSingleton<IConnectedServiceProvider>(sp =>
+{
+    var appStore = sp.GetRequiredService<Agnes.Host.Hosting.GitHubAppStore>();
+    var registry = sp.GetRequiredService<Agnes.Host.Hosting.CredentialSourceRegistry>();
+    return new Agnes.Host.Hosting.GitHubConnectedServiceProvider(
+        appSource: () => appStore.List().Any(a => a.InstallationId != 0)
+            ? new Agnes.Host.Hosting.GitHubAppCredentialSource(() => appStore.List(), gitHubConnectedServiceHttp)
+            : null,
+        storedSource: () =>
+        {
+            if (!string.IsNullOrWhiteSpace(gitHubConnectedServiceToken))
+            {
+                return new Agnes.Host.Hosting.StoredTokenCredentialSource(
+                    Agnes.Host.Hosting.GitHubConnectedServiceProvider.GitHubHost, gitHubConnectedServiceToken);
+            }
+
+            // A token stored at runtime via /credentials/token lives only in the registry; use it only when it
+            // is specifically a stored-token source (the App source, if present, was already tried above).
+            return registry.For(Agnes.Host.Hosting.GitHubConnectedServiceProvider.GitHubHost)
+                is Agnes.Host.Hosting.StoredTokenCredentialSource storedSource
+                ? storedSource
+                : null;
+        });
+});
+
 // ---- git forges as built-in plugins (AC13): GitHub today, GitLab/Bitbucket addable as plugins ----
 // The GitHub provider lists PRs anonymously for public repos, and mints a repo-scoped token via the linked
 // GitHub App (through the credential source) when one is available for private repos / higher rate limits.
