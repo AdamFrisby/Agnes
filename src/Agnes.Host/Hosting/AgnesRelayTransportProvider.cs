@@ -199,6 +199,10 @@ public sealed class AgnesRelayTransportProvider : ITransportProvider, IAsyncDisp
                 "The Agnes relay transport could not determine the local Kestrel HTTPS port to forward to. " +
                 "Set Agnes:Transport:Relay:HubPort.");
 
+        // Ensure the host cert exists before advertising it (self-signed: lazy no-op; ACME: runs the DNS-01
+        // order now so a cert failure surfaces loudly at startup rather than on the first client, per AC6).
+        await _certificate.EnsureReadyAsync(ct).ConfigureAwait(false);
+
         Stream control;
         try
         {
@@ -226,13 +230,19 @@ public sealed class AgnesRelayTransportProvider : ITransportProvider, IAsyncDisp
         _cts = new CancellationTokenSource();
         _controlLoop = Task.Run(() => ControlLoopAsync(control, hubPort, _cts.Token), CancellationToken.None);
 
-        // AC5: advertise the RELAY address + host-id + cert fingerprint to pin — never a LAN address.
-        var address = $"agnes-relay://{_relayHost}:{_relayPort}/{_options.HostId}?fp={_certificate.Fingerprint}";
+        // AC5: advertise the RELAY address + host-id + how to trust the host cert — never a LAN address. A real-CA
+        // cert advertises its CA-validated hostname (?cn=) so the client validates the chain+name; a self-signed
+        // cert advertises its fingerprint (?fp=) for the client to pin.
+        string? caName = _certificate.CaValidatedHostName;
+        var (query, trustHint) = caName is not null
+            ? ($"cn={Uri.EscapeDataString(caName)}", $"CA-validated host name {caName}")
+            : ($"fp={_certificate.Fingerprint}", $"pinned host cert {_certificate.Fingerprint}");
+        var address = $"agnes-relay://{_relayHost}:{_relayPort}/{_options.HostId}?{query}";
         _endpoint = new TransportEndpoint([address],
-            $"Reachable via the Agnes relay at {_relayHost}:{_relayPort} (pinned host cert {_certificate.Fingerprint}).");
+            $"Reachable via the Agnes relay at {_relayHost}:{_relayPort} ({trustHint}).");
         _logger?.LogInformation(
-            "Registered host-id '{HostId}' on the Agnes relay at {Relay}; clients reach it via {Address}.",
-            _options.HostId, $"{_relayHost}:{_relayPort}", address);
+            "Registered host-id '{HostId}' on the Agnes relay at {Relay}; clients reach it via {Address} ({Trust}).",
+            _options.HostId, $"{_relayHost}:{_relayPort}", address, trustHint);
         return _endpoint;
     }
 

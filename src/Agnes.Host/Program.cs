@@ -48,11 +48,16 @@ builder.Services.AddSingleton(relayTransportOptions);
 builder.Services.AddSingleton<IRelayHostKey>(sp => new FileRelayHostKey(
     builder.Configuration["Agnes:Transport:Relay:KeyFile"] ?? Path.Combine(agnesHome, "relay-host-key.pem"),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<FileRelayHostKey>()));
-// One shared cert-provider instance so the fingerprint Kestrel presents is exactly the one advertised to
-// (and pinned by) clients. The interface leaves a clean seam for a real-CA impl (DNS-01) in a later wave.
-var hostCertificateProvider = new SelfSignedHostCertificateProvider(
-    builder.Configuration["Agnes:Transport:Relay:CertFile"] ?? Path.Combine(agnesHome, "relay-host-cert.pfx"));
-builder.Services.AddSingleton<IHostCertificateProvider>(hostCertificateProvider);
+// The host cert Kestrel presents on the relay path. Selection (Agnes:Transport:Relay:Cert): a real-CA
+// Let's-Encrypt cert via DNS-01 when configured (the client validates the CA chain + hostname), else the
+// persistent self-signed default (the client pins its fingerprint). An unconfigured host is unchanged (AC1).
+var relayHostId = relayTransportOptions.HostId;
+var acmeHostCertConfigured = HostCertificateSelection.IsAcmeConfigured(builder.Configuration, relayHostId);
+builder.Services.AddSingleton<IHostCertificateProvider>(sp => HostCertificateSelection.Create(
+    builder.Configuration, relayHostId, agnesHome,
+    new HttpClient(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<ITransportProvider>(sp => new AgnesRelayTransportProvider(
     sp.GetRequiredService<RelayTransportOptions>(),
     sp.GetRequiredService<IRelayHostKey>(),
@@ -60,12 +65,23 @@ builder.Services.AddSingleton<ITransportProvider>(sp => new AgnesRelayTransportP
     logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger<AgnesRelayTransportProvider>()));
 builder.Services.AddPluginPoint<ITransportProvider>(t => t.Id);
 
-// On the relay path TLS must terminate at Kestrel with the cert clients pin, so present the host cert on the
-// HTTPS listener. Only done when the relay transport is selected — Direct keeps today's cert behavior (AC1).
+// Auto-renew the ACME cert before expiry (only when the real-CA path is active).
+if (acmeHostCertConfigured)
+{
+    builder.Services.AddHostedService(sp => new HostCertificateRenewalService(
+        (AcmeDns01HostCertificateProvider)sp.GetRequiredService<IHostCertificateProvider>(),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<HostCertificateRenewalService>()));
+}
+
+// On the relay path TLS must terminate at Kestrel with the cert clients trust, so present the host cert on the
+// HTTPS listener via a selector (so an ACME renewal swaps the served cert without a restart). Only when the relay
+// transport is selected — Direct keeps today's cert behavior (AC1).
 if (string.Equals(builder.Configuration["Agnes:Transport:Provider"], "agnes-relay", StringComparison.OrdinalIgnoreCase))
 {
-    builder.WebHost.ConfigureKestrel(kestrel =>
-        kestrel.ConfigureHttpsDefaults(https => https.ServerCertificate = hostCertificateProvider.GetCertificate()));
+    builder.Services.AddOptions<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>()
+        .Configure<IHostCertificateProvider>((kestrel, cert) =>
+            kestrel.ConfigureHttpsDefaults(https => https.ServerCertificateSelector = (_, _) => cert.GetCertificate()));
 }
 
 // CORS for a browser-hosted frontend (Uno WASM) reaching the hub cross-origin. The web client

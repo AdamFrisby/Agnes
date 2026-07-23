@@ -12,6 +12,17 @@
     <RootNamespace>Agnes.Relay</RootNamespace>
   </PropertyGroup>
 
+  <!-- The one deliberate exception to the relay's BCL-only stance: the relay's OWN public control endpoint can
+       obtain a real Let's Encrypt certificate (config-gated on Agnes:Relay:PublicDomain, OFF by default) via
+       LettuceEncrypt (natemcmaster/LettuceEncrypt, Apache-2.0) — the maintainer-named ACME lib, which fits the
+       relay because the relay HAS a public address so standard HTTP-01/TLS-ALPN-01 applies. Pulls in the shared
+       ASP.NET Core framework only for that path; the plain-TCP default engages none of it. The tunnelled
+       client↔host TLS stays opaque regardless. See .ideas/connectivity/01-relay-and-tunneling.md. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="LettuceEncrypt" Version="1.3.2" />
+  </ItemGroup>
+
   <!-- The relay's connection-setup wire contract now lives in a shared project so the Agnes host/client
        relay transports speak the identical frames. The relay still references NO Agnes domain projects. -->
   <ItemGroup>

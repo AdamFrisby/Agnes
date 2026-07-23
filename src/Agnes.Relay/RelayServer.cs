@@ -25,6 +25,7 @@ public sealed class RelayServer : IAsyncDisposable
     private readonly RelayRateLimiter _rateLimiter;
     private readonly IRelayLog _log;
     private readonly TimeProvider _time;
+    private readonly IRelayConnectionSecurity? _security;
 
     private readonly ConcurrentDictionary<string, HostRegistration> _hosts = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PendingClient> _pending = new(StringComparer.Ordinal);
@@ -39,13 +40,17 @@ public sealed class RelayServer : IAsyncDisposable
         IAuthorizedHostKeys authorizedKeys,
         RelayRateLimiter? rateLimiter = null,
         IRelayLog? log = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IRelayConnectionSecurity? security = null)
     {
         _options = options;
         _authorizedKeys = authorizedKeys;
         _log = log ?? NullRelayLog.Instance;
         _time = timeProvider ?? TimeProvider.System;
         _rateLimiter = rateLimiter ?? new RelayRateLimiter(options.RateLimit, _time);
+        // Off by default (null): the broker serves plain TCP. When the relay has a public domain a TLS wrapper is
+        // injected so each accepted broker connection is server-authenticated before any relay frame is read.
+        _security = security;
     }
 
     /// <summary>The port actually bound (useful when <see cref="RelayOptions.Port"/> was 0 / ephemeral).</summary>
@@ -109,6 +114,14 @@ public sealed class RelayServer : IAsyncDisposable
 
             using var handshakeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             handshakeCts.CancelAfter(_options.HandshakeTimeout);
+
+            if (_security is not null)
+            {
+                // Server-authenticate the connection (real-CA cert) before reading any relay frame. The bytes
+                // above this layer are still opaque tunnelled client↔host TLS on data connections — blind pipe intact.
+                stream = await _security.WrapAsync(stream, handshakeCts.Token).ConfigureAwait(false);
+            }
+
             RelayFrame? first = await RelayFrameCodec.ReadFrameAsync(stream, handshakeCts.Token).ConfigureAwait(false);
 
             switch (first)
@@ -127,7 +140,8 @@ public sealed class RelayServer : IAsyncDisposable
                     break;
             }
         }
-        catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidOperationException or EndOfStreamException)
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidOperationException
+            or EndOfStreamException or System.Security.Authentication.AuthenticationException)
         {
             _log.Warn($"Connection from {sourceIp} ended: {ex.GetType().Name}");
         }

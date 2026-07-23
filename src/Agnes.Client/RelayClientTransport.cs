@@ -8,14 +8,19 @@ using Microsoft.AspNetCore.Http.Connections.Client;
 
 namespace Agnes.Client;
 
-/// <summary>A parsed <c>agnes-relay://host:port/hostId?fp=&lt;sha256hex&gt;</c> address handed to a client at pairing.</summary>
-public sealed record RelayClientAddress(string RelayHost, int RelayPort, string HostId, string Fingerprint);
+/// <summary>
+/// A parsed relay address handed to a client at pairing. Carries exactly one trust anchor: a self-signed
+/// <see cref="Fingerprint"/> to pin (<c>?fp=</c>), or a real-CA <see cref="CaName"/> to validate the chain and
+/// host name against (<c>?cn=</c>).
+/// </summary>
+public sealed record RelayClientAddress(string RelayHost, int RelayPort, string HostId, string? Fingerprint, string? CaName);
 
 /// <summary>
 /// Client half of the relay tunnel (spec AC2). Given an <c>agnes-relay://</c> address, it dials the relay,
 /// routes to the target host-id, then hands SignalR a transport that runs the client↔host TLS <b>end-to-end</b>
-/// over the spliced stream — pinning the host's advertised self-signed cert fingerprint (from pairing) instead
-/// of validating a CA chain. The per-device bearer token is unchanged and flows inside the tunnel (AC4): the
+/// over the spliced stream — validating the host's real-CA cert by chain+name when the address advertises one
+/// (<c>?cn=</c>), or pinning the host's advertised self-signed fingerprint (<c>?fp=</c>) otherwise. The per-device
+/// bearer token is unchanged and flows inside the tunnel (AC4): the
 /// relay only ever forwards already-encrypted bytes and never sees the token or any payload.
 /// <para>
 /// SignalR is forced onto its long-polling transport so every physical connection goes through our
@@ -32,7 +37,8 @@ public static class RelayClientTransport
     public static bool IsRelayAddress(string address)
         => address.StartsWith(Scheme + "://", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Parses an <c>agnes-relay://host:port/hostId?fp=&lt;sha256hex&gt;</c> address.</summary>
+    /// <summary>Parses an <c>agnes-relay://host:port/hostId?fp=&lt;sha256hex&gt;</c> (pin) or
+    /// <c>?cn=&lt;hostname&gt;</c> (CA-validated) address.</summary>
     public static RelayClientAddress Parse(string address)
     {
         if (!Uri.TryCreate(address, UriKind.Absolute, out Uri? uri)
@@ -53,13 +59,17 @@ public static class RelayClientTransport
         }
 
         string fingerprint = ReadQueryValue(uri.Query, "fp");
-        if (fingerprint.Length == 0)
+        string caName = ReadQueryValue(uri.Query, "cn");
+        if (fingerprint.Length == 0 && caName.Length == 0)
         {
             throw new FormatException(
-                $"Relay address is missing the pinned host-cert fingerprint (?fp=): '{address}'.");
+                $"Relay address must carry a pinned host-cert fingerprint (?fp=) or a CA-validated host name (?cn=): '{address}'.");
         }
 
-        return new RelayClientAddress(uri.Host, uri.Port, hostId, NormalizeFingerprint(fingerprint));
+        return new RelayClientAddress(
+            uri.Host, uri.Port, hostId,
+            fingerprint.Length > 0 ? NormalizeFingerprint(fingerprint) : null,
+            caName.Length > 0 ? caName : null);
     }
 
     /// <summary>
@@ -85,7 +95,7 @@ public static class RelayClientTransport
         return (baseUrl, Configure);
     }
 
-    /// <summary>The <see cref="SocketsHttpHandler"/> that tunnels through the relay and pins the host cert.</summary>
+    /// <summary>The <see cref="SocketsHttpHandler"/> that tunnels through the relay and trusts the host cert.</summary>
     private static SocketsHttpHandler CreateHandler(RelayClientAddress relay)
     {
         var handler = new SocketsHttpHandler
@@ -93,14 +103,33 @@ public static class RelayClientTransport
             // Each HTTP connection: dial the relay, route to the host-id, then hand back the opaque spliced
             // stream. SocketsHttpHandler wraps it in TLS itself (below), so the handshake is end-to-end to Kestrel.
             ConnectCallback = async (_, ct) => await OpenTunnelAsync(relay, ct).ConfigureAwait(false),
-            SslOptions = new SslClientAuthenticationOptions
-            {
-                TargetHost = "agnes-host",
-                // Pin the host's advertised self-signed cert by fingerprint instead of a CA chain.
-                RemoteCertificateValidationCallback = (_, cert, _, _) => MatchesPin(cert, relay.Fingerprint),
-            },
+            SslOptions = BuildSslClientOptions(relay),
         };
         return handler;
+    }
+
+    /// <summary>
+    /// Builds the end-to-end TLS options for the host handshake over the tunnel: for a real-CA host cert, default
+    /// chain validation against the advertised host name (<see cref="RelayClientAddress.CaName"/>); for a
+    /// self-signed host cert, pin the advertised fingerprint (<see cref="RelayClientAddress.Fingerprint"/>) with no
+    /// chain check. Exposed for tests over the trust decision.
+    /// </summary>
+    public static SslClientAuthenticationOptions BuildSslClientOptions(RelayClientAddress relay)
+    {
+        if (relay.CaName is { Length: > 0 } caName)
+        {
+            // Real CA cert: validate the chain AND that the cert matches this name (default validation does both).
+            return new SslClientAuthenticationOptions { TargetHost = caName };
+        }
+
+        string pin = relay.Fingerprint
+            ?? throw new InvalidOperationException("Relay address has neither a CA host name nor a pinned fingerprint.");
+        return new SslClientAuthenticationOptions
+        {
+            // Synthetic name: the cert is self-signed and validated by fingerprint, not by name.
+            TargetHost = "agnes-host",
+            RemoteCertificateValidationCallback = (_, cert, _, _) => MatchesPin(cert, pin),
+        };
     }
 
     private static async Task<Stream> OpenTunnelAsync(RelayClientAddress relay, CancellationToken ct)

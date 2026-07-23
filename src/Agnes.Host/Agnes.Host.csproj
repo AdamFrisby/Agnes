@@ -32,6 +32,12 @@
          OpenAI Realtime voice endpoint (and any MCP client) can drive Agnes. Built on the same StreamJsonRpc
          family already used by Agnes.Acp. See .ideas/voice/01-voice-assistant.md. -->
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.1" />
+    <!-- Real-CA host certificate on the relay path via ACME DNS-01 (fitzngo/Certes, MIT — a reputable, widely-used
+         .NET ACME client). Certes exposes the ACME order lifecycle as discrete awaitable steps, which the NAT'd
+         host's DNS-01 flow needs (and which LettuceEncrypt, being coupled to Kestrel-hosted HTTP-01/TLS-ALPN-01
+         renewal, does not expose cleanly). All key/CSR crypto is BCL-backed — nothing hand-rolled.
+         See .ideas/connectivity/01-relay-and-tunneling.md. -->
+    <PackageReference Include="Certes" Version="3.0.4" />
   </ItemGroup>
 
   <ItemGroup>

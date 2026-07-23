@@ -22,6 +22,21 @@ public interface IHostCertificateProvider
 
     /// <summary>Lower-case hex SHA-256 of the certificate's DER encoding — the value a client pins.</summary>
     string Fingerprint { get; }
+
+    /// <summary>
+    /// When this provider supplies a certificate issued by a public CA (e.g. Let's Encrypt via DNS-01),
+    /// the DNS name the client should validate the CA chain against — the host's relay hostname. For a
+    /// self-signed provider this is <c>null</c>, signalling the client to pin <see cref="Fingerprint"/>
+    /// instead of validating a chain. Default: <c>null</c> (pin), so existing providers are unaffected.
+    /// </summary>
+    string? CaValidatedHostName => null;
+
+    /// <summary>
+    /// Ensures a usable certificate is available (acquiring/renewing it if necessary) before the listener
+    /// starts. A self-signed provider generates lazily and needs nothing here; an ACME provider performs its
+    /// DNS-01 order. Default: nothing to do.
+    /// </summary>
+    Task EnsureReadyAsync(CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>
