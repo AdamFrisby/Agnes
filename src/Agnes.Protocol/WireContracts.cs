@@ -536,9 +536,15 @@ public sealed record OpenApproval(
 /// request id alone (there is no session) with the chosen option text.</summary>
 public sealed record AttentionAnswerRequest(string RequestId, string Answer);
 
-/// <summary>A user-authored bug report sent from a client. Deliberately has NO diagnostic-payload field:
-/// the owner-only host-log attachment is deferred, so the client never sends one and the host maps this to a
-/// domain <c>BugReport</c> with a null payload. The typed result is
-/// <see cref="Agnes.Abstractions.BugReportResult"/> (a created URL, a browser-fallback URL, and/or likely
-/// duplicates).</summary>
-public sealed record BugReportDto(string Title, string Summary, string? CurrentBehavior, string? ExpectedBehavior);
+/// <summary>A user-authored bug report sent from a client. Deliberately carries NO diagnostic payload: the
+/// sensitive host-log bundle is assembled HOST-SIDE (owner-only, opt-in) and never travels client→host.
+/// <see cref="AttachDiagnostics"/> is only the user's per-report opt-in request; the host still gates it on
+/// the caller being the authorized owner and the capability being enabled, else the payload stays null. The
+/// typed result is <see cref="Agnes.Abstractions.BugReportResult"/> (a created URL, a browser-fallback URL,
+/// and/or likely duplicates).</summary>
+public sealed record BugReportDto(
+    string Title,
+    string Summary,
+    string? CurrentBehavior,
+    string? ExpectedBehavior,
+    bool AttachDiagnostics = false);

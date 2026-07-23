@@ -167,6 +167,31 @@ public sealed class DeviceRegistry
             .Select(d => new DeviceInfo(d.Id, d.Name, d.PairedAt, d.LastSeenAt, d.Subject))
             .ToArray();
 
+    /// <summary>
+    /// Whether a resolved caller id is the host owner/operator. The configured bootstrap token (mapped to the
+    /// fixed id <c>"bootstrap"</c>) is the operator by definition; otherwise the earliest-paired device is
+    /// treated as the owner (the first device paired to a fresh host is whoever set it up). Used to gate the
+    /// sensitive owner-only host-log diagnostic attachment. Returns false for an unknown/anonymous caller.
+    /// </summary>
+    public bool IsOwner(string? callerId)
+    {
+        if (string.IsNullOrEmpty(callerId))
+        {
+            return false;
+        }
+
+        if (string.Equals(callerId, "bootstrap", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var owner = _devices.Values
+            .OrderBy(d => d.PairedAt)
+            .ThenBy(d => d.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
+        return owner is not null && string.Equals(owner.Id, callerId, StringComparison.Ordinal);
+    }
+
     public bool Revoke(string deviceId)
     {
         lock (_gate)

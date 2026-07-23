@@ -55,6 +55,36 @@ public sealed class BugReportViewModel : ObservableObject
     private string _status = string.Empty;
     public string Status { get => _status; set => SetProperty(ref _status, value); }
 
+    // Owner-only, opt-in host-log attachment. CanAttachDiagnostics is false unless the host tells us this
+    // caller is the authorized owner AND the operator enabled the capability — the checkbox stays hidden
+    // otherwise. AttachDiagnostics is the user's per-report opt-in, off by default and cleared whenever the
+    // capability isn't offered, so diagnostics are never attached silently.
+    private bool _canAttachDiagnostics;
+    public bool CanAttachDiagnostics
+    {
+        get => _canAttachDiagnostics;
+        private set { if (SetProperty(ref _canAttachDiagnostics, value) && !value) { AttachDiagnostics = false; } }
+    }
+
+    private bool _attachDiagnostics;
+    public bool AttachDiagnostics { get => _attachDiagnostics; set => SetProperty(ref _attachDiagnostics, value); }
+
+    /// <summary>Asks the host whether this caller may attach host diagnostics, to show/hide the opt-in
+    /// control. Fail-closed: any error leaves the control hidden.</summary>
+    public async Task RefreshCapabilitiesAsync()
+    {
+        try
+        {
+            var host = _host();
+            var can = host is not null && await host.CanAttachDiagnosticsAsync().ConfigureAwait(false);
+            _dispatcher.Post(() => CanAttachDiagnostics = can);
+        }
+        catch (Exception)
+        {
+            _dispatcher.Post(() => CanAttachDiagnostics = false);
+        }
+    }
+
     private bool _isBusy;
     public bool IsBusy { get => _isBusy; set { if (SetProperty(ref _isBusy, value)) { OnPropertyChanged(nameof(HasDuplicates)); } } }
 
@@ -76,7 +106,10 @@ public sealed class BugReportViewModel : ObservableObject
         _dispatcher.Post(Duplicates.Clear);
 
         var report = new BugReport(Title, Summary, NullIfBlank(CurrentBehavior), NullIfBlank(ExpectedBehavior), DiagnosticPayload: null);
-        var dto = new BugReportDto(report.Title, report.Summary, report.CurrentBehavior, report.ExpectedBehavior);
+        // The client never carries a payload; AttachDiagnostics is only the opt-in request. It's meaningful
+        // only when the host offered the control (CanAttachDiagnostics) — the host re-checks authorization.
+        var dto = new BugReportDto(report.Title, report.Summary, report.CurrentBehavior, report.ExpectedBehavior,
+            AttachDiagnostics: CanAttachDiagnostics && AttachDiagnostics);
 
         try
         {

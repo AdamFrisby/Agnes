@@ -720,6 +720,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             _ = PromptLibrary.RefreshAsync();
         }
+        else if (value == "bugreport")
+        {
+            // Ask the host whether this caller may attach diagnostics, to show/hide the owner-only opt-in.
+            _ = BugReport.RefreshCapabilitiesAsync();
+        }
     }
 
     // ---- Sandboxes: the host's managed VMs (stop-on-close · resume · delete) ----

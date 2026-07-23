@@ -328,6 +328,11 @@ public interface IAgnesHost : IAsyncDisposable
     /// without bug reporting: report it as unavailable so the client falls back to the public browser flow.</summary>
     Task<Agnes.Abstractions.BugReportResult> SubmitBugReportAsync(BugReportDto report)
         => Task.FromResult(new Agnes.Abstractions.BugReportResult(false, null, "Bug reporting is not available on this host."));
+
+    /// <summary>Whether this client may attach the host diagnostic bundle to a report (owner-only + opt-in
+    /// capability enabled). Default false, so the sensitive control stays hidden on hosts/fixtures that don't
+    /// offer it.</summary>
+    Task<bool> CanAttachDiagnosticsAsync() => Task.FromResult(false);
     // ---- prompt library (see .ideas/extensibility/02-prompts-skills-library.md) ----
     // Defaulted so hosts/fixtures that predate the library reply empty (and reject writes) instead of failing.
 

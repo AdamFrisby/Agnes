@@ -525,12 +525,24 @@ builder.Services.AddSingleton<IGitHostProvider>(sp =>
 });
 builder.Services.AddPluginPoint<IGitHostProvider>(p => p.Id);
 
+// ---- owner-only diagnostics: recent-log ring + crash/error telemetry (see .ideas/ops/01-...) ----
+// Agnes keeps no on-disk log to scrape, so a bounded in-memory ring captures the tail of the host log for the
+// owner-only, opt-in diagnostic bundle (and nothing else). The provider tees the same lines the console shows
+// into the ring. A second bounded ring records recent errors, fed by the event spine (AgentErrorEvent) and by
+// the process-level exception handlers wired after the app is built.
+var hostLogBuffer = new Agnes.Host.Ops.HostLogRingBuffer(
+    builder.Configuration.GetValue("Agnes:BugReports:LogBufferLines", 500));
+builder.Services.AddSingleton(hostLogBuffer);
+builder.Logging.AddProvider(new Agnes.Host.Ops.RingBufferLoggerProvider(hostLogBuffer));
+builder.Services.AddSingleton(_ => new Agnes.Host.Ops.ErrorTelemetryStore(
+    builder.Configuration.GetValue("Agnes:BugReports:ErrorBufferSize", 100)));
+
 // ---- bug-report sinks as built-in plugins (see .ideas/ops/01-bug-reports-and-diagnostics.md) ----
 // GitHubIssueSink is always available (prefilled browser fallback with no token; API create/duplicate-search
 // with one); CustomEndpointSink is added only when a self-hoster configures an endpoint. The default sink is
 // selected by which config is present, unless pinned by Agnes:BugReports:Sink.
-// DEFERRED: crash/error telemetry (an opt-in SDK in the UI heads + host) is not wired here.
-// DEFERRED: the owner-only host-log DiagnosticPayload attachment — reports carry a null payload for now.
+// The owner-only host-log DiagnosticPayload attachment is gated by DiagnosticAttachmentPolicy below; by
+// default (AttachDiagnostics off) reports still carry a null payload.
 var bugReportRepo = builder.Configuration["Agnes:BugReports:Repo"] ?? "AdamFrisby/Agnes";
 var bugReportToken = builder.Configuration["Agnes:BugReports:GitHubToken"] ?? Environment.GetEnvironmentVariable("GITHUB_TOKEN");
 var bugReportEndpoint = builder.Configuration["Agnes:BugReports:Endpoint"];
@@ -548,8 +560,27 @@ if (!string.IsNullOrWhiteSpace(bugReportEndpoint))
 builder.Services.AddPluginPoint<IBugReportSink>(s => s.Id);
 var defaultBugSink = builder.Configuration["Agnes:BugReports:Sink"]
     ?? (string.IsNullOrWhiteSpace(bugReportEndpoint) ? "github-issue" : "custom-endpoint");
+
+// Diagnostic collector: assembles the owner-only bundle (host/runtime metadata, adapter list, recent errors,
+// recent host log), capped at the same byte budget the sinks enforce.
+builder.Services.AddSingleton(sp => new Agnes.Host.Ops.DiagnosticCollector(
+    sp.GetRequiredService<Agnes.Host.Ops.HostLogRingBuffer>(),
+    sp.GetRequiredService<Agnes.Host.Ops.ErrorTelemetryStore>(),
+    sp.GetRequiredService<HostIdentity>(),
+    () => sp.GetRequiredService<SessionManager>().ListAgents().Select(a => a.AdapterId).ToArray(),
+    bugReportMaxBytes));
+
+// Attachment policy: the sensitive host-log bundle is attached only when the operator enabled the capability
+// (Agnes:BugReports:AttachDiagnostics, off by default) AND the submitting caller is the host owner.
+var attachDiagnosticsEnabled = builder.Configuration.GetValue("Agnes:BugReports:AttachDiagnostics", false);
+builder.Services.AddSingleton(sp => new Agnes.Host.Ops.DiagnosticAttachmentPolicy(
+    attachDiagnosticsEnabled,
+    callerId => sp.GetRequiredService<DeviceRegistry>().IsOwner(callerId)));
+
 builder.Services.AddSingleton(sp => new Agnes.Host.Ops.BugReportRouter(
-    sp.GetRequiredService<IPluginRegistry<IBugReportSink>>(), defaultBugSink));
+    sp.GetRequiredService<IPluginRegistry<IBugReportSink>>(), defaultBugSink,
+    sp.GetRequiredService<Agnes.Host.Ops.DiagnosticCollector>(),
+    sp.GetRequiredService<Agnes.Host.Ops.DiagnosticAttachmentPolicy>()));
 
 // ---- plugin installer: NuGet-packaged third-party plugins (see .ideas/00-plugin-architecture.md) ----
 // The scoped service a plugin gets when it declares (and is granted) the "credentials" capability.
@@ -625,6 +656,16 @@ var tokens = app.Services.GetRequiredService<DeviceRegistry>();
 // The host event spine — auth endpoints emit observe-only audit events (device paired/revoked) on it so a
 // plugin can react (notify, log) without the security-critical DeviceRegistry taking an async dependency.
 var authEvents = app.Services.GetRequiredService<Agnes.Abstractions.Events.IEventBus>();
+
+// Bind crash/error telemetry: observe agent/adapter faults on the spine and capture process-level failures
+// (unhandled exceptions, unobserved task exceptions). Recorded in-memory only — nothing is sent anywhere; the
+// ring merely feeds the owner-only, opt-in diagnostic bundle. The Observe handle lives for the app's lifetime.
+var errorTelemetry = app.Services.GetRequiredService<Agnes.Host.Ops.ErrorTelemetryStore>();
+_ = authEvents.Observe(errorTelemetry);
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+    errorTelemetry.Record("unhandled", (e.ExceptionObject as Exception)?.Message ?? "unknown unhandled exception");
+TaskScheduler.UnobservedTaskException += (_, e) =>
+    errorTelemetry.Record("unobserved-task", e.Exception.Message);
 
 // Optionally serve a web frontend (e.g. the Uno WASM build) from the same origin as
 // the hub — avoids cross-origin setup and lets a browser reach both on one port.

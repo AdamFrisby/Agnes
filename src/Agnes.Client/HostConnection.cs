@@ -321,6 +321,9 @@ public sealed class HostConnection : IAgnesHost
 
     public Task<Abstractions.BugReportResult> SubmitBugReportAsync(BugReportDto report)
         => _hub.InvokeAsync<Abstractions.BugReportResult>(nameof(IAgnesServer.SubmitBugReport), report);
+
+    public Task<bool> CanAttachDiagnosticsAsync()
+        => _hub.InvokeAsync<bool>(nameof(IAgnesServer.CanAttachDiagnostics));
     // ---- prompt library (see .ideas/extensibility/02-prompts-skills-library.md) ----
 
     public Task<IReadOnlyList<Abstractions.LibraryPrompt>> GetPromptsAsync()

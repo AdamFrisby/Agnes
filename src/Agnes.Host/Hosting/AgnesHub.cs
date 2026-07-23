@@ -368,11 +368,25 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPlugins()
         => _plugins.ListInstalledAsync();
 
-    // Map the wire DTO to the domain report with a null diagnostic payload (the owner-only host-log
-    // attachment is deferred), then route to the host's selected sink.
+    // Map the wire DTO to the domain report (client never sends a payload) and route to the host's selected
+    // sink. The router assembles the owner-only host-log diagnostic bundle host-side and attaches it ONLY when
+    // the caller opted in for this report AND is the authorized owner; otherwise the payload stays null.
     public Task<Abstractions.BugReportResult> SubmitBugReport(BugReportDto report)
-        => _bugReports.SubmitAsync(new Abstractions.BugReport(
-            report.Title, report.Summary, report.CurrentBehavior, report.ExpectedBehavior, DiagnosticPayload: null));
+        => _bugReports.SubmitAsync(
+            new Abstractions.BugReport(report.Title, report.Summary, report.CurrentBehavior, report.ExpectedBehavior, DiagnosticPayload: null),
+            report.AttachDiagnostics,
+            CallerId());
+
+    // Whether the calling client may attach diagnostics — capability enabled AND this caller is the owner.
+    public Task<bool> CanAttachDiagnostics()
+        => Task.FromResult(_bugReports.CanAttachDiagnostics(CallerId()));
+
+    // The authenticated caller's stable id, resolved from the connection's bearer token (null if unknown).
+    private string? CallerId()
+    {
+        var token = Context.GetHttpContext()?.Request.Query[WireProtocol.TokenParameter].ToString();
+        return _tokens.ResolveCallerId(token);
+    }
     public Task<IReadOnlyList<Abstractions.LibraryPrompt>> GetPrompts()
         => Task.FromResult(_prompts.List());
 

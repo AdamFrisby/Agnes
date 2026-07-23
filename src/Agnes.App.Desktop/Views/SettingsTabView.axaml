@@ -633,6 +633,15 @@
                                 <TextBox Text="{Binding ExpectedBehavior, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" FontSize="13" Padding="8,5" CornerRadius="6" />
                             </StackPanel>
 
+                            <!-- Owner-only, opt-in host-log attachment. Shown only when the host tells us this
+                                 caller is the authorized owner AND the operator enabled the capability. Off by
+                                 default; the host re-checks authorization before it attaches anything. -->
+                            <StackPanel Spacing="3" IsVisible="{Binding CanAttachDiagnostics}">
+                                <CheckBox Content="Attach host diagnostics (owner only)" IsChecked="{Binding AttachDiagnostics, Mode=TwoWay}" />
+                                <TextBlock Classes="fieldLabel" TextWrapping="Wrap"
+                                           Text="Includes recent host log lines, runtime/OS and adapter info, and recent error telemetry from this host. Sensitive — only attach when you're comfortable sharing it with the maintainer." />
+                            </StackPanel>
+
                             <StackPanel Orientation="Horizontal" Spacing="10">
                                 <Button Content="Submit report" Command="{Binding SubmitCommand}" HorizontalAlignment="Left" Classes="seg" IsEnabled="{Binding !IsBusy}" />
                                 <ProgressBar IsIndeterminate="True" Width="90" Height="4" VerticalAlignment="Center"
