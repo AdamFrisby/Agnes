@@ -197,6 +197,12 @@ public sealed class HostConnection : IAgnesHost
     public Task<GitOperationResult> CheckoutPullRequestAsync(string sessionId, string pullRequestId)
         => _hub.InvokeAsync<GitOperationResult>(nameof(IAgnesServer.CheckoutPullRequest), sessionId, pullRequestId);
 
+    public Task<IReadOnlyList<string>> GetChangedFilesAsync(string sessionId, ChangedFileScope scope)
+        => _hub.InvokeAsync<IReadOnlyList<string>>(nameof(IAgnesServer.GetChangedFiles), sessionId, scope);
+
+    public Task<CommitMessageSuggestion> GenerateCommitMessageAsync(string sessionId)
+        => _hub.InvokeAsync<CommitMessageSuggestion>(nameof(IAgnesServer.GenerateCommitMessage), sessionId);
+
     public Task<IReadOnlyList<Abstractions.ReviewComment>> ListReviewCommentsAsync(string projectId)
         => _hub.InvokeAsync<IReadOnlyList<Abstractions.ReviewComment>>(nameof(IAgnesServer.ListReviewComments), projectId);
 

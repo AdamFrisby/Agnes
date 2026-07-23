@@ -21,6 +21,9 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<SessionManager> _logger;
     private readonly Git.GitService _git = new();
+    // Shared one-shot-agent primitive (bounded, non-interactive single-turn runs) — reused for commit-message
+    // generation and available for any other one-shot generation task.
+    private readonly OneShotAgentRunner _oneShot = new();
     private readonly IReadOnlyList<IGitHostProvider> _gitHosts;
     private readonly ISandboxProvider? _sandboxes;
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
@@ -1758,12 +1761,79 @@ public sealed class SessionManager : IAsyncDisposable
         return result;
     }
 
-    // DEFERRED (deep-git-integration): changed-file scoping ("this turn" / "this session" / "whole repo") is
-    // intentionally not built here. It needs the NormalizedToolCall timeline query from
-    // sessions/06-tool-timeline-normalization.md — once that lands it's a filter over the event log by file
-    // path + time range, not a new subsystem. DEFERRED: agent-generated commit messages, which should reuse a
-    // shared one-shot-agent primitive (spin up a bounded session over the staged diff, take its output, tear
-    // it down) rather than a bespoke summarization call — build that primitive once and share it.
+    /// <summary>
+    /// The changed-file set for a session, scoped per <paramref name="scope"/>. <see
+    /// cref="ChangedFileScope.WholeRepo"/> is the git working-tree status; the narrower scopes are answered from
+    /// the event-sourced log (the files the agent's tool calls touched this turn / this session), so a scope
+    /// tighter than the whole repository is a query over history rather than a new tracking subsystem. Paths are
+    /// normalized relative to the working directory (POSIX-separated) so every scope's set is comparable.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetChangedFilesAsync(string sessionId, ChangedFileScope scope, CancellationToken cancellationToken = default)
+    {
+        var workingDirectory = WorkingDirectoryOf(sessionId);
+        if (scope == ChangedFileScope.WholeRepo)
+        {
+            var status = await _git.GetStatusAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+            return status.Changes.Select(change => change.Path).Distinct(StringComparer.Ordinal).ToArray();
+        }
+
+        var events = await _store.ReadSinceAsync(sessionId, 0, cancellationToken).ConfigureAwait(false);
+        return scope == ChangedFileScope.ThisTurn
+            ? ChangedFileScoping.ThisTurn(events, workingDirectory)
+            : ChangedFileScoping.ThisSession(events, workingDirectory);
+    }
+
+    /// <summary>
+    /// Generates a suggested commit message by summarizing the session's <em>staged</em> diff through the shared
+    /// one-shot-agent primitive (a bounded, non-interactive run over the diff, torn down afterward). Returns a
+    /// suggestion with <see cref="Agnes.Protocol.CommitMessageSuggestion.HasSuggestion"/> false when nothing is
+    /// staged (or no agent is available). This only <em>suggests</em> — the user still edits/confirms and commits.
+    /// </summary>
+    public async Task<Agnes.Protocol.CommitMessageSuggestion> GenerateCommitMessageAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        var workingDirectory = WorkingDirectoryOf(sessionId);
+        var diff = await _git.GetStagedDiffAsync(workingDirectory, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(diff))
+        {
+            return new Agnes.Protocol.CommitMessageSuggestion(false, string.Empty);
+        }
+
+        if (AdapterFor(sessionId) is not { } adapter)
+        {
+            return new Agnes.Protocol.CommitMessageSuggestion(false, string.Empty);
+        }
+
+        var prompt = new ContentBlock[] { new TextContent(CommitMessagePrompt(diff)) };
+        var result = await _oneShot.RunAsync(adapter, workingDirectory, prompt, cancellationToken).ConfigureAwait(false);
+        var message = result.Text.Trim();
+        return message.Length > 0
+            ? new Agnes.Protocol.CommitMessageSuggestion(true, message)
+            : new Agnes.Protocol.CommitMessageSuggestion(false, string.Empty);
+    }
+
+    // Resolves the agent adapter backing a session (from the live handle or the catalogue), or null if unknown.
+    private IAgentAdapter? AdapterFor(string sessionId)
+    {
+        var adapterId = _sessions.TryGetValue(sessionId, out var live) ? live.AdapterId
+            : _catalog.TryGetValue(sessionId, out var record) ? record.AdapterId
+            : null;
+        return adapterId is null ? null : _adapters.Find(adapterId);
+    }
+
+    // A bounded prompt asking the agent to summarize a staged diff as a Conventional Commit message. The diff is
+    // capped so a huge staging area can't blow the one-shot turn's context budget.
+    private static string CommitMessagePrompt(string stagedDiff)
+    {
+        const int maxDiffChars = 12000;
+        var diff = stagedDiff.Length > maxDiffChars
+            ? string.Concat(stagedDiff.AsSpan(0, maxDiffChars), "\n… (diff truncated)")
+            : stagedDiff;
+        return
+            "Write a git commit message for the following staged changes. Use the Conventional Commits format: " +
+            "a concise `type(scope): summary` subject line under about 72 characters, then an optional blank line " +
+            "and a short body explaining the why. Reply with ONLY the commit message text — no code fences, no " +
+            "preamble, no explanation.\n\n```diff\n" + diff + "\n```";
+    }
 
     /// <summary>Stashes the session working tree's uncommitted changes; null when there's nothing to stash.</summary>
     public Task<Agnes.Protocol.GitStashInfo?> GitStashAsync(string sessionId)

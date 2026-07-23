@@ -164,6 +164,12 @@ public interface IAgnesServer
     /// <summary>Fetches and checks out a pull request into the session's working directory.</summary>
     Task<GitOperationResult> CheckoutPullRequest(string sessionId, string pullRequestId);
 
+    /// <summary>The session's changed files scoped to this turn, this session, or the whole repository.</summary>
+    Task<IReadOnlyList<string>> GetChangedFiles(string sessionId, ChangedFileScope scope);
+
+    /// <summary>Suggests a commit message by summarizing the staged diff via a one-shot agent run (never commits).</summary>
+    Task<CommitMessageSuggestion> GenerateCommitMessage(string sessionId);
+
     /// <summary>Review comments left on a project's files (durable across the sessions run against it).</summary>
     Task<IReadOnlyList<Abstractions.ReviewComment>> ListReviewComments(string projectId);
 

@@ -285,6 +285,10 @@
                                                        Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="12" />
                                             <TextBlock Grid.Column="1" Text="{Binding Session.GitSummary}" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                         </Grid>
+                                        <ComboBox ItemsSource="{Binding Session.ChangedFileScopes}"
+                                                  SelectedItem="{Binding Session.ChangedFileScope, Mode=TwoWay}"
+                                                  HorizontalAlignment="Stretch" FontSize="11"
+                                                  AutomationProperties.Name="Changed-file scope" />
                                         <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto">
                                         <ItemsControl ItemsSource="{Binding Session.GitChanges}">
                                             <ItemsControl.ItemTemplate>
@@ -304,6 +308,11 @@
                                                  BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,5" FontSize="12"
                                                  AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52"
                                                  AutomationProperties.Name="Commit message" />
+                                        <Button Content="Generate message" Command="{Binding Session.GenerateCommitMessageCommand}"
+                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="8,5" FontSize="12"
+                                                AutomationProperties.Name="Generate commit message" />
                                         <Button Content="Commit all changes" Command="{Binding Session.CommitCommand}"
                                                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                                 Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="10,6" FontWeight="SemiBold" />
