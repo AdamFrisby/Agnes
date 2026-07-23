@@ -298,6 +298,9 @@ public sealed class HostConnection : IAgnesHost
     public Task AnswerAttentionRequestAsync(string requestId, string answer)
         => _hub.InvokeAsync(nameof(IAgnesServer.AnswerAttentionRequest), new AttentionAnswerRequest(requestId, answer));
 
+    public Task ResolveGatedApprovalAsync(string requestId, bool approve)
+        => _hub.InvokeAsync(nameof(IAgnesServer.ResolveGatedApproval), new GatedApprovalResolution(requestId, approve));
+
     public Task AnswerQuestionAsync(string sessionId, string requestId, IReadOnlyList<Agnes.Abstractions.QuestionAnswer> answers)
         => _hub.InvokeAsync(nameof(IAgnesServer.AnswerQuestion), new QuestionAnswerRequest(sessionId, requestId,
             answers.Select(a => new QuestionAnswerDto(a.QuestionId, a.SelectedLabels, a.Notes)).ToList()));

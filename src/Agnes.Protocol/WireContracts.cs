@@ -598,6 +598,10 @@ public enum OpenApprovalKind
 
     /// <summary>An external system's "ask a human" request created over <c>/v1/attention-requests</c>.</summary>
     ExternalAttention,
+
+    /// <summary>A generic approval-gated action (notifications/02 tier 2) invoked from a gated surface and
+    /// waiting on a human's sign-off before it runs.</summary>
+    GatedAction,
 }
 
 /// <summary>An open request still waiting on a human, surfaced in the cross-session approvals list
@@ -621,6 +625,11 @@ public sealed record OpenApproval(
 /// <summary>A human's answer to an external attention request, sent from any Agnes client. Answered by
 /// request id alone (there is no session) with the chosen option text.</summary>
 public sealed record AttentionAnswerRequest(string RequestId, string Answer);
+
+/// <summary>A human's resolution of an approval-gated action (notifications/02 tier 2) from the inbox, sent
+/// from any Agnes client. Keyed by request id alone; <see cref="Approve"/> true runs the parked action,
+/// false rejects it (the action never runs).</summary>
+public sealed record GatedApprovalResolution(string RequestId, bool Approve);
 
 /// <summary>A user-authored bug report sent from a client. Deliberately carries NO diagnostic payload: the
 /// sensitive host-log bundle is assembled HOST-SIDE (owner-only, opt-in) and never travels client→host.

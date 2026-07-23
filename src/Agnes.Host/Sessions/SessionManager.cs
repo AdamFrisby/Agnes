@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Agnes.Abstractions;
 using Agnes.Abstractions.Events;
+using Agnes.Host.Approvals;
 using Agnes.Host.Files;
 using Agnes.Host.Events;
 using Agnes.Host.Hosting;
@@ -40,6 +41,10 @@ public sealed class SessionManager : IAsyncDisposable
     // External attention requests (extensibility/06) are unioned into the same approvals inbox; optional so
     // the many test/simulation constructions of SessionManager are unaffected (null ⇒ session permissions only).
     private readonly Attention.AttentionRequestStore? _attention;
+    // Generic approval-gating (notifications/02 tier 2): consequential actions invoked from a gated surface
+    // become durable ApprovalRequests unioned into the same inbox. Optional so the many test/simulation
+    // constructions are unaffected (null ⇒ every action executes immediately, exactly as before this feature).
+    private readonly ApprovalGateService? _approvals;
     // Host-level CLI-fallback terminal provider (platform/03). Optional so the many test/simulation
     // constructions are unaffected (null ⇒ terminals resolve only from a session whose agent is itself an
     // ICliFallback). Used both for in-session terminals and provider login — the ONE shared spawn path.
@@ -134,7 +139,8 @@ public sealed class SessionManager : IAsyncDisposable
         IPluginRegistry<IGitHostProvider>? gitHosts = null,
         Attention.AttentionRequestStore? attention = null,
         ICliFallback? cliFallback = null,
-        Hosting.PromptLibrary? promptLibrary = null)
+        Hosting.PromptLibrary? promptLibrary = null,
+        ApprovalGateService? approvals = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -156,6 +162,7 @@ public sealed class SessionManager : IAsyncDisposable
         _credentialBroker = credentialBroker;
         _credentialListener = credentialListener;
         _attention = attention;
+        _approvals = approvals;
         _cliFallback = cliFallback;
         _prompts = promptLibrary;
         if (_forwardListener is not null)
@@ -275,6 +282,18 @@ public sealed class SessionManager : IAsyncDisposable
         if (grant.SessionId is null || !_sessions.TryGetValue(grant.SessionId, out var session))
         {
             return false;
+        }
+
+        // A brokered credential is being requested by the sandboxed agent, so this is the SessionAgent surface.
+        // When that surface is gated (notifications/02 tier 2), route the share through the same durable
+        // approval path as everything else in the inbox — the prompt becomes a durable request that survives the
+        // user navigating away, rather than a live consent card that vanishes if unseen. Ungated (the default)
+        // keeps the existing ask-once-per-repo live consent behaviour unchanged.
+        if (_approvals is not null && _approvals.RequiresApproval(CredentialShareAction.Id, ApprovalSurface.SessionAgent))
+        {
+            var action = new CredentialShareAction(grant.SessionId, request.Host, request.Repo,
+                () => session.RecordGitCredentialAsync(request.Host, request.Repo, allowed: true));
+            return await _approvals.InvokeForDecisionAsync(action, ApprovalSurface.SessionAgent).ConfigureAwait(false);
         }
 
         return await _gitConsent.DecideAsync(grant.SessionId, request.Host, request.Repo, grant.Mode,
@@ -1863,7 +1882,36 @@ public sealed class SessionManager : IAsyncDisposable
     public Task<Agnes.Protocol.GitStatus> GetGitStatusAsync(string sessionId)
         => _git.GetStatusAsync(WorkingDirectoryOf(sessionId));
 
-    public async Task<Agnes.Protocol.GitCommitResult> GitCommitAsync(string sessionId, string message)
+    /// <summary>Commits from a client (a human clicking "commit") — the default, ungated surface. Kept as the
+    /// original signature so every existing caller is unchanged.</summary>
+    public Task<Agnes.Protocol.GitCommitResult> GitCommitAsync(string sessionId, string message)
+        => GitCommitAsync(sessionId, message, ApprovalSurface.Client);
+
+    /// <summary>
+    /// Commits, but expressed as an approval-gated action (notifications/02 tier 2) so the same operation can be
+    /// gated per <paramref name="surface"/>. When the gate requires approval for this surface, the commit does
+    /// NOT happen: a durable <see cref="ApprovalRequest"/> is created and surfaced in the inbox, and the result
+    /// reports that approval is pending. When the surface is ungated (the default for everything unless a gate
+    /// is configured) it commits immediately, exactly as before.
+    /// </summary>
+    public async Task<Agnes.Protocol.GitCommitResult> GitCommitAsync(string sessionId, string message, ApprovalSurface surface)
+    {
+        if (_approvals is not null && _approvals.RequiresApproval(GitCommitAction.Id, surface))
+        {
+            var action = new GitCommitAction(sessionId, message, CommitInternalAsync);
+            var request = await _approvals.InvokeAsync(action, surface).ConfigureAwait(false);
+            return new Agnes.Protocol.GitCommitResult(false,
+                request is null
+                    ? "Commit was blocked."
+                    : $"Commit requires approval — waiting on request {request.Id}.");
+        }
+
+        return await CommitInternalAsync(sessionId, message, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    // The actual commit path (bus veto → git commit → committed fact). Shared by an immediate commit and by a
+    // gated commit that a human later approves, so both run byte-for-byte the same code.
+    private async Task<Agnes.Protocol.GitCommitResult> CommitInternalAsync(string sessionId, string message, CancellationToken cancellationToken)
     {
         var before = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeGitCommitEvent(sessionId, message)).ConfigureAwait(false);
         if (before.IsCanceled)
@@ -1871,13 +1919,32 @@ public sealed class SessionManager : IAsyncDisposable
             return new Agnes.Protocol.GitCommitResult(false, before.CancelReason is { Length: > 0 } r ? $"Commit blocked: {r}" : "Commit was blocked by a plugin.");
         }
 
-        var result = await _git.CommitAsync(WorkingDirectoryOf(sessionId), before.Message).ConfigureAwait(false);
+        var result = await _git.CommitAsync(WorkingDirectoryOf(sessionId), before.Message, cancellationToken).ConfigureAwait(false);
         if (result.Success)
         {
             await _bus.DispatchAsync(new Agnes.Abstractions.Events.GitCommittedEvent(sessionId, before.Message)).ConfigureAwait(false);
         }
 
         return result;
+    }
+
+    /// <summary>Resolves an approval-gated action from the inbox (notifications/02 tier 2): approve runs the
+    /// parked action, reject turns it down. A no-op when approval gating isn't wired.</summary>
+    public async Task ResolveGatedApprovalAsync(string requestId, bool approve, CancellationToken cancellationToken = default)
+    {
+        if (_approvals is null)
+        {
+            return;
+        }
+
+        if (approve)
+        {
+            await _approvals.ApproveAsync(requestId, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            _approvals.Reject(requestId);
+        }
     }
 
     /// <summary>
@@ -2104,6 +2171,22 @@ public sealed class SessionManager : IAsyncDisposable
                 Kind: OpenApprovalKind.ExternalAttention,
                 Source: request.Source,
                 Options: request.Options));
+        }
+
+        // Approval-gated actions (notifications/02 tier 2) awaiting sign-off ride the same inbox: null session
+        // (nothing to jump to), the action id as the Source label, the argument summary as the Title, and the
+        // GatedAction kind so a consumer renders approve/reject rather than a permission option list.
+        foreach (var request in _approvals?.ListOpen() ?? [])
+        {
+            open.Add(new OpenApproval(
+                SessionId: null,
+                RequestId: request.Id,
+                Title: request.ArgsSummary,
+                ToolCallId: string.Empty,
+                RequestedAt: request.CreatedAt,
+                Kind: OpenApprovalKind.GatedAction,
+                Source: request.ActionId,
+                Options: request.Preview is { Length: > 0 } p ? [p] : null));
         }
 
         return open.OrderByDescending(a => a.RequestedAt).ToArray();

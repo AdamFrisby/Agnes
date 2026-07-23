@@ -187,6 +187,10 @@ public interface IAgnesHost : IAsyncDisposable
     /// for hosts/fixtures that don't surface external attention requests.</summary>
     Task AnswerAttentionRequestAsync(string requestId, string answer) => Task.CompletedTask;
 
+    /// <summary>Resolve an approval-gated action (notifications/02 tier 2) from the approvals inbox: approve runs
+    /// the parked action, reject turns it down. Default no-op for hosts/fixtures without approval gating.</summary>
+    Task ResolveGatedApprovalAsync(string requestId, bool approve) => Task.CompletedTask;
+
     /// <summary>Submit the user's answers to an outstanding structured question set. Default no-op for hosts
     /// whose agents never ask questions.</summary>
     Task AnswerQuestionAsync(string sessionId, string requestId, IReadOnlyList<Agnes.Abstractions.QuestionAnswer> answers)

@@ -244,6 +244,30 @@ builder.Services.AddHostedService(sp => new Agnes.Host.Attention.AttentionTimeou
     sp.GetRequiredService<Agnes.Host.Attention.AttentionRequestService>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Attention.AttentionTimeoutSweeper>()));
 
+// ---- generic approval-gated actions (notifications/02 tier 2) ----
+// Consequential actions (a git commit, a brokered credential share) invoked from a gated surface become
+// durable ApprovalRequests unioned into the same inbox as tier 1. Persisted so an open request survives a
+// restart. The gating table is built from config, defaulting to EMPTY — i.e. every surface is ungated and
+// existing commit/credential behaviour is unchanged until a gate is explicitly configured. Config shape:
+//   "Agnes:Approvals:Gated": [ { "ActionId": "git.commit", "Surface": "SessionAgent" }, ... ]
+var approvalsFile = builder.Configuration["Agnes:ApprovalRequestsFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "approval-requests.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Approvals.ApprovalRequestStore(
+    approvalsFile, sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Approvals.ApprovalRequestStore>()));
+builder.Services.AddSingleton(sp =>
+{
+    var gated = builder.Configuration.GetSection("Agnes:Approvals:Gated")
+        .Get<List<Agnes.Host.Approvals.GatedSurfaceConfig>>() ?? [];
+    return new Agnes.Host.Approvals.ApprovalGate(gated
+        .Where(g => !string.IsNullOrWhiteSpace(g.ActionId))
+        .Select(g => (g.ActionId!, g.Surface)));
+});
+builder.Services.AddSingleton(sp => new Agnes.Host.Approvals.ApprovalGateService(
+    sp.GetRequiredService<Agnes.Host.Approvals.ApprovalGate>(),
+    sp.GetRequiredService<Agnes.Host.Approvals.ApprovalRequestStore>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Approvals.ApprovalGateService>()));
+
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
 var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandboxes.json");

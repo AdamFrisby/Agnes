@@ -373,6 +373,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         return Task.CompletedTask;
     }
 
+    public Task ResolveGatedApproval(GatedApprovalResolution resolution)
+        => _sessions.ResolveGatedApprovalAsync(resolution.RequestId, resolution.Approve, Context.ConnectionAborted);
+
     public Task PauseSandbox(string sessionId) => _sessions.PauseSandboxAsync(sessionId);
 
     public Task ResumeSandbox(string sessionId) => _sessions.ResumeSandboxAsync(sessionId);

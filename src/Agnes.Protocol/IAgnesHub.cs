@@ -164,6 +164,10 @@ public interface IAgnesServer
     /// records the answer and, if the caller supplied a callback URL, delivers it out of band.</summary>
     Task AnswerAttentionRequest(AttentionAnswerRequest response);
 
+    /// <summary>Resolve an approval-gated action (notifications/02 tier 2) from the inbox: approving runs the
+    /// parked action, rejecting turns it down without running it.</summary>
+    Task ResolveGatedApproval(GatedApprovalResolution resolution);
+
     /// <summary>Git state of the session's working directory.</summary>
     Task<GitStatus> GetGitStatus(string sessionId);
 

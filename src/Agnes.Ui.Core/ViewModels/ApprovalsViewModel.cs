@@ -46,6 +46,21 @@ public sealed class ApprovalsViewModel : ObservableObject
         await LoadAsync().ConfigureAwait(false);
     }
 
+    /// <summary>Resolves an approval-gated action row (notifications/02 tier 2): approve runs the parked action,
+    /// reject turns it down. Then refreshes so the now-resolved entry drops out. A no-op for any other row kind
+    /// (session permissions are answered in-session; external attention requests via
+    /// <see cref="AnswerExternalAsync"/>).</summary>
+    public async Task ResolveGatedAsync(ApprovalRow row, bool approve)
+    {
+        if (!row.IsGatedAction)
+        {
+            return;
+        }
+
+        await row.Host.ResolveGatedApprovalAsync(row.RequestId, approve).ConfigureAwait(false);
+        await LoadAsync().ConfigureAwait(false);
+    }
+
     /// <summary>The open approvals, most-recent first.</summary>
     public ObservableCollection<ApprovalRow> Approvals { get; } = [];
 
@@ -136,7 +151,11 @@ public sealed class ApprovalRow
     /// false for an in-session agent permission request (jumped to and answered in the session view).</summary>
     public bool IsExternal => Approval.Kind == OpenApprovalKind.ExternalAttention;
 
-    /// <summary>The external caller's free-text label, when this is an external attention request.</summary>
+    /// <summary>True for an approval-gated action (notifications/02 tier 2), resolved with approve/reject via
+    /// <see cref="ApprovalsViewModel.ResolveGatedAsync"/>; <see cref="Source"/> is the action id.</summary>
+    public bool IsGatedAction => Approval.Kind == OpenApprovalKind.GatedAction;
+
+    /// <summary>The external caller's free-text label, or (for a gated action) the action id.</summary>
     public string? Source => Approval.Source;
 
     /// <summary>The answer choices for an external attention request (empty for a session permission).</summary>
