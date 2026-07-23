@@ -155,7 +155,10 @@ public sealed class SessionViewModel : ObservableObject
 
         _mainAgentNode = new AgentNode(null, title, isMain: true, SelectAgent) { IsSelected = true };
         AgentTree.Add(_mainAgentNode);
+        Subagents = new SubagentsPanelViewModel(title);
         _transcript.SubagentAdded += AddSubagent;
+        // The roster (participant panel) consumes the same SubagentAdded pipeline, de-duped independently.
+        _transcript.SubagentAdded += Subagents.Add;
         // The ListBox observes Items directly, but the empty-state flag is a computed bool — keep it in
         // sync with the collection so "No messages yet" disappears the moment the first item arrives.
         _transcript.Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsTranscriptEmpty));
@@ -343,6 +346,10 @@ public sealed class SessionViewModel : ObservableObject
 
     /// <summary>The session's agents: the main agent with any subagents nested beneath it.</summary>
     public ObservableCollection<AgentNode> AgentTree { get; } = [];
+
+    /// <summary>The participant roster (sessions/04): the lead agent plus each reported subagent, with a
+    /// controllable-vs-observe-only flag. Fed from the same SubagentAdded pipeline as <see cref="AgentTree"/>.</summary>
+    public SubagentsPanelViewModel Subagents { get; }
 
     public bool HasSubagents => _mainAgentNode.Children.Count > 0;
 

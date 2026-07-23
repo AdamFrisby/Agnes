@@ -740,6 +740,38 @@
                                     </TreeView>
                                 </StackPanel>
 
+                                <!-- Participant roster (sessions/04): the lead + each reported subagent, with a
+                                     controllable-vs-observe-only indicator. Subagents are observe-only for now
+                                     (no adapter exposes addressed send/stop), so their route/stop control is
+                                     disabled with an explaining tooltip rather than shown as a no-op. -->
+                                <StackPanel Spacing="6" IsVisible="{Binding Subagents.HasSubagents}">
+                                    <TextBlock Text="PARTICIPANTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                    <ItemsControl ItemsSource="{Binding Subagents.Participants}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="vm:ParticipantRow">
+                                                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                                        <TextBlock Text="◆" FontSize="9" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource Good}" IsVisible="{Binding IsLead}" />
+                                                        <TextBlock Text="•" FontSize="12" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsLead}" />
+                                                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <!-- Observe-only rows show a disabled route/stop control (a Tier-1
+                                                         subagent Agnes can watch but can't message or stop yet). -->
+                                                    <Button Grid.Column="1" IsEnabled="{Binding CanControl}"
+                                                            IsVisible="{Binding IsObserveOnly}"
+                                                            Background="Transparent" BorderThickness="0" Padding="4,2" Cursor="Arrow"
+                                                            ToolTip.Tip="{Binding ControlTooltip}">
+                                                        <TextBlock Text="observe-only" FontSize="10" Foreground="{DynamicResource FgFaint}" />
+                                                    </Button>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
                                 <StackPanel Spacing="6" IsVisible="{Binding Plan, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                                     <TextBlock Text="PLAN" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                     <ItemsControl ItemsSource="{Binding Plan.Entries}">
