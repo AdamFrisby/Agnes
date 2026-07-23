@@ -86,13 +86,12 @@ public partial class SessionTabView : UserControl
                 }
             }
 
-            // A raw clipboard image (e.g. a screenshot) → inline PNG.
+            // A raw clipboard image (e.g. a screenshot) → upload the PNG bytes and reference the path.
             if (await transfer.TryGetBitmapAsync() is { } bitmap)
             {
                 using var ms = new System.IO.MemoryStream();
                 bitmap.Save(ms); // PNG
-                _session.Attach(new PromptAttachment("pasted image", "img",
-                    new Agnes.Abstractions.ImageContent("image/png", System.Convert.ToBase64String(ms.ToArray()))));
+                await _session.AttachFileAsync("pasted-image.png", ms.ToArray());
                 return;
             }
 
@@ -383,7 +382,9 @@ public partial class SessionTabView : UserControl
         }
     }
 
-    // Attach a picked/dropped file: images become inline image blocks, everything else an @-reference.
+    // Attach a picked/dropped file: read its bytes on this client and upload them to the workspace, then
+    // reference the materialized path — never inline binary, and never a client-local path the host can't
+    // see (referencing a file already in the workspace by path is the separate @-reference flow).
     private async System.Threading.Tasks.Task AttachStorageFileAsync(Avalonia.Platform.Storage.IStorageFile file)
     {
         if (_session is null)
@@ -391,27 +392,11 @@ public partial class SessionTabView : UserControl
             return;
         }
 
-        var name = file.Name;
-        if (IsImage(name))
-        {
-            await using var stream = await file.OpenReadAsync();
-            using var ms = new System.IO.MemoryStream();
-            await stream.CopyToAsync(ms);
-            var mime = name.EndsWith(".png", System.StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
-            _session.Attach(new PromptAttachment(name, "img",
-                new Agnes.Abstractions.ImageContent(mime, System.Convert.ToBase64String(ms.ToArray()))));
-        }
-        else
-        {
-            _session.Attach(PromptAttachment.Reference(file.Path.LocalPath));
-        }
+        await using var stream = await file.OpenReadAsync();
+        using var ms = new System.IO.MemoryStream();
+        await stream.CopyToAsync(ms);
+        await _session.AttachFileAsync(file.Name, ms.ToArray());
     }
-
-    private static bool IsImage(string name)
-        => name.EndsWith(".png", System.StringComparison.OrdinalIgnoreCase)
-        || name.EndsWith(".jpg", System.StringComparison.OrdinalIgnoreCase)
-        || name.EndsWith(".jpeg", System.StringComparison.OrdinalIgnoreCase)
-        || name.EndsWith(".gif", System.StringComparison.OrdinalIgnoreCase);
 
     private void OnDragOver(object? sender, Avalonia.Input.DragEventArgs e)
         => e.DragEffects = e.DataTransfer.Contains(Avalonia.Input.DataFormat.File)
