@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="using:Avalonia.Data.Converters"
         xmlns:dc="using:Dock.Avalonia.Controls"
         x:Class="Agnes.App.Desktop.MainWindow"
         Title="{Binding WindowTitle}" Width="1180" Height="760"
@@ -474,6 +475,113 @@
                                 Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
                                 BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
                         <Button Grid.Column="3" Content="Fork" Command="{Binding ConfirmCommand}" IsEnabled="{Binding !Busy}"
+                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="16,6"
+                                FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- First-run setup wizard: guides a brand-new user through adding a host and pairing, using only the
+             auth methods the host advertises at GET /auth/methods. Layered on top of the existing add-host UI;
+             it never appears once a host is paired, and cancelling keeps persisted progress for next launch. -->
+        <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="120" IsVisible="{Binding IsSetupWizardOpen}"
+                Background="#88000000">
+            <Border Width="560" MaxHeight="560" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                    CornerRadius="12" Padding="24" BoxShadow="0 20 60 -20 #000000"
+                    DataContext="{Binding SetupWizard}">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="3">
+                        <TextBlock Text="Connect your first host" Foreground="{DynamicResource Fg}" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="Point Agnes at a running host, then pick how to sign in. You can also do this manually anytime."
+                                   Foreground="{DynamicResource FgDim}" FontSize="12" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- Step 1: host address -->
+                    <StackPanel Spacing="10" IsVisible="{Binding IsEnteringHost}">
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="Host address" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                            <TextBox Text="{Binding HostUrl, Mode=TwoWay}" Watermark="https://your-host:5099" FontSize="13"
+                                     Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                     BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8" />
+                        </StackPanel>
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="Name (optional)" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                            <TextBox Text="{Binding HostName, Mode=TwoWay}" Watermark="My host" FontSize="13"
+                                     Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                     BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Step 2: methods the host actually advertises -->
+                    <StackPanel Spacing="10" IsVisible="{Binding IsChoosingMethod}">
+                        <TextBlock Text="How do you want to sign in?" Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" />
+                        <ItemsControl ItemsSource="{Binding Methods}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Command="{Binding $parent[ItemsControl].DataContext.ChooseMethodCommand}"
+                                            CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left" Background="{DynamicResource PanelAlt}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8"
+                                            Padding="12,9" Margin="0,0,0,6" Cursor="Hand">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="Set up your host (deployment docs)" Command="{Binding $parent[Window].DataContext.OpenDeploymentDocsCommand}"
+                                HorizontalAlignment="Left" Background="Transparent" Foreground="{DynamicResource Accent}"
+                                BorderThickness="0" Padding="0" FontSize="12" Cursor="Hand" />
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding Status}" IsVisible="{Binding Status, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{DynamicResource FgDim}" FontSize="12" TextWrapping="Wrap" />
+
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                        <Button Grid.Column="0" Content="Back" Command="{Binding BackCommand}" IsVisible="{Binding IsChoosingMethod}"
+                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
+                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" />
+                        <Button Grid.Column="2" Content="Skip" Command="{Binding CancelCommand}"
+                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
+                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
+                        <Button Grid.Column="3" Content="Continue" Command="{Binding DiscoverCommand}" IsVisible="{Binding IsEnteringHost}"
+                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="16,6"
+                                FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Onboarding showcase: a data-driven, next/prev/dismiss feature tour. Shown once per install and
+             re-openable from the command palette ("Show onboarding tour"). -->
+        <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="130" IsVisible="{Binding Showcase.IsOpen}"
+                Background="#88000000">
+            <Border Width="560" MaxHeight="560" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                    CornerRadius="12" Padding="24" BoxShadow="0 20 60 -20 #000000"
+                    DataContext="{Binding Showcase}">
+                <StackPanel Spacing="16">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding StepLabel}" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="✕" Command="{Binding DismissCommand}" Background="Transparent"
+                                Foreground="{DynamicResource FgDim}" BorderThickness="0" Padding="6,2" FontSize="13" Cursor="Hand" />
+                    </Grid>
+                    <StackPanel Spacing="8" DataContext="{Binding Current}">
+                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="13" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                        <Button Grid.Column="0" Content="Back" Command="{Binding PrevCommand}" IsVisible="{Binding HasPrev}"
+                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
+                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" />
+                        <Button Grid.Column="2" Content="Dismiss" Command="{Binding DismissCommand}"
+                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
+                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
+                        <Button Grid.Column="3" Content="Next" Command="{Binding NextCommand}" IsVisible="{Binding HasNext}"
                                 Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="16,6"
                                 FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0" />
                     </Grid>

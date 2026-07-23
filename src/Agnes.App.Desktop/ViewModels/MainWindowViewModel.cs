@@ -5,6 +5,7 @@ using Agnes.App.Desktop.Plugins;
 using Agnes.Client;
 using Agnes.Protocol;
 using Agnes.Ui.Core;
+using Agnes.Ui.Core.Onboarding;
 using Agnes.Ui.Core.Plugins;
 using Agnes.Ui.Core.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -34,6 +35,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private readonly IPermissionPolicy _policy;
     private readonly SettingsStore _settingsStore;
     private readonly ModelFavoritesStore _modelFavorites;
+    private readonly IOnboardingStore _onboarding;
     private readonly DockFactory _factory;
     private readonly List<KnownHost> _knownHosts = [];
     private AppSettings _settings;
@@ -76,7 +78,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         IPromptStore? prompts = null,
         SessionStateStore? archiveStore = null,
         SettingsStore? settingsStore = null,
-        IPermissionPolicy? policy = null)
+        IPermissionPolicy? policy = null,
+        IOnboardingStore? onboarding = null)
     {
         _connector = connector;
         _dispatcher = dispatcher;
@@ -88,6 +91,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _settingsStore = settingsStore ?? new SettingsStore();
         _settings = _settingsStore.Load();
         _modelFavorites = new ModelFavoritesStore();
+        _onboarding = onboarding ?? new FileOnboardingStore();
+
+        // First-run setup wizard: sequences the client's existing pairing/auth flows over whichever methods a
+        // host actually advertises at GET /auth/methods. It never appears once any real host is paired.
+        SetupWizard = new SetupWizardViewModel(
+            _onboarding,
+            (url, ct) => AuthDiscovery.GetMethodsAsync(url, cancellationToken: ct),
+            () => _knownHosts.Any(h => IsForgettableHost(h.Url)));
+        SetupWizard.MethodChosen += OnWizardMethodChosen;
+        SetupWizard.Dismissed += () => IsSetupWizardOpen = false;
+
+        // Onboarding showcase: a data-driven, shown-once feature tour (also reachable manually), keyed by app
+        // version so it can double as a future "what's new" surface.
+        Showcase = new ShowcaseViewModel(OnboardingCards.Default, _onboarding, AppVersion);
+        ShowOnboardingCommand = new RelayCommand(() => Showcase.Show());
+        OpenDeploymentDocsCommand = new RelayCommand(() => OpenExternalUrl(SetupWizardViewModel.DeploymentDocsUrl));
 
         // Cross-session approvals (notifications/02 tier 1): unions open permission requests across every
         // connected host, newest first, with jump-to-session. Constructed before the layout is built so an
@@ -542,6 +561,62 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private ForkPrompt? _forkPrompt;
 
     public bool IsForkPromptOpen => ForkPrompt is not null;
+
+    // ---- onboarding: first-run setup wizard + feature showcase ----
+
+    /// <summary>The first-run setup wizard (host address → discovered auth methods → existing flow).</summary>
+    public SetupWizardViewModel SetupWizard { get; }
+
+    /// <summary>The data-driven feature showcase / "what's new" surface.</summary>
+    public ShowcaseViewModel Showcase { get; }
+
+    /// <summary>Re-opens the onboarding showcase on demand (a help/about entry).</summary>
+    public IRelayCommand ShowOnboardingCommand { get; }
+
+    /// <summary>Opens the deployment docs in a browser for host-side setup the wizard links out to.</summary>
+    public IRelayCommand OpenDeploymentDocsCommand { get; }
+
+    /// <summary>Whether the setup-wizard overlay is visible. Progress persists even while hidden, so a cancel
+    /// resumes cleanly next launch.</summary>
+    [ObservableProperty]
+    private bool _isSetupWizardOpen;
+
+    /// <summary>This build's version — keys the shown-once showcase (a new version re-shows it as "what's new").</summary>
+    private static string AppVersion =>
+        typeof(MainWindowViewModel).Assembly.GetName().Version?.ToString() ?? "dev";
+
+    /// <summary>Evaluate first-run onboarding on startup: show the setup wizard when no host is paired, else the
+    /// feature showcase the first time this version runs.</summary>
+    private void EvaluateOnboarding()
+    {
+        if (SetupWizard.ShouldShow)
+        {
+            IsSetupWizardOpen = true;
+        }
+        else if (Showcase.ShouldAutoShow)
+        {
+            Showcase.Show();
+        }
+    }
+
+    /// <summary>The wizard picked a sign-in method: hand off to the existing, fully-built add-host panel on a
+    /// fresh tab, pre-filled and pointed at the chosen host, so the user completes pairing through the flow that
+    /// already exists rather than a reimplementation. The wizard's persisted progress guards re-appearance.</summary>
+    private void OnWizardMethodChosen(AuthMethodKind kind)
+    {
+        var doc = CreateTab();
+        AddDocument(doc);
+        doc.NewHostName = SetupWizard.HostName;
+        doc.NewHostUrl = SetupWizard.HostUrl;
+        if (kind == AuthMethodKind.Pairing && !string.IsNullOrWhiteSpace(SetupWizard.PairingCode))
+        {
+            doc.NewHostToken = SetupWizard.PairingCode;
+        }
+
+        doc.ShowAddHost = true;
+        _ = DiscoverAuthMethodsAsync(doc);
+        IsSetupWizardOpen = false;
+    }
 
     private void LinkGitHubNow()
     {
@@ -1744,6 +1819,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var all = new List<PaletteItem>
         {
             new("New tab", "Ctrl+T", () => NewTabCommand.Execute(null)),
+            new("Show onboarding tour", "help", () => Showcase.Show()),
         };
         all.AddRange(AllDocuments().Select(t => new PaletteItem(
             string.IsNullOrWhiteSpace(t.Title) ? "New session" : t.Title,
@@ -1820,6 +1896,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     {
         var saved = _tabStore.Load();
         _ready = true;
+        EvaluateOnboarding();
 
         if (saved.Count == 0)
         {
