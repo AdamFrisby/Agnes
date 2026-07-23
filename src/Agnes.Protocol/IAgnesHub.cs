@@ -79,6 +79,15 @@ public interface IAgnesServer
     /// <summary>Stages all changes and commits them in the session's working directory.</summary>
     Task<GitCommitResult> GitCommit(string sessionId, string message);
 
+    /// <summary>Review comments left on a project's files (durable across the sessions run against it).</summary>
+    Task<IReadOnlyList<Abstractions.ReviewComment>> ListReviewComments(string projectId);
+
+    /// <summary>Adds a review comment anchored to a file + line, returning it with its assigned id.</summary>
+    Task<Abstractions.ReviewComment> AddReviewComment(AddReviewCommentRequest request);
+
+    /// <summary>Removes a review comment by id.</summary>
+    Task RemoveReviewComment(string id);
+
     /// <summary>Materializes an uploaded attachment to a gitignored dir in the session's workspace and
     /// returns the workspace-relative path to reference in a prompt (never inline binary).</summary>
     Task<string> UploadAttachment(string sessionId, string fileName, byte[] data);

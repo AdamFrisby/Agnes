@@ -1,4 +1,5 @@
 using Agnes.Host.Plugins;
+using Agnes.Host.Projects;
 using Agnes.Host.Sessions;
 using Agnes.Protocol;
 using Microsoft.AspNetCore.SignalR;
@@ -14,8 +15,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly DeviceRegistry _tokens;
     private readonly PluginManagementService _plugins;
     private readonly ClientCapabilityStore _clientCaps;
+    private readonly ReviewCommentStore _reviewComments;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments)
     {
         _sessions = sessions;
         _schedule = schedule;
@@ -23,6 +25,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _tokens = tokens;
         _plugins = plugins;
         _clientCaps = clientCaps;
+        _reviewComments = reviewComments;
     }
 
     public override async Task OnConnectedAsync()
@@ -118,6 +121,18 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task<GitCommitResult> GitCommit(string sessionId, string message)
         => _sessions.GitCommitAsync(sessionId, message);
+
+    public Task<IReadOnlyList<Abstractions.ReviewComment>> ListReviewComments(string projectId)
+        => Task.FromResult(_reviewComments.ListForProject(projectId));
+
+    public Task<Abstractions.ReviewComment> AddReviewComment(AddReviewCommentRequest request)
+        => Task.FromResult(_reviewComments.Add(request.ProjectId, request.FilePath, request.LineNumber, request.LineHash, request.Text));
+
+    public Task RemoveReviewComment(string id)
+    {
+        _reviewComments.Remove(id);
+        return Task.CompletedTask;
+    }
 
     public Task<string> UploadAttachment(string sessionId, string fileName, byte[] data)
         => _sessions.UploadAttachmentAsync(sessionId, fileName, data);

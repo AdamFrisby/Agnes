@@ -159,6 +159,40 @@ public sealed class SessionViewModel : ObservableObject
         _host.ReadStateChanged += OnReadStateChanged;
         UpdateBanner();
         _ = RefreshGitAsync();
+
+        // Review comments are project-scoped (durable across sessions); load the ones left on this session's
+        // project, and keep their staleness anchors fresh as the modified-file diffs change underneath them.
+        ReviewComments = new ReviewCommentsViewModel(host, SessionId, view.Info?.Project, _dispatcher);
+        ReviewComments.JumpRequested += OnReviewJumpRequested;
+        ReviewComments.Files.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasReviewComments));
+            OnPropertyChanged(nameof(HasSidebarContent));
+            OnPropertyChanged(nameof(ShowLeftPanel));
+        };
+        ModifiedFiles.CollectionChanged += (_, _) => SyncReviewDiffs();
+        _ = ReviewComments.LoadAsync();
+    }
+
+    /// <summary>The project-scoped review comments surfaced for this session (grouped by file).</summary>
+    public ReviewCommentsViewModel ReviewComments { get; }
+
+    /// <summary>Whether the review panel has any comments (drives its sidebar visibility).</summary>
+    public bool HasReviewComments => ReviewComments.HasComments;
+
+    // Feed the current modified-file diffs to the review VM so it can hash new comments' anchor lines and
+    // recompute staleness of existing ones.
+    private void SyncReviewDiffs()
+        => ReviewComments.UpdateDiffs(ModifiedFiles.Select(f => (f.Name, f.Detail)));
+
+    // Jump: reveal the commented file's diff in the preview pane.
+    private void OnReviewJumpRequested(Abstractions.ReviewComment comment)
+    {
+        var entry = ModifiedFiles.FirstOrDefault(f => f.Name == comment.FilePath);
+        if (entry is not null)
+        {
+            Preview(entry.Name, entry.Detail);
+        }
     }
 
     // ---- read / unread state (sessions/05) ----
@@ -434,7 +468,7 @@ public sealed class SessionViewModel : ObservableObject
     public ObservableCollection<CredentialUseEntry> CredentialUses { get; } = [];
     public bool HasCredentialUses => CredentialUses.Count > 0;
 
-    public bool HasSidebarContent => HasAgentTitle || Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents;
+    public bool HasSidebarContent => HasAgentTitle || Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents || HasReviewComments;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
     public bool ShowRightPanel => SelectedPreview is not null;
 

@@ -94,6 +94,18 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Stages all changes and commits them.</summary>
     Task<GitCommitResult> GitCommitAsync(string sessionId, string message);
 
+    /// <summary>Review comments left on a project's files (durable across sessions). Default empty for hosts
+    /// that don't store review comments.</summary>
+    Task<IReadOnlyList<Agnes.Abstractions.ReviewComment>> ListReviewCommentsAsync(string projectId)
+        => Task.FromResult<IReadOnlyList<Agnes.Abstractions.ReviewComment>>([]);
+
+    /// <summary>Adds a review comment anchored to a file + line, returning it with its assigned id.</summary>
+    Task<Agnes.Abstractions.ReviewComment> AddReviewCommentAsync(AddReviewCommentRequest request)
+        => throw new NotSupportedException("This host does not support review comments.");
+
+    /// <summary>Removes a review comment by id.</summary>
+    Task RemoveReviewCommentAsync(string id) => Task.CompletedTask;
+
     /// <summary>Uploads an attachment's bytes; the host materializes it into the workspace and returns the
     /// workspace-relative path to reference in a prompt.</summary>
     Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data);

@@ -269,6 +269,39 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(new GitCommitResult(true, $"[main 1a2b3c4] {message}"));
     }
 
+    // Review comments: a simple in-memory store so the review panel is demoable + screenshot-verifiable offline.
+    private readonly List<ReviewComment> _reviewComments = [];
+
+    public Task<IReadOnlyList<ReviewComment>> ListReviewCommentsAsync(string projectId)
+    {
+        lock (_reviewComments)
+        {
+            return Task.FromResult<IReadOnlyList<ReviewComment>>(_reviewComments.Where(c => c.ProjectId == projectId).ToArray());
+        }
+    }
+
+    public Task<ReviewComment> AddReviewCommentAsync(AddReviewCommentRequest request)
+    {
+        var comment = new ReviewComment(Guid.NewGuid().ToString("n"), request.ProjectId, request.FilePath,
+            request.LineNumber, request.LineHash, request.Text, DateTimeOffset.UtcNow);
+        lock (_reviewComments)
+        {
+            _reviewComments.Add(comment);
+        }
+
+        return Task.FromResult(comment);
+    }
+
+    public Task RemoveReviewCommentAsync(string id)
+    {
+        lock (_reviewComments)
+        {
+            _reviewComments.RemoveAll(c => c.Id == id);
+        }
+
+        return Task.CompletedTask;
+    }
+
     private readonly List<ScheduledTask> _scheduled = [];
     private readonly List<InboxRun> _inbox =
     [

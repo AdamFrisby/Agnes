@@ -139,6 +139,15 @@ public sealed class HostConnection : IAgnesHost
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message)
         => _hub.InvokeAsync<GitCommitResult>(nameof(IAgnesServer.GitCommit), sessionId, message);
 
+    public Task<IReadOnlyList<Abstractions.ReviewComment>> ListReviewCommentsAsync(string projectId)
+        => _hub.InvokeAsync<IReadOnlyList<Abstractions.ReviewComment>>(nameof(IAgnesServer.ListReviewComments), projectId);
+
+    public Task<Abstractions.ReviewComment> AddReviewCommentAsync(AddReviewCommentRequest request)
+        => _hub.InvokeAsync<Abstractions.ReviewComment>(nameof(IAgnesServer.AddReviewComment), request);
+
+    public Task RemoveReviewCommentAsync(string id)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RemoveReviewComment), id);
+
     public Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data)
         => _hub.InvokeAsync<string>(nameof(IAgnesServer.UploadAttachment), sessionId, fileName, data);
 
