@@ -116,7 +116,7 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(info);
     }
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true)
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
     {
         var id = $"sim-{Interlocked.Increment(ref _counter):x4}";
         var session = _sessions.GetOrAdd(id, _ => new SimSession(id, adapterId, workingDirectory));

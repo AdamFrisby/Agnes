@@ -299,9 +299,11 @@ public sealed record SessionSnapshot(
 /// Opt into autonomous operation — the agent runs tool calls without asking. Default false: the
 /// agent asks the user to approve each tool call (Agnes's intended interactive behaviour).
 /// </param>
+/// <param name="ModelId">The model the agent's CLI should use, or null for its default. Trailing-optional so
+/// pre-model callers keep compiling.</param>
 public sealed record OpenSessionRequest(
     string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false,
-    string McpApproval = "Ask", string GitCredentialMode = "Off", bool UseSandbox = true);
+    string McpApproval = "Ask", string GitCredentialMode = "Off", bool UseSandbox = true, string? ModelId = null);
 
 /// <summary>What a fork would do, computed host-side: the source's working folder, a proposed
 /// (non-existing, numeral-incremented) target the UI prefills, and whether the source's sandbox can be

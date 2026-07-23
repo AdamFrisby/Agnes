@@ -64,6 +64,13 @@ public sealed record AgentSessionOptions
     /// <c>--mcp-config</c>) pass it; others that read a materialized config file ignore this.
     /// </summary>
     public string? McpConfigPath { get; init; }
+
+    /// <summary>
+    /// When set, the model the agent's CLI should use (e.g. Claude Code's <c>--model</c>). Threaded into the
+    /// launch invocation by adapters that implement <see cref="IModelListingAdapter"/> in the form that CLI
+    /// expects; adapters that don't understand a model axis ignore it. Null means "the CLI's own default".
+    /// </summary>
+    public string? ModelId { get; init; }
 }
 
 /// <summary>

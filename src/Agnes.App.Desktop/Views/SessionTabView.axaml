@@ -717,6 +717,47 @@
                         </ScrollViewer>
                     </StackPanel>
 
+                    <!-- Model: the per-agent catalog (live-probed or static). Only shown when the selected
+                         agent exposes models; a free-text entry covers models newer than Agnes's list. -->
+                    <StackPanel Spacing="6" IsVisible="{Binding HasModels}">
+                        <TextBlock Text="MODEL" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                        <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Models}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                        <Button Grid.Column="0" Classes="agent" Classes.sel="{Binding IsSelected}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.SelectModelChoiceCommand}"
+                                                CommandParameter="{Binding}" IsEnabled="{Binding IsAvailable}"
+                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" CornerRadius="8"
+                                                Padding="12,8" Background="{DynamicResource Panel}"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="13" />
+                                                    <TextBlock Text="{Binding Id}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                               FontFamily="{StaticResource MonoFont}" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="✓" Foreground="{DynamicResource Accent}" FontWeight="Bold"
+                                                           FontSize="14" VerticalAlignment="Center" IsVisible="{Binding IsSelected}" />
+                                            </Grid>
+                                        </Button>
+                                        <Button Grid.Column="1" Content="{Binding FavoriteGlyph}" Command="{Binding ToggleFavoriteCommand}"
+                                                Background="Transparent" BorderThickness="0" Foreground="{DynamicResource Accent}"
+                                                FontSize="16" Padding="8,0" VerticalAlignment="Center"
+                                                ToolTip.Tip="Favorite this model" AutomationProperties.Name="Toggle favorite model" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        </ScrollViewer>
+                        <TextBox Text="{Binding CustomModelId, Mode=TwoWay}" Watermark="Custom model id (optional)"
+                                 IsEnabled="{Binding CustomEntryAllowed}"
+                                 Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                 BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="9,5" FontSize="12"
+                                 FontFamily="{StaticResource MonoFont}" AutomationProperties.Name="Custom model id" />
+                    </StackPanel>
+
                     <!-- Explicit start: no surprise auto-progress when an agent is clicked -->
                     <Button Content="Start session" Command="{Binding StartSessionCommand}" HorizontalAlignment="Stretch"
                             HorizontalContentAlignment="Center" Background="{DynamicResource Accent}" Foreground="#1A1200"

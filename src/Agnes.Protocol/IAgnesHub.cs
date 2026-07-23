@@ -26,6 +26,11 @@ public interface IAgnesServer
 
     Task<IReadOnlyList<AgentInfo>> ListAgents();
 
+    /// <summary>The models an adapter can be told to use — its live-probed list when the CLI supports one, else
+    /// its static fallback (see <c>.ideas/providers/05-model-and-engine-selection.md</c>). Empty for adapters
+    /// that don't implement <c>IModelListingAdapter</c>, so a client shows no model picker for them.</summary>
+    Task<IReadOnlyList<Abstractions.ModelInfo>> ListModels(string adapterId);
+
     /// <summary>Forces a fresh (cache-bypassing) auth-status check for one adapter and returns its refreshed
     /// <see cref="AgentInfo"/>. The host also broadcasts <see cref="IAgnesClient.OnAgentsChanged"/> so every
     /// connected client's picker updates. See <c>.ideas/providers/06-provider-authentication-detection.md</c>.</summary>

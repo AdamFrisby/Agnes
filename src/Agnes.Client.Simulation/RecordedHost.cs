@@ -56,7 +56,7 @@ public sealed class RecordedHost : IAgnesHost
         => Task.FromResult(new AgentInfo(
             adapterId, _byId.TryGetValue(adapterId, out var r) ? r.Name : adapterId, "recording", Available: true));
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true)
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
     {
         var recording = _byId.TryGetValue(adapterId, out var r) ? r : _byId.Values.FirstOrDefault();
         var id = $"rec-{Interlocked.Increment(ref _counter):x4}";

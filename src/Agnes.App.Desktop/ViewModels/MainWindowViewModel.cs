@@ -33,6 +33,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private readonly IPromptStore _prompts;
     private readonly IPermissionPolicy _policy;
     private readonly SettingsStore _settingsStore;
+    private readonly ModelFavoritesStore _modelFavorites;
     private readonly DockFactory _factory;
     private readonly List<KnownHost> _knownHosts = [];
     private AppSettings _settings;
@@ -86,6 +87,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _policy = policy ?? new FilePermissionPolicy();
         _settingsStore = settingsStore ?? new SettingsStore();
         _settings = _settingsStore.Load();
+        _modelFavorites = new ModelFavoritesStore();
 
         // Cross-session approvals (notifications/02 tier 1): unions open permission requests across every
         // connected host, newest first, with jump-to-session. Constructed before the layout is built so an
@@ -2133,7 +2135,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
-    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true)
+    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
     {
         if (doc.Host is null)
         {
@@ -2159,7 +2161,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode, useSandbox: useSandbox);
+            var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode, useSandbox: useSandbox, modelId: modelId);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             var title = ProjectTitle(info.WorkingDirectory, displayName);
             _dispatcher.Post(() =>
@@ -2202,6 +2204,49 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             await progress.ConfigureAwait(false);
             doc.StartCts = null;
         }
+    }
+
+    public async Task LoadModelsAsync(SessionDocument doc, string adapterId)
+    {
+        if (doc.Host is null)
+        {
+            return;
+        }
+
+        IReadOnlyList<Agnes.Abstractions.ModelInfo> catalog;
+        try
+        {
+            catalog = await doc.Host.ListModelsAsync(adapterId);
+        }
+        catch
+        {
+            catalog = []; // best-effort: no picker rather than an error on the config screen.
+        }
+
+        // Reconcile against the user's favorites so a removed favorite shows as unavailable, not silently offered.
+        var options = ModelCatalogReconciler.Reconcile(adapterId, catalog, _modelFavorites.All);
+        var choices = options
+            .Select(o => new ModelChoice(o, m => ToggleModelFavorite(doc, m)))
+            .ToList();
+        _dispatcher.Post(() =>
+        {
+            // Ignore a stale response if the user moved on to a different agent while this was in flight.
+            if (doc.SelectedAgent?.AdapterId == adapterId)
+            {
+                doc.SetModels(choices);
+            }
+        });
+    }
+
+    public void ToggleModelFavorite(SessionDocument doc, ModelChoice model)
+    {
+        var adapterId = doc.SelectedAgent?.AdapterId;
+        if (adapterId is null)
+        {
+            return;
+        }
+
+        model.IsFavorite = _modelFavorites.Toggle(adapterId, model.Id);
     }
 
     /// <summary>While a session is opening, poll the host's sandbox-image bake status and surface its

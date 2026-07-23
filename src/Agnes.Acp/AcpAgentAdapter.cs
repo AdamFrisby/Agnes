@@ -19,13 +19,25 @@ public sealed record AcpLaunchSpec
 
     /// <summary>Identity advertised for this agent kind.</summary>
     public required AgentDescriptor Descriptor { get; init; }
+
+    /// <summary>Static model catalog surfaced via <see cref="IModelListingAdapter.StaticModels"/> (empty when
+    /// this CLI has no model axis Agnes knows about).</summary>
+    public IReadOnlyList<ModelInfo> Models { get; init; } = [];
+
+    /// <summary>Optional live model probe. Null (the default) means "no live listing" — resolution falls back
+    /// to <see cref="Models"/>.</summary>
+    public Func<CancellationToken, Task<IReadOnlyList<ModelInfo>?>>? LiveModelProbe { get; init; }
+
+    /// <summary>Builds the CLI arguments that select a model id (e.g. <c>--model &lt;id&gt;</c>). Null means
+    /// this CLI doesn't take a model flag, so a requested <see cref="AgentSessionOptions.ModelId"/> is ignored.</summary>
+    public Func<string, IReadOnlyList<string>>? ModelArguments { get; init; }
 }
 
 /// <summary>
 /// Generic <see cref="IAgentAdapter"/> for any ACP-compliant CLI. Agent plugins are
 /// typically just an <see cref="AcpLaunchSpec"/> passed to this adapter.
 /// </summary>
-public sealed class AcpAgentAdapter : IAgentAdapter
+public sealed class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
 {
     private readonly AcpLaunchSpec _spec;
     private readonly ILoggerFactory _loggerFactory;
@@ -39,6 +51,24 @@ public sealed class AcpAgentAdapter : IAgentAdapter
     public AgentDescriptor Descriptor => _spec.Descriptor;
 
     public bool IsAvailable() => AgentCommand.IsOnPath(_spec.Command);
+
+    public IReadOnlyList<ModelInfo> StaticModels => _spec.Models;
+
+    public Task<IReadOnlyList<ModelInfo>?> ListModelsAsync(CancellationToken ct = default)
+        => _spec.LiveModelProbe?.Invoke(ct) ?? Task.FromResult<IReadOnlyList<ModelInfo>?>(null);
+
+    /// <summary>The agent argv for a launch: the base ACP arguments plus the model-selection flag when a
+    /// model was requested and this CLI takes one. Pure, so the model-threading rule is unit-testable
+    /// without spawning a process.</summary>
+    public static IReadOnlyList<string> BuildAgentArguments(AcpLaunchSpec spec, AgentSessionOptions options)
+    {
+        if (options.ModelId is { Length: > 0 } modelId && spec.ModelArguments is { } build)
+        {
+            return [.. spec.Arguments, .. build(modelId)];
+        }
+
+        return spec.Arguments;
+    }
 
     public async Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {
@@ -68,7 +98,7 @@ public sealed class AcpAgentAdapter : IAgentAdapter
         // on the host; the agent's stdin/stdout flow through the exec pipe unchanged. The guest
         // working directory travels inside the wrapped argv, so the host launcher must use a real
         // host directory, not the guest path.
-        var (command, arguments) = (_spec.Command, (IReadOnlyList<string>)_spec.Arguments);
+        var (command, arguments) = (_spec.Command, BuildAgentArguments(_spec, options));
         var hostWorkingDirectory = options.WorkingDirectory;
         if (options.Sandbox is { } sandbox)
         {

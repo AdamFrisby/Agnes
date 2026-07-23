@@ -37,7 +37,14 @@ public interface ITabController
 
     /// <summary>Whether a host can be removed by the user (built-in Simulated/Recorded hosts can't).</summary>
     bool IsForgettableHost(string url);
-    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true);
+    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
+
+    /// <summary>Loads the models offered for an agent (live or static) and reconciles them against the user's
+    /// favorites, populating the tab's model picker. No-op when the host reports no models.</summary>
+    Task LoadModelsAsync(SessionDocument doc, string adapterId);
+
+    /// <summary>Toggles a model as a favorite for the tab's selected agent (pure client-side) and persists it.</summary>
+    void ToggleModelFavorite(SessionDocument doc, ModelChoice model);
 
     /// <summary>Force a fresh (cache-bypassing) provider login-state check for one agent on the tab's host,
     /// returning its refreshed status (or null when the agent has no reliable signal).</summary>
@@ -109,6 +116,42 @@ public sealed class HostChoice
 
 /// <summary>An entry in the command palette (Ctrl+K): a session to jump to or a global action.</summary>
 public sealed record PaletteItem(string Label, string Hint, System.Action Invoke);
+
+/// <summary>A model option on the new-tab model picker (per the selected agent). Built from a reconciled
+/// <see cref="Agnes.Ui.Core.ViewModels.ModelOption"/>: an unavailable one is a stale favorite the provider
+/// dropped (shown, not selectable); the star toggles the favorite via the tab controller.</summary>
+public sealed partial class ModelChoice : ObservableObject
+{
+    public ModelChoice(Agnes.Ui.Core.ViewModels.ModelOption option, System.Action<ModelChoice>? toggleFavorite = null)
+    {
+        Id = option.Id;
+        DisplayName = option.DisplayName;
+        IsCustomEntryAllowed = option.IsCustomEntryAllowed;
+        IsAvailable = option.IsAvailable;
+        _isFavorite = option.IsFavorite;
+        ToggleFavoriteCommand = new RelayCommand(() => toggleFavorite?.Invoke(this), () => IsAvailable);
+    }
+
+    public string Id { get; }
+    public string DisplayName { get; }
+    public bool IsCustomEntryAllowed { get; }
+
+    /// <summary>Whether the model is in the current catalog. A favorited-but-removed model is shown as a
+    /// visible "no longer available" row rather than silently offered as working.</summary>
+    public bool IsAvailable { get; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FavoriteGlyph))]
+    private bool _isFavorite;
+
+    /// <summary>Highlighted as the chosen model (one at a time across the list).</summary>
+    [ObservableProperty]
+    private bool _isSelected;
+
+    public IRelayCommand ToggleFavoriteCommand { get; }
+
+    public string FavoriteGlyph => IsFavorite ? "★" : "☆";
+}
 
 /// <summary>An agent option on the new-tab agent picker. Selectable — picking it highlights the row;
 /// the session only opens when the user presses "Start session" (no surprise auto-progress).</summary>

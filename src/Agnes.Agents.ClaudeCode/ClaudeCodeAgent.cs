@@ -31,6 +31,19 @@ public static class ClaudeCodeAgent
         DisplayName = "Claude Code",
     };
 
+    /// <summary>Claude Code's currently selectable models. These are stable CLI aliases (the <c>claude</c> CLI
+    /// resolves each to its latest concrete model), so they don't go stale as new dated model ids ship; a user
+    /// who wants a specific dated id types it as a custom entry (<see cref="ModelInfo.IsCustomEntryAllowed"/>).</summary>
+    public static IReadOnlyList<ModelInfo> StaticModels { get; } =
+    [
+        new ModelInfo("sonnet", "Claude Sonnet (latest)"),
+        new ModelInfo("opus", "Claude Opus (latest)"),
+        new ModelInfo("haiku", "Claude Haiku (latest)"),
+    ];
+
+    /// <summary>Claude Code selects a model with <c>--model &lt;id&gt;</c>.</summary>
+    public static IReadOnlyList<string> BuildModelArguments(string modelId) => ["--model", modelId];
+
     public static AcpLaunchSpec CreateLaunchSpec(ClaudeCodeOptions? options = null)
     {
         options ??= new ClaudeCodeOptions();
@@ -40,6 +53,9 @@ public static class ClaudeCodeAgent
             Arguments = options.Arguments,
             Environment = options.Environment,
             Descriptor = Descriptor,
+            // No standard ACP model-list call, so ship the static list and fall back to it (LiveModelProbe null).
+            Models = StaticModels,
+            ModelArguments = BuildModelArguments,
         };
     }
 

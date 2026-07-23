@@ -63,6 +63,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<AgentInfo> CheckAuthStatus(string adapterId)
         => _sessions.CheckAuthStatusAsync(adapterId);
 
+    public Task<IReadOnlyList<Abstractions.ModelInfo>> ListModels(string adapterId)
+        => _sessions.ListModelsAsync(adapterId);
+
     public Task<IReadOnlyList<HostCapability>> GetCapabilities()
         => Task.FromResult(HostCapabilityList());
 
@@ -85,7 +88,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     }
 
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
-        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox);
+        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox, request.ModelId);
 
     public Task<ForkPlan?> ProposeFork(string sessionId)
         => Task.FromResult(_sessions.ProposeFork(sessionId));

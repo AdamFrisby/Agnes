@@ -97,14 +97,17 @@ public sealed class HostConnection : IAgnesHost
     public Task<AgentInfo> CheckAuthStatusAsync(string adapterId)
         => _hub.InvokeAsync<AgentInfo>(nameof(IAgnesServer.CheckAuthStatus), adapterId);
 
+    public Task<IReadOnlyList<ModelInfo>> ListModelsAsync(string adapterId)
+        => _hub.InvokeAsync<IReadOnlyList<ModelInfo>>(nameof(IAgnesServer.ListModels), adapterId);
+
     public Task<IReadOnlyList<HostCapability>> GetCapabilitiesAsync()
         => _hub.InvokeAsync<IReadOnlyList<HostCapability>>(nameof(IAgnesServer.GetCapabilities));
 
     public Task<NegotiatedCapabilities> NegotiateAsync(ClientCapabilities client)
         => _hub.InvokeAsync<NegotiatedCapabilities>(nameof(IAgnesServer.Negotiate), client);
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true)
-        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox));
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
+        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox, modelId));
 
     public Task<ForkPlan?> ProposeForkAsync(string sessionId)
         => _hub.InvokeAsync<ForkPlan?>(nameof(IAgnesServer.ProposeFork), sessionId);

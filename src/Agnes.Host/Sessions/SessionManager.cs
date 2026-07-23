@@ -352,6 +352,28 @@ public sealed class SessionManager : IAsyncDisposable
         return BuildAgentInfo(adapter);
     }
 
+    /// <summary>The models an adapter can be told to use: its live-probed list when it implements
+    /// <see cref="IModelListingAdapter"/> and supports probing, else its static fallback. Empty for adapters
+    /// with no model axis, and for unknown ids — so a client just shows no picker. A probe failure degrades to
+    /// the static list rather than surfacing an error.</summary>
+    public async Task<IReadOnlyList<ModelInfo>> ListModelsAsync(string adapterId, CancellationToken cancellationToken = default)
+    {
+        if (_adapters.Find(adapterId) is not IModelListingAdapter lister)
+        {
+            return [];
+        }
+
+        try
+        {
+            return await ModelCatalog.ResolveAsync(lister, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Model listing failed for {AdapterId}; falling back to the static list", adapterId);
+            return lister.StaticModels;
+        }
+    }
+
     /// <summary>Whether this host can isolate sessions in per-session sandbox VMs (a provider is configured).</summary>
     public bool SandboxAvailable => _sandboxes is not null;
 
@@ -364,7 +386,7 @@ public sealed class SessionManager : IAsyncDisposable
         new HostCapability(HostCapabilityIds.SandboxProvider, SandboxAvailable, FailClosed: false),
     ];
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, CancellationToken cancellationToken = default)
     {
         // Event spine: a plugin may redirect the adapter/working directory or veto the open.
         var open = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionOpenEvent(adapterId, workingDirectory), cancellationToken).ConfigureAwait(false);
@@ -395,7 +417,7 @@ public sealed class SessionManager : IAsyncDisposable
 
         var info = await OpenSessionCoreAsync(
             sessionId, adapterId, effectiveDirectory, skipPermissions, mcpApproval, gitCredentialMode,
-            useSandbox, existingSandbox: null, worktree: useWorktree, cancellationToken).ConfigureAwait(false);
+            useSandbox, modelId, existingSandbox: null, worktree: useWorktree, cancellationToken).ConfigureAwait(false);
         await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionOpenedEvent(info.SessionId, adapterId), cancellationToken).ConfigureAwait(false);
         return info;
     }
@@ -408,7 +430,7 @@ public sealed class SessionManager : IAsyncDisposable
     /// </summary>
     private async Task<SessionInfo> OpenSessionCoreAsync(
         string sessionId, string adapterId, string effectiveDirectory,
-        bool skipPermissions, string mcpApproval, string gitCredentialMode, bool useSandbox,
+        bool skipPermissions, string mcpApproval, string gitCredentialMode, bool useSandbox, string? modelId,
         ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken)
     {
         var adapter = _adapters.Find(adapterId);
@@ -494,6 +516,7 @@ public sealed class SessionManager : IAsyncDisposable
                 Sandbox = sandbox,
                 SkipPermissions = skipPermissions,
                 McpConfigPath = mcpConfigPath,
+                ModelId = modelId,
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -573,7 +596,7 @@ public sealed class SessionManager : IAsyncDisposable
 
         return await OpenSessionCoreAsync(
             sessionId, adapterId, targetDirectory, skipPermissions, mcpApproval, gitCredentialMode,
-            useSandbox: sourceSandboxed, existingSandbox: clonedSandbox, worktree: false, cancellationToken).ConfigureAwait(false);
+            useSandbox: sourceSandboxed, modelId: null, existingSandbox: clonedSandbox, worktree: false, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Replay-fork: branch the conversation at a log point. Copies the workspace and inherits config

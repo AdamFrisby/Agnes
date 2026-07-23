@@ -34,6 +34,7 @@ public sealed partial class SessionDocument : Document
         SetPermissionModeCommand = new RelayCommand<string>(v => SkipPermissions = v == "Autonomous");
         SetSandboxModeCommand = new RelayCommand<string>(v => { if (v is not null && SandboxAvailable) { UseSandbox = v == "On"; } });
         SelectAgentChoiceCommand = new RelayCommand<AgentChoice>(SelectAgentChoice);
+        SelectModelChoiceCommand = new RelayCommand<ModelChoice>(SelectModelChoice);
         StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => SelectedAgent is { Available: true });
 
         Tags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTags));
@@ -85,6 +86,76 @@ public sealed partial class SessionDocument : Document
     partial void OnAgentFilterChanged(string value) => ApplyAgentFilter();
 
     partial void OnSelectedAgentChanged(AgentChoice? value) => StartSessionCommand.NotifyCanExecuteChanged();
+
+    // ---- model picker (per selected agent; populated from the host's live/static catalog) ----
+
+    /// <summary>Models offered for the selected agent, reconciled against the user's favorites. Null/empty
+    /// hides the picker (the agent has no model axis Agnes knows about).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasModels))]
+    private ObservableCollection<ModelChoice>? _models;
+
+    /// <summary>The chosen catalog model; the free-text <see cref="CustomModelId"/> overrides it when set.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CustomEntryAllowed))]
+    private ModelChoice? _selectedModel;
+
+    /// <summary>A free-text model id, for a model newer than Agnes's catalog. Gated by
+    /// <see cref="CustomEntryAllowed"/> (the selected model's <c>IsCustomEntryAllowed</c>).</summary>
+    [ObservableProperty]
+    private string _customModelId = string.Empty;
+
+    public bool HasModels => Models is { Count: > 0 };
+
+    /// <summary>Whether a free-text custom id is accepted right now (defaults allowed when nothing is selected).</summary>
+    public bool CustomEntryAllowed => SelectedModel?.IsCustomEntryAllowed ?? true;
+
+    /// <summary>The model id a new session should launch with: the (allowed) custom entry if typed, else the
+    /// selected available catalog model, else null (the CLI's own default).</summary>
+    public string? EffectiveModelId
+    {
+        get
+        {
+            var custom = CustomModelId?.Trim();
+            if (!string.IsNullOrEmpty(custom))
+            {
+                return CustomEntryAllowed ? custom : null;
+            }
+
+            return SelectedModel is { IsAvailable: true } m ? m.Id : null;
+        }
+    }
+
+    public IRelayCommand<ModelChoice> SelectModelChoiceCommand { get; }
+
+    private void SelectModelChoice(ModelChoice? choice)
+    {
+        if (choice is null || !choice.IsAvailable)
+        {
+            return; // an unavailable (stale-favorite) row is shown but not selectable.
+        }
+
+        if (Models is { } models)
+        {
+            foreach (var m in models)
+            {
+                m.IsSelected = ReferenceEquals(m, choice);
+            }
+        }
+
+        SelectedModel = choice;
+    }
+
+    /// <summary>Replaces the model picker's contents (called by the controller once the catalog is resolved),
+    /// preselecting the first available model.</summary>
+    public void SetModels(IEnumerable<ModelChoice> models)
+    {
+        Models = new ObservableCollection<ModelChoice>(models);
+        CustomModelId = string.Empty;
+        SelectedModel = null;
+        SelectModelChoice(Models.FirstOrDefault(m => m.IsAvailable));
+        OnPropertyChanged(nameof(HasModels));
+    }
 
     [ObservableProperty]
     private SessionViewModel? _session;
@@ -327,12 +398,28 @@ public sealed partial class SessionDocument : Document
         }
 
         SelectedAgent = choice;
+        // The model catalog is per-agent; reset it and (re)load for the newly chosen agent.
+        Models = null;
+        _ = _controller.LoadModelsAsync(this, choice.AdapterId);
     }
 
     private Task StartSessionAsync()
-        => SelectedAgent is { Available: true } a
-            ? _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode, SandboxAvailable && UseSandbox)
-            : Task.CompletedTask;
+    {
+        if (SelectedAgent is not { Available: true } a)
+        {
+            return Task.CompletedTask;
+        }
+
+        // A free-text id typed against a model that forbids custom entry is rejected up front (clear message)
+        // rather than launching with a bad id.
+        if (!string.IsNullOrWhiteSpace(CustomModelId) && !CustomEntryAllowed)
+        {
+            StatusText = "This model doesn't allow a custom model id — clear it or pick another model.";
+            return Task.CompletedTask;
+        }
+
+        return _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode, SandboxAvailable && UseSandbox, EffectiveModelId);
+    }
 
     private void ApplyAgentFilter()
     {

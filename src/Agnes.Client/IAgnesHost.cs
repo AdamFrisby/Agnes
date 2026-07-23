@@ -39,6 +39,12 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task<IReadOnlyList<AgentInfo>> ListAgentsAsync();
 
+    /// <summary>The models an adapter can be told to use (live-probed or its static fallback). Default empty
+    /// for hosts/fixtures that don't report models — a client then shows no model picker (see
+    /// <c>.ideas/providers/05-model-and-engine-selection.md</c>).</summary>
+    Task<IReadOnlyList<ModelInfo>> ListModelsAsync(string adapterId)
+        => Task.FromResult<IReadOnlyList<ModelInfo>>([]);
+
     /// <summary>Forces a fresh (cache-bypassing) auth-status check for one adapter and returns its refreshed
     /// <see cref="AgentInfo"/>; the host also pushes <see cref="AgentsChanged"/> to every client. Default:
     /// unsupported (hosts/fixtures without auth detection).</summary>
@@ -55,7 +61,7 @@ public interface IAgnesHost : IAsyncDisposable
     Task<NegotiatedCapabilities> NegotiateAsync(ClientCapabilities client)
         => Task.FromResult(new NegotiatedCapabilities([]));
 
-    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true);
+    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
 
     /// <summary>Compute a fork plan (proposed target folder + sandbox-copy capability) for a session, or
     /// null if the session/host doesn't support forking. Default null for hosts without the feature.</summary>
