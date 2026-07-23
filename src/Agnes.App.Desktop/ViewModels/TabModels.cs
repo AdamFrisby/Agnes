@@ -53,6 +53,9 @@ public interface ITabController
     /// <summary>Open another tab on the same live session (a second client view).</summary>
     Task DuplicateAsync(SessionDocument doc);
 
+    /// <summary>Open a fresh, empty session on the same host/agent carrying this one's launch config.</summary>
+    Task NewSessionSameSetupAsync(SessionDocument source);
+
     /// <summary>Open a new tab that forks a fresh session from the same host and agent.</summary>
     Task ForkAsync(SessionDocument doc);
 

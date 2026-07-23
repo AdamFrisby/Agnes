@@ -327,6 +327,7 @@
                                     <MenuItem Header="Open in new window" Command="{Binding MoveToWindowCommand}" />
                                     <Separator />
                                     <MenuItem Header="Duplicate (same session)" Command="{Binding DuplicateCommand}" />
+                                    <MenuItem Header="New session (same setup)" Command="{Binding SameSetupCommand}" />
                                     <MenuItem Header="Fork (copy working folder)…" Command="{Binding ForkCommand}" />
                                     <Separator />
                                     <MenuItem Header="Archive" Command="{Binding ArchiveCommand}" />

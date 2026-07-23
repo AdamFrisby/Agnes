@@ -46,6 +46,7 @@ public sealed partial class SessionDocument : Document
         RemoveTagCommand = new RelayCommand<string>(RemoveTag);
         ArchiveCommand = new RelayCommand(() => _controller.ArchiveTab(this));
         DuplicateCommand = new AsyncRelayCommand(() => _controller.DuplicateAsync(this));
+        SameSetupCommand = new AsyncRelayCommand(() => _controller.NewSessionSameSetupAsync(this));
         ForkCommand = new AsyncRelayCommand(() => _controller.ForkAsync(this));
         MoveToWindowCommand = new RelayCommand(() => _controller.FloatTab(this));
         // Stop waiting on a slow/opaque session open and drop back to the agent picker (defect #8/#10).
@@ -253,6 +254,9 @@ public sealed partial class SessionDocument : Document
     public IRelayCommand<string> RemoveTagCommand { get; }
     public IRelayCommand ArchiveCommand { get; }
     public IAsyncRelayCommand DuplicateCommand { get; }
+
+    /// <summary>Opens a fresh, empty session on the same host/agent with this session's launch config.</summary>
+    public IAsyncRelayCommand SameSetupCommand { get; }
     public IAsyncRelayCommand ForkCommand { get; }
     public IRelayCommand MoveToWindowCommand { get; }
     public IRelayCommand CancelStartCommand { get; }

@@ -2257,6 +2257,41 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
+    /// <summary>
+    /// "New session, same setup" — opens a fresh session on the SAME host/agent as <paramref name="source"/>,
+    /// carrying over its launch configuration (working directory, permission mode, git-credential mode,
+    /// sandbox). Unlike <see cref="DuplicateAsync"/> (a second view of the same conversation) this starts a
+    /// brand-new, empty conversation; unlike <see cref="ForkAsync"/> it copies no transcript history.
+    /// </summary>
+    public Task NewSessionSameSetupAsync(SessionDocument source)
+    {
+        if (source.Host is null || source.Descriptor is not { } descriptor)
+        {
+            return Task.CompletedTask;
+        }
+
+        var doc = new SessionDocument(this)
+        {
+            Title = "New session",
+            CanClose = true,
+            HostName = source.HostName,
+            Host = source.Host,
+            HostToken = source.HostToken,
+            WorkingDirectory = source.WorkingDirectory,
+            SkipPermissions = source.SkipPermissions,
+            GitCredentialMode = source.GitCredentialMode,
+            UseSandbox = source.UseSandbox,
+        };
+        ApplyTags(doc, source.Tags.ToList());
+        AddDocument(doc);
+        WireStatus(doc, source.Host);
+
+        // Reuse the already-connected host and the source's adapter — no host/agent picker round-trip.
+        return SelectAgentAsync(
+            doc, descriptor.AdapterId, source.AgentName ?? descriptor.AdapterId,
+            source.SkipPermissions, source.GitCredentialMode, source.UseSandbox && source.SandboxAvailable);
+    }
+
     public async Task ForkAsync(SessionDocument doc)
     {
         if (doc.Host is null || doc.Descriptor is null)
