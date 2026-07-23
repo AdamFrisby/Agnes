@@ -366,6 +366,34 @@ public sealed class SessionViewModel : ObservableObject
 
     public bool HasSubagents => _mainAgentNode.Children.Count > 0;
 
+    // ---- embedded terminal (platform/03) ----
+    // Created once per session (keyed by this SessionView), so its scrollback + dock location persist for the
+    // session's lifetime and a dock move never reconnects the PTY. Lazily built so a session with no terminal
+    // pays nothing.
+    private TerminalPanelViewModel? _terminal;
+    private ICommand? _toggleTerminal;
+    private bool _isTerminalVisible;
+
+    /// <summary>The session's embedded CLI-fallback terminal (platform/03), built on first use.</summary>
+    public TerminalPanelViewModel Terminal => _terminal ??= new TerminalPanelViewModel(_host, _view, _dispatcher);
+
+    /// <summary>Whether the terminal panel is shown for this session (show/hide; on phones the shell hides it
+    /// when the host can't back a terminal). Toggling it never tears down the terminal.</summary>
+    public bool IsTerminalVisible
+    {
+        get => _isTerminalVisible;
+        set
+        {
+            if (SetProperty(ref _isTerminalVisible, value))
+            {
+                Terminal.IsVisible = value;
+            }
+        }
+    }
+
+    /// <summary>Shows/hides the terminal panel.</summary>
+    public ICommand ToggleTerminalCommand => _toggleTerminal ??= new RelayCommand(() => IsTerminalVisible = !IsTerminalVisible);
+
     public string? SelectedAgentId => _selectedAgentId;
 
     private AgentNode _mainAgentNode = null!;

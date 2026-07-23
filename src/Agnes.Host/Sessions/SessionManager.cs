@@ -37,6 +37,13 @@ public sealed class SessionManager : IAsyncDisposable
     // External attention requests (extensibility/06) are unioned into the same approvals inbox; optional so
     // the many test/simulation constructions of SessionManager are unaffected (null ⇒ session permissions only).
     private readonly Attention.AttentionRequestStore? _attention;
+    // Host-level CLI-fallback terminal provider (platform/03). Optional so the many test/simulation
+    // constructions are unaffected (null ⇒ terminals resolve only from a session whose agent is itself an
+    // ICliFallback). Used both for in-session terminals and provider login — the ONE shared spawn path.
+    private readonly ICliFallback? _cliFallback;
+    // Open fallback terminals, keyed by their (globally-unique) terminal id, so write/resize can reach the
+    // live PTY handle. Distinct lifetime from a session's agent handle, hence its own map.
+    private readonly ConcurrentDictionary<string, ITerminalHandle> _terminals = new();
     // Live handles keep their own maps — they have distinct lifetimes (a stopped session keeps its sandbox
     // for resume) and hotter concurrency than the metadata below.
     private readonly ConcurrentDictionary<string, HostSession> _sessions = new();
@@ -111,7 +118,8 @@ public sealed class SessionManager : IAsyncDisposable
         Agnes.Abstractions.Events.IEventBus? eventBus = null,
         McpOptions? mcpOptions = null,
         IPluginRegistry<IGitHostProvider>? gitHosts = null,
-        Attention.AttentionRequestStore? attention = null)
+        Attention.AttentionRequestStore? attention = null,
+        ICliFallback? cliFallback = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -133,6 +141,7 @@ public sealed class SessionManager : IAsyncDisposable
         _credentialBroker = credentialBroker;
         _credentialListener = credentialListener;
         _attention = attention;
+        _cliFallback = cliFallback;
         if (_forwardListener is not null)
         {
             _forwardListener.OnToolCall = OnForwardedToolCall;
@@ -1438,6 +1447,99 @@ public sealed class SessionManager : IAsyncDisposable
         await session.PromptAsync(content).ConfigureAwait(false);
     }
 
+    // ---- CLI-fallback terminal (platform/03) ----
+    // Both the in-session terminal and provider login funnel through OpenFallbackTerminalAsync below — the
+    // single ICliFallback.OpenTerminalAsync spawn path, never a bespoke Process.Start (the reuse discipline
+    // this feature exists to enforce). Output rides the session event stream as TerminalOutputEvents.
+
+    /// <summary>Opens a CLI-fallback terminal in a session and returns its terminal id. A null command uses
+    /// the session's default shell; a null working directory uses the session's own working directory. The
+    /// terminal's output is appended to the session log as <see cref="TerminalOutputEvent"/>s (via
+    /// <see cref="ITerminalOutputSource"/> when the handle streams it), replayed like any other event.</summary>
+    public async Task<string> OpenTerminalAsync(string sessionId, string? command, IReadOnlyList<string>? arguments, string? workingDirectory, int columns, int rows, CancellationToken cancellationToken = default)
+    {
+        var session = await EnsureLiveAsync(sessionId).ConfigureAwait(false);
+        var fallback = session.CliFallback ?? _cliFallback
+            ?? throw new InvalidOperationException("This host has no CLI-fallback terminal provider.");
+
+        var options = new TerminalOptions
+        {
+            Command = string.IsNullOrWhiteSpace(command) ? DefaultShell() : command,
+            Arguments = arguments ?? [],
+            WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory) ? session.WorkingDirectory : workingDirectory,
+            Columns = columns,
+            Rows = rows,
+        };
+
+        // Bind streamed output to THIS session's log — the "output rides the session event stream" contract.
+        var handle = await OpenFallbackTerminalAsync(fallback, options, session.AppendTerminalOutputAsync, cancellationToken).ConfigureAwait(false);
+        return handle.TerminalId;
+    }
+
+    /// <summary>Writes raw input bytes to an open fallback terminal (no-op if the id is unknown/closed).</summary>
+    public Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data)
+        => _terminals.TryGetValue(terminalId, out var handle) ? handle.WriteAsync(data) : Task.CompletedTask;
+
+    /// <summary>Resizes an open fallback terminal (no-op if the id is unknown/closed).</summary>
+    public Task ResizeTerminalAsync(string sessionId, string terminalId, int columns, int rows)
+        => _terminals.TryGetValue(terminalId, out var handle) ? handle.ResizeAsync(columns, rows) : Task.CompletedTask;
+
+    /// <summary>
+    /// Starts a provider CLI's interactive login through the SAME CLI-fallback terminal path as the in-session
+    /// terminal (platform/03 reuse discipline) — never a bespoke <c>Process.Start</c>. Returns the opened
+    /// terminal id. NOTE: login output isn't yet bound to a client-visible session stream (a dedicated login
+    /// "scratch" session is future work); what this delivers is the important half — one shared spawn path.
+    /// </summary>
+    public async Task<string> BeginProviderLoginAsync(string adapterId, CancellationToken cancellationToken = default)
+    {
+        var adapter = _adapters.Find(adapterId)
+            ?? throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
+        if (adapter.GetInteractiveLoginCommand() is not { } login)
+        {
+            throw new InvalidOperationException($"Agent '{adapterId}' has no interactive login command.");
+        }
+
+        var fallback = _cliFallback
+            ?? throw new InvalidOperationException("This host has no CLI-fallback terminal provider for provider login.");
+
+        var options = new TerminalOptions
+        {
+            Command = login.Command,
+            Arguments = login.Arguments,
+            WorkingDirectory = Path.GetTempPath(),
+        };
+
+        // Same helper, same ICliFallback.OpenTerminalAsync call — no output sink yet (no session to attach to).
+        var handle = await OpenFallbackTerminalAsync(fallback, options, onOutput: null, cancellationToken).ConfigureAwait(false);
+        return handle.TerminalId;
+    }
+
+    // The single CLI-fallback spawn path. Opens the PTY, tracks the handle for later write/resize, and — when
+    // the handle streams output and a sink was given — forwards each chunk to it (the session log).
+    private async Task<ITerminalHandle> OpenFallbackTerminalAsync(ICliFallback fallback, TerminalOptions options, Func<string, string, Task>? onOutput, CancellationToken cancellationToken)
+    {
+        var handle = await fallback.OpenTerminalAsync(options, cancellationToken).ConfigureAwait(false);
+        _terminals[handle.TerminalId] = handle;
+        if (onOutput is not null && handle is ITerminalOutputSource source)
+        {
+            source.OutputReceived += (terminalId, data) => _ = onOutput(terminalId, data);
+        }
+
+        return handle;
+    }
+
+    // The host's default interactive shell for a bare "open a terminal" request.
+    private static string DefaultShell()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return "powershell.exe";
+        }
+
+        var shell = Environment.GetEnvironmentVariable("SHELL");
+        return string.IsNullOrWhiteSpace(shell) ? "/bin/bash" : shell;
+    }
+
     // ---- pending queue & send policy (sessions/03) ----
     // One ordered queue per SESSION (not per client), owned by the live HostSession; queue mutations ride
     // the event log as PendingQueueEvent snapshots, so multi-client sync is automatic.
@@ -1777,6 +1879,11 @@ public sealed class SessionManager : IAsyncDisposable
         foreach (var session in _sessions.Values)
         {
             await session.DisposeAsync().ConfigureAwait(false);
+        }
+
+        foreach (var terminal in _terminals.Values)
+        {
+            await terminal.DisposeAsync().ConfigureAwait(false);
         }
 
         foreach (var state in _state.Values)

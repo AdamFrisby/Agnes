@@ -20,6 +20,10 @@
     <PackageReference Include="Dock.Model.Mvvm" Version="12.0.0.2" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Markdown.Avalonia" Version="12.0.0-a3" />
+    <!-- Third-party VT/terminal control for the embedded terminal head (platform/03). Deliberately
+         confined to the desktop head — never core or Agnes.Ui.Core. Maintainer-approved for this use;
+         restores against Avalonia 12 (its dep is Avalonia 12.0.2). -->
+    <PackageReference Include="Iciclecreek.Avalonia.Terminal" Version="2.0.3" />
   </ItemGroup>
 
   <ItemGroup>

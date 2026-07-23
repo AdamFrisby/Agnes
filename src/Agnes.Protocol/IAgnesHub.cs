@@ -66,6 +66,25 @@ public interface IAgnesServer
 
     Task Prompt(PromptRequest request);
 
+    // ---- CLI-fallback terminal (platform/03) ----
+    // The client-facing surface over the session's ICliFallback/PTY. Output rides the session event stream
+    // as TerminalOutputEvents (replayed via snapshot/tail), so only open/write/resize live here; bytes stay
+    // byte[] on the wire. Additive/trailing.
+
+    /// <summary>Opens a CLI-fallback terminal in a session and returns its terminal id. Its output is
+    /// appended to the session log as <see cref="Abstractions.TerminalOutputEvent"/>s (no new channel).</summary>
+    Task<string> OpenTerminal(string sessionId, OpenTerminalRequest request);
+
+    /// <summary>Writes raw input bytes (keystrokes/paste) to an open fallback terminal.</summary>
+    Task WriteTerminal(string sessionId, string terminalId, byte[] data);
+
+    /// <summary>Resizes an open fallback terminal to <paramref name="columns"/> × <paramref name="rows"/>.</summary>
+    Task ResizeTerminal(string sessionId, string terminalId, int columns, int rows);
+
+    /// <summary>Starts a provider CLI's interactive login through the same CLI-fallback terminal path as the
+    /// in-session terminal (platform/03 reuse discipline), returning the opened terminal id.</summary>
+    Task<string> BeginProviderLogin(string adapterId);
+
     // ---- pending queue & send policy (sessions/03) ----
     // One ordered queue per SESSION (not per client), owned host-side; its state rides the session event
     // log as PendingQueueEvent snapshots, so no bespoke queue-sync channel is needed. Additive/trailing.

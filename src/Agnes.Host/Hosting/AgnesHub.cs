@@ -127,6 +127,18 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task Prompt(PromptRequest request)
         => _sessions.PromptAsync(request.SessionId, request.Content);
 
+    public Task<string> OpenTerminal(string sessionId, OpenTerminalRequest request)
+        => _sessions.OpenTerminalAsync(sessionId, request.Command, request.Arguments, request.WorkingDirectory, request.Columns, request.Rows);
+
+    public Task WriteTerminal(string sessionId, string terminalId, byte[] data)
+        => _sessions.WriteTerminalAsync(sessionId, terminalId, data);
+
+    public Task ResizeTerminal(string sessionId, string terminalId, int columns, int rows)
+        => _sessions.ResizeTerminalAsync(sessionId, terminalId, columns, rows);
+
+    public Task<string> BeginProviderLogin(string adapterId)
+        => _sessions.BeginProviderLoginAsync(adapterId);
+
     public Task SetSendPolicy(string sessionId, SendPolicy policy)
         => _sessions.SetSendPolicyAsync(sessionId, policy);
 

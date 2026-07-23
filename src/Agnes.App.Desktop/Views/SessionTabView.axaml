@@ -4,6 +4,7 @@
              xmlns:vm="using:Agnes.Ui.Core.ViewModels"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             xmlns:views="using:Agnes.App.Desktop.Views"
              xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
              Background="{DynamicResource Bg}"
@@ -1861,5 +1862,14 @@
                 </Grid>
             </Grid>
         </Grid>
+
+        <!-- Embedded terminal (platform/03): a bottom-docked, show/hide panel over the session. Docking it
+             elsewhere / persisting per-session lives in the framework-agnostic TerminalPanelViewModel. -->
+        <Border Grid.Row="1" VerticalAlignment="Bottom" Height="260"
+                IsVisible="{Binding Session.IsTerminalVisible}"
+                Background="{DynamicResource Bg}"
+                BorderBrush="{DynamicResource Panel}" BorderThickness="0,1,0,0">
+            <views:TerminalPanelView DataContext="{Binding Session.Terminal}" />
+        </Border>
     </Grid>
 </UserControl>
