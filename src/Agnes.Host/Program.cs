@@ -1,5 +1,6 @@
 using Agnes.Abstractions;
 using Agnes.Acp;
+using Agnes.Host.Attention;
 using Agnes.Agents.ClaudeCode;
 using Agnes.Agents.OpenCode;
 using Agnes.Host.Events;
@@ -166,6 +167,31 @@ var promptLibraryDir = builder.Configuration["Agnes:PromptLibraryDir"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.PromptLibrary(
     promptLibraryDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.PromptLibrary>()));
+
+// ---- external attention requests (extensibility/06): the generic human-in-the-loop webhook API ----
+// A public REST surface ( /v1/attention-requests ) lets any external system create a "please ask a human"
+// entry that surfaces in the SAME approvals inbox as internal session permissions; the answer is delivered
+// back via a callback POST (retried with bounded backoff) and/or polling. Persisted so answers survive a
+// restart; the timeout sweeper (below) expires unanswered ones. TimeProvider.System is injected so the
+// clock is a seam under test.
+builder.Services.AddSingleton(TimeProvider.System);
+var attentionFile = builder.Configuration["Agnes:AttentionRequestsFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "attention-requests.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Attention.AttentionRequestStore(
+    attentionFile, sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Attention.AttentionRequestStore>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Attention.AttentionCallbackPoster(
+    new HttpClient(),
+    maxAttempts: builder.Configuration.GetValue("Agnes:Attention:CallbackMaxAttempts", 5),
+    logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Attention.AttentionCallbackPoster>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Attention.AttentionRequestService(
+    sp.GetRequiredService<Agnes.Host.Attention.AttentionRequestStore>(),
+    sp.GetRequiredService<Agnes.Host.Attention.AttentionCallbackPoster>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Attention.AttentionRequestService>()));
+builder.Services.AddHostedService(sp => new Agnes.Host.Attention.AttentionTimeoutSweeper(
+    sp.GetRequiredService<Agnes.Host.Attention.AttentionRequestService>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Attention.AttentionTimeoutSweeper>()));
 
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
 var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
@@ -737,6 +763,11 @@ app.MapDelete("/devices/{id}", async (HttpContext ctx, string id) =>
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DeviceRevokedEvent(id));
     return Results.NoContent();
 });
+
+// ---- external attention requests: public create/poll REST API (extensibility/06) ----
+// Authenticated with an Agnes device token and scoped per caller (a request is only readable via the token
+// that created it). Answering happens over the hub, from the shared approvals inbox.
+app.MapAttentionEndpoints(tokens, app.Services.GetRequiredService<Agnes.Host.Attention.AttentionRequestService>());
 
 // ---- MCP server management (requires a valid token; mirrors /devices) ----
 var mcp = app.Services.GetRequiredService<McpRegistry>();

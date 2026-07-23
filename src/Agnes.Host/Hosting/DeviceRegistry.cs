@@ -102,6 +102,33 @@ public sealed class DeviceRegistry
         return false;
     }
 
+    /// <summary>
+    /// Resolves a bearer token to a stable caller id for per-caller scoping (external attention requests),
+    /// or null if the token is invalid. A paired/issued device maps to its device id; the configured
+    /// bootstrap token maps to the fixed id <c>"bootstrap"</c> (it isn't a device record). Records last-seen,
+    /// matching <see cref="IsValid"/>.
+    /// </summary>
+    public string? ResolveCallerId(string? token)
+    {
+        if (string.IsNullOrEmpty(token))
+        {
+            return null;
+        }
+
+        if (_bootstrapToken is not null && FixedTimeEquals(token, _bootstrapToken))
+        {
+            return "bootstrap";
+        }
+
+        if (_devices.TryGetValue(Hash(token), out var device))
+        {
+            device.LastSeenAt = DateTimeOffset.UtcNow;
+            return device.Id;
+        }
+
+        return null;
+    }
+
     /// <summary>Pairs a new device given the current pairing code; returns its durable token.</summary>
     public PairingResult? TryPair(string? code, string? deviceName)
     {

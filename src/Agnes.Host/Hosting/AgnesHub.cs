@@ -1,4 +1,5 @@
 using Agnes.Abstractions;
+using Agnes.Host.Attention;
 using Agnes.Host.Ops;
 using Agnes.Host.Plugins;
 using Agnes.Host.Projects;
@@ -21,8 +22,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly IPluginRegistry<IMemoryIndexProvider> _memoryIndexes;
     private readonly BugReportRouter _bugReports;
     private readonly PromptLibrary _prompts;
+    private readonly AttentionRequestService _attention;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, AttentionRequestService attention)
     {
         _sessions = sessions;
         _schedule = schedule;
@@ -34,6 +36,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _memoryIndexes = memoryIndexes;
         _bugReports = bugReports;
         _prompts = prompts;
+        _attention = attention;
     }
 
     public override async Task OnConnectedAsync()
@@ -236,6 +239,14 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task AnswerQuestion(QuestionAnswerRequest response)
         => _sessions.AnswerQuestionAsync(response.SessionId, response.RequestId, response.Answers);
+
+    public Task AnswerAttentionRequest(AttentionAnswerRequest response)
+    {
+        // Records the answer synchronously; any callback POST runs on its own task inside the service so the
+        // answering client isn't held for the retry/backoff window.
+        _attention.Answer(response.RequestId, response.Answer);
+        return Task.CompletedTask;
+    }
 
     public Task PauseSandbox(string sessionId) => _sessions.PauseSandboxAsync(sessionId);
 

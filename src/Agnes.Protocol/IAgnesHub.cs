@@ -105,6 +105,10 @@ public interface IAgnesServer
     /// <summary>Submit the user's answers to an outstanding structured question set.</summary>
     Task AnswerQuestion(QuestionAnswerRequest response);
 
+    /// <summary>Answer an external attention request (extensibility/06) surfaced in the approvals inbox:
+    /// records the answer and, if the caller supplied a callback URL, delivers it out of band.</summary>
+    Task AnswerAttentionRequest(AttentionAnswerRequest response);
+
     /// <summary>Git state of the session's working directory.</summary>
     Task<GitStatus> GetGitStatus(string sessionId);
 

@@ -122,6 +122,10 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task RespondPermissionAsync(string sessionId, string requestId, string optionId);
 
+    /// <summary>Answer an external attention request (extensibility/06) from the approvals inbox. Default no-op
+    /// for hosts/fixtures that don't surface external attention requests.</summary>
+    Task AnswerAttentionRequestAsync(string requestId, string answer) => Task.CompletedTask;
+
     /// <summary>Submit the user's answers to an outstanding structured question set. Default no-op for hosts
     /// whose agents never ask questions.</summary>
     Task AnswerQuestionAsync(string sessionId, string requestId, IReadOnlyList<Agnes.Abstractions.QuestionAnswer> answers)

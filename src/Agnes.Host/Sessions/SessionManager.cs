@@ -34,6 +34,9 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly SandboxRegistry? _sandboxRegistry;
     private readonly CredentialBrokerRegistry? _credentialBroker;
     private readonly CredentialBrokerListener? _credentialListener;
+    // External attention requests (extensibility/06) are unioned into the same approvals inbox; optional so
+    // the many test/simulation constructions of SessionManager are unaffected (null ⇒ session permissions only).
+    private readonly Attention.AttentionRequestStore? _attention;
     // Live handles keep their own maps — they have distinct lifetimes (a stopped session keeps its sandbox
     // for resume) and hotter concurrency than the metadata below.
     private readonly ConcurrentDictionary<string, HostSession> _sessions = new();
@@ -107,7 +110,8 @@ public sealed class SessionManager : IAsyncDisposable
         SandboxRegistry? sandboxRegistry = null,
         Agnes.Abstractions.Events.IEventBus? eventBus = null,
         McpOptions? mcpOptions = null,
-        IPluginRegistry<IGitHostProvider>? gitHosts = null)
+        IPluginRegistry<IGitHostProvider>? gitHosts = null,
+        Attention.AttentionRequestStore? attention = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -128,6 +132,7 @@ public sealed class SessionManager : IAsyncDisposable
         _sandboxRegistry = sandboxRegistry;
         _credentialBroker = credentialBroker;
         _credentialListener = credentialListener;
+        _attention = attention;
         if (_forwardListener is not null)
         {
             _forwardListener.OnToolCall = OnForwardedToolCall;
@@ -1715,8 +1720,12 @@ public sealed class SessionManager : IAsyncDisposable
     /// The cross-session approvals list (notifications/02 tier 1): for every live session, the
     /// <see cref="PermissionRequestedEvent"/>s in its log that have no matching
     /// <see cref="PermissionResolvedEvent"/> (matched on <c>RequestId</c>) — i.e. still waiting on a human —
-    /// unioned across sessions and returned most-recent first. Pure aggregation over the durable log; it
-    /// creates no state and mutates nothing.
+    /// unioned across sessions, PLUS every still-Pending external attention request (extensibility/06) when an
+    /// attention store is wired, and returned most-recent first. Pure aggregation over durable state; it
+    /// creates nothing and mutates nothing. External entries carry a null <c>SessionId</c>, the
+    /// <see cref="OpenApprovalKind.ExternalAttention"/> kind, and their caller <c>Source</c> label — the first
+    /// five positional fields stay identical to the session-permission shape, so pre-existing consumers are
+    /// unaffected.
     /// </summary>
     public async Task<IReadOnlyList<OpenApproval>> GetOpenApprovalsAsync(CancellationToken cancellationToken = default)
     {
@@ -1740,6 +1749,19 @@ public sealed class SessionManager : IAsyncDisposable
                     open.Add(new OpenApproval(sessionId, p.RequestId, p.Title, p.ToolCallId, p.Timestamp));
                 }
             }
+        }
+
+        foreach (var request in _attention?.ListPending() ?? [])
+        {
+            open.Add(new OpenApproval(
+                SessionId: null,
+                RequestId: request.Id,
+                Title: request.Question,
+                ToolCallId: string.Empty,
+                RequestedAt: request.CreatedAt,
+                Kind: OpenApprovalKind.ExternalAttention,
+                Source: request.Source,
+                Options: request.Options));
         }
 
         return open.OrderByDescending(a => a.RequestedAt).ToArray();

@@ -33,6 +33,19 @@ public sealed class ApprovalsViewModel : ObservableObject
         JumpCommand = new RelayCommand<ApprovalRow>(Jump);
     }
 
+    /// <summary>Answers an external attention request row with the chosen option, then refreshes the list so
+    /// the now-resolved entry drops out. A no-op for a session-permission row (those are answered in-session).</summary>
+    public async Task AnswerExternalAsync(ApprovalRow row, string option)
+    {
+        if (!row.IsExternal)
+        {
+            return;
+        }
+
+        await row.Host.AnswerAttentionRequestAsync(row.RequestId, option).ConfigureAwait(false);
+        await LoadAsync().ConfigureAwait(false);
+    }
+
     /// <summary>The open approvals, most-recent first.</summary>
     public ObservableCollection<ApprovalRow> Approvals { get; } = [];
 
@@ -99,7 +112,9 @@ public sealed class ApprovalsViewModel : ObservableObject
 }
 
 /// <summary>One open approval as a bindable row, tagged with the host it lives on so the shell can route the
-/// jump-to-session action to the right connection.</summary>
+/// jump-to-session action to the right connection. An external attention request (extensibility/06) is the
+/// same row shape — <see cref="IsExternal"/> is true, <see cref="SessionId"/> is null (nothing to jump to),
+/// <see cref="Source"/> labels the caller, and <see cref="Options"/> are the answers to offer.</summary>
 public sealed class ApprovalRow
 {
     public ApprovalRow(IAgnesHost host, OpenApproval approval)
@@ -112,8 +127,18 @@ public sealed class ApprovalRow
 
     public OpenApproval Approval { get; }
 
-    public string SessionId => Approval.SessionId;
+    public string? SessionId => Approval.SessionId;
     public string RequestId => Approval.RequestId;
     public string Title => Approval.Title;
     public DateTimeOffset RequestedAt => Approval.RequestedAt;
+
+    /// <summary>True for an external attention request (labeled with <see cref="Source"/>, answered by id);
+    /// false for an in-session agent permission request (jumped to and answered in the session view).</summary>
+    public bool IsExternal => Approval.Kind == OpenApprovalKind.ExternalAttention;
+
+    /// <summary>The external caller's free-text label, when this is an external attention request.</summary>
+    public string? Source => Approval.Source;
+
+    /// <summary>The answer choices for an external attention request (empty for a session permission).</summary>
+    public IReadOnlyList<string> Options => Approval.Options ?? [];
 }
