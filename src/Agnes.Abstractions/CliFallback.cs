@@ -26,3 +26,15 @@ public interface ICliFallback
 {
     Task<ITerminalHandle> OpenTerminalAsync(TerminalOptions options, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Optional companion to <see cref="ITerminalHandle"/>: a fallback whose PTY streams its output back to the
+/// host, so the host can append each chunk to the session log as a <see cref="TerminalOutputEvent"/>
+/// (interleaved with everything else, replayed via the normal snapshot/tail). A handle that surfaces its
+/// output some other way — or a test fake that produces none — simply doesn't implement it.
+/// </summary>
+public interface ITerminalOutputSource
+{
+    /// <summary>Raised as the PTY produces output: the terminal id and the decoded chunk.</summary>
+    event Action<string, string>? OutputReceived;
+}

@@ -130,6 +130,18 @@ public sealed class HostConnection : IAgnesHost
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
         => _hub.InvokeAsync(nameof(IAgnesServer.Prompt), new PromptRequest(sessionId, content));
 
+    public Task<string> OpenTerminalAsync(string sessionId, string? command = null, IReadOnlyList<string>? arguments = null, string? workingDirectory = null, int columns = 120, int rows = 30)
+        => _hub.InvokeAsync<string>(nameof(IAgnesServer.OpenTerminal), sessionId, new OpenTerminalRequest(command, arguments, workingDirectory, columns, rows));
+
+    public Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data)
+        => _hub.InvokeAsync(nameof(IAgnesServer.WriteTerminal), sessionId, terminalId, data);
+
+    public Task ResizeTerminalAsync(string sessionId, string terminalId, int columns, int rows)
+        => _hub.InvokeAsync(nameof(IAgnesServer.ResizeTerminal), sessionId, terminalId, columns, rows);
+
+    public Task<string> BeginProviderLoginAsync(string adapterId)
+        => _hub.InvokeAsync<string>(nameof(IAgnesServer.BeginProviderLogin), adapterId);
+
     public Task SetSendPolicyAsync(string sessionId, SendPolicy policy)
         => _hub.InvokeAsync(nameof(IAgnesServer.SetSendPolicy), sessionId, policy);
 

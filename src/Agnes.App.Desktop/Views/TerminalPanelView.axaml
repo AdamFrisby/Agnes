@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:term="using:Iciclecreek.Terminal"
+             x:Class="Agnes.App.Desktop.Views.TerminalPanelView"
+             Background="{DynamicResource Bg}">
+
+    <!-- The embedded terminal head (platform/03). The Iciclecreek VT control is the render surface; all
+         transport logic (open/write/resize, output feed) lives in the framework-agnostic
+         TerminalPanelViewModel, wired in the code-behind (this glue is not headless-testable). -->
+    <Grid RowDefinitions="Auto,*">
+        <Border Grid.Row="0" Padding="8,4" Background="{DynamicResource Panel}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Terminal" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding ActiveTerminalId}" Foreground="{DynamicResource FgFaint}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
+        <term:TerminalControl Grid.Row="1" x:Name="Terminal" />
+    </Grid>
+</UserControl>

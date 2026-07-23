@@ -83,6 +83,29 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content);
 
+    // ---- CLI-fallback terminal (platform/03) ----
+    // Client-facing surface over the session's ICliFallback/PTY. Output rides the session event stream as
+    // TerminalOutputEvents (rendered by TerminalPanelViewModel from the same SessionView), so only
+    // open/write/resize are here. Defaulted so hosts/fixtures (SimulatedHost/RecordedHost/FakeHost) that
+    // predate the terminal surface keep compiling.
+
+    /// <summary>Opens a CLI-fallback terminal in a session and returns its terminal id; output rides the
+    /// session event stream as <see cref="TerminalOutputEvent"/>s. Default: unsupported for hosts/fixtures
+    /// without a terminal fallback.</summary>
+    Task<string> OpenTerminalAsync(string sessionId, string? command = null, IReadOnlyList<string>? arguments = null, string? workingDirectory = null, int columns = 120, int rows = 30)
+        => throw new NotSupportedException("This host does not support a CLI-fallback terminal.");
+
+    /// <summary>Writes raw input bytes (keystrokes/paste) to an open fallback terminal. Default no-op.</summary>
+    Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data) => Task.CompletedTask;
+
+    /// <summary>Resizes an open fallback terminal. Default no-op.</summary>
+    Task ResizeTerminalAsync(string sessionId, string terminalId, int columns, int rows) => Task.CompletedTask;
+
+    /// <summary>Starts a provider CLI's interactive login through the same CLI-fallback terminal path as the
+    /// in-session terminal, returning the opened terminal id. Default: unsupported.</summary>
+    Task<string> BeginProviderLoginAsync(string adapterId)
+        => throw new NotSupportedException("This host does not support interactive provider login.");
+
     // ---- pending queue & send policy (sessions/03) ----
     // Defaulted so hosts/fixtures (SimulatedHost/RecordedHost/FakeHost) that predate the queue keep
     // compiling: a policy set is a no-op and an enqueue degrades to an immediate send.

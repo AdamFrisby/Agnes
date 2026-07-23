@@ -120,7 +120,23 @@ public interface IAgentAdapter
     /// </summary>
     Task<ProviderAuthStatus?> GetAuthStatusAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<ProviderAuthStatus?>(null);
+
+    /// <summary>
+    /// The interactive login command for this agent's CLI (e.g. a <c>… auth login</c> subcommand), when it
+    /// has one — so the host can run it through the <b>same</b> <see cref="ICliFallback.OpenTerminalAsync"/>
+    /// CLI-fallback terminal path as the in-session terminal (platform/03 reuse discipline), rather than a
+    /// bespoke <c>Process.Start</c>. Default: <c>null</c> — no interactive login (the client shows no
+    /// "Log in" action for this adapter).
+    /// </summary>
+    ProviderLoginCommand? GetInteractiveLoginCommand() => null;
 }
+
+/// <summary>
+/// An interactive provider-login invocation an adapter exposes, run via the shared CLI-fallback terminal
+/// (see <see cref="IAgentAdapter.GetInteractiveLoginCommand"/>). Kept minimal (command + arguments); the
+/// host supplies a working directory and terminal dimensions when it opens the terminal.
+/// </summary>
+public sealed record ProviderLoginCommand(string Command, IReadOnlyList<string> Arguments);
 
 /// <summary>
 /// Whether a coding CLI is logged in to its provider on this host, as reported by an adapter that has a

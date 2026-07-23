@@ -61,6 +61,16 @@ internal sealed class HostSession : IAsyncDisposable
     public string AdapterId { get; }
     public string WorkingDirectory { get; }
 
+    /// <summary>The agent's own CLI-fallback terminal transport, when its session implements one; else null,
+    /// so the <see cref="SessionManager"/> falls back to the host-level provider (platform/03).</summary>
+    public ICliFallback? CliFallback => _agent as ICliFallback;
+
+    /// <summary>Appends a chunk of CLI-fallback terminal output to the session log (interleaved with every
+    /// other event, replayed via the normal snapshot/tail). Called by the <see cref="SessionManager"/> when a
+    /// fallback PTY streams output (platform/03) — the existing <see cref="TerminalOutputEvent"/> path.</summary>
+    public Task AppendTerminalOutputAsync(string terminalId, string data)
+        => AppendAndPublishAsync(new TerminalOutputEvent(terminalId, data));
+
     /// <summary>Invoked once if the agent's event stream ends while we did NOT ask it to stop — i.e. the
     /// underlying CLI process died. The host uses this to auto-restart (and resume) the agent.</summary>
     public Action? Faulted { get; set; }

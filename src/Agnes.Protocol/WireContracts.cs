@@ -355,6 +355,21 @@ public sealed record CredentialStatus(string State, string? Slug, bool Installed
 /// <summary>Request to send a prompt to a session.</summary>
 public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock> Content);
 
+/// <summary>
+/// Request to open a CLI-fallback terminal (real PTY) in a session — the client-facing surface over
+/// <see cref="Agnes.Abstractions.ICliFallback"/> (platform/03). Every field is optional/trailing: a null
+/// <see cref="Command"/> means the host picks the session's default shell, and a null
+/// <see cref="WorkingDirectory"/> means the session's own working directory. Terminal <i>output</i> needs no
+/// field here — it rides the session event stream as <see cref="Agnes.Abstractions.TerminalOutputEvent"/>s;
+/// only <i>input</i> (keystrokes/paste) crosses back, as raw <c>byte[]</c> via <c>WriteTerminal</c>.
+/// </summary>
+public sealed record OpenTerminalRequest(
+    string? Command = null,
+    IReadOnlyList<string>? Arguments = null,
+    string? WorkingDirectory = null,
+    int Columns = 120,
+    int Rows = 30);
+
 /// <summary>Wire form of <see cref="Agnes.Abstractions.MemorySearchOptions"/> — how many hits to return
 /// and an optional single-session scope. The result type (<see cref="Agnes.Abstractions.MemorySearchResult"/>)
 /// is already a flat, wire-safe record, so it crosses the boundary unchanged.</summary>
