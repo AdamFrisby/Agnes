@@ -66,7 +66,7 @@ Each phase title is the theme that ties its items together. Items are ordered wi
 - `[~]` — **basic / partial**: an MVP shipped and green on `main`, but a substantial part of the spec is deliberately deferred (noted per item). Provider-shaped items marked `[~] template` ship the plugin interface + a commented stub so a real backend wires in later — no real third-party integration yet.
 - `[ ]` — **not built** (reason noted: infra-blocked, gated behind another unbuilt item, or a pending product decision).
 
-**Tally of the 42 scheduled items: 13 `[x]` complete · 16 `[~]` basic/partial · 13 `[ ]` not built** (29 have at least a working MVP). `platform/04` remains excluded.
+**Tally of the 42 scheduled items: 18 `[x]` complete · 11 `[~]` basic/partial · 13 `[ ]` not built** (29 have at least a working MVP). `platform/04` remains excluded. *(A finishing pass promoted 5 items from `[~]`→`[x]` — git-and-files/01 & /03, extensibility/01 & /02, ops/01 — by completing deferred work that had no real blocker. The remaining `[~]` items are deferred on a genuine external dependency: a real engine/service/backend or an unimplemented adapter capability.)*
 
 ### Phase 1 — Foundation + two everyday wins
 1. `[x]` `00-plugin-architecture.md` — the generalized `IPluginRegistry<T>`/`PluginRegistry<T>` pattern; `IAgentAdapter`/`ISandboxProvider`/auth/git-host/MCP/transport/event-store all migrated onto it (AC13.1–6); NuGet install + signature verification + `AssemblyLoadContext` loader; host + client capability negotiation; client-plugin registry; the event spine; and the plugin management UI. (Went well beyond the original "core scope only" pass.)
@@ -75,7 +75,7 @@ Each phase title is the theme that ties its items together. Items are ordered wi
 
 ### Phase 2 — Structural enablers + remote-workflow basics
 1. `[x]` `sessions/06-tool-timeline-normalization.md` — formalizes something that already half-exists; unlocks git integration and broader provider support.
-2. `[~]` `git-and-files/03-attachments-and-file-browser.md` — **Partial:** attachment upload + workspace path-safety shipped; the full file-browser surface is not built.
+2. `[x]` `git-and-files/03-attachments-and-file-browser.md` — attachment upload + workspace path-safety, plus the file browser (list/read/write/create/rename/delete/download, all through the shared traversal-safety guard, text+image preview). *(File browser completed in the finishing pass.)*
 3. `[ ]` `sessions/02-direct-vs-synced-sessions.md` — **Not built.** Buildable (discovering/attaching to CLI sessions started outside Agnes), just not reached; needs per-adapter on-disk-log reading.
 4. `[x]` `sessions/05-session-read-state-and-shortcuts.md` — unread indicators and "same setup again"; cheap, high polish-to-effort ratio.
 
@@ -88,28 +88,28 @@ Each phase title is the theme that ties its items together. Items are ordered wi
 ### Phase 4 — Low-priority polish (last of the no-dependency items)
 1. `[x]` `ops/04-onboarding-showcase.md` — first-run setup wizard over `GET /auth/methods` + data-driven shown-once showcase cards.
 2. `[x]` `platform/02-menubar-and-tray.md` — the system-tray icon (aggregate status + jump-to-session); the separate self-host operator status tool is intentionally out of scope per the spec.
-3. `[ ]` `delight/01-pets-companion.md` — **Not built.** Deferred per its own spec pending a product-tone decision; its tone-neutral ambient-status core is already covered by the inbox + tray.
+3. `[—]` `delight/01-pets-companion.md` — **DESCOPED (won't build).** Maintainer decision 2026-07. Its tone-neutral ambient-status core is already covered by the inbox + tray.
 
 ### Phase 5 — Reachability + the security work that must ride along with it
 1. `[ ]` `connectivity/01-relay-and-tunneling.md` — **Not built.** Needs a hosted relay/tunnel service — external infrastructure, not verifiable headlessly here.
-2. `[ ]` `security/01-end-to-end-encryption.md` — **Not built.** Coupled to the relay + a key-exchange design; gates the broker→quota→profiles and session-sharing chain.
+2. `[—]` `security/01-end-to-end-encryption.md` — **DESCOPED (won't build).** Maintainer decision 2026-07: TLS is deemed sufficient. This un-gates its former dependents — broker/quota/profiles are now built directly without it.
 3. `[x]` `providers/01-provider-breadth-acp-catalog.md` — a generic custom-ACP adapter plus the on-ramp for new agent CLIs.
 4. `[~]` `notifications/02-inbox-and-approvals.md` — **Partial:** the tier-1 cross-session approvals inbox shipped (and is unioned with the external-webhook requests); richer inbox tiers/filters pending.
 
 ### Phase 6 — Git, notifications, and the automation upgrade
 1. `[~] template` `notifications/01-push-notifications.md` — **Partial:** `INotificationChannel` plugin point + a template mobile-push stub + a Desktop channel + spine-driven dispatch with per-trigger/per-device toggles, active-session suppression, and the untrusted-payload safety guard. No real FCM/APNs backend.
-2. `[~]` `git-and-files/01-deep-git-integration.md` — **Partial:** stash/branch/pull(ff-only)/push + PR list/checkout with server-side safety shipped; changed-file scoping and agent-generated commit messages deferred.
+2. `[x]` `git-and-files/01-deep-git-integration.md` — stash/branch/pull(ff-only)/push + PR list/checkout with server-side safety, plus changed-file scoping (turn/session/repo, via the `NormalizedToolCall` timeline) and agent commit-message generation over the staged diff (through a shared one-shot-agent primitive). *(Scoping + commit-message generation completed in the finishing pass, once sessions/06 had landed.)*
 3. `[x]` `extensibility/03-automations.md` — persistence + cron scheduling + pause/resume/run-now; a real "cron for agents."
 4. `[ ]` `sessions/07-local-cli-wrapper-and-handoff.md` — **Not built.** Depends on direct-vs-synced sessions + a live PTY/handoff runtime.
 
 ### Phase 7 — Extensibility surface
-1. `[~]` `extensibility/01-mcp-management.md` — **Partial:** preset install + scope rules + strict/lenient toggle + effective-config preview shipped; native-config detection deferred.
-2. `[~]` `extensibility/02-prompts-skills-library.md` — **Partial:** saved prompts + slash-token templates shipped; skill bundles, external registries, copy/symlink sync, and system-prompt additions deferred.
+1. `[x]` `extensibility/01-mcp-management.md` — preset install + scope rules + strict/lenient toggle + effective-config preview, plus native-config detection (`IMcpDiscoveryAdapter`; Claude Code reads its own `.mcp.json`/`~/.claude.json`, folded into the preview flagged read-only). *(Native detection completed in the finishing pass.)*
+2. `[x]` `extensibility/02-prompts-skills-library.md` — saved prompts + slash-token templates, plus skill bundles (`SKILL.md` + supporting files as a unit), external registries (`IPromptRegistryProvider` + a local-directory source), copy/symlink sync with SHA-256 content-digest conflict detection, and system-prompt additions (`--append-system-prompt`). *(All four deferred pieces completed in the finishing pass.)*
 3. `[~]` `sessions/04-participant-routing-and-subagents-panel.md` — **Partial:** the subagents roster (visibility tier) shipped; true addressed message-routing / stop-a-subagent control deferred (capability flag in place).
 4. `[~]` `voice/01-voice-assistant.md` — **Partial:** `IVoiceProvider` plugin + hidden controller (transcript→host-call intent mapping) + privacy-default summarizer, proven with a fake provider; real STT/TTS engines deferred.
 
 ### Phase 8 — Diagnostics and the long tail of plugin points
-1. `[~]` `ops/01-bug-reports-and-diagnostics.md` — **Partial:** GitHub-issue sink (with duplicate detection) + custom endpoint + prefilled browser fallback; crash/error telemetry and the owner-only host-log diagnostic attachment deferred.
+1. `[x]` `ops/01-bug-reports-and-diagnostics.md` — GitHub-issue sink (with duplicate detection) + custom endpoint + prefilled browser fallback, plus the owner-only, opt-in host-log diagnostic payload and crash/error telemetry (both gates + per-report opt-in required; never on the public browser path). *(Diagnostics + telemetry completed in the finishing pass.)*
 2. `[~]` `ops/02-memory-search.md` — **Partial:** the SQLite FTS5 full-text tier (the spec's intended cheap starting point) shipped; semantic/embedding search not built.
 3. `[~]` `security/02-enterprise-auth.md` — **Partial:** OIDC token validation + mTLS client-cert + GitHub org/team gating shipped; the interactive OIDC authorization-code redirect deferred (token-validation core built).
 4. `[~]` `extensibility/04-channel-bridges.md` — **Partial:** `IChannelBridge` plugin point + chat-id↔identity linking + authorized inbound routing + spine-driven outbound, proven with a fake bridge; real Telegram/Slack transport deferred.

@@ -126,6 +126,11 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         var open = profile.ToOpenSessionRequest(request.WorkingDirectoryOverride);
         return _sessions.OpenSessionAsync(open.AdapterId, open.WorkingDirectory, open.UseWorktree, open.SkipPermissions, open.McpApproval, open.GitCredentialMode, open.UseSandbox, open.ModelId);
     }
+    public Task<IReadOnlyList<Abstractions.ExternalSessionInfo>> DiscoverExternalSessions(string workspaceDirectory)
+        => _sessions.DiscoverExternalSessionsAsync(workspaceDirectory);
+
+    public Task<SessionInfo> AttachExternalSession(string adapterId, string externalId)
+        => _sessions.AttachExternalSessionAsync(adapterId, externalId);
 
     public Task<ForkPlan?> ProposeFork(string sessionId)
         => Task.FromResult(_sessions.ProposeFork(sessionId));

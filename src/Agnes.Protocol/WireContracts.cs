@@ -186,7 +186,10 @@ public sealed record PluginInstallOutcome(
     bool Success, InstalledPluginDto? Plugin, bool ConsentRequired,
     IReadOnlyList<string> MissingCapabilities, string? Error);
 
-/// <summary>Metadata about a live or resumable session.</summary>
+/// <summary>Metadata about a live or resumable session. <see cref="ReadOnly"/> marks a Direct/watch session —
+/// a read-only live tail of a CLI session Agnes did not start (see
+/// <c>.ideas/sessions/02-direct-vs-synced-sessions.md</c>); its composer/prompt is disabled. Trailing-optional
+/// so it defaults to a normal (writable) session and pre-existing callers keep compiling.</summary>
 public sealed record SessionInfo(
     string SessionId,
     string AdapterId,
@@ -196,7 +199,8 @@ public sealed record SessionInfo(
     string? CurrentModeId = null,
     SandboxStatus? Sandbox = null,
     bool SkipPermissions = false,
-    string? Project = null);
+    string? Project = null,
+    bool ReadOnly = false);
 
 /// <summary>The per-session defaults a project suggests.</summary>
 public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask");

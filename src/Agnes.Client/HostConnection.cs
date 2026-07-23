@@ -120,6 +120,11 @@ public sealed class HostConnection : IAgnesHost
 
     public Task<SessionInfo> OpenSessionFromProfileAsync(string profileId, string? workingDirectoryOverride = null)
         => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSessionFromProfile), new OpenSessionFromProfileRequest(profileId, workingDirectoryOverride));
+    public Task<IReadOnlyList<ExternalSessionInfo>> DiscoverExternalSessionsAsync(string workspaceDirectory)
+        => _hub.InvokeAsync<IReadOnlyList<ExternalSessionInfo>>(nameof(IAgnesServer.DiscoverExternalSessions), workspaceDirectory);
+
+    public Task<SessionInfo> AttachExternalSessionAsync(string adapterId, string externalId)
+        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.AttachExternalSession), adapterId, externalId);
 
     public Task<ForkPlan?> ProposeForkAsync(string sessionId)
         => _hub.InvokeAsync<ForkPlan?>(nameof(IAgnesServer.ProposeFork), sessionId);
