@@ -394,6 +394,37 @@ public sealed class SessionViewModel : ObservableObject
     /// <summary>Shows/hides the terminal panel.</summary>
     public ICommand ToggleTerminalCommand => _toggleTerminal ??= new RelayCommand(() => IsTerminalVisible = !IsTerminalVisible);
 
+    // ---- file browser (git-and-files/03) ----
+    // Built once per session (keyed by this SessionView) and lazily, so a session that never opens the
+    // browser pays nothing. Toggling visibility never discards its navigation state.
+    private FileBrowserViewModel? _fileBrowser;
+    private ICommand? _toggleFileBrowser;
+    private bool _isFileBrowserVisible;
+
+    /// <summary>The session's workspace file browser (git-and-files/03), built on first use.</summary>
+    public FileBrowserViewModel FileBrowser => _fileBrowser ??= new FileBrowserViewModel(_host, _view.SessionId, _dispatcher);
+
+    /// <summary>Whether the file-browser panel is shown for this session. Toggling it on lists the root the
+    /// first time; toggling off keeps the browser's navigation state.</summary>
+    public bool IsFileBrowserVisible
+    {
+        get => _isFileBrowserVisible;
+        set
+        {
+            if (SetProperty(ref _isFileBrowserVisible, value))
+            {
+                FileBrowser.IsVisible = value;
+                if (value && FileBrowser.Entries.Count == 0)
+                {
+                    _ = FileBrowser.RefreshAsync();
+                }
+            }
+        }
+    }
+
+    /// <summary>Shows/hides the file-browser panel.</summary>
+    public ICommand ToggleFileBrowserCommand => _toggleFileBrowser ??= new RelayCommand(() => IsFileBrowserVisible = !IsFileBrowserVisible);
+
     public string? SelectedAgentId => _selectedAgentId;
 
     private AgentNode _mainAgentNode = null!;

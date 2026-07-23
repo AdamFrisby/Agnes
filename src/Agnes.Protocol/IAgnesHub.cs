@@ -177,6 +177,31 @@ public interface IAgnesServer
     /// returns the workspace-relative path to reference in a prompt (never inline binary).</summary>
     Task<string> UploadAttachment(string sessionId, string fileName, byte[] data);
 
+    // ---- file browser (see .ideas/git-and-files/03-attachments-and-file-browser.md) ----
+    // Structured file ops over the session's working directory. Every relativePath is validated host-side
+    // (the shared WorkspacePaths guard) so a `..`-escaping path is rejected before any disk access.
+
+    /// <summary>Lists a directory in the session's workspace (empty path = the root), directories first.</summary>
+    Task<IReadOnlyList<FileEntry>> ListDirectory(string sessionId, string relativePath);
+
+    /// <summary>Reads a file for preview (decoded text, or bytes + mime for a recognised image).</summary>
+    Task<FileContent> ReadFile(string sessionId, string relativePath);
+
+    /// <summary>Writes UTF-8 text to a workspace file (the quick-edit-without-an-agent-turn case).</summary>
+    Task WriteFile(string sessionId, string relativePath, string content);
+
+    /// <summary>Creates a directory (and any missing parents) in the workspace.</summary>
+    Task CreateDirectory(string sessionId, string relativePath);
+
+    /// <summary>Renames/moves a file or directory within the workspace.</summary>
+    Task RenameEntry(string sessionId, string fromRelativePath, string toRelativePath);
+
+    /// <summary>Deletes a file or directory (recursively) from the workspace.</summary>
+    Task DeleteEntry(string sessionId, string relativePath);
+
+    /// <summary>Reads a workspace file's raw bytes for download to the client device.</summary>
+    Task<byte[]> DownloadFile(string sessionId, string relativePath);
+
     /// <summary>Marks a session read up to <paramref name="sequence"/> (clears unread), synced to all
     /// the user's clients.</summary>
     Task MarkSessionRead(string sessionId, long sequence);

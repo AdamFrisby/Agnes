@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Agnes.Ui.Core.ViewModels"
+             xmlns:proto="using:Agnes.Protocol"
+             x:Class="Agnes.App.Desktop.Views.FileBrowserView"
+             x:DataType="vm:FileBrowserViewModel"
+             Background="{DynamicResource Bg}">
+
+    <!-- The file-browser head (git-and-files/03). All transport + path logic lives in the framework-agnostic
+         FileBrowserViewModel; this view is Avalonia glue only (double-tap to open, image bitmap, save dialog). -->
+    <Grid RowDefinitions="Auto,*">
+        <!-- Toolbar: navigate + create -->
+        <Border Grid.Row="0" Padding="8,4" Background="{DynamicResource Panel}">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto,Auto">
+                <TextBlock Grid.Column="0" Text="Files" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <Button Grid.Column="1" Content="Up" Command="{Binding NavigateUpCommand}" Margin="0,0,8,0" />
+                <TextBlock Grid.Column="2" Text="{Binding CurrentPath}" Foreground="{DynamicResource FgFaint}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <TextBox Grid.Column="3" x:Name="NameInput" PlaceholderText="name" Width="120" Margin="0,0,4,0" />
+                <Button Grid.Column="4" Content="New folder" Click="OnCreateFolder" Margin="0,0,8,0" />
+                <Button Grid.Column="5" Content="Rename" Click="OnRename" Margin="0,0,4,0" />
+                <Button Grid.Column="6" Content="Delete" Command="{Binding DeleteCommand}"
+                        CommandParameter="{Binding SelectedEntry}" Margin="0,0,4,0" />
+                <Button Grid.Column="7" Content="Download" Click="OnDownload" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,4,2*">
+            <!-- Directory listing -->
+            <ListBox Grid.Column="0" x:Name="EntryList" ItemsSource="{Binding Entries}"
+                     SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
+                     DoubleTapped="OnEntryActivated">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="proto:FileEntry">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Grid.Column="0" Text="📁" Margin="0,0,6,0" IsVisible="{Binding IsDirectory}" />
+                            <TextBlock Grid.Column="0" Text="📄" Margin="0,0,6,0" IsVisible="{Binding !IsDirectory}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="2" Text="{Binding Size}" Foreground="{DynamicResource FgFaint}"
+                                       IsVisible="{Binding !IsDirectory}" FontSize="11" VerticalAlignment="Center" />
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <GridSplitter Grid.Column="1" Background="{DynamicResource Panel}" />
+
+            <!-- Preview / edit pane -->
+            <Grid Grid.Column="2" RowDefinitions="Auto,*">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="8,4"
+                            IsVisible="{Binding HasOpenFile}">
+                    <TextBlock Text="{Binding OpenFile.RelativePath}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button Content="Save" Command="{Binding SaveEditCommand}" IsVisible="{Binding IsTextOpen}" />
+                    <Button Content="Close" Command="{Binding CloseFileCommand}" />
+                </StackPanel>
+
+                <TextBox Grid.Row="1" Text="{Binding EditText, Mode=TwoWay}" AcceptsReturn="True" AcceptsTab="True"
+                         FontFamily="{StaticResource MonoFont}" FontSize="12" TextWrapping="NoWrap"
+                         IsVisible="{Binding IsTextOpen}" />
+
+                <ScrollViewer Grid.Row="1" IsVisible="{Binding IsImageOpen}">
+                    <Image x:Name="ImagePreview" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </ScrollViewer>
+
+                <TextBlock Grid.Row="1" Text="Select a file to preview" Foreground="{DynamicResource FgFaint}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsVisible="{Binding !HasOpenFile}" />
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>
