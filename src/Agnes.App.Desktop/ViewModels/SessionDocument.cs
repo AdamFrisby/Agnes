@@ -30,6 +30,7 @@ public sealed partial class SessionDocument : Document, ITraySession
         SignInWithKeyCommand = new AsyncRelayCommand(() => _controller.SignInWithKeyAsync(this));
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
+        CloseLoginTerminalCommand = new RelayCommand(() => LoginTerminal = null);
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
         SetPermissionModeCommand = new RelayCommand<string>(v => SkipPermissions = v == "Autonomous");
         SetSandboxModeCommand = new RelayCommand<string>(v => { if (v is not null && SandboxAvailable) { UseSandbox = v == "On"; } });
@@ -167,6 +168,25 @@ public sealed partial class SessionDocument : Document, ITraySession
         SelectModelChoice(Models.FirstOrDefault(m => m.IsAvailable));
         OnPropertyChanged(nameof(HasModels));
     }
+
+    // ---- provider login terminal (platform/03): a live, interactive terminal for a CLI's login flow ----
+
+    /// <summary>The terminal panel for an in-progress provider login, or null when none is running. Bound to
+    /// the same <see cref="TerminalPanelViewModel"/> the in-session terminal uses, so the user can watch the
+    /// login CLI's prompts and type responses. Cleared to close the panel.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLoginTerminalVisible))]
+    private TerminalPanelViewModel? _loginTerminal;
+
+    /// <summary>Whether the provider-login terminal panel is showing.</summary>
+    public bool IsLoginTerminalVisible => LoginTerminal is not null;
+
+    /// <summary>Shows the login terminal panel bound to the given view model (called by the controller once the
+    /// login session is subscribed).</summary>
+    public void ShowLoginTerminal(TerminalPanelViewModel terminal) => LoginTerminal = terminal;
+
+    /// <summary>Closes the login terminal panel (the login PTY keeps running host-side until it exits).</summary>
+    public IRelayCommand CloseLoginTerminalCommand { get; }
 
     // ---- launch profiles (providers/04): pick a saved config to prefill the new-session controls ----
 
@@ -592,7 +612,8 @@ public sealed partial class SessionDocument : Document, ITraySession
     {
         _allAgents = agents.Select(a => new AgentChoice(
             a.DisplayName, a.AdapterId, a.Available, a.Auth,
-            () => _controller.CheckAgentAuthAsync(this, a.AdapterId))).ToList();
+            () => _controller.CheckAgentAuthAsync(this, a.AdapterId),
+            () => _controller.BeginProviderLoginAsync(this, a.AdapterId))).ToList();
         SelectedAgent = null;
         AgentFilter = string.Empty;
         // Preselect the first available agent so Start is reachable without a click, but never auto-open.

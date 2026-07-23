@@ -56,6 +56,11 @@ public interface ITabController
     /// <summary>Force a fresh (cache-bypassing) provider login-state check for one agent on the tab's host,
     /// returning its refreshed status (or null when the agent has no reliable signal).</summary>
     Task<ProviderAuthStatus?> CheckAgentAuthAsync(SessionDocument doc, string adapterId);
+
+    /// <summary>Begin an interactive provider login for one agent: opens the login CLI in a client-visible,
+    /// interactive terminal on the tab so the user can watch its prompts and type responses. The provider's
+    /// login badge refreshes automatically once the login CLI exits.</summary>
+    Task BeginProviderLoginAsync(SessionDocument doc, string adapterId);
     void BackToHosts(SessionDocument doc);
 
     /// <summary>Persist tab metadata (rename / pin / tag) after an in-tab change.</summary>
@@ -179,15 +184,22 @@ public sealed partial class AgentChoice : ObservableObject
     // the agent has no reliable login signal. Null delegate = this host doesn't support auth checks.
     private readonly Func<Task<ProviderAuthStatus?>>? _checkAuth;
 
+    // Starts an interactive provider login (opens the CLI's login in a client-visible terminal on the tab).
+    // Null delegate = this host can't run an interactive login for the agent.
+    private readonly Func<Task>? _beginLogin;
+
     public AgentChoice(string displayName, string adapterId, bool available = true,
-        ProviderAuthStatus? auth = null, Func<Task<ProviderAuthStatus?>>? checkAuth = null)
+        ProviderAuthStatus? auth = null, Func<Task<ProviderAuthStatus?>>? checkAuth = null,
+        Func<Task>? beginLogin = null)
     {
         DisplayName = displayName;
         AdapterId = adapterId;
         Available = available;
         _auth = auth;
         _checkAuth = checkAuth;
+        _beginLogin = beginLogin;
         CheckAuthCommand = new AsyncRelayCommand(CheckAuthAsync, () => _checkAuth is not null && !IsChecking);
+        LogInCommand = new AsyncRelayCommand(BeginLoginAsync, () => _beginLogin is not null && !IsLoggingIn);
     }
 
     public string DisplayName { get; }
@@ -219,11 +231,24 @@ public sealed partial class AgentChoice : ObservableObject
 
     partial void OnIsCheckingChanged(bool value) => CheckAuthCommand.NotifyCanExecuteChanged();
 
+    /// <summary>True while a "Log in" launch is in flight (disables the button until the terminal opens).</summary>
+    [ObservableProperty]
+    private bool _isLoggingIn;
+
+    partial void OnIsLoggingInChanged(bool value) => LogInCommand.NotifyCanExecuteChanged();
+
     /// <summary>Forces a fresh login-state check (bypassing any cached status).</summary>
     public IAsyncRelayCommand CheckAuthCommand { get; }
 
+    /// <summary>Starts an interactive provider login in a terminal on the tab (visible only when logged out).</summary>
+    public IAsyncRelayCommand LogInCommand { get; }
+
     /// <summary>Whether this host can check login state at all (drives the "Check now" button's visibility).</summary>
     public bool CanCheckAuth => _checkAuth is not null;
+
+    /// <summary>Whether an interactive login can be started for this agent (drives the "Log in" button; only
+    /// meaningful together with <see cref="IsLoggedOut"/>).</summary>
+    public bool CanLogIn => _beginLogin is not null;
 
     /// <summary>Whether there's a login badge to show — false means "no reliable signal", so show nothing.</summary>
     public bool HasAuth => Auth is not null;
@@ -256,6 +281,24 @@ public sealed partial class AgentChoice : ObservableObject
         finally
         {
             IsChecking = false;
+        }
+    }
+
+    private async Task BeginLoginAsync()
+    {
+        if (_beginLogin is null)
+        {
+            return;
+        }
+
+        IsLoggingIn = true;
+        try
+        {
+            await _beginLogin().ConfigureAwait(true);
+        }
+        finally
+        {
+            IsLoggingIn = false;
         }
     }
 }

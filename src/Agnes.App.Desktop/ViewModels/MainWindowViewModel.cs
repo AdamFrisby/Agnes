@@ -2049,6 +2049,29 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
+    public async Task BeginProviderLoginAsync(SessionDocument doc, string adapterId)
+    {
+        if (doc.Host is not { } host)
+        {
+            return;
+        }
+
+        try
+        {
+            // The host opens the login CLI in a client-visible scratch session (id == terminal id) and streams
+            // its output as TerminalOutputEvents; subscribe and bind the same terminal panel the in-session
+            // terminal uses, so the user can watch the prompts and type responses. The provider's login badge
+            // refreshes on its own (host-pushed OnAgentsChanged) when the login CLI exits.
+            var loginId = await host.BeginProviderLoginAsync(adapterId);
+            var view = await host.SubscribeAsync(loginId);
+            _dispatcher.Post(() => doc.ShowLoginTerminal(new TerminalPanelViewModel(host, view, _dispatcher)));
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => doc.StatusText = $"Couldn't start login for {adapterId} — {ex.Message}");
+        }
+    }
+
     public bool IsForgettableHost(string url)
         => url != SimulatedHost.Url && url != RecordedHost.Url;
 

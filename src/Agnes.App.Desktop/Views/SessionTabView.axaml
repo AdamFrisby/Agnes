@@ -781,6 +781,14 @@
                                                         <TextBlock Text="{Binding AuthBadgeText}" Foreground="{DynamicResource FgDim}" FontSize="10" />
                                                     </StackPanel>
                                                 </Border>
+                                                <!-- Interactive provider login: opens the CLI's login in a terminal on the tab.
+                                                     Only offered when signed out (and the host can run the login). -->
+                                                <Button Content="Log in" Command="{Binding LogInCommand}"
+                                                        IsVisible="{Binding IsLoggedOut}" IsEnabled="{Binding CanLogIn}"
+                                                        Background="Transparent" Foreground="{DynamicResource Accent}" BorderBrush="{DynamicResource Accent}"
+                                                        BorderThickness="1" CornerRadius="6" Padding="8,2" FontSize="10" VerticalAlignment="Center"
+                                                        ToolTip.Tip="Sign this agent in by running its login in a terminal here"
+                                                        AutomationProperties.Name="Log in to this agent" />
                                                 <!-- Force a fresh, cache-bypassing login check. -->
                                                 <Button Content="Check now" Command="{Binding CheckAuthCommand}" IsVisible="{Binding CanCheckAuth}"
                                                         Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
@@ -1971,6 +1979,26 @@
                 Background="{DynamicResource Bg}"
                 BorderBrush="{DynamicResource Panel}" BorderThickness="1,0,0,0">
             <views:FileBrowserView DataContext="{Binding Session.FileBrowser}" />
+        </Border>
+
+        <!-- Provider login terminal (platform/03): a bottom-docked, interactive terminal running a CLI's login,
+             so the user can watch its prompts and type responses. Shown while a login is in progress; the login
+             badge refreshes on its own when the CLI exits. Reuses the in-session TerminalPanelView unchanged. -->
+        <Border Grid.Row="1" VerticalAlignment="Bottom" Height="300"
+                IsVisible="{Binding IsLoginTerminalVisible}"
+                Background="{DynamicResource Bg}"
+                BorderBrush="{DynamicResource Panel}" BorderThickness="0,1,0,0">
+            <Grid RowDefinitions="Auto,*">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,6">
+                    <TextBlock Grid.Column="0" Text="Provider login" FontWeight="SemiBold" VerticalAlignment="Center"
+                               Foreground="{DynamicResource Fg}" />
+                    <Button Grid.Column="1" Content="Close" Command="{Binding CloseLoginTerminalCommand}"
+                            Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
+                            BorderThickness="1" CornerRadius="6" Padding="8,2" FontSize="11"
+                            ToolTip.Tip="Close the login terminal (the login keeps running until it finishes)" />
+                </Grid>
+                <views:TerminalPanelView Grid.Row="1" DataContext="{Binding LoginTerminal}" />
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

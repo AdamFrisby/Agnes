@@ -1619,9 +1619,14 @@ public sealed class SessionManager : IAsyncDisposable
 
     /// <summary>
     /// Starts a provider CLI's interactive login through the SAME CLI-fallback terminal path as the in-session
-    /// terminal (platform/03 reuse discipline) — never a bespoke <c>Process.Start</c>. Returns the opened
-    /// terminal id. NOTE: login output isn't yet bound to a client-visible session stream (a dedicated login
-    /// "scratch" session is future work); what this delivers is the important half — one shared spawn path.
+    /// terminal (platform/03 reuse discipline) — never a bespoke <c>Process.Start</c>. The login terminal is
+    /// surfaced as its own lightweight, client-visible session so the user can WATCH the CLI's login prompts and
+    /// TYPE the responses many logins require: its output rides <see cref="TerminalOutputEvent"/>s through the
+    /// normal snapshot/tail, and keystrokes/resizes route back to the login PTY via
+    /// <see cref="WriteTerminalAsync"/>/<see cref="ResizeTerminalAsync"/>. The returned id is BOTH the session
+    /// to subscribe to and the terminal to write to (they're one and the same), so the existing
+    /// <c>TerminalPanelViewModel</c> binds to it unchanged. When the login CLI exits, the provider's login badge
+    /// is refreshed for every client and the scratch session is torn down.
     /// </summary>
     public async Task<string> BeginProviderLoginAsync(string adapterId, CancellationToken cancellationToken = default)
     {
@@ -1642,9 +1647,55 @@ public sealed class SessionManager : IAsyncDisposable
             WorkingDirectory = Path.GetTempPath(),
         };
 
-        // Same helper, same ICliFallback.OpenTerminalAsync call — no output sink yet (no session to attach to).
-        var handle = await OpenFallbackTerminalAsync(fallback, options, onOutput: null, cancellationToken).ConfigureAwait(false);
+        // Bind the login PTY's output to a fresh scratch session, keyed by the terminal id itself — so the one
+        // returned string is both the session id a client subscribes to and the terminal id it writes back to.
+        // The session is created right after the handle so its id is known; the sink reads it at emit-time (a
+        // real login CLI produces nothing before then). Output flows through HostSession.AppendTerminalOutputAsync
+        // — the exact same TerminalOutputEvent path as the in-session terminal, never a parallel channel.
+        HostSession? loginSession = null;
+        var handle = await OpenFallbackTerminalAsync(
+            fallback, options,
+            onOutput: (terminalId, data) => loginSession?.AppendTerminalOutputAsync(terminalId, data) ?? Task.CompletedTask,
+            cancellationToken).ConfigureAwait(false);
+
+        // The scratch session has no real agent — a no-op IAgentSession that emits nothing — and no lifecycle
+        // wiring (no crash-recovery/resume/title): it exists purely to make the login terminal a client-visible,
+        // interactive session. Its adapter id is the provider being signed into (so the snapshot names it).
+        loginSession = TrackSession(handle.TerminalId, adapterId, options.WorkingDirectory,
+            new LoginTerminalSession(handle.TerminalId), wireLifecycle: false);
+
+        // When the login CLI exits, refresh the provider's login badge everywhere and tear the scratch session
+        // down. A handle that can't observe its process exit simply leaves the session open until host shutdown.
+        if (handle is ITerminalExitSource exit)
+        {
+            exit.Exited += () => _ = OnLoginTerminalExitedAsync(adapterId, handle.TerminalId);
+        }
+
         return handle.TerminalId;
+    }
+
+    // The login CLI exited: forget the scratch session + its PTY handle, then force a fresh auth-status check so
+    // every client's login badge reflects the new state. Best-effort — teardown/probe failures are swallowed.
+    private async Task OnLoginTerminalExitedAsync(string adapterId, string loginTerminalId)
+    {
+        if (_sessions.TryRemove(loginTerminalId, out var session))
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_terminals.TryRemove(loginTerminalId, out var handle))
+        {
+            await handle.DisposeAsync().ConfigureAwait(false);
+        }
+
+        try
+        {
+            await CheckAuthStatusAsync(adapterId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Refreshing auth status after provider login for {AdapterId} failed", adapterId);
+        }
     }
 
     // The single CLI-fallback spawn path. Opens the PTY, tracks the handle for later write/resize, and — when
