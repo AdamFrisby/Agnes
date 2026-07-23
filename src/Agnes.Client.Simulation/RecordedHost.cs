@@ -83,6 +83,9 @@ public sealed class RecordedHost : IAgnesHost
     public Task SetModeAsync(string sessionId, string modeId) => Task.CompletedTask;
     public Task<GitStatus> GetGitStatusAsync(string sessionId) => Task.FromResult(new GitStatus(false, null, false, []));
     public Task<GitCommitResult> GitCommitAsync(string sessionId, string message) => Task.FromResult(new GitCommitResult(false, "read-only"));
+    public Task<IReadOnlyList<ReviewComment>> ListReviewCommentsAsync(string projectId) => Task.FromResult<IReadOnlyList<ReviewComment>>([]);
+    public Task<ReviewComment> AddReviewCommentAsync(AddReviewCommentRequest request) => throw new NotSupportedException("Recorded sessions are read-only.");
+    public Task RemoveReviewCommentAsync(string id) => Task.CompletedTask;
 
     public Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data) => Task.FromResult(".agnes/attachments/" + fileName);
     public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request) => Task.FromResult(new ScheduledTask("", request.AdapterId, request.WorkingDirectory, request.Prompt, request.IntervalSeconds, false));

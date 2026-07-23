@@ -314,6 +314,9 @@ public sealed record GitFileChange(string Path, string Status);
 /// <summary>Result of a commit attempt.</summary>
 public sealed record GitCommitResult(bool Success, string Message);
 
+/// <summary>A request to leave a review comment on a project's file at a specific line.</summary>
+public sealed record AddReviewCommentRequest(string ProjectId, string FilePath, int LineNumber, string LineHash, string Text);
+
 /// <summary>A recurring background task: run <see cref="Prompt"/> on an interval.</summary>
 public sealed record ScheduledTask(
     string Id,

@@ -121,6 +121,12 @@ var projectsFile = builder.Configuration["Agnes:ProjectsFile"]
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ProjectStore(
     projectsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ProjectStore>()));
 
+// ---- review comments: file+line feedback anchored to a project, durable across sessions ----
+var reviewCommentsFile = builder.Configuration["Agnes:ReviewCommentsFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "review-comments.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ReviewCommentStore(
+    reviewCommentsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ReviewCommentStore>()));
+
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
 var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandboxes.json");

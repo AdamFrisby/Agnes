@@ -726,6 +726,24 @@ internal sealed class FakeHost : IAgnesHost
         return Task.FromResult(new GitCommitResult(true, "ok"));
     }
 
+    public List<ReviewComment> ReviewComments { get; } = [];
+    public Task<IReadOnlyList<ReviewComment>> ListReviewCommentsAsync(string projectId)
+        => Task.FromResult<IReadOnlyList<ReviewComment>>(ReviewComments.Where(c => c.ProjectId == projectId).ToArray());
+
+    public Task<ReviewComment> AddReviewCommentAsync(AddReviewCommentRequest request)
+    {
+        var comment = new ReviewComment(Guid.NewGuid().ToString("n"), request.ProjectId, request.FilePath,
+            request.LineNumber, request.LineHash, request.Text, DateTimeOffset.UtcNow);
+        ReviewComments.Add(comment);
+        return Task.FromResult(comment);
+    }
+
+    public Task RemoveReviewCommentAsync(string id)
+    {
+        ReviewComments.RemoveAll(c => c.Id == id);
+        return Task.CompletedTask;
+    }
+
     public List<ScheduleTaskRequest> Scheduled { get; } = [];
 
     public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request)
