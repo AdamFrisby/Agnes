@@ -78,6 +78,26 @@ public class SessionStateTests
     }
 
     [Fact]
+    public void Finished_subagent_is_hidden_from_the_roster_until_show_all()
+    {
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        view.Apply(Seq(new SubagentStartedEvent("sub-1", "reviewer"), 1));
+        Assert.Equal(2, vm.VisibleAgentRows.Count()); // main + the running subagent
+
+        // The subagent's Task tool call (id == subagent id) completes → it's finished.
+        view.Apply(Seq(new ToolCallUpdateEvent("sub-1", ToolCallStatus.Completed, [new TextContent("done")]), 2));
+        Assert.Single(vm.VisibleAgentRows); // only the main agent now
+        Assert.True(vm.HasInactiveAgents);
+
+        vm.ShowAllAgentsCommand.Execute(null);
+        Assert.Equal(2, vm.VisibleAgentRows.Count()); // the finished one reappears
+        Assert.False(vm.HasInactiveAgents);
+    }
+
+    [Fact]
     public void Stale_wins_over_connection_state_until_dismissed()
     {
         var host = new FakeHost();

@@ -13,10 +13,11 @@ public sealed class PreviewViewModel : ObservableObject
 {
     private bool _split;
 
-    public PreviewViewModel(string title, string body, bool markdown = false)
+    public PreviewViewModel(string title, string body, bool markdown = false, string? command = null)
     {
         Title = title;
         Body = body;
+        Command = command;
         if (DiffParser.LooksLikeDiff(body))
         {
             Diff = DiffParser.Parse(body);
@@ -33,6 +34,13 @@ public sealed class PreviewViewModel : ObservableObject
 
     public string Title { get; }
     public string Body { get; }
+
+    /// <summary>The full tool command/target, shown verbatim above the result — the title bar truncates it,
+    /// so a long command (a shell line, a full path) is otherwise unreadable. Null for non-tool previews.</summary>
+    public string? Command { get; }
+
+    public bool HasCommand => !string.IsNullOrWhiteSpace(Command);
+
     public IReadOnlyList<DiffLine>? Diff { get; }
     public IReadOnlyList<DiffSplitRow>? SplitRows { get; }
     public int HunkCount { get; }

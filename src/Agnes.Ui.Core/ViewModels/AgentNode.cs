@@ -9,6 +9,7 @@ namespace Agnes.Ui.Core.ViewModels;
 public sealed class AgentNode : ObservableObject
 {
     private bool _isSelected;
+    private bool _isActive = true;
 
     public AgentNode(string? id, string name, bool isMain, Action<string?> select)
     {
@@ -16,6 +17,14 @@ public sealed class AgentNode : ObservableObject
         Name = name;
         IsMain = isMain;
         SelectCommand = new RelayCommand(() => select(id));
+    }
+
+    /// <summary>Whether this agent is still running. A subagent goes inactive when its Task tool call
+    /// completes; the main agent is always active. Inactive subagents are hidden behind "show all".</summary>
+    public bool IsActive
+    {
+        get => _isActive;
+        set => SetProperty(ref _isActive, value);
     }
 
     /// <summary>Agent id (null for the main agent).</summary>

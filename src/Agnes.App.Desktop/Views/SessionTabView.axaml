@@ -16,6 +16,7 @@
     <UserControl.Resources>
         <appconv:IndentConverter x:Key="AgentIndent" Step="16" />
         <appconv:SendPolicyLabelConverter x:Key="SendPolicyLabel" />
+        <appconv:BoolToOpacityConverter x:Key="ActiveOpacity" TrueOpacity="1.0" FalseOpacity="0.5" />
     </UserControl.Resources>
 
     <UserControl.KeyBindings>
@@ -177,10 +178,14 @@
                                 Content="Event log" Background="Transparent" Foreground="{DynamicResource FgDim}"
                                 BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Show the raw event log" AutomationProperties.Name="Toggle raw event log" />
-                        <Button Command="{Binding Session.ToggleFileBrowserCommand}"
+                        <Button Command="{Binding Session.ToggleFileBrowserCommand}" IsVisible="{Binding IsLive}"
                                 Content="Files" Background="Transparent" Foreground="{DynamicResource FgDim}"
                                 BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Browse the session's working directory" AutomationProperties.Name="Toggle file browser" />
+                        <Button Command="{Binding Session.ToggleTerminalCommand}" IsVisible="{Binding IsLive}"
+                                Content="Terminal" Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="9,3" FontSize="11"
+                                ToolTip.Tip="Open a terminal in the session's working directory" AutomationProperties.Name="Toggle terminal" />
                         <!-- real context-window usage the agent reported (bar only when the window is known) -->
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                     IsVisible="{Binding Usage.HasAnyContext, FallbackValue=false}"
@@ -930,60 +935,46 @@
                                 </StackPanel>
 
                                 <!-- Agent roster: flattened so the root and its direct subagents share one
-                                     visual level (only deeper nesting indents), styled like Files/Tools rows. -->
+                                     visual level (only deeper nesting indents), styled like Files/Tools rows.
+                                     Collapsible, and shows only RUNNING agents until "show all" reveals finished
+                                     ones (the separate PARTICIPANTS section was redundant and was removed). -->
                                 <StackPanel Spacing="4" IsVisible="{Binding HasSubagents}">
-                                    <TextBlock Text="AGENTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <ItemsControl ItemsSource="{Binding AgentRows}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="vm:AgentNode">
-                                                <Button Command="{Binding SelectCommand}" Classes.sel="{Binding IsSelected}"
-                                                        Margin="{Binding Depth, Converter={StaticResource AgentIndent}}"
-                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                                        Background="Transparent" BorderThickness="0" Padding="6,5" CornerRadius="6" Cursor="Hand">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="◆" FontSize="9" VerticalAlignment="Center"
-                                                                   Foreground="{DynamicResource Good}" IsVisible="{Binding IsMain}" />
-                                                        <TextBlock Text="•" FontSize="12" VerticalAlignment="Center"
-                                                                   Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsMain}" />
-                                                        <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource Fg}"
-                                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                </Button>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-
-                                <!-- Participant roster (sessions/04): the lead + each reported subagent, with a
-                                     controllable-vs-observe-only indicator. Subagents are observe-only for now
-                                     (no adapter exposes addressed send/stop), so their route/stop control is
-                                     disabled with an explaining tooltip rather than shown as a no-op. -->
-                                <StackPanel Spacing="6" IsVisible="{Binding Subagents.HasSubagents}">
-                                    <TextBlock Text="PARTICIPANTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <ItemsControl ItemsSource="{Binding Subagents.Participants}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="vm:ParticipantRow">
-                                                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
-                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                                        <TextBlock Text="◆" FontSize="9" VerticalAlignment="Center"
-                                                                   Foreground="{DynamicResource Good}" IsVisible="{Binding IsLead}" />
-                                                        <TextBlock Text="•" FontSize="12" VerticalAlignment="Center"
-                                                                   Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsLead}" />
-                                                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
-                                                    <!-- Observe-only rows show a disabled route/stop control (a Tier-1
-                                                         subagent Agnes can watch but can't message or stop yet). -->
-                                                    <Button Grid.Column="1" IsEnabled="{Binding CanControl}"
-                                                            IsVisible="{Binding IsObserveOnly}"
-                                                            Background="Transparent" BorderThickness="0" Padding="4,2" Cursor="Arrow"
-                                                            ToolTip.Tip="{Binding ControlTooltip}">
-                                                        <TextBlock Text="observe-only" FontSize="10" Foreground="{DynamicResource FgFaint}" />
+                                    <Button Command="{Binding ToggleAgentsCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding AgentsExpanded}" />
+                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding !AgentsExpanded}" />
+                                            <TextBlock Text="AGENTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <StackPanel Spacing="4" IsVisible="{Binding AgentsExpanded}">
+                                        <ItemsControl ItemsSource="{Binding VisibleAgentRows}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="vm:AgentNode">
+                                                    <Button Command="{Binding SelectCommand}" Classes.sel="{Binding IsSelected}"
+                                                            Margin="{Binding Depth, Converter={StaticResource AgentIndent}}"
+                                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                            Background="Transparent" BorderThickness="0" Padding="6,5" CornerRadius="6" Cursor="Hand">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="◆" FontSize="9" VerticalAlignment="Center"
+                                                                       Foreground="{DynamicResource Good}" IsVisible="{Binding IsMain}" />
+                                                            <TextBlock Text="•" FontSize="12" VerticalAlignment="Center"
+                                                                       Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsMain}" />
+                                                            <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Foreground="{DynamicResource Fg}" Opacity="{Binding IsActive, Converter={StaticResource ActiveOpacity}}" />
+                                                        </StackPanel>
                                                     </Button>
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <Button Content="{Binding MoreAgentsLabel}" Command="{Binding ShowAllAgentsCommand}"
+                                                IsVisible="{Binding HasInactiveAgents}" HorizontalAlignment="Left" Cursor="Hand"
+                                                Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
+                                                Padding="6,3" FontSize="11" />
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <StackPanel Spacing="6" IsVisible="{Binding Plan, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
@@ -1953,6 +1944,20 @@
                                 </Grid>
                             </Border>
 
+                            <!-- Body area: an optional full command block (the title bar truncates a long
+                                 command/path) above the result. The four result views below stay Grid.Row="1"
+                                 within this nested grid, so no re-numbering was needed. -->
+                            <Grid Grid.Row="1" RowDefinitions="Auto,*">
+                            <Border Grid.Row="0" IsVisible="{Binding SelectedPreview.HasCommand}"
+                                    Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
+                                    BorderThickness="0,0,0,1" Padding="14,8" MaxHeight="180">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <SelectableTextBlock Text="{Binding SelectedPreview.Command}" Foreground="{DynamicResource FgDim}"
+                                                         FontFamily="{StaticResource MonoFont}" FontSize="12" TextWrapping="Wrap"
+                                                         ctl:SelectionContextMenu.Enable="True" />
+                                </ScrollViewer>
+                            </Border>
+
                             <!-- Unified diff view -->
                             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                                           IsVisible="{Binding SelectedPreview.ShowUnified}">
@@ -2044,28 +2049,40 @@
                                 <SelectableTextBlock Text="{Binding SelectedPreview.Body}" Foreground="{DynamicResource Fg}"
                                            FontSize="13" TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                             </ScrollViewer>
+                            </Grid>
                         </Grid>
                     </Border>
                 </Grid>
             </Grid>
         </Grid>
 
-        <!-- Embedded terminal (platform/03): a bottom-docked, show/hide panel over the session. Docking it
-             elsewhere / persisting per-session lives in the framework-agnostic TerminalPanelViewModel. -->
+        <!-- Embedded terminal (platform/03): a bottom-docked, on-demand overlay panel over the LIVE session.
+             Gated on IsLive too: when there's no session yet (host picker / configure), Session is null and a
+             bare Session.IsTerminalVisible binding falls back to the control default (visible) and covers the
+             configure screen — the extra IsLive term keeps it hidden until a session is actually live. -->
         <Border Grid.Row="1" VerticalAlignment="Bottom" Height="260"
-                IsVisible="{Binding Session.IsTerminalVisible}"
-                Background="{DynamicResource Bg}"
-                BorderBrush="{DynamicResource Panel}" BorderThickness="0,1,0,0">
+                Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                BoxShadow="0 -8 24 -12 #60000000">
+            <Border.IsVisible>
+                <MultiBinding Converter="{x:Static conv:BoolConverters.And}">
+                    <Binding Path="IsLive" />
+                    <Binding Path="Session.IsTerminalVisible" FallbackValue="False" />
+                </MultiBinding>
+            </Border.IsVisible>
             <views:TerminalPanelView DataContext="{Binding Session.Terminal}" />
         </Border>
 
-        <!-- Workspace file browser (git-and-files/03): a right-docked, show/hide panel over the session.
-             All list/read/write/rename/delete/download + path-safety lives host-side; the framework-agnostic
-             FileBrowserViewModel drives it. -->
+        <!-- Workspace file browser (git-and-files/03): a right-docked, on-demand overlay panel over the LIVE
+             session. Same IsLive gate as the terminal (see above) so it never covers the configure screen. -->
         <Border Grid.Row="1" HorizontalAlignment="Right" Width="520"
-                IsVisible="{Binding Session.IsFileBrowserVisible}"
-                Background="{DynamicResource Bg}"
-                BorderBrush="{DynamicResource Panel}" BorderThickness="1,0,0,0">
+                Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0"
+                BoxShadow="-8 0 24 -12 #60000000">
+            <Border.IsVisible>
+                <MultiBinding Converter="{x:Static conv:BoolConverters.And}">
+                    <Binding Path="IsLive" />
+                    <Binding Path="Session.IsFileBrowserVisible" FallbackValue="False" />
+                </MultiBinding>
+            </Border.IsVisible>
             <views:FileBrowserView DataContext="{Binding Session.FileBrowser}" />
         </Border>
 

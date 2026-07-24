@@ -104,6 +104,8 @@ public sealed class SessionViewModel : ObservableObject
         ToggleToolsListCommand = new RelayCommand(() => ToolsListExpanded = !ToolsListExpanded);
         ShowAllToolsCommand = new RelayCommand(() => ShowAllTools = true);
         ToggleCredentialsCommand = new RelayCommand(() => CredentialsExpanded = !CredentialsExpanded);
+        ToggleAgentsCommand = new RelayCommand(() => AgentsExpanded = !AgentsExpanded);
+        ShowAllAgentsCommand = new RelayCommand(() => ShowAllAgents = true);
         ShowAllCredentialsCommand = new RelayCommand(() => ShowAllCredentials = true);
         CompactCommand = new RelayCommand(() => SendControl("/compact"));
         ClearContextCommand = new RelayCommand(() => SendControl("/clear"));
@@ -166,8 +168,8 @@ public sealed class SessionViewModel : ObservableObject
         NextChangeCommand = new RelayCommand(() => NavigateKind(IsChange, +1, ref _changeCursor));
         PrevChangeCommand = new RelayCommand(() => NavigateKind(IsChange, -1, ref _changeCursor));
         ClosePreviewCommand = new RelayCommand(() => SelectedPreview = null);
-        ShowToolPreviewCommand = new RelayCommand<ToolCallItem>(t => { if (t is not null) { Preview(t.Header, t.Detail); } });
-        ShowFilePreviewCommand = new RelayCommand<ToolEntry>(f => { if (f is not null) { Preview(f.Name, f.Detail); } });
+        ShowToolPreviewCommand = new RelayCommand<ToolCallItem>(t => { if (t is not null) { Preview(t.Header, t.Detail, command: t.Title); } });
+        ShowFilePreviewCommand = new RelayCommand<ToolEntry>(f => { if (f is not null) { Preview(f.Name, f.Detail, command: f.Name); } });
         ShowMessagePreviewCommand = new RelayCommand<MessageBubbleItem>(m =>
         {
             if (m is { IsLong: true })
@@ -511,6 +513,44 @@ public sealed class SessionViewModel : ObservableObject
         }
 
         Walk(_mainAgentNode, 0);
+        RaiseAgentRows();
+    }
+
+    private void RaiseAgentRows()
+    {
+        OnPropertyChanged(nameof(VisibleAgentRows));
+        OnPropertyChanged(nameof(HasInactiveAgents));
+        OnPropertyChanged(nameof(MoreAgentsLabel));
+    }
+
+    // ---- agents: collapse + "active only, show all finished" (a subagent goes inactive when its Task
+    // tool call completes; the main agent is always active) ----
+    private bool _agentsExpanded = true;
+    public bool AgentsExpanded { get => _agentsExpanded; set => SetProperty(ref _agentsExpanded, value); }
+
+    private bool _showAllAgents;
+    public bool ShowAllAgents
+    {
+        get => _showAllAgents;
+        set { if (SetProperty(ref _showAllAgents, value)) { RaiseAgentRows(); } }
+    }
+
+    /// <summary>The agents to show: the main agent plus still-running subagents (and any currently-selected
+    /// one), until "show all" reveals the finished ones too.</summary>
+    public IEnumerable<AgentNode> VisibleAgentRows
+        => ShowAllAgents ? AgentRows : AgentRows.Where(n => n.IsMain || n.IsActive || n.IsSelected);
+
+    public bool HasInactiveAgents => !ShowAllAgents && AgentRows.Any(n => !n.IsMain && !n.IsActive && !n.IsSelected);
+    public string MoreAgentsLabel => $"Show all {AgentRows.Count}";
+
+    /// <summary>Marks a subagent finished when its Task tool call reaches a terminal status.</summary>
+    private void MarkAgentInactive(string? toolCallId)
+    {
+        if (toolCallId is not null && _agentNodes.TryGetValue(toolCallId, out var node) && node.IsActive)
+        {
+            node.IsActive = false;
+            RaiseAgentRows();
+        }
     }
 
     private void SelectAgent(string? agentId)
@@ -524,6 +564,7 @@ public sealed class SessionViewModel : ObservableObject
 
         OnPropertyChanged(nameof(DisplayItems));
         OnPropertyChanged(nameof(IsTranscriptEmpty));
+        RaiseAgentRows(); // a selected (possibly finished) agent stays visible in the roster
         ScrollToBottomRequested?.Invoke(); // switching conversations lands at the latest, not the top
     }
 
@@ -614,6 +655,8 @@ public sealed class SessionViewModel : ObservableObject
     public System.Windows.Input.ICommand ToggleToolsListCommand { get; }
     public System.Windows.Input.ICommand ShowAllToolsCommand { get; }
     public System.Windows.Input.ICommand ToggleCredentialsCommand { get; }
+    public System.Windows.Input.ICommand ToggleAgentsCommand { get; }
+    public System.Windows.Input.ICommand ShowAllAgentsCommand { get; }
     public System.Windows.Input.ICommand ShowAllCredentialsCommand { get; }
 
     /// <summary>Ask the agent to compact / clear its context. Sent as a control command the agent
@@ -1576,6 +1619,18 @@ public sealed class SessionViewModel : ObservableObject
             IsTurnActive = true;
         }
 
+        // A subagent's Task tool call reaching a terminal status means that subagent finished → mark it
+        // inactive so the roster shows only running agents (its id IS the Task tool-call id).
+        switch (@event)
+        {
+            case ToolCallUpdateEvent { Status: ToolCallStatus.Completed or ToolCallStatus.Failed } tcu:
+                MarkAgentInactive(tcu.ToolCallId);
+                break;
+            case ToolCallEvent { Status: ToolCallStatus.Completed or ToolCallStatus.Failed } tce:
+                MarkAgentInactive(tce.ToolCallId);
+                break;
+        }
+
         switch (@event)
         {
             case PermissionRequestedEvent pr:
@@ -1802,7 +1857,7 @@ public sealed class SessionViewModel : ObservableObject
         }
     }
 
-    private void Preview(string title, string body, bool markdown = false) => SelectedPreview = new PreviewViewModel(title, body, markdown);
+    private void Preview(string title, string body, bool markdown = false, string? command = null) => SelectedPreview = new PreviewViewModel(title, body, markdown, command);
 
     // ---- search + deep-linking ----
 
