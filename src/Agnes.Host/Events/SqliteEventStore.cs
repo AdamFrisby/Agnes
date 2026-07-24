@@ -45,6 +45,25 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
             );
             """;
         command.ExecuteNonQuery();
+
+        // Additive migration for DBs created before the column existed. SQLite has no ADD COLUMN IF NOT
+        // EXISTS, so add it and swallow the "duplicate column name" error when it's already there —
+        // critical so an existing catalogue (with real sessions) still loads instead of throwing on read.
+        AddColumnIfMissing(connection, "sessions", "model_id TEXT");
+    }
+
+    private static void AddColumnIfMissing(SqliteConnection connection, string table, string columnDef)
+    {
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {columnDef};";
+        try
+        {
+            alter.ExecuteNonQuery();
+        }
+        catch (SqliteException ex) when (ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+        {
+            // Column already present — nothing to migrate.
+        }
     }
 
     public async Task SaveSessionAsync(SessionRecord record, CancellationToken cancellationToken = default)
@@ -53,10 +72,11 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            INSERT INTO sessions (session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at)
-            VALUES ($sid, $adapter, $wd, $agent, $wt, $skip, $sandboxed, $created)
+            INSERT INTO sessions (session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id)
+            VALUES ($sid, $adapter, $wd, $agent, $wt, $skip, $sandboxed, $created, $model)
             ON CONFLICT(session_id) DO UPDATE SET
-                agent_session_id = excluded.agent_session_id;
+                agent_session_id = excluded.agent_session_id,
+                model_id = excluded.model_id;
             """;
         command.Parameters.AddWithValue("$sid", record.SessionId);
         command.Parameters.AddWithValue("$adapter", record.AdapterId);
@@ -66,6 +86,7 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         command.Parameters.AddWithValue("$skip", record.SkipPermissions ? 1 : 0);
         command.Parameters.AddWithValue("$sandboxed", record.Sandboxed ? 1 : 0);
         command.Parameters.AddWithValue("$created", record.CreatedAt.ToString("O"));
+        command.Parameters.AddWithValue("$model", (object?)record.ModelId ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -74,7 +95,7 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         await using var connection = Open();
         await using var command = connection.CreateCommand();
         command.CommandText =
-            "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at FROM sessions ORDER BY created_at ASC;";
+            "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id FROM sessions ORDER BY created_at ASC;";
         var records = new List<SessionRecord>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -83,7 +104,8 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
                 reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.GetInt64(4) != 0, reader.GetInt64(5) != 0, reader.GetInt64(6) != 0,
-                DateTimeOffset.Parse(reader.GetString(7))));
+                DateTimeOffset.Parse(reader.GetString(7)),
+                reader.IsDBNull(8) ? null : reader.GetString(8)));
         }
 
         return records;

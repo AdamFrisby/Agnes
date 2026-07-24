@@ -219,6 +219,9 @@ public sealed class HostConnection : IAgnesHost
     public Task SetModeAsync(string sessionId, string modeId)
         => _hub.InvokeAsync(nameof(IAgnesServer.SetMode), sessionId, modeId);
 
+    public Task SwitchModelAsync(string sessionId, string? modelId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.SwitchModel), sessionId, modelId);
+
     public Task<GitStatus> GetGitStatusAsync(string sessionId)
         => _hub.InvokeAsync<GitStatus>(nameof(IAgnesServer.GetGitStatus), sessionId);
 

@@ -671,7 +671,7 @@ public sealed class SessionManager : IAsyncDisposable
         // Persist the initial (placeholder-id) record first so it can't overwrite the real id afterwards.
         var record = new SessionRecord(
             sessionId, adapterId, effectiveDirectory, agent.AgentSessionId,
-            worktree, skipPermissions, sandbox is not null, DateTimeOffset.UtcNow);
+            worktree, skipPermissions, sandbox is not null, DateTimeOffset.UtcNow, modelId);
         _catalog[sessionId] = record;
         await _store.SaveSessionAsync(record, cancellationToken).ConfigureAwait(false);
 
@@ -679,7 +679,7 @@ public sealed class SessionManager : IAsyncDisposable
         _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name);
+        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name, CurrentModelId: modelId);
     }
 
     /// <summary>Computes a fork plan for a live session: a proposed non-existing target folder (numeral-
@@ -1198,6 +1198,9 @@ public sealed class SessionManager : IAsyncDisposable
                 Sandbox = sandbox,
                 SkipPermissions = record.SkipPermissions,
                 McpConfigPath = mcpConfigPath,
+                // Carry the session's chosen model across the relaunch (crash-recovery, restart, or an explicit
+                // model switch); without this a relaunch silently reverted to the CLI's default model.
+                ModelId = record.ModelId,
                 // Only resume when the agent reported a real session id (a UUID); the pre-init placeholder
                 // (a dash-less GUID) would make `--resume` fail, so start fresh in that case.
                 ResumeSessionId = LooksResumable(record.AgentSessionId) ? record.AgentSessionId : null,
@@ -1335,6 +1338,52 @@ public sealed class SessionManager : IAsyncDisposable
         {
             _logger.LogError(ex, "Manual restart failed for session {SessionId}", sessionId);
             await AppendNoticeAsync(sessionId, "Couldn't restart the agent: " + ex.Message, isError: true).ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            _attachGate.Release();
+        }
+    }
+
+    /// <summary>Switches the model of a live session. Because the model is a launch-time CLI argument, this
+    /// persists the new model on the session record and relaunches the agent, resuming its conversation — so
+    /// the switch is durable (survives a later restart) and the transcript continues uninterrupted. A no-op if
+    /// the model is unchanged. Adapters without a model axis simply relaunch with the same (ignored) value.</summary>
+    public async Task SwitchModelAsync(string sessionId, string? modelId)
+    {
+        if (!_catalog.TryGetValue(sessionId, out var record))
+        {
+            throw new InvalidOperationException($"Unknown session '{sessionId}'.");
+        }
+
+        var normalized = string.IsNullOrWhiteSpace(modelId) ? null : modelId;
+        if (string.Equals(record.ModelId, normalized, StringComparison.Ordinal))
+        {
+            return; // already on this model
+        }
+
+        await _attachGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var updated = record with { ModelId = normalized };
+            _catalog[sessionId] = updated;
+            await _store.SaveSessionAsync(updated, CancellationToken.None).ConfigureAwait(false);
+
+            if (_sessions.TryRemove(sessionId, out var old))
+            {
+                await old.DisposeAsync().ConfigureAwait(false);
+            }
+
+            State(sessionId).LastRecoveryAt = null; // a deliberate switch, not a crash — reset the guard
+            await AppendNoticeAsync(sessionId, $"Switching model to {normalized ?? "the default"}…").ConfigureAwait(false);
+            await RelaunchAgentAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+            await AppendNoticeAsync(sessionId, $"Model is now {normalized ?? "the CLI default"}.").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Model switch failed for session {SessionId}", sessionId);
+            await AppendNoticeAsync(sessionId, "Couldn't switch the model: " + ex.Message, isError: true).ConfigureAwait(false);
             throw;
         }
         finally
@@ -1536,7 +1585,8 @@ public sealed class SessionManager : IAsyncDisposable
             // Already live — nothing to resume.
             var liveHead = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
             return new SessionInfo(sessionId, already.AdapterId, "/work", liveHead, already.Modes, already.CurrentModeId,
-                _sandboxBySession.TryGetValue(sessionId, out var s) ? MapSandbox(s) : null, false, null);
+                _sandboxBySession.TryGetValue(sessionId, out var s) ? MapSandbox(s) : null, false, null,
+                CurrentModelId: _catalog.TryGetValue(sessionId, out var arec) ? arec.ModelId : null);
         }
 
         var record = _sandboxRegistry?.Get(sessionId)
@@ -1567,7 +1617,8 @@ public sealed class SessionManager : IAsyncDisposable
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var project = StateOrNull(sessionId)?.Project;
         return new SessionInfo(sessionId, record.AdapterId, "/work", head, session.Modes, session.CurrentModeId,
-            MapSandbox(sandbox), record.SkipPermissions, project?.Name);
+            MapSandbox(sandbox), record.SkipPermissions, project?.Name,
+            CurrentModelId: _catalog.TryGetValue(sessionId, out var crec) ? crec.ModelId : null);
     }
 
     /// <summary>Re-resolves the project for a working directory (same rule as open).</summary>
@@ -2279,7 +2330,8 @@ public sealed class SessionManager : IAsyncDisposable
             : (_catalog[sessionId].AdapterId, _catalog[sessionId].WorkingDirectory);
         var skipPermissions = _catalog.TryGetValue(sessionId, out var rec) && rec.SkipPermissions;
         var info = new SessionInfo(sessionId, adapterId, workingDirectory, head,
-            live?.Modes, live?.CurrentModeId, GetSandboxStatus(sessionId), skipPermissions, Project: null, ReadOnly: IsReadOnly(sessionId));
+            live?.Modes, live?.CurrentModeId, GetSandboxStatus(sessionId), skipPermissions, Project: null, ReadOnly: IsReadOnly(sessionId),
+            CurrentModelId: rec?.ModelId);
         return new SessionSnapshot(info, events, head);
     }
 

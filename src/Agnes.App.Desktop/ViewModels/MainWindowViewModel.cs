@@ -2883,9 +2883,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         WireStatus(doc, source.Host);
 
         // Reuse the already-connected host and the source's adapter — no host/agent picker round-trip.
+        // Carry the source's model forward too: prefer the model it was configured with, else the model the
+        // live session is currently on (a restored session has no configure-time picker state). Without this
+        // "same setup" silently reverted to the CLI's default model.
+        var modelId = source.EffectiveModelId ?? source.Session?.CurrentModelId;
         return SelectAgentAsync(
             doc, descriptor.AdapterId, source.AgentName ?? descriptor.AdapterId,
-            source.SkipPermissions, source.GitCredentialMode, source.UseSandbox && source.SandboxAvailable);
+            source.SkipPermissions, source.GitCredentialMode, source.UseSandbox && source.SandboxAvailable, modelId);
     }
 
     // ---- launch profiles (providers/04): named, reusable new-session launch configs ----

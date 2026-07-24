@@ -782,6 +782,14 @@ internal sealed class FakeHost : IAgnesHost
 
     public string? Mode { get; private set; }
 
+    public string? SwitchedModel { get; private set; }
+
+    public Task SwitchModelAsync(string sessionId, string? modelId)
+    {
+        SwitchedModel = modelId;
+        return Task.CompletedTask;
+    }
+
     public Task SetModeAsync(string sessionId, string modeId)
     {
         Mode = modeId;

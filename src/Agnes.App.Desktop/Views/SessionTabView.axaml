@@ -1817,6 +1817,21 @@
                                                    FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0" />
                                     </StackPanel>
 
+                                    <!-- model picker: switch the agent's model mid-session (relaunches + resumes on the
+                                         host). Hidden for adapters with no model axis. -->
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                                Margin="4,0,0,6" IsVisible="{Binding HasModelPicker}">
+                                        <TextBlock Text="Model" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
+                                        <ComboBox ItemsSource="{Binding AvailableModels}" SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
+                                                  FontSize="12" MinHeight="30" Padding="8,2" AutomationProperties.Name="Switch model">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="12" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </StackPanel>
+
                                     <!-- Send policy: what "send" does while a turn is active (sessions/03). -->
                                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="4,0,0,6">
                                         <TextBlock Text="When busy" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />

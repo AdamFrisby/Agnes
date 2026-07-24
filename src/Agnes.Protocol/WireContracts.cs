@@ -221,7 +221,8 @@ public sealed record SessionInfo(
     SandboxStatus? Sandbox = null,
     bool SkipPermissions = false,
     string? Project = null,
-    bool ReadOnly = false);
+    bool ReadOnly = false,
+    string? CurrentModelId = null);
 
 /// <summary>The per-session defaults a project suggests.</summary>
 public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask");

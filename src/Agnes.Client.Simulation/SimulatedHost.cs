@@ -259,6 +259,17 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.CompletedTask;
     }
 
+    public Task SwitchModelAsync(string sessionId, string? modelId)
+    {
+        // The simulated host has no real CLI to relaunch; just narrate the switch so the UI reflects it.
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.Emit(new NoticeEvent($"Model is now {(string.IsNullOrWhiteSpace(modelId) ? "the default" : modelId)}.", false));
+        }
+
+        return Task.CompletedTask;
+    }
+
     private bool _committed;
 
     public Task<GitStatus> GetGitStatusAsync(string sessionId)

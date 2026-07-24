@@ -154,6 +154,10 @@ public interface IAgnesServer
     /// <summary>Switches the session mode (maps to ACP <c>session/set_mode</c>).</summary>
     Task SetMode(string sessionId, string modeId);
 
+    /// <summary>Switches a live session's model. The model is a launch-time CLI argument, so the host
+    /// relaunches the agent (resuming its conversation) on the new model; null selects the CLI default.</summary>
+    Task SwitchModel(string sessionId, string? modelId);
+
     Task RespondPermission(PermissionResponseRequest response);
 
     /// <summary>Registers the calling device's push token against a notification channel and sets its toggles,

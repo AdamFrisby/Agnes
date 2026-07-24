@@ -356,6 +356,8 @@ internal sealed class RecordingHost : IAgnesHost
         return Task.CompletedTask;
     }
 
+    public Task SwitchModelAsync(string sessionId, string? modelId) => Task.CompletedTask;
+
     public Task SetModeAsync(string sessionId, string modeId)
     {
         ModeChanges.Add((sessionId, modeId));

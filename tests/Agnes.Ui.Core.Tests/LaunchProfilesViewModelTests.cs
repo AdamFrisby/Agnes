@@ -88,6 +88,7 @@ public class LaunchProfilesViewModelTests
         public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content) => Task.CompletedTask;
         public Task CancelAsync(string sessionId) => Task.CompletedTask;
         public Task SetModeAsync(string sessionId, string modeId) => Task.CompletedTask;
+    public Task SwitchModelAsync(string sessionId, string? modelId) => Task.CompletedTask;
         public Task RespondPermissionAsync(string sessionId, string requestId, string optionId) => Task.CompletedTask;
         public Task<GitStatus> GetGitStatusAsync(string sessionId) => Task.FromResult(new GitStatus(false, null, false, []));
         public Task<GitCommitResult> GitCommitAsync(string sessionId, string message) => Task.FromResult(new GitCommitResult(true, "ok"));

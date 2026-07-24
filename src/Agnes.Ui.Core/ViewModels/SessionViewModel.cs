@@ -50,6 +50,9 @@ public sealed class SessionViewModel : ObservableObject
     private bool _showSlash;
     private string _referenceInput = string.Empty;
     private string? _currentModeId;
+    private string? _currentModelId;
+    private ModelInfo? _selectedModel;
+    private bool _applyingModel;
     private SandboxStatus? _sandbox;
     private GitStatus? _git;
     private string _commitMessage = string.Empty;
@@ -146,6 +149,10 @@ public sealed class SessionViewModel : ObservableObject
         }
 
         _currentModeId = view.Info?.CurrentModeId;
+        _currentModelId = view.Info?.CurrentModelId;
+        // Populate the mid-session model picker from the host (best-effort; empty for adapters with no
+        // model axis, which hides the picker).
+        _ = LoadModelsAsync(view.Info?.AdapterId);
         _sandbox = view.Info?.Sandbox;
         PauseSandboxCommand = new AsyncRelayCommand(PauseSandboxAsync, () => HasSandbox && !SandboxPaused);
         ResumeSandboxCommand = new AsyncRelayCommand(ResumeSandboxAsync, () => HasSandbox && SandboxPaused);
@@ -1047,6 +1054,83 @@ public sealed class SessionViewModel : ObservableObject
     {
         CurrentModeId = mode.Id; // optimistic; ModeChangedEvent will confirm
         await _host.SetModeAsync(SessionId, mode.Id);
+    }
+
+    // ---- mid-session model switching ----
+
+    /// <summary>The models this session's agent can switch to mid-conversation; empty when the adapter has no
+    /// model axis (which hides the picker). Populated once from the host on construction.</summary>
+    public ObservableCollection<ModelInfo> AvailableModels { get; } = [];
+
+    public bool HasModelPicker => AvailableModels.Count > 0;
+
+    public string? CurrentModelId
+    {
+        get => _currentModelId;
+        private set { if (SetProperty(ref _currentModelId, value)) { OnPropertyChanged(nameof(CurrentModelName)); } }
+    }
+
+    public string CurrentModelName => AvailableModels.FirstOrDefault(m => m.Id == _currentModelId)?.DisplayName ?? _currentModelId ?? "default";
+
+    /// <summary>Two-way bound to the picker. A genuine user selection relaunches the agent on the new model
+    /// (the host resumes the conversation); a programmatic set during the initial load must not trigger a
+    /// switch, hence the <see cref="_applyingModel"/> guard.</summary>
+    public ModelInfo? SelectedModel
+    {
+        get => _selectedModel;
+        set
+        {
+            if (!SetProperty(ref _selectedModel, value) || _applyingModel || value is null)
+            {
+                return;
+            }
+
+            if (!string.Equals(value.Id, _currentModelId, StringComparison.Ordinal))
+            {
+                CurrentModelId = value.Id; // optimistic; the relaunch + notice will confirm
+                _ = _host.SwitchModelAsync(SessionId, value.Id);
+            }
+        }
+    }
+
+    private async Task LoadModelsAsync(string? adapterId)
+    {
+        if (string.IsNullOrEmpty(adapterId))
+        {
+            return;
+        }
+
+        IReadOnlyList<ModelInfo> models;
+        try
+        {
+            models = await _host.ListModelsAsync(adapterId);
+        }
+        catch
+        {
+            return; // model listing is best-effort; no picker on failure
+        }
+
+        _dispatcher.Post(() =>
+        {
+            _applyingModel = true;
+            AvailableModels.Clear();
+            foreach (var m in models)
+            {
+                AvailableModels.Add(m);
+            }
+
+            // Show the session's current model as selected even when it's a custom id not in the catalog.
+            if (_currentModelId is { Length: > 0 } id && AvailableModels.All(m => m.Id != id))
+            {
+                AvailableModels.Add(new ModelInfo(id, id));
+            }
+
+            _selectedModel = AvailableModels.FirstOrDefault(m => m.Id == _currentModelId);
+            _applyingModel = false;
+            OnPropertyChanged(nameof(HasModelPicker));
+            OnPropertyChanged(nameof(SelectedModel));
+            OnPropertyChanged(nameof(CurrentModelName));
+        });
     }
 
     // ---- conversation rewind (read-only history) ----

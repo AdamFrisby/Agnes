@@ -186,6 +186,10 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Switches the session's mode (Ask / Code / …).</summary>
     Task SetModeAsync(string sessionId, string modeId);
 
+    /// <summary>Switches a live session's model; the host relaunches the agent (resuming its conversation) on
+    /// the new model. Null selects the CLI's default.</summary>
+    Task SwitchModelAsync(string sessionId, string? modelId);
+
     Task RespondPermissionAsync(string sessionId, string requestId, string optionId);
 
     /// <summary>Registers this device's push token against a host notification channel and sets its per-trigger

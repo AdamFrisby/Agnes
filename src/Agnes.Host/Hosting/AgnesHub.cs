@@ -257,6 +257,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task SetMode(string sessionId, string modeId)
         => _sessions.SetModeAsync(sessionId, modeId);
 
+    public Task SwitchModel(string sessionId, string? modelId)
+        => _sessions.SwitchModelAsync(sessionId, modelId);
+
     public Task<GitStatus> GetGitStatus(string sessionId)
         => _sessions.GetGitStatusAsync(sessionId);
 
