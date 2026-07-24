@@ -526,7 +526,7 @@ if (Agnes.Host.Channels.SlackBridgeOptions.FromConfiguration(builder.Configurati
 if (Agnes.Host.Channels.DiscordBridgeOptions.FromConfiguration(builder.Configuration) is { } discordOptions)
 {
     builder.Services.AddSingleton<IChannelBridge>(sp => new Agnes.Host.Channels.DiscordBridge(
-        new HttpClient(), discordOptions,
+        new HttpClient(), discordOptions, sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.DiscordBridge>()));
 }
 

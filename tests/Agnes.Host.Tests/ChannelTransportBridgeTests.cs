@@ -6,14 +6,15 @@ using System.Text.Json;
 using Agnes.Abstractions;
 using Agnes.Host.Channels;
 using Microsoft.Extensions.Configuration;
+using NSec.Cryptography;
 
 namespace Agnes.Host.Tests;
 
 /// <summary>
 /// The three REAL channel-bridge transports (extensibility/04): Slack, Discord, WhatsApp. Everything is offline
 /// — outbound requests hit a stub <see cref="HttpMessageHandler"/> (no network), and inbound signature
-/// verification is exercised as the pure BCL-crypto function it is. Discord's inbound Ed25519 path is deferred
-/// (no standalone Ed25519 in the .NET 10 BCL), so only its outbound + deferral seam are asserted here.
+/// verification is exercised as the pure crypto function it is. Discord's inbound Ed25519 path is verified with
+/// NSec/libsodium; its tests generate a throwaway keypair and sign locally (no network, no fixtures).
 /// </summary>
 public sealed class ChannelTransportBridgeTests
 {
@@ -157,22 +158,123 @@ public sealed class ChannelTransportBridgeTests
         Assert.Equal("deploy?", json.RootElement.GetProperty("content").GetString());
     }
 
-    // Discord inbound uses an Ed25519 interaction signature. .NET 10's BCL has no standalone Ed25519 verify
-    // primitive, and repo policy forbids hand-rolled curve math / obscure third-party crypto — so inbound
-    // verification is DEFERRED behind a seam that refuses every request rather than trust an unverifiable one.
-    [Fact]
-    public async Task Discord_inbound_is_deferred_and_refuses_until_bcl_ed25519_is_available()
+    /// <summary>A throwaway Ed25519 keypair for offline signing: returns the app public key (hex) plus a signer
+    /// that produces the hex <c>X-Signature-Ed25519</c> over <c>timestamp + body</c>, exactly as Discord does.</summary>
+    private static (string PublicKeyHex, Func<string, string, string> Sign) NewDiscordKeypair()
     {
-        var bridge = new DiscordBridge(new HttpClient(new CapturingHandler()), new DiscordBridgeOptions("bot", "pubkey"));
-        var result = await bridge.HandleWebhookAsync("{\"type\":1}", "12345", " signature ");
-        Assert.Equal(ChannelWebhookStatus.Unauthorized, result.Status);
+        var key = Key.Create(SignatureAlgorithm.Ed25519);
+        var publicKeyHex = Convert.ToHexStringLower(key.PublicKey.Export(KeyBlobFormat.RawPublicKey));
+        string Sign(string timestamp, string body)
+            => Convert.ToHexStringLower(SignatureAlgorithm.Ed25519.Sign(key, Encoding.UTF8.GetBytes(timestamp + body)));
+        return (publicKeyHex, Sign);
     }
 
-    [Fact(Skip = "Discord inbound Ed25519 verification (PING->PONG, interaction->inbound) deferred: no standalone Ed25519 in the .NET 10 BCL.")]
-    public void Discord_ping_responds_pong()
+    private static string Now()
+        => DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    [Fact]
+    public async Task Discord_signed_ping_responds_pong()
     {
-        // Re-enable once a first-party/BCL Ed25519 verify is available; the parse + PONG + inbound mapping slot
-        // behind the existing DiscordBridge.HandleWebhookAsync seam without an interface change.
+        var (publicKey, sign) = NewDiscordKeypair();
+        var bridge = new DiscordBridge(new HttpClient(new CapturingHandler()), new DiscordBridgeOptions("bot", publicKey));
+        var raised = false;
+        bridge.OnInboundMessage += _ => { raised = true; return Task.CompletedTask; };
+
+        var ts = Now();
+        const string body = "{\"type\":1}";
+        var result = await bridge.HandleWebhookAsync(body, ts, sign(ts, body));
+
+        Assert.Equal(ChannelWebhookStatus.Ok, result.Status);
+        using var json = JsonDocument.Parse(result.Body!);
+        Assert.Equal(1, json.RootElement.GetProperty("type").GetInt32()); // PONG
+        Assert.False(raised); // a PING is a handshake, not an inbound message.
+    }
+
+    [Fact]
+    public async Task Discord_signed_command_interaction_raises_inbound_with_channel_and_text()
+    {
+        var (publicKey, sign) = NewDiscordKeypair();
+        var bridge = new DiscordBridge(new HttpClient(new CapturingHandler()), new DiscordBridgeOptions("bot", publicKey));
+        InboundChannelMessage? received = null;
+        bridge.OnInboundMessage += m => { received = m; return Task.CompletedTask; };
+
+        var ts = Now();
+        // An application-command interaction carrying a free-text reply option.
+        const string body = "{\"type\":2,\"channel_id\":\"C777\",\"data\":{\"name\":\"agnes\",\"options\":[{\"name\":\"reply\",\"value\":\"allow\"}]}}";
+        var result = await bridge.HandleWebhookAsync(body, ts, sign(ts, body));
+
+        Assert.Equal(ChannelWebhookStatus.Ok, result.Status);
+        Assert.NotNull(received);
+        Assert.Equal("discord", received!.BridgeId);
+        Assert.Equal("C777", received.ExternalChatId);
+        Assert.Equal("allow", received.Text);
+    }
+
+    [Fact]
+    public async Task Discord_message_component_interaction_uses_custom_id_as_text()
+    {
+        var (publicKey, sign) = NewDiscordKeypair();
+        var bridge = new DiscordBridge(new HttpClient(new CapturingHandler()), new DiscordBridgeOptions("bot", publicKey));
+        InboundChannelMessage? received = null;
+        bridge.OnInboundMessage += m => { received = m; return Task.CompletedTask; };
+
+        var ts = Now();
+        // A button click (type 3) carries its decision in custom_id, not options.
+        const string body = "{\"type\":3,\"channel_id\":\"C9\",\"data\":{\"custom_id\":\"deny\"}}";
+        var result = await bridge.HandleWebhookAsync(body, ts, sign(ts, body));
+
+        Assert.Equal(ChannelWebhookStatus.Ok, result.Status);
+        Assert.Equal("C9", received!.ExternalChatId);
+        Assert.Equal("deny", received.Text);
+    }
+
+    [Fact]
+    public void Discord_signature_accepts_correct_and_rejects_tampered_wrong_key_and_stale()
+    {
+        var (publicKey, sign) = NewDiscordKeypair();
+        var (otherKey, _) = NewDiscordKeypair();
+        var now = DateTimeOffset.UtcNow;
+        var ts = now.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        const string body = "{\"type\":1}";
+        var good = sign(ts, body);
+
+        Assert.True(DiscordBridge.VerifySignature(publicKey, ts, body, good, now));
+        Assert.False(DiscordBridge.VerifySignature(publicKey, ts, body + "x", good, now));   // tampered body
+        Assert.False(DiscordBridge.VerifySignature(otherKey, ts, body, good, now));          // wrong public key
+        Assert.False(DiscordBridge.VerifySignature(publicKey, ts, body, good, now.AddMinutes(6))); // stale
+        Assert.False(DiscordBridge.VerifySignature(publicKey, "", body, good, now));         // missing timestamp
+        Assert.False(DiscordBridge.VerifySignature(publicKey, ts, body, "zznothex", now));   // malformed hex
+        Assert.False(DiscordBridge.VerifySignature("", ts, body, good, now));                // missing public key
+    }
+
+    [Fact]
+    public async Task Discord_inbound_with_bad_signature_is_unauthorized_and_does_not_raise()
+    {
+        var (publicKey, sign) = NewDiscordKeypair();
+        var bridge = new DiscordBridge(new HttpClient(new CapturingHandler()), new DiscordBridgeOptions("bot", publicKey));
+        var raised = false;
+        bridge.OnInboundMessage += _ => { raised = true; return Task.CompletedTask; };
+
+        var ts = Now();
+        const string body = "{\"type\":2,\"channel_id\":\"C1\",\"data\":{\"name\":\"allow\"}}";
+        var good = sign(ts, body);
+
+        // Tampered body (signature was over the original) — the interaction is rejected before any raise.
+        var result = await bridge.HandleWebhookAsync(body + " ", ts, good);
+
+        Assert.Equal(ChannelWebhookStatus.Unauthorized, result.Status);
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public async Task Discord_inbound_with_missing_signature_is_unauthorized()
+    {
+        var (publicKey, _) = NewDiscordKeypair();
+        var bridge = new DiscordBridge(new HttpClient(new CapturingHandler()), new DiscordBridgeOptions("bot", publicKey));
+
+        var result = await bridge.HandleWebhookAsync("{\"type\":1}", Now(), null);
+
+        Assert.Equal(ChannelWebhookStatus.Unauthorized, result.Status);
     }
 
     // ------------------------------------------------------------- WhatsApp ----

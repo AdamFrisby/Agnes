@@ -32,8 +32,8 @@ public static class ChannelBridgeEndpoints
             return ToResult(result);
         });
 
-        // Discord interactions: Ed25519-signed. Inbound is DEFERRED (no BCL Ed25519) — the endpoint is wired but
-        // the bridge refuses every request until verification is available. See DiscordBridge.
+        // Discord interactions: Ed25519-signed (NSec/libsodium). The bridge verifies the signature, answers a PING
+        // with a PONG, and maps command/component interactions to inbound messages. See DiscordBridge.
         app.MapPost("/channels/discord/interactions", async (HttpContext ctx) =>
         {
             if (bridges.Find("discord") is not DiscordBridge discord)

@@ -42,6 +42,11 @@
          Porta.Pty (tomlm/Porta.Pty, MIT) is a maintained fork of Microsoft's vs-pty.net with a native shim for
          .NET 7+; already vetted into the tree transitively via Agnes.App.Desktop. Backs PortaPtyCliFallback. -->
     <PackageReference Include="Porta.Pty" Version="1.0.7" />
+    <!-- Ed25519 verification of Discord interaction webhooks (extensibility/04). NSec.Cryptography (ektrah/nsec,
+         MIT) is a thin, well-maintained managed wrapper over libsodium — the standalone Ed25519 verify primitive
+         the .NET 10 BCL still lacks (it exposes only composite ML-DSA-with-Ed25519). Verification is constant-time
+         by construction; no hand-rolled curve math. Used only by DiscordBridge inbound. -->
+    <PackageReference Include="NSec.Cryptography" Version="24.4.0" />
   </ItemGroup>
 
   <ItemGroup>
