@@ -503,6 +503,16 @@ public sealed partial class SessionDocument : Document, ITraySession
     public bool IsStarting => Stage == TabStage.Starting;
     public bool IsLive => Stage == TabStage.Live;
 
+    /// <summary>Whether the on-demand terminal overlay should show: only over a live session, and only when
+    /// toggled on. A single computed bool (not a XAML MultiBinding) so the host-picker/configure screen is
+    /// never covered — a <c>FallbackValue</c> string in a MultiBinding is filtered by <c>OfType&lt;bool&gt;</c>
+    /// and an all-empty <c>And</c> is vacuously true, which used to leak the panel over the picker.</summary>
+    public bool TerminalPanelVisible => IsLive && Session?.IsTerminalVisible == true;
+
+    /// <summary>Whether the on-demand file-browser overlay should show — same live-and-toggled gate as
+    /// <see cref="TerminalPanelVisible"/>.</summary>
+    public bool FileBrowserPanelVisible => IsLive && Session?.IsFileBrowserVisible == true;
+
     /// <summary>Status bar shows once a host is connected (agent-pick and live stages).</summary>
     public bool ShowStatusBar => Stage != TabStage.PickHost;
 
@@ -513,6 +523,8 @@ public sealed partial class SessionDocument : Document, ITraySession
         OnPropertyChanged(nameof(IsStarting));
         OnPropertyChanged(nameof(IsLive));
         OnPropertyChanged(nameof(ShowStatusBar));
+        OnPropertyChanged(nameof(TerminalPanelVisible));
+        OnPropertyChanged(nameof(FileBrowserPanelVisible));
     }
 
     // ---- agent picking: select (highlight) then Start (open) ----
@@ -658,6 +670,14 @@ public sealed partial class SessionDocument : Document, ITraySession
             else if (e.PropertyName is nameof(SessionViewModel.IsUnread))
             {
                 OnPropertyChanged(nameof(IsUnread));
+            }
+            else if (e.PropertyName is nameof(SessionViewModel.IsTerminalVisible))
+            {
+                OnPropertyChanged(nameof(TerminalPanelVisible));
+            }
+            else if (e.PropertyName is nameof(SessionViewModel.IsFileBrowserVisible))
+            {
+                OnPropertyChanged(nameof(FileBrowserPanelVisible));
             }
             else if (e.PropertyName is nameof(SessionViewModel.Usage)
                 or nameof(SessionViewModel.UsageSummary))

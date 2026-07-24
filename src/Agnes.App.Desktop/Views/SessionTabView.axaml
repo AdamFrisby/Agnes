@@ -2057,32 +2057,23 @@
         </Grid>
 
         <!-- Embedded terminal (platform/03): a bottom-docked, on-demand overlay panel over the LIVE session.
-             Gated on IsLive too: when there's no session yet (host picker / configure), Session is null and a
-             bare Session.IsTerminalVisible binding falls back to the control default (visible) and covers the
-             configure screen — the extra IsLive term keeps it hidden until a session is actually live. -->
+             Gated by TerminalPanelVisible (= IsLive && Session.IsTerminalVisible), a single computed bool on the
+             document — so it's hidden on the host-picker/configure screen where there's no session yet. -->
+
         <Border Grid.Row="1" VerticalAlignment="Bottom" Height="260"
+                IsVisible="{Binding TerminalPanelVisible}"
                 Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
                 BoxShadow="0 -8 24 -12 #60000000">
-            <Border.IsVisible>
-                <MultiBinding Converter="{x:Static conv:BoolConverters.And}">
-                    <Binding Path="IsLive" />
-                    <Binding Path="Session.IsTerminalVisible" FallbackValue="False" />
-                </MultiBinding>
-            </Border.IsVisible>
             <views:TerminalPanelView DataContext="{Binding Session.Terminal}" />
         </Border>
 
         <!-- Workspace file browser (git-and-files/03): a right-docked, on-demand overlay panel over the LIVE
-             session. Same IsLive gate as the terminal (see above) so it never covers the configure screen. -->
+             session. Same computed gate as the terminal (FileBrowserPanelVisible) so it never covers the
+             configure screen. -->
         <Border Grid.Row="1" HorizontalAlignment="Right" Width="520"
+                IsVisible="{Binding FileBrowserPanelVisible}"
                 Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0"
                 BoxShadow="-8 0 24 -12 #60000000">
-            <Border.IsVisible>
-                <MultiBinding Converter="{x:Static conv:BoolConverters.And}">
-                    <Binding Path="IsLive" />
-                    <Binding Path="Session.IsFileBrowserVisible" FallbackValue="False" />
-                </MultiBinding>
-            </Border.IsVisible>
             <views:FileBrowserView DataContext="{Binding Session.FileBrowser}" />
         </Border>
 
