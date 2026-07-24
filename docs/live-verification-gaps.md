@@ -65,6 +65,24 @@ Nothing here is a missing feature — it's the "plug in the real thing and confi
   `Agnes.Host.Tests` — `PostgresEventStoreTests.Postgres_satisfies_the_event_store_contract` exercises the real
   round-trip.
 
+## 7. OIDC interactive redirect — real IdP (`security/02`)
+- **Built & offline-tested:** the interactive OIDC authorization-code + PKCE redirect flow
+  (`OidcRedirectFlow`, endpoints `GET /auth/oidc/start` + `GET /auth/oidc/callback`). Generates a PKCE
+  verifier/challenge (S256) + CSRF `state` + replay `nonce`, resolves the authorize/token endpoints via OIDC
+  discovery (or explicit config), exchanges the code at the token endpoint, then **reuses the existing
+  `OidcIdentity` validation core** (JWKS/iss/aud/exp) + a nonce check and mints the same per-device token as
+  the other mechanisms. `OidcRedirectFlowTests` stubs the IdP discovery/token endpoints via an
+  `HttpMessageHandler` and signs the id_token with a test RSA key whose JWKS the validator holds — covering
+  PKCE correctness, the happy path (token issued), CSRF (unknown/expired/replayed state), nonce mismatch, a
+  rejected id_token, and discovery-vs-explicit endpoint resolution.
+- **Not verified (needs a real IdP):** an end-to-end browser round-trip against a live issuer (Keycloak,
+  Auth0, Okta, Azure AD, Google Workspace) — the real authorize consent screen, code redemption, and an
+  id_token signed by the issuer's live keys.
+- **To test:** stand up a throwaway Keycloak/Auth0 realm, register a client (client id + redirect
+  `{host}/auth/oidc/callback`), set `Agnes:Auth:Oidc:{Enabled,Issuer,Audience,ClientId,ClientSecret?,RedirectUri}`
+  (JWKS via discovery or `JwksUri`), open `GET /auth/oidc/start` in a browser, and confirm the callback mints a
+  device token.
+
 ## Capability-gated (waiting on the coding CLIs, not on us)
 - **sessions/04 subagent control** — routing a message to / stopping a *specific* subagent needs the
   CLI's own protocol to expose subagent addressing. The roster ships read-only with disabled controls

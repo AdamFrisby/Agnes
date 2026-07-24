@@ -1,3 +1,4 @@
+using Agnes.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -33,12 +34,48 @@ public sealed record OidcOptions
     /// <summary>Human-friendly label shown to clients (e.g. "Okta", "Azure AD").</summary>
     public string DisplayName { get; init; } = "OIDC";
 
+    // ---- Interactive authorization-code (PKCE) redirect flow (see .ideas/security/02-enterprise-auth.md).
+    // These are only needed for the browser-based "Sign in with <IdP>" flow; the token-validation core
+    // (exchange endpoint) works with just Issuer/Audience/JWKS above.
+
+    /// <summary>The OAuth client id registered with the issuer for this Agnes host. Required for the redirect
+    /// flow; public (safe to advertise), never a secret.</summary>
+    public string? ClientId { get; init; }
+
+    /// <summary>The client secret, for confidential clients. Omitted for public clients, which authenticate
+    /// the token exchange with PKCE alone. Never advertised or logged.</summary>
+    public string? ClientSecret { get; init; }
+
+    /// <summary>The redirect URI registered with the issuer — the host's own callback
+    /// (<c>{baseUrl}/auth/oidc/callback</c>). The issuer sends the authorization code here.</summary>
+    public string? RedirectUri { get; init; }
+
+    /// <summary>Space-separated OAuth scopes to request. <c>openid</c> is always required for an id_token;
+    /// defaults to a typical <c>openid profile email</c>.</summary>
+    public string Scopes { get; init; } = "openid profile email";
+
+    /// <summary>Explicit authorization endpoint, overriding OIDC discovery. Optional — discovery
+    /// (<c>{Issuer}/.well-known/openid-configuration</c>) resolves it when unset.</summary>
+    public string? AuthorizationEndpoint { get; init; }
+
+    /// <summary>Explicit token endpoint, overriding OIDC discovery. Optional — discovery resolves it when
+    /// unset.</summary>
+    public string? TokenEndpoint { get; init; }
+
     /// <summary>Enabled and configured with everything needed to validate a token (fail-closed: an enabled
     /// but incompletely configured issuer is treated as unusable rather than accepting anything).</summary>
     public bool IsUsable => Enabled
         && !string.IsNullOrWhiteSpace(Issuer)
         && !string.IsNullOrWhiteSpace(Audience)
         && (!string.IsNullOrWhiteSpace(JwksJson) || !string.IsNullOrWhiteSpace(JwksUri));
+
+    /// <summary>The interactive authorization-code redirect flow is usable: the validation core is usable
+    /// (so the returned id_token can be verified) and a client id + redirect URI are configured. The
+    /// authorize/token endpoints resolve via discovery from <see cref="Issuer"/> when not set explicitly, so
+    /// they aren't required here. Fail-closed like <see cref="IsUsable"/>.</summary>
+    public bool RedirectConfigured => IsUsable
+        && !string.IsNullOrWhiteSpace(ClientId)
+        && !string.IsNullOrWhiteSpace(RedirectUri);
 }
 
 /// <summary>Outcome of validating an OIDC token: accepted (with a subject) or rejected (with a reason).</summary>
@@ -179,12 +216,32 @@ public sealed class OidcAuthMethodProvider(OidcIdentity oidc) : IAuthMethodProvi
     public string MethodId => "oidc";
     public string DisplayName => string.IsNullOrWhiteSpace(oidc.Options.DisplayName) ? "OIDC" : oidc.Options.DisplayName;
     public bool IsEnabled => oidc.Options.IsUsable;
-    public IReadOnlyDictionary<string, string> ClientMetadata =>
-        oidc.Options.IsUsable
-            ? new Dictionary<string, string>
+    public IReadOnlyDictionary<string, string> ClientMetadata
+    {
+        get
+        {
+            if (!oidc.Options.IsUsable)
+            {
+                return new Dictionary<string, string>();
+            }
+
+            var metadata = new Dictionary<string, string>
             {
                 ["issuer"] = oidc.Options.Issuer!,
                 ["audience"] = oidc.Options.Audience!,
+            };
+
+            // When the interactive authorization-code redirect is configured, advertise its start path so a
+            // client can offer "Sign in with <IdP>" (open a browser) rather than only the token-exchange path.
+            if (oidc.Options.RedirectConfigured)
+            {
+                metadata["startPath"] = "/auth/oidc/start";
             }
-            : new Dictionary<string, string>();
+
+            return metadata;
+        }
+    }
+
+    // Adding a human-facing device by signing in against the org's IdP — the "add this device" bucket.
+    public AuthFlowKind Kind => AuthFlowKind.NewDevice;
 }
