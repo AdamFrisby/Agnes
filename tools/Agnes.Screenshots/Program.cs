@@ -3,6 +3,7 @@ using Agnes.App.Desktop.Persistence;
 using Agnes.App.Desktop.ViewModels;
 using Agnes.Client;
 using Agnes.Client.Simulation;
+using Agnes.Ui.Core.Onboarding;
 using Agnes.Ui.Core.Transcript;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -41,12 +42,14 @@ public static class Program
         var store = new SessionStateStore(statePath);
         var recordingsDir = Path.Combine(Directory.GetCurrentDirectory(), "recordings");
 
-        var vm = new MainWindowViewModel(NewConnector(recordingsDir), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
+        var vm = new MainWindowViewModel(NewConnector(recordingsDir), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath),
+            onboarding: SuppressedOnboarding());
         var window = new MainWindow { DataContext = vm };
         window.Show();
         MainWindowViewModel.ApplyTheme("Dark"); // pin dark for the canonical shots (a light one is captured too)
         vm.Notifier = new AvaloniaNotifier(window); // in-app toasts for blockers/completions
         vm.WindowActive = false; // simulate a background window so completion toasts also show
+        vm.Showcase.Dismiss(); // record this version so the first-run feature showcase doesn't auto-open
         vm.RestoreAsync(); // empty → one fresh host-picker tab; also enables persistence
         Settle(300);
 
@@ -304,9 +307,11 @@ public static class Program
         }
 
         // 8) Auto-reconnect on relaunch: a fresh instance restoring the saved tabs
-        var vm2 = new MainWindowViewModel(NewConnector(recordingsDir), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath));
+        var vm2 = new MainWindowViewModel(NewConnector(recordingsDir), new AvaloniaDispatcher(), store, new HostRegistryStore(hostsPath),
+            onboarding: SuppressedOnboarding());
         var window2 = new MainWindow { DataContext = vm2 };
         window2.Show();
+        vm2.Showcase.Dismiss();
         vm2.RestoreAsync();
         Pump(() => Tabs(vm2).Any() && Tabs(vm2).All(d => d.Session is not null));
         Capture(window2, "08-restore-on-relaunch.png");
@@ -314,6 +319,11 @@ public static class Program
 
     private static IAgnesConnector NewConnector(string recordingsDir)
         => new RoutingConnector(recordingsDir, recordingSpeed: 8.0);
+
+    // The screenshot harness is not a first run — suppress the setup wizard so it doesn't cover the shots.
+    // (The showcase is separately quieted by Showcase.Dismiss() after construction, which records the version.)
+    private static IOnboardingStore SuppressedOnboarding()
+        => new InMemoryOnboardingStore(new OnboardingState(WizardCompleted: true));
 
     // ---- driving through the real public model ----
 

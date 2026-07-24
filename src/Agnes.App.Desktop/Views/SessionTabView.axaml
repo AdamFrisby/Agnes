@@ -3,6 +3,7 @@
              xmlns:tr="using:Agnes.Ui.Core.Transcript"
              xmlns:vm="using:Agnes.Ui.Core.ViewModels"
              xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:ctb="using:ColorTextBlock.Avalonia"
              xmlns:appconv="using:Agnes.App.Desktop.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
              xmlns:views="using:Agnes.App.Desktop.Views"
@@ -1326,7 +1327,22 @@
                                                 </Grid>
                                                 <!-- Full message rendered as selectable Markdown; thoughts stay plain italic. -->
                                                 <mdxaml:MarkdownScrollViewer Markdown="{Binding Text}" IsVisible="{Binding !IsThought}"
-                                                                             SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True" />
+                                                                             SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True">
+                                                    <mdxaml:MarkdownScrollViewer.Styles>
+                                                        <!-- Override the built-in Markdown theme's DarkBlue-on-LightGray inline
+                                                             `code` (matching its selector's specificity) with a mono, theme-matched chip. -->
+                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CCode">
+                                                            <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+                                                            <Setter Property="MonospaceFontFamily" Value="{StaticResource MonoFont}" />
+                                                            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+                                                            <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+                                                            <Setter Property="BorderThickness" Value="1" />
+                                                            <Setter Property="CornerRadius" Value="4" />
+                                                            <Setter Property="Padding" Value="4,1" />
+                                                        </Style>
+                                                    </mdxaml:MarkdownScrollViewer.Styles>
+                                                </mdxaml:MarkdownScrollViewer>
                                                 <SelectableTextBlock Text="{Binding Text}" Classes="thought" IsVisible="{Binding IsThought}"
                                                                      TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                             </StackPanel>
@@ -1997,7 +2013,23 @@
                             <!-- Markdown preview (chat messages: tables, code, lists, …) -->
                             <mdxaml:MarkdownScrollViewer Grid.Row="1" Padding="16" Markdown="{Binding SelectedPreview.Body}"
                                                          IsVisible="{Binding SelectedPreview.IsMarkdown}"
-                                                         SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True" />
+                                                         SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True">
+                                <mdxaml:MarkdownScrollViewer.Styles>
+                                    <!-- The built-in Markdown 'Standard' theme styles inline code with
+                                         DarkBlue-on-LightGray via '.Markdown_Avalonia_MarkdownViewer CCode';
+                                         match that specificity to override it with a mono, theme-matched chip. -->
+                                    <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CCode">
+                                        <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+                                        <Setter Property="MonospaceFontFamily" Value="{StaticResource MonoFont}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+                                        <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Setter Property="CornerRadius" Value="4" />
+                                        <Setter Property="Padding" Value="4,1" />
+                                    </Style>
+                                </mdxaml:MarkdownScrollViewer.Styles>
+                            </mdxaml:MarkdownScrollViewer>
 
                             <!-- Plain, verbatim text preview (tool output, logs) -->
                             <ScrollViewer Grid.Row="1" Padding="16" VerticalScrollBarVisibility="Auto"
