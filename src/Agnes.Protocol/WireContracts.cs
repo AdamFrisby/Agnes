@@ -233,6 +233,33 @@ public sealed record ProjectDto(
     ProjectDefaultsDto Defaults,
     string? Repo = null);
 
+/// <summary>
+/// One host's on-disk checkout of a workspace as the client sees it (multi-machine workspace model,
+/// <c>connectivity/05</c>). Carries the <see cref="RepositoryUrl"/> so the client can group checkouts across
+/// hosts into a single logical <c>Workspace</c> by normalizing it, plus the host's own <see cref="WorkspaceId"/>
+/// tag and the live <see cref="Branch"/>. No host id: the client tags each with the host it was read from
+/// (a checkout id is only unique within a host), the same way the cross-host session aggregate does.
+/// </summary>
+public sealed record CheckoutDto(
+    string Id,
+    string WorkspaceId,
+    string RepositoryUrl,
+    string DisplayName,
+    string Path,
+    string? Branch,
+    bool IsWorktree);
+
+/// <summary>
+/// Asks a host to create a new checkout of <see cref="RepositoryUrl"/> at <see cref="Path"/>. When
+/// <see cref="UseWorktreeOfExisting"/> is set and the host already has a (full-clone) checkout of the same
+/// repository, the new checkout is added as a git worktree of that clone instead of a second full clone.
+/// </summary>
+public sealed record CreateCheckoutRequest(string RepositoryUrl, string Path, string? Branch = null, bool UseWorktreeOfExisting = false);
+
+/// <summary>Result of a checkout create/clean-up: success plus the resulting <see cref="Checkout"/> (on
+/// create) or a clear message (e.g. the uncommitted-work refusal that blocks a non-forced clean-up).</summary>
+public sealed record CheckoutOperationResult(bool Success, CheckoutDto? Checkout, string Message);
+
 /// <summary>A device paired with a host (metadata only — never the token).</summary>
 public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt, string? Subject = null);
 

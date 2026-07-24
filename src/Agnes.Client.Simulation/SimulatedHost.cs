@@ -315,6 +315,38 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.CompletedTask;
     }
 
+    // Checkouts (multi-machine workspace model, connectivity/05): an in-memory list so the cross-host
+    // Workspace aggregation is demoable + testable offline. Seed with SeedCheckout(...) to give this
+    // simulated host a working copy of a repository.
+    private readonly List<CheckoutDto> _checkouts = [];
+
+    /// <summary>Seeds a checkout on this simulated host, returning it (for the offline Workspace aggregation).</summary>
+    public CheckoutDto SeedCheckout(string repositoryUrl, string path, string? branch = null, bool isWorktree = false)
+    {
+        var dto = new CheckoutDto(
+            Guid.NewGuid().ToString("n"),
+            WorkspaceIdentity.Normalize(repositoryUrl),
+            repositoryUrl,
+            WorkspaceIdentity.DisplayName(repositoryUrl),
+            path,
+            branch,
+            isWorktree);
+        lock (_checkouts)
+        {
+            _checkouts.Add(dto);
+        }
+
+        return dto;
+    }
+
+    public Task<IReadOnlyList<CheckoutDto>> ListCheckoutsAsync()
+    {
+        lock (_checkouts)
+        {
+            return Task.FromResult<IReadOnlyList<CheckoutDto>>(_checkouts.ToArray());
+        }
+    }
+
     private readonly List<ScheduledTask> _scheduled = [];
     private readonly List<InboxRun> _inbox =
     [

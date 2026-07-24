@@ -218,6 +218,25 @@ public interface IAgnesServer
     /// <summary>Removes a review comment by id.</summary>
     Task RemoveReviewComment(string id);
 
+    // ---- multi-machine workspace model (see .ideas/connectivity/05-multi-machine-workspace-model.md) ----
+    // A host's on-disk checkouts (clones/worktrees) and their lifecycle, scoped to this host. The client
+    // unions these across hosts into logical Workspaces.
+
+    /// <summary>This host's checkouts (each with its live branch), for the client's cross-host workspace view.</summary>
+    Task<IReadOnlyList<CheckoutDto>> ListCheckouts();
+
+    /// <summary>Creates a checkout on this host: a fresh clone, or a git worktree of an existing clone of the
+    /// same repository when requested. Reuses the deep-git clone/worktree primitives.</summary>
+    Task<CheckoutOperationResult> CreateCheckout(CreateCheckoutRequest request);
+
+    /// <summary>Switches a checkout's branch (carrying uncommitted work across as a stash), reusing the
+    /// deep-git branch-switch primitive.</summary>
+    Task<GitSwitchResult> SwitchCheckoutBranch(string checkoutId, string branch);
+
+    /// <summary>Removes a checkout (clone or worktree). Refuses (unless <paramref name="force"/>) when the
+    /// checkout has uncommitted work, naming it, so nothing is silently discarded.</summary>
+    Task<CheckoutOperationResult> CleanUpCheckout(string checkoutId, bool force);
+
     /// <summary>Materializes an uploaded attachment to a gitignored dir in the session's workspace and
     /// returns the workspace-relative path to reference in a prompt (never inline binary).</summary>
     Task<string> UploadAttachment(string sessionId, string fileName, byte[] data);

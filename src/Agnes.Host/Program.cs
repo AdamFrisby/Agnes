@@ -221,6 +221,19 @@ var projectsFile = builder.Configuration["Agnes:ProjectsFile"]
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ProjectStore(
     projectsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ProjectStore>()));
 
+// ---- checkouts: this host's on-disk clones/worktrees + their lifecycle (multi-machine workspace model,
+//      connectivity/05). A separate store from projects (working copies vs. per-repo session config); the
+//      manager reuses GitService's clone/worktree/branch/status primitives rather than reinventing git. ----
+var checkoutsFile = builder.Configuration["Agnes:CheckoutsFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "checkouts.json");
+builder.Services.AddSingleton<Agnes.Host.Git.GitService>();
+builder.Services.AddSingleton(sp => new Agnes.Host.Projects.CheckoutStore(
+    checkoutsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.CheckoutStore>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Git.CheckoutManager(
+    sp.GetRequiredService<Agnes.Host.Git.GitService>(),
+    sp.GetRequiredService<Agnes.Host.Projects.CheckoutStore>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Git.CheckoutManager>()));
+
 // ---- review comments: file+line feedback anchored to a project, durable across sessions ----
 var reviewCommentsFile = builder.Configuration["Agnes:ReviewCommentsFile"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "review-comments.json");

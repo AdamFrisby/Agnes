@@ -261,6 +261,20 @@ public sealed class HostConnection : IAgnesHost
     public Task RemoveReviewCommentAsync(string id)
         => _hub.InvokeAsync(nameof(IAgnesServer.RemoveReviewComment), id);
 
+    // ---- multi-machine workspace model (connectivity/05) ----
+
+    public Task<IReadOnlyList<CheckoutDto>> ListCheckoutsAsync()
+        => _hub.InvokeAsync<IReadOnlyList<CheckoutDto>>(nameof(IAgnesServer.ListCheckouts));
+
+    public Task<CheckoutOperationResult> CreateCheckoutAsync(CreateCheckoutRequest request)
+        => _hub.InvokeAsync<CheckoutOperationResult>(nameof(IAgnesServer.CreateCheckout), request);
+
+    public Task<GitSwitchResult> SwitchCheckoutBranchAsync(string checkoutId, string branch)
+        => _hub.InvokeAsync<GitSwitchResult>(nameof(IAgnesServer.SwitchCheckoutBranch), checkoutId, branch);
+
+    public Task<CheckoutOperationResult> CleanUpCheckoutAsync(string checkoutId, bool force)
+        => _hub.InvokeAsync<CheckoutOperationResult>(nameof(IAgnesServer.CleanUpCheckout), checkoutId, force);
+
     public Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data)
         => _hub.InvokeAsync<string>(nameof(IAgnesServer.UploadAttachment), sessionId, fileName, data);
 

@@ -266,6 +266,27 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Removes a review comment by id.</summary>
     Task RemoveReviewCommentAsync(string id) => Task.CompletedTask;
 
+    // ---- multi-machine workspace model (see .ideas/connectivity/05-multi-machine-workspace-model.md) ----
+    // This host's on-disk checkouts + their lifecycle. Defaulted so hosts/fixtures that predate the feature
+    // report no checkouts and refuse writes rather than failing; the client unions ListCheckoutsAsync across
+    // the pool into logical Workspaces (see WorkspaceRegistry).
+
+    /// <summary>This host's checkouts (each with its live branch). Default empty for hosts without the feature.</summary>
+    Task<IReadOnlyList<CheckoutDto>> ListCheckoutsAsync()
+        => Task.FromResult<IReadOnlyList<CheckoutDto>>([]);
+
+    /// <summary>Creates a checkout on this host (clone, or worktree of an existing clone). Default unsupported.</summary>
+    Task<CheckoutOperationResult> CreateCheckoutAsync(CreateCheckoutRequest request)
+        => Task.FromResult(new CheckoutOperationResult(false, null, "This host does not support checkouts."));
+
+    /// <summary>Switches a checkout's branch. Default unsupported.</summary>
+    Task<GitSwitchResult> SwitchCheckoutBranchAsync(string checkoutId, string branch)
+        => Task.FromResult(new GitSwitchResult(false, false, null, "This host does not support checkouts."));
+
+    /// <summary>Removes a checkout, refusing uncommitted work unless forced. Default unsupported.</summary>
+    Task<CheckoutOperationResult> CleanUpCheckoutAsync(string checkoutId, bool force)
+        => Task.FromResult(new CheckoutOperationResult(false, null, "This host does not support checkouts."));
+
     /// <summary>Uploads an attachment's bytes; the host materializes it into the workspace and returns the
     /// workspace-relative path to reference in a prompt.</summary>
     Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data);

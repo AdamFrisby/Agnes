@@ -19,6 +19,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly PluginManagementService _plugins;
     private readonly ClientCapabilityStore _clientCaps;
     private readonly ReviewCommentStore _reviewComments;
+    private readonly Git.CheckoutManager _checkouts;
     private readonly IPluginRegistry<IMemoryIndexProvider> _memoryIndexes;
     private readonly BugReportRouter _bugReports;
     private readonly PromptLibrary _prompts;
@@ -36,8 +37,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly Sharing.PublicLinkStore _publicLinks;
     private readonly Sharing.PublicViewerTracker _publicViewers;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.FriendService friends, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.FriendService friends, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers, Git.CheckoutManager checkouts)
     {
+        _checkouts = checkouts;
         _friends = friends;
         _sharing = sharing;
         _access = access;
@@ -299,6 +301,20 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _reviewComments.Remove(id);
         return Task.CompletedTask;
     }
+
+    // ---- multi-machine workspace model (connectivity/05): this host's checkout lifecycle ----
+
+    public Task<IReadOnlyList<CheckoutDto>> ListCheckouts()
+        => _checkouts.ListAsync(Context.ConnectionAborted);
+
+    public Task<CheckoutOperationResult> CreateCheckout(CreateCheckoutRequest request)
+        => _checkouts.CreateCheckoutAsync(request.RepositoryUrl, request.Path, request.Branch, request.UseWorktreeOfExisting, Context.ConnectionAborted);
+
+    public Task<GitSwitchResult> SwitchCheckoutBranch(string checkoutId, string branch)
+        => _checkouts.SwitchCheckoutBranchAsync(checkoutId, branch, Context.ConnectionAborted);
+
+    public Task<CheckoutOperationResult> CleanUpCheckout(string checkoutId, bool force)
+        => _checkouts.CleanUpCheckoutAsync(checkoutId, force, Context.ConnectionAborted);
 
     public Task<string> UploadAttachment(string sessionId, string fileName, byte[] data)
         => _sessions.UploadAttachmentAsync(sessionId, fileName, data);
