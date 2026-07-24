@@ -1646,13 +1646,15 @@ public sealed class SessionViewModel : ObservableObject
                 // subagent's smaller window/occupancy before the main figure returned).
                 break;
 
-            case UsageReportedEvent u:
+            case UsageReportedEvent u when u.Metrics is { } m:
                 // Merge: each event may carry only some fields (context from a message, cost from the
-                // result), so keep the last real value for any field this event didn't report.
-                if (u.Metrics.ContextUsed is not null) _ctxUsed = u.Metrics.ContextUsed;
-                if (u.Metrics.ContextWindow is not null) _ctxWindow = u.Metrics.ContextWindow;
-                if (u.Metrics.OutputTokens is not null) _outputTokens = u.Metrics.OutputTokens;
-                if (u.Metrics.CostUsd is not null) _costUsd = u.Metrics.CostUsd;
+                // result), so keep the last real value for any field this event didn't report. Metrics can
+                // be null for events persisted before UsageReportedEvent wrapped a UsageMetrics — those
+                // deserialize with no Metrics; skip them rather than NRE (which killed the whole replay).
+                if (m.ContextUsed is not null) _ctxUsed = m.ContextUsed;
+                if (m.ContextWindow is not null) _ctxWindow = m.ContextWindow;
+                if (m.OutputTokens is not null) _outputTokens = m.OutputTokens;
+                if (m.CostUsd is not null) _costUsd = m.CostUsd;
                 Usage = new UsageInfo(_ctxUsed, _ctxWindow, _outputTokens, _costUsd);
                 break;
         }

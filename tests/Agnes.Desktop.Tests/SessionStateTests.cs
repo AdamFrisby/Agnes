@@ -42,6 +42,21 @@ public class SessionStateTests
     }
 
     [Fact]
+    public void Usage_event_with_null_metrics_does_not_crash_replay()
+    {
+        // Events persisted before UsageReportedEvent wrapped a UsageMetrics deserialize with a null Metrics.
+        // Replaying one must not throw (it used to NRE and kill the whole session restore → no backscroll).
+        var host = new FakeHost();
+        var view = Live();
+        var vm = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        view.Apply(Seq(new UsageReportedEvent(null!), 1));
+        view.Apply(Seq(new MessageChunkEvent(MessageRole.Assistant, new TextContent("still here")), 2));
+
+        Assert.Contains(vm.Items.OfType<Agnes.Ui.Core.Transcript.MessageBubbleItem>(), b => b.Text.Contains("still here"));
+    }
+
+    [Fact]
     public void Agent_error_shows_interrupted_and_retry_resends_last_prompt()
     {
         var host = new FakeHost();
