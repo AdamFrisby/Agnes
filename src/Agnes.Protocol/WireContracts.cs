@@ -49,6 +49,13 @@ public sealed record GitHubExchangeRequest(string Token, string DeviceName);
 /// Agnes device token. The OIDC token is verified then discarded.</summary>
 public sealed record OidcExchangeRequest(string Token, string DeviceName);
 
+/// <summary>The start of the interactive OIDC authorization-code (PKCE) redirect flow (from
+/// <c>GET /auth/oidc/start</c>): the client opens <see cref="AuthorizationUrl"/> in a browser and the host
+/// finishes the exchange at its callback. <see cref="State"/> is the opaque CSRF token tying the browser
+/// round-trip to the server-side PKCE verifier; the client needn't act on it (the callback validates it),
+/// but it's surfaced so a client can correlate the flow it started.</summary>
+public sealed record OidcAuthStart(string AuthorizationUrl, string State);
+
 /// <summary>Complete mTLS pairing once a valid client certificate has been presented on the TLS
 /// connection; the certificate is the credential, so the body carries only a device name.</summary>
 public sealed record MtlsPairRequest(string DeviceName);

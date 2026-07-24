@@ -163,9 +163,27 @@ var oidcOptions = new OidcOptions
     JwksJson = builder.Configuration["Agnes:Auth:Oidc:JwksJson"],
     JwksUri = builder.Configuration["Agnes:Auth:Oidc:JwksUri"],
     DisplayName = builder.Configuration["Agnes:Auth:Oidc:DisplayName"] ?? "OIDC",
+    // Interactive authorization-code (PKCE) redirect flow (optional; the exchange path needs none of these).
+    ClientId = builder.Configuration["Agnes:Auth:Oidc:ClientId"],
+    ClientSecret = builder.Configuration["Agnes:Auth:Oidc:ClientSecret"],
+    RedirectUri = builder.Configuration["Agnes:Auth:Oidc:RedirectUri"],
+    Scopes = builder.Configuration["Agnes:Auth:Oidc:Scopes"] ?? "openid profile email",
+    AuthorizationEndpoint = builder.Configuration["Agnes:Auth:Oidc:AuthorizationEndpoint"],
+    TokenEndpoint = builder.Configuration["Agnes:Auth:Oidc:TokenEndpoint"],
 };
 builder.Services.AddSingleton(sp => new OidcIdentity(
     oidcOptions, new HttpClient(), sp.GetRequiredService<ILoggerFactory>().CreateLogger<OidcIdentity>()));
+// The interactive authorization-code + PKCE redirect flow that *obtains* the token the validation core
+// above consumes. Reuses OidcIdentity for verification and DeviceRegistry for minting; holds its short-lived
+// PKCE/nonce state in an in-memory store keyed by the CSRF `state`.
+builder.Services.AddSingleton<IOidcStateStore>(sp => new InMemoryOidcStateStore(TimeProvider.System));
+builder.Services.AddSingleton(sp => new OidcRedirectFlow(
+    sp.GetRequiredService<OidcIdentity>(),
+    sp.GetRequiredService<DeviceRegistry>(),
+    new HttpClient(),
+    sp.GetRequiredService<IOidcStateStore>(),
+    TimeProvider.System,
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<OidcRedirectFlow>()));
 
 // ---- mTLS client-certificate auth (enterprise) — optional; a certificate that chains to the configured
 // CA or matches a pin is the sole credential. Fail-closed the same way as OIDC above. ----
@@ -1150,6 +1168,45 @@ app.MapPost("/auth/oidc/exchange", async (OidcExchangeRequest request, OidcIdent
     return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
 });
 
+// Begin the interactive OIDC authorization-code + PKCE redirect flow: the host generates the PKCE verifier,
+// CSRF state and replay nonce (stashed server-side), and returns the issuer's authorization URL for the
+// client to open in a browser. Public info only — the challenge, not the verifier, leaves the host.
+app.MapGet("/auth/oidc/start", async (string? deviceName, OidcRedirectFlow flow, CancellationToken ct) =>
+{
+    if (!flow.IsConfigured)
+    {
+        return Results.Json(new { error = "OIDC sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    var start = await flow.StartAsync(deviceName, ct);
+    return start is null
+        ? Results.Json(new { error = "Could not reach the issuer to begin sign-in." }, statusCode: StatusCodes.Status502BadGateway)
+        : Results.Ok(start);
+});
+
+// The issuer redirects the browser here with `code` + `state`. Validate the state (CSRF), exchange the code
+// for an id_token at the token endpoint (PKCE verifier + optional secret), validate it (reusing the OIDC
+// validation core, incl. nonce), and mint the same per-device token the other mechanisms produce. Returns an
+// HTML page so the browser tab shows a human-readable result; the device token is embedded for a client that
+// drives the browser to read back, and is shown once.
+app.MapGet("/auth/oidc/callback", async (string? code, string? state, OidcRedirectFlow flow, CancellationToken ct) =>
+{
+    if (!flow.IsConfigured)
+    {
+        return Results.Content(OidcCallbackPage("Sign-in unavailable", "OIDC sign-in is not enabled on this host.", null), "text/html");
+    }
+
+    var result = await flow.HandleCallbackAsync(code, state, ct);
+    if (!result.Ok || result.Pairing is null)
+    {
+        return Results.Content(OidcCallbackPage("Couldn't sign in", result.Reason ?? "The sign-in could not be completed.", null), "text/html");
+    }
+
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(
+        result.Pairing.DeviceId, result.Pairing.DeviceName, "oidc", "oidc:redirect"));
+    return Results.Content(OidcCallbackPage("Signed in ✓", "You can return to Agnes. This device is now paired.", result.Pairing), "text/html");
+});
+
 // mTLS: the client certificate presented on the TLS connection is the credential. Validate it against the
 // configured trust anchor / pin allowlist and mint a device token. (Requires the listener to request a
 // client certificate; when TLS is terminated upstream this endpoint isn't reachable with a cert.)
@@ -1228,6 +1285,24 @@ static bool Authorized(HttpContext ctx, DeviceRegistry reg)
         ? header["Bearer ".Length..]
         : ctx.Request.Query[WireProtocol.TokenParameter].ToString();
     return reg.IsValid(token);
+}
+
+// The human-readable page shown in the browser tab at the end of the OIDC redirect flow. On success the
+// minted device token is embedded as JSON in a hidden element so a client driving an embedded browser can
+// read it back (shown once); it's never placed in a URL or logged.
+static string OidcCallbackPage(string title, string message, PairResponse? pairing)
+{
+    var safeTitle = System.Net.WebUtility.HtmlEncode(title);
+    var safeMessage = System.Net.WebUtility.HtmlEncode(message);
+    var payload = pairing is null
+        ? string.Empty
+        : $"""<script id="agnes-pairing" type="application/json">{System.Text.Json.JsonSerializer.Serialize(pairing)}</script>""";
+    return $"""
+        <!doctype html><html><head><meta charset="utf-8"><title>{safeTitle}</title></head>
+        <body style="font-family:system-ui;padding:2rem">
+        <h2>{safeTitle}</h2><p>{safeMessage}</p>{payload}
+        </body></html>
+        """;
 }
 
 app.MapGet("/devices", (HttpContext ctx) =>
