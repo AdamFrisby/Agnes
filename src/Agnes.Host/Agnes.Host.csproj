@@ -38,6 +38,10 @@
          renewal, does not expose cleanly). All key/CSR crypto is BCL-backed — nothing hand-rolled.
          See .ideas/connectivity/01-relay-and-tunneling.md. -->
     <PackageReference Include="Certes" Version="3.0.4" />
+    <!-- Real host-side pseudo-terminal for the embedded terminal + provider-login CLI-fallback (platform/03).
+         Porta.Pty (tomlm/Porta.Pty, MIT) is a maintained fork of Microsoft's vs-pty.net with a native shim for
+         .NET 7+; already vetted into the tree transitively via Agnes.App.Desktop. Backs PortaPtyCliFallback. -->
+    <PackageReference Include="Porta.Pty" Version="1.0.7" />
   </ItemGroup>
 
   <ItemGroup>

@@ -472,6 +472,9 @@ builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPointMerger>(sp =>
 // ---- broadcast + session manager ----
 builder.Services.AddSingleton<Agnes.Host.Hosting.ClientCapabilityStore>();
 builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
+// The real host-side CLI-fallback: a genuine pseudo-terminal (Porta.Pty) backing the embedded terminal and
+// provider-login flows (platform/03). SessionManager resolves it as its optional ICliFallback.
+builder.Services.AddSingleton<ICliFallback, Agnes.Host.Sessions.PortaPtyCliFallback>();
 builder.Services.AddSingleton<SessionManager>();
 
 // ---- Agnes AS an MCP server (see .ideas/voice/01-voice-assistant.md) ----
