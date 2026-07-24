@@ -24,6 +24,10 @@ public sealed class AgentNode : ObservableObject
     public string Name { get; }
     public bool IsMain { get; }
 
+    /// <summary>Visual indent level in the flattened agent list: the root and its direct subagents sit at
+    /// level 0 (a flat roster in a narrow panel); only deeper nesting indents.</summary>
+    public int Depth { get; set; }
+
     /// <summary>Subagents spawned under this one.</summary>
     public ObservableCollection<AgentNode> Children { get; } = [];
 

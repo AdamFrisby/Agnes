@@ -36,6 +36,18 @@ public sealed class TranscriptBuilder
     public void Apply(SessionEvent @event)
     {
         var agentId = @event.AgentId;
+        var before = Items.Count;
+        ApplyCore(@event, agentId);
+        // Stamp every item this event created with its time (one choke point covers all the cases above),
+        // so the scroll-position hint can show where you are in the conversation.
+        for (var i = before; i < Items.Count; i++)
+        {
+            Items[i].Timestamp = @event.Timestamp;
+        }
+    }
+
+    private void ApplyCore(SessionEvent @event, string? agentId)
+    {
         switch (@event)
         {
             case MessageChunkEvent m:

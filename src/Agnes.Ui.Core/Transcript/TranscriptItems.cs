@@ -12,6 +12,10 @@ public abstract class TranscriptItem : ObservableObject
 
     /// <summary>Which agent produced this item: null for the main agent, else a subagent id.</summary>
     public string? AgentId { get; init; }
+
+    /// <summary>When this item's originating event occurred (stamped by the builder). Drives the
+    /// scroll-position timestamp hint.</summary>
+    public DateTimeOffset Timestamp { get; set; }
 }
 
 /// <summary>A coalesced run of message (or thought) chunks from one speaker.</summary>

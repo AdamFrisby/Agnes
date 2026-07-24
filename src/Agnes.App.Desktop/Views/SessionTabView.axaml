@@ -3,6 +3,7 @@
              xmlns:tr="using:Agnes.Ui.Core.Transcript"
              xmlns:vm="using:Agnes.Ui.Core.ViewModels"
              xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:appconv="using:Agnes.App.Desktop.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
              xmlns:views="using:Agnes.App.Desktop.Views"
              xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
@@ -10,6 +11,10 @@
              Background="{DynamicResource Bg}"
              FontFamily="{StaticResource UiFont}"
              DragDrop.AllowDrop="True">
+
+    <UserControl.Resources>
+        <appconv:IndentConverter x:Key="AgentIndent" Step="16" />
+    </UserControl.Resources>
 
     <UserControl.KeyBindings>
         <KeyBinding Gesture="Ctrl+F" Command="{Binding Session.OpenSearchCommand}" />
@@ -922,27 +927,29 @@
                                                FontWeight="SemiBold" TextWrapping="Wrap" />
                                 </StackPanel>
 
-                                <!-- Agent / subagent tree -->
-                                <StackPanel Spacing="6" IsVisible="{Binding HasSubagents}">
+                                <!-- Agent roster: flattened so the root and its direct subagents share one
+                                     visual level (only deeper nesting indents), styled like Files/Tools rows. -->
+                                <StackPanel Spacing="4" IsVisible="{Binding HasSubagents}">
                                     <TextBlock Text="AGENTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <TreeView ItemsSource="{Binding AgentTree}" Background="Transparent" BorderThickness="0">
-                                        <TreeView.ItemTemplate>
-                                            <TreeDataTemplate DataType="vm:AgentNode" ItemsSource="{Binding Children}">
-                                                <Button Command="{Binding SelectCommand}" HorizontalAlignment="Stretch"
-                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                                                        Padding="2,3" Cursor="Hand" Classes.sel="{Binding IsSelected}">
-                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <ItemsControl ItemsSource="{Binding AgentRows}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="vm:AgentNode">
+                                                <Button Command="{Binding SelectCommand}" Classes.sel="{Binding IsSelected}"
+                                                        Margin="{Binding Depth, Converter={StaticResource AgentIndent}}"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                        Background="Transparent" BorderThickness="0" Padding="6,5" CornerRadius="6" Cursor="Hand">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <TextBlock Text="◆" FontSize="9" VerticalAlignment="Center"
                                                                    Foreground="{DynamicResource Good}" IsVisible="{Binding IsMain}" />
                                                         <TextBlock Text="•" FontSize="12" VerticalAlignment="Center"
                                                                    Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsMain}" />
-                                                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource Fg}"
+                                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
                                                 </Button>
-                                            </TreeDataTemplate>
-                                        </TreeView.ItemTemplate>
-                                    </TreeView>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
 
                                 <!-- Participant roster (sessions/04): the lead + each reported subagent, with a
@@ -1145,22 +1152,38 @@
                                     </ItemsControl>
                                 </StackPanel>
 
-                                <!-- CREDENTIALS: brokered git-credential grants for a sandboxed session -->
+                                <!-- CREDENTIALS: brokered git-credential grants — collapsible, and capped to the
+                                     past hour with "show all" (they pile up in a long-running session). -->
                                 <StackPanel Spacing="4" IsVisible="{Binding HasCredentialUses}">
-                                    <TextBlock Text="CREDENTIALS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <ItemsControl ItemsSource="{Binding CredentialUses}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
-                                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
-                                                    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                                               FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                    <Button Command="{Binding ToggleCredentialsCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding CredentialsExpanded}" />
+                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding !CredentialsExpanded}" />
+                                            <TextBlock Text="CREDENTIALS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <StackPanel Spacing="4" IsVisible="{Binding CredentialsExpanded}">
+                                        <ItemsControl ItemsSource="{Binding VisibleCredentialUses}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
+                                                        <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                                   FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                                   FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <Button Content="{Binding MoreCredentialsLabel}" Command="{Binding ShowAllCredentialsCommand}"
+                                                IsVisible="{Binding HasMoreCredentialUses}" HorizontalAlignment="Left" Cursor="Hand"
+                                                Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
+                                                Padding="6,3" FontSize="11" />
+                                    </StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
@@ -1240,7 +1263,7 @@
                         <ListBox Grid.Row="1" x:Name="Transcript" ItemsSource="{Binding DisplayItems}"
                                  IsVisible="{Binding !IsInspectorOpen}"
                                  Background="Transparent" BorderThickness="0"
-                                 Padding="24,16" HorizontalAlignment="Stretch"
+                                 Padding="24,16,24,48" HorizontalAlignment="Stretch"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
                             <ListBox.ItemsPanel>
@@ -1471,6 +1494,17 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Scroll-position hint: the timestamp of what you're looking at, shown only while
+                             scrolled up from the live tail (toggled in code-behind), so long conversations
+                             aren't disorienting. -->
+                        <Border Grid.Row="1" x:Name="ScrollHint" IsVisible="False" VerticalAlignment="Top"
+                                HorizontalAlignment="Center" Margin="0,10,0,0" ZIndex="5" IsHitTestVisible="False"
+                                Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                CornerRadius="10" Padding="10,3" BoxShadow="0 4 12 -4 #40000000">
+                            <TextBlock x:Name="ScrollHintText" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                       FontFamily="{StaticResource MonoFont}" />
+                        </Border>
+
                         <!-- Thinking indicator: the agent is working even when it hasn't emitted output yet,
                              so there's always a sign it's still going (vs. stopped) — defect #4. -->
                         <Border Grid.Row="1" IsVisible="{Binding IsTurnActive}" VerticalAlignment="Bottom" HorizontalAlignment="Center"
@@ -1509,24 +1543,39 @@
                                                 Padding="8,2" AutomationProperties.Name="Close event log" />
                                     </Grid>
                                 </Border>
-                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="16,8">
-                                    <ItemsControl ItemsSource="{Binding RawEvents}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Grid ColumnDefinitions="44,86,120,*" Margin="0,1">
-                                                    <TextBlock Grid.Column="0" Text="{Binding Sequence}" Foreground="{DynamicResource Gutter}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" TextAlignment="Right" Padding="0,0,8,0" />
-                                                    <TextBlock Grid.Column="1" Text="{Binding Time}" Foreground="{DynamicResource FgFaint}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" />
-                                                    <TextBlock Grid.Column="2" Text="{Binding Kind}" Foreground="{DynamicResource Good}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Grid.Column="3" Text="{Binding Summary}" Foreground="{DynamicResource FgDim}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
+                                <!-- Virtualized: a long session accumulates thousands of rows; a plain
+                                     ItemsControl realized every one and froze the UI. The ListBox brings its
+                                     own (virtualizing) scroll viewer. -->
+                                <ListBox Grid.Row="1" ItemsSource="{Binding RawEvents}" Padding="16,8"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <VirtualizingStackPanel />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.Styles>
+                                        <Style Selector="ListBoxItem">
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="MinHeight" Value="0" />
+                                        </Style>
+                                    </ListBox.Styles>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="44,86,120,*" Margin="0,1">
+                                                <TextBlock Grid.Column="0" Text="{Binding Sequence}" Foreground="{DynamicResource Gutter}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" TextAlignment="Right" Padding="0,0,8,0" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Time}" Foreground="{DynamicResource FgFaint}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Kind}" Foreground="{DynamicResource Good}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="3" Text="{Binding Summary}" Foreground="{DynamicResource FgDim}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </Grid>
                         </Border>
 

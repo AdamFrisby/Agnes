@@ -170,6 +170,19 @@ public partial class SessionTabView : UserControl
         if (_transcriptScroll is not null)
         {
             _transcriptScroll.ScrollChanged += OnTranscriptScrollChanged;
+            // Wheel-up is explicit intent to leave the bottom — release the pin IMMEDIATELY, even mid-stream.
+            // (Relying on scroll deltas alone fails while content streams: the extent grows every frame and
+            // keeps yanking the view back down before an offset-only "user scrolled up" can be detected.)
+            _transcript.AddHandler(InputElement.PointerWheelChangedEvent, OnTranscriptWheel,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        }
+    }
+
+    private void OnTranscriptWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (e.Delta.Y > 0) // scrolling up (wheel away from the user)
+        {
+            _stickToBottom = false;
         }
     }
 
@@ -180,24 +193,83 @@ public partial class SessionTabView : UserControl
             return;
         }
 
-        // Content grew/settled (streaming text, a new row, or the first layout): if we're pinned, follow
-        // it all the way to the true bottom — content keeps growing after the offset was set, which is why
-        // targeting the last item once only got ~75% of the way.
-        if (System.Math.Abs(e.ExtentDelta.Y) > 0.5)
+        var atBottom = sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height) < 24;
+
+        // Re-arm / release the pin from user-driven offset moves. Reaching the bottom always re-arms;
+        // a pure scroll (offset moved, content didn't) away from the bottom releases. Content-driven
+        // growth (ExtentDelta, i.e. our own streaming) must never flip the pin.
+        if (System.Math.Abs(e.OffsetDelta.Y) > 0.5)
         {
-            if (_stickToBottom)
+            if (atBottom)
             {
-                ScrollToEndNow();
+                _stickToBottom = true;
+            }
+            else if (System.Math.Abs(e.ExtentDelta.Y) <= 0.5)
+            {
+                _stickToBottom = false;
             }
         }
-        // The user (or our own pin) moved the offset with no content change: re-evaluate whether we're at
-        // the bottom, so scrolling up releases the pin and scrolling back to the end re-arms it.
-        else if (System.Math.Abs(e.OffsetDelta.Y) > 0.5)
+
+        // Follow streaming/new content to the true bottom only while pinned.
+        if (_stickToBottom && System.Math.Abs(e.ExtentDelta.Y) > 0.5)
         {
-            _stickToBottom = sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height) < 24;
+            ScrollToEndNow();
         }
 
         UpdateStickyHeader();
+        UpdateScrollHint(atBottom);
+    }
+
+    // A floating "you are here" timestamp shown while the user has scrolled up from the bottom, so long
+    // conversations aren't disorienting. Hidden when pinned to the bottom (the live tail).
+    private void UpdateScrollHint(bool atBottom)
+    {
+        var hint = this.FindControl<Border>("ScrollHint");
+        if (hint is null)
+        {
+            return;
+        }
+
+        if (_stickToBottom || atBottom || _transcript is null || _transcriptScroll is null)
+        {
+            hint.IsVisible = false;
+            return;
+        }
+
+        // The topmost item intersecting the viewport = what you're currently looking at.
+        var viewportHeight = _transcriptScroll.Viewport.Height;
+        TranscriptItem? top = null;
+        var topY = double.MaxValue;
+        foreach (var container in _transcript.GetRealizedContainers())
+        {
+            if (container.TranslatePoint(default, _transcriptScroll) is not { } p
+                || container.DataContext is not TranscriptItem item)
+            {
+                continue;
+            }
+
+            if (p.Y + container.Bounds.Height > 0 && p.Y < viewportHeight && p.Y < topY)
+            {
+                topY = p.Y;
+                top = item;
+            }
+        }
+
+        if (top is null || top.Timestamp == default)
+        {
+            hint.IsVisible = false;
+            return;
+        }
+
+        if (this.FindControl<TextBlock>("ScrollHintText") is { } label)
+        {
+            var local = top.Timestamp.ToLocalTime();
+            label.Text = local.Date == System.DateTimeOffset.Now.Date
+                ? local.ToString("HH:mm")
+                : local.ToString("MMM d, HH:mm");
+        }
+
+        hint.IsVisible = true;
     }
 
     private void OnTranscriptItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)

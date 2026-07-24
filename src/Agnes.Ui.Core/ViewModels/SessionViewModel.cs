@@ -103,6 +103,8 @@ public sealed class SessionViewModel : ObservableObject
         ToggleFilesCommand = new RelayCommand(() => FilesExpanded = !FilesExpanded);
         ToggleToolsListCommand = new RelayCommand(() => ToolsListExpanded = !ToolsListExpanded);
         ShowAllToolsCommand = new RelayCommand(() => ShowAllTools = true);
+        ToggleCredentialsCommand = new RelayCommand(() => CredentialsExpanded = !CredentialsExpanded);
+        ShowAllCredentialsCommand = new RelayCommand(() => ShowAllCredentials = true);
         CompactCommand = new RelayCommand(() => SendControl("/compact"));
         ClearContextCommand = new RelayCommand(() => SendControl("/clear"));
         RestartAgentCommand = new RelayCommand(() => { _ = RestartAgentAsync(); });
@@ -112,6 +114,13 @@ public sealed class SessionViewModel : ObservableObject
             OnPropertyChanged(nameof(VisibleToolActivity));
             OnPropertyChanged(nameof(HasMoreTools));
             OnPropertyChanged(nameof(MoreToolsLabel));
+        };
+        // Credentials show only the past hour until "show all"; keep the view + label in sync.
+        CredentialUses.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(VisibleCredentialUses));
+            OnPropertyChanged(nameof(HasMoreCredentialUses));
+            OnPropertyChanged(nameof(MoreCredentialsLabel));
         };
         ToggleInspectorCommand = new RelayCommand(() => IsInspectorOpen = !IsInspectorOpen);
         SetModeCommand = new RelayCommand<SessionMode>(m => { if (m is not null) { _ = SetModeAsync(m); } });
@@ -174,6 +183,7 @@ public sealed class SessionViewModel : ObservableObject
 
         _mainAgentNode = new AgentNode(null, title, isMain: true, SelectAgent) { IsSelected = true };
         AgentTree.Add(_mainAgentNode);
+        RebuildAgentRows();
         Subagents = new SubagentsPanelViewModel(title);
         _transcript.SubagentAdded += AddSubagent;
         // The roster (participant panel) consumes the same SubagentAdded pipeline, de-duped independently.
@@ -447,8 +457,30 @@ public sealed class SessionViewModel : ObservableObject
         var parent = sub.ParentAgentId is { } pid && _agentNodes.TryGetValue(pid, out var p) ? p : _mainAgentNode;
         parent.Children.Add(node);
         _agentNodes[sub.SubagentId] = node;
+        RebuildAgentRows();
         OnPropertyChanged(nameof(HasSubagents));
         RaisePanels();
+    }
+
+    /// <summary>The agent tree flattened into a single roster: the root first, then its direct subagents at
+    /// the same visual level (level 0), and only deeper nesting indented — so a narrow panel isn't mostly
+    /// empty left margin.</summary>
+    public ObservableCollection<AgentNode> AgentRows { get; } = [];
+
+    private void RebuildAgentRows()
+    {
+        AgentRows.Clear();
+        void Walk(AgentNode node, int level)
+        {
+            node.Depth = System.Math.Max(0, level - 1); // root (0) and its direct children (1) → level 0
+            AgentRows.Add(node);
+            foreach (var child in node.Children)
+            {
+                Walk(child, level + 1);
+            }
+        }
+
+        Walk(_mainAgentNode, 0);
     }
 
     private void SelectAgent(string? agentId)
@@ -551,6 +583,8 @@ public sealed class SessionViewModel : ObservableObject
     public System.Windows.Input.ICommand ToggleFilesCommand { get; }
     public System.Windows.Input.ICommand ToggleToolsListCommand { get; }
     public System.Windows.Input.ICommand ShowAllToolsCommand { get; }
+    public System.Windows.Input.ICommand ToggleCredentialsCommand { get; }
+    public System.Windows.Input.ICommand ShowAllCredentialsCommand { get; }
 
     /// <summary>Ask the agent to compact / clear its context. Sent as a control command the agent
     /// interprets (Claude honours /compact and /clear); harmless text otherwise.</summary>
@@ -587,6 +621,39 @@ public sealed class SessionViewModel : ObservableObject
     /// <summary>Audit trail of brokered git-credential grants/denials for this session.</summary>
     public ObservableCollection<CredentialUseEntry> CredentialUses { get; } = [];
     public bool HasCredentialUses => CredentialUses.Count > 0;
+
+    // ---- credentials collapse + "recent (past hour) + show more" (they pile up in a long session) ----
+    private static readonly TimeSpan CredentialRecentWindow = TimeSpan.FromHours(1);
+
+    private bool _credentialsExpanded = true;
+    public bool CredentialsExpanded { get => _credentialsExpanded; set => SetProperty(ref _credentialsExpanded, value); }
+
+    private bool _showAllCredentials;
+    public bool ShowAllCredentials
+    {
+        get => _showAllCredentials;
+        set { if (SetProperty(ref _showAllCredentials, value)) { OnPropertyChanged(nameof(VisibleCredentialUses)); OnPropertyChanged(nameof(HasMoreCredentialUses)); } }
+    }
+
+    /// <summary>The credential grants to show — those from the past hour until "show all"; at least the most
+    /// recent one so the section is never present-but-empty. <see cref="CredentialUses"/> is newest-first.</summary>
+    public IEnumerable<CredentialUseEntry> VisibleCredentialUses
+    {
+        get
+        {
+            if (ShowAllCredentials)
+            {
+                return CredentialUses;
+            }
+
+            var cutoff = DateTimeOffset.Now - CredentialRecentWindow;
+            var recent = CredentialUses.Where(c => c.When >= cutoff).ToList();
+            return recent.Count > 0 ? recent : CredentialUses.Take(1);
+        }
+    }
+
+    public bool HasMoreCredentialUses => !ShowAllCredentials && CredentialUses.Count > VisibleCredentialUses.Count();
+    public string MoreCredentialsLabel => $"Show all {CredentialUses.Count}";
 
     public bool HasSidebarContent => HasAgentTitle || Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents || HasReviewComments;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
@@ -1453,11 +1520,31 @@ public sealed class SessionViewModel : ObservableObject
 
     private void OnEvent(SessionEvent @event) => _dispatcher.Post(() => Apply(@event));
 
+    /// <summary>Upper bound on rows kept in the raw event-log inspector — the tail is what matters, and an
+    /// unbounded list is a slow memory leak in a long-running session (the view virtualizes either way).</summary>
+    private const int RawEventLimit = 5_000;
+
     private void Apply(SessionEvent @event)
     {
         _transcript.Apply(@event);
         UpdateSidebar(@event);
         RawEvents.Add(new RawEventRow(@event));
+        if (RawEvents.Count > RawEventLimit)
+        {
+            RawEvents.RemoveAt(0);
+        }
+
+        // Derive "a turn is in progress" straight from the stream so the working indicator is reliable for
+        // ANY client — not just the one that sent the prompt. Live agent activity (streamed message/thought,
+        // or a tool call still running) means a turn is active; TurnEnded/AgentError below clear it. This is
+        // replay-safe: a completed turn's trailing TurnEnded leaves it false; an in-progress turn (whose
+        // replay ends on activity) leaves it true — fixing the missing pill after a reconnect. A *completed*
+        // tool call is deliberately excluded so a post-turn file-for-review row doesn't reactivate the turn.
+        if (@event is MessageChunkEvent or ThoughtChunkEvent
+            or ToolCallEvent { Status: ToolCallStatus.Pending or ToolCallStatus.InProgress })
+        {
+            IsTurnActive = true;
+        }
 
         switch (@event)
         {
