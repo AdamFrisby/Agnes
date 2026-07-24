@@ -35,3 +35,14 @@ public sealed class InMemoryEventStoreProvider : IEventStoreProvider
 
     public IEventStore Create() => new InMemoryEventStore();
 }
+
+/// <summary>Built-in provider for the optional Postgres event store — selected for a scaled/shared-database
+/// deployment topology (ops/03). Only registered when a Postgres connection string is configured, so the
+/// Npgsql driver is never loaded for a default (SQLite/in-memory) host. The same per-store selection seam could
+/// later give the memory-index (or any other durable store) a Postgres backing without touching core.</summary>
+public sealed class PostgresEventStoreProvider(string connectionString) : IEventStoreProvider
+{
+    public string Name => "postgres";
+
+    public IEventStore Create() => new PostgresEventStore(connectionString);
+}

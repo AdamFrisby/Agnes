@@ -423,14 +423,24 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Sessions.SandboxRegistry(
 
 // ---- event store: selected from a registry of built-in providers (AC13) ----
 // The backends are registered as built-in IEventStoreProvider plugins; the host picks one by name.
-// Default preserves the prior behavior exactly: SQLite when a database path is configured, else in-memory.
+//
+// Deployment topology (ops/03): the store choice IS the topology choice.
+//   * Default / single-node: SQLite (a file on disk) — or in-memory when no database path is set. This is
+//     the right shape for one host = one daemon on one machine: durable, ordered, single-writer, zero
+//     operational overhead. A zero-config deployment behaves exactly as it always has.
+//   * Optional scaled / shared-database: Postgres, selected with Agnes:Storage:EventStore=postgres and a
+//     Agnes:Storage:Postgres:ConnectionString. This lets the event log live in a shared server (e.g. so a
+//     scaled/multi-instance host, or a future relay, can point at one logical store) without any storage
+//     code changing. v1 keeps a single logical store — no sharding.
+//
+// Selection is per-store, so the memory-index (and any other durable store) could later gain a Postgres
+// backing through the same seam without touching core. Name resolution + provider set live in one testable
+// helper (EventStoreSelection) so Program.cs and the tests share a single source of truth.
 var databasePath = builder.Configuration["Agnes:Database"];
-var eventStoreName = builder.Configuration["Agnes:EventStore:Provider"]
-    ?? (string.IsNullOrWhiteSpace(databasePath) ? "in-memory" : "sqlite");
-builder.Services.AddSingleton<IEventStoreProvider>(new InMemoryEventStoreProvider());
-if (!string.IsNullOrWhiteSpace(databasePath))
+var eventStoreName = EventStoreSelection.ResolveName(builder.Configuration);
+foreach (var provider in EventStoreSelection.BuildProviders(builder.Configuration))
 {
-    builder.Services.AddSingleton<IEventStoreProvider>(new SqliteEventStoreProvider(databasePath));
+    builder.Services.AddSingleton(provider);
 }
 builder.Services.AddSingleton<IPluginRegistry<IEventStoreProvider>>(sp =>
     new PluginRegistry<IEventStoreProvider>(sp.GetServices<IEventStoreProvider>(), p => p.Name));

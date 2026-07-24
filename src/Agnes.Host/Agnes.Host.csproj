@@ -38,6 +38,11 @@
          renewal, does not expose cleanly). All key/CSR crypto is BCL-backed — nothing hand-rolled.
          See .ideas/connectivity/01-relay-and-tunneling.md. -->
     <PackageReference Include="Certes" Version="3.0.4" />
+    <!-- Optional Postgres event-store backend for a scaled/shared-database deployment topology (ops/03).
+         Npgsql (npgsql/npgsql, PostgreSQL License) is the standard, widely-used .NET Postgres driver. It is
+         config-gated: PostgresEventStore is only constructed when Agnes:Storage:EventStore=postgres is
+         selected, so this driver is never loaded for the default (SQLite/in-memory) host. -->
+    <PackageReference Include="Npgsql" Version="10.0.3" />
     <!-- Real host-side pseudo-terminal for the embedded terminal + provider-login CLI-fallback (platform/03).
          Porta.Pty (tomlm/Porta.Pty, MIT) is a maintained fork of Microsoft's vs-pty.net with a native shim for
          .NET 7+; already vetted into the tree transitively via Agnes.App.Desktop. Backs PortaPtyCliFallback. -->

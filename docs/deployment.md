@@ -212,5 +212,26 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 | `DevicesFile` | Where paired-device hashes are stored. |
 | `AllowedOrigins` / `AllowAllOrigins` | Cross-origin browser policy. |
 | `Database` | SQLite path for the event log (in-memory if empty). |
+| `Storage:EventStore` | Event-store backend: `sqlite` (default single-node) or `postgres` (optional shared DB). |
+| `Storage:Postgres:ConnectionString` | Npgsql connection string; required when `Storage:EventStore=postgres`. |
 | `ClaudeCode` / `OpenCode` / `ClaudeCodeNative` | Agent launch commands. |
 | `Sandbox:Provider` | `incus` to run agents in per-session VMs (see [sandbox-live-testing.md](sandbox-live-testing.md)). |
+
+## Storage topology (event store)
+
+The event-store backend *is* the deployment topology choice (ops/03). Both backends implement the same
+`IEventStore` contract (append / read-since / snapshot / head, monotonic per-session sequence), so the choice is
+purely operational — no application behavior changes.
+
+- **Single-node (default): SQLite.** With `Database` set to a file path (or in-memory when empty), the event log
+  lives in one file on the host machine. This is the right shape for the standard "one host = one daemon on one
+  machine" deployment: durable, ordered, single-writer, zero operational overhead. A zero-config deployment
+  behaves exactly as it always has — nothing about the default changes.
+- **Scaled / shared database (optional): Postgres.** Set `Storage:EventStore=postgres` and
+  `Storage:Postgres:ConnectionString` to point the event log at a shared Postgres server — e.g. so a
+  scaled/multi-instance host (or, later, a relay) can share one logical store. The Npgsql driver is only loaded
+  when this is selected; SQLite deployments never touch it. v1 keeps a single logical store — there is no
+  sharding.
+
+Selection is per-store: the same seam could later give other durable stores (e.g. the memory-search index) a
+Postgres backing the same way, without changing core storage code.

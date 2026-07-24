@@ -54,6 +54,17 @@ Nothing here is a missing feature — it's the "plug in the real thing and confi
 - *(providers/03 Claude quota needs **no** new credential — it reuses the token
   `ClaudeCredentialProvider` already reads from `~/.claude/.credentials.json`.)*
 
+## 6. Postgres event store — real round-trip (`ops/03`)
+- **Built & offline-tested:** `PostgresEventStore` (Npgsql, config-gated behind `Storage:EventStore=postgres`
+  + `Storage:Postgres:ConnectionString`) implements the same `IEventStore` contract as SQLite; the DDL/statement
+  shape and config selection are unit-tested, and the full append/read-since/snapshot/head/multi-session
+  contract runs against SQLite. SQLite stays the default — a zero-config host is unchanged.
+- **Not verified (needs a Postgres server):** the same contract test against a live Postgres. It runs when a
+  server is reachable, otherwise it dynamically **skips** (never faked with SQLite).
+- **To test:** set `POSTGRES_TEST_CONNSTRING` (or run a local Postgres on `:5432`) and re-run
+  `Agnes.Host.Tests` — `PostgresEventStoreTests.Postgres_satisfies_the_event_store_contract` exercises the real
+  round-trip.
+
 ## Capability-gated (waiting on the coding CLIs, not on us)
 - **sessions/04 subagent control** — routing a message to / stopping a *specific* subagent needs the
   CLI's own protocol to expose subagent addressing. The roster ships read-only with disabled controls
