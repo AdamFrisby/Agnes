@@ -58,6 +58,13 @@ public sealed record SessionSecurityOptions
     /// </summary>
     public SessionIsolation SessionIsolation { get; init; } = SessionIsolation.Shared;
 
+    /// <summary>
+    /// When true, host-wide configuration mutations — the sandbox image manifest, project config, and the MCP
+    /// server registry — are restricted to the host owner rather than any paired device. Defaults to false
+    /// (today's behaviour: any valid device may edit them). Recommended on a shared host.
+    /// </summary>
+    public bool RestrictConfigToOwner { get; init; }
+
     /// <summary>True when <see cref="AllowedSessionRoots"/> actually constrains anything.</summary>
     [JsonIgnore]
     public bool RestrictsDirectories => AllowedSessionRoots.Count > 0;

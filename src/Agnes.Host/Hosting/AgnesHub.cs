@@ -442,13 +442,32 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task ResolveGatedApproval(GatedApprovalResolution resolution)
         => _sessions.ResolveGatedApprovalAsync(resolution.RequestId, resolution.Approve, Context.ConnectionAborted);
 
-    public Task PauseSandbox(string sessionId) => _sessions.PauseSandboxAsync(sessionId);
+    // Sandbox lifecycle mutates a session's runtime — gated as session management (owner / host-owner / a
+    // CanManage collaborator), like sharing changes. Previously ungated: any paired device could stop or delete
+    // another session's sandbox.
+    public async Task PauseSandbox(string sessionId)
+    {
+        await RequireManageAsync(sessionId).ConfigureAwait(false);
+        await _sessions.PauseSandboxAsync(sessionId).ConfigureAwait(false);
+    }
 
-    public Task ResumeSandbox(string sessionId) => _sessions.ResumeSandboxAsync(sessionId);
+    public async Task ResumeSandbox(string sessionId)
+    {
+        await RequireManageAsync(sessionId).ConfigureAwait(false);
+        await _sessions.ResumeSandboxAsync(sessionId).ConfigureAwait(false);
+    }
 
-    public Task DeleteSandbox(string sessionId) => _sessions.DeleteSandboxAsync(sessionId);
+    public async Task DeleteSandbox(string sessionId)
+    {
+        await RequireManageAsync(sessionId).ConfigureAwait(false);
+        await _sessions.DeleteSandboxAsync(sessionId).ConfigureAwait(false);
+    }
 
-    public Task StopSession(string sessionId) => _sessions.StopSessionAsync(sessionId);
+    public async Task StopSession(string sessionId)
+    {
+        await RequireManageAsync(sessionId).ConfigureAwait(false);
+        await _sessions.StopSessionAsync(sessionId).ConfigureAwait(false);
+    }
 
     public Task<SandboxStatus?> GetSandboxStatus(string sessionId)
         => Task.FromResult(_sessions.GetSandboxStatus(sessionId));

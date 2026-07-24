@@ -1333,6 +1333,23 @@ static bool Authorized(HttpContext ctx, DeviceRegistry reg)
     return reg.IsValid(token);
 }
 
+// Authorization for host-wide CONFIG mutations (image manifest, projects, MCP registry, sandbox lifecycle):
+// a valid token, plus — when Agnes:Security:RestrictConfigToOwner is set — the host owner specifically.
+static bool AuthorizedForConfig(HttpContext ctx, DeviceRegistry reg)
+{
+    var header = ctx.Request.Headers.Authorization.ToString();
+    var token = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? header["Bearer ".Length..]
+        : ctx.Request.Query[WireProtocol.TokenParameter].ToString();
+    if (!reg.IsValid(token))
+    {
+        return false;
+    }
+
+    var restrict = ctx.RequestServices.GetService<Agnes.Host.Sessions.SessionSecurityOptions>()?.RestrictConfigToOwner ?? false;
+    return !restrict || reg.IsOwner(reg.ResolveCallerId(token));
+}
+
 // The human-readable page shown in the browser tab at the end of the OIDC redirect flow. On success the
 // minted device token is embedded as JSON in a hidden element so a client driving an embedded browser can
 // read it back (shown once); it's never placed in a URL or logged.
@@ -1403,14 +1420,14 @@ app.MapGet("/mcp/effective", async (HttpContext ctx, string? workspaceId, string
         : Results.Unauthorized());
 
 app.MapPost("/mcp", (HttpContext ctx, McpServerRequest request) =>
-    Authorized(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());
+    AuthorizedForConfig(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());
 
 app.MapPut("/mcp/{id}", (HttpContext ctx, string id, McpServerRequest request) =>
-    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
     : mcp.Update(id, request) is { } updated ? Results.Ok(updated) : Results.NotFound());
 
 app.MapDelete("/mcp/{id}", (HttpContext ctx, string id) =>
-    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
     : mcp.Remove(id) ? Results.NoContent() : Results.NotFound());
 
 // ---- baked sandbox image (only when sandboxing is configured) ----
@@ -1428,7 +1445,7 @@ app.MapGet("/sandbox/image/status", (HttpContext ctx) =>
 
 app.MapPut("/sandbox/image", (HttpContext ctx, SandboxImageDto dto) =>
 {
-    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (images is null) return Results.NotFound();
     _ = images.SaveAndRebuildAsync(SandboxImageMapping.ToManifest(dto)); // rebuild runs in the background
     return Results.Ok(SandboxImageMapping.Status(images.Status));
@@ -1436,7 +1453,7 @@ app.MapPut("/sandbox/image", (HttpContext ctx, SandboxImageDto dto) =>
 
 app.MapPost("/sandbox/image/rebuild", (HttpContext ctx) =>
 {
-    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (images is null) return Results.NotFound();
     _ = images.RebuildAsync();
     return Results.Ok(SandboxImageMapping.Status(images.Status));
@@ -1452,7 +1469,7 @@ app.MapGet("/sandboxes", (HttpContext ctx) =>
 
 app.MapDelete("/sandboxes/{sessionId}", async (HttpContext ctx, string sessionId) =>
 {
-    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (sessionMgr is null) return Results.NotFound();
     await sessionMgr.DeleteSandboxAsync(sessionId);
     return Results.Ok(sessionMgr.ListSandboxes());
@@ -1478,7 +1495,7 @@ app.MapGet("/sandboxes/orphans", async (HttpContext ctx) =>
     : Results.Ok(await sessionMgr.ListOrphanVmNamesAsync()));
 
 app.MapPost("/sandboxes/reap", async (HttpContext ctx) =>
-    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
     : sessionMgr is null ? Results.NotFound()
     : Results.Ok(await sessionMgr.ReapOrphanSandboxesAsync()));
 
@@ -1549,7 +1566,7 @@ app.MapGet("/projects/resolve", async (HttpContext ctx, string? dir) =>
 
 app.MapPut("/projects/{id}", (HttpContext ctx, string id, ProjectDto dto) =>
 {
-    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (projects is null) return Results.NotFound();
     var saved = projects.Save(Agnes.Host.Projects.ProjectMapping.ToProject(dto with { Id = id }));
     _ = images?.RebuildForProjectAsync(saved); // re-bake the project's sandbox image in the background
@@ -1557,7 +1574,7 @@ app.MapPut("/projects/{id}", (HttpContext ctx, string id, ProjectDto dto) =>
 });
 
 app.MapDelete("/projects/{id}", (HttpContext ctx, string id) =>
-    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
     : projects is null ? Results.NotFound()
     : projects.Remove(id) ? Results.NoContent() : Results.NotFound());
 
