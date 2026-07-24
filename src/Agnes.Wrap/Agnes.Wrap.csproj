@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- The local CLI wrapper: `agnes <cli>` runs a coding CLI in a real terminal on the user's machine
+         and simultaneously tees its I/O into an Agnes session so remote clients can watch it and it can be
+         handed off (.ideas/sessions/07-local-cli-wrapper-and-handoff.md). A distinct binary from the host
+         daemon and from agnes-agent. -->
+    <AssemblyName>agnes</AssemblyName>
+    <RootNamespace>Agnes.Wrap</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Agnes.Abstractions\Agnes.Abstractions.csproj" />
+    <ProjectReference Include="..\Agnes.Host\Agnes.Host.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The only new dependency: a cross-platform PTY (already transitive elsewhere in the tree). Used to
+         spawn the wrapped CLI in a pseudo-terminal so it behaves exactly like the bare CLI. -->
+    <PackageReference Include="Porta.Pty" Version="1.0.7" />
+  </ItemGroup>
+
+  <!-- Let the test project drive the wrapper's testable core (adapter + PTY session) directly. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Agnes.Host.Tests" />
+  </ItemGroup>
+
+</Project>

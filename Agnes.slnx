@@ -18,6 +18,7 @@
     <Project Path="src/Agnes.Sandbox/Agnes.Sandbox.csproj" />
     <Project Path="src/Agnes.Sandbox.Incus/Agnes.Sandbox.Incus.csproj" />
     <Project Path="src/Agnes.Ui.Core/Agnes.Ui.Core.csproj" />
+    <Project Path="src/Agnes.Wrap/Agnes.Wrap.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj" />

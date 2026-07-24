@@ -18,6 +18,7 @@
       "src/Agnes.Cli/Agnes.Cli.csproj",
       "src/Agnes.Recording/Agnes.Recording.csproj",
       "src/Agnes.Ui.Core/Agnes.Ui.Core.csproj",
+      "src/Agnes.Wrap/Agnes.Wrap.csproj",
       "src/Agnes.App.Desktop/Agnes.App.Desktop.csproj",
       "tests/Agnes.TestKit/Agnes.TestKit.csproj",
       "tests/Agnes.TestPluginFixture/Agnes.TestPluginFixture.csproj",
