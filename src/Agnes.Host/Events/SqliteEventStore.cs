@@ -93,6 +93,17 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<int> PruneEventsBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        await using var connection = Open();
+        await using var command = connection.CreateCommand();
+        // ts is the ISO-8601 round-trip ("O") UTC string written on append; that format sorts lexicographically,
+        // so a string comparison is a correct chronological comparison here.
+        command.CommandText = "DELETE FROM events WHERE ts < $cutoff;";
+        command.Parameters.AddWithValue("$cutoff", cutoff.ToUniversalTime().ToString("O"));
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<SessionRecord>> ListSessionsAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = Open();

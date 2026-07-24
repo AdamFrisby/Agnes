@@ -46,6 +46,9 @@ public sealed class IndexingEventStore : IEventStore
     public Task<long> GetHeadAsync(string sessionId, CancellationToken cancellationToken = default)
         => _inner.GetHeadAsync(sessionId, cancellationToken);
 
+    public Task<int> PruneEventsBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+        => _inner.PruneEventsBeforeAsync(cutoff, cancellationToken);
+
     public Task SaveSessionAsync(SessionRecord record, CancellationToken cancellationToken = default)
         => _inner.SaveSessionAsync(record, cancellationToken);
 

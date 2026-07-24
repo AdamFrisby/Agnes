@@ -64,6 +64,9 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
             agent_session_id = EXCLUDED.agent_session_id;
         """;
 
+    internal const string PruneEventsSql =
+        "DELETE FROM events WHERE ts < @cutoff;";
+
     internal const string ListSessionsSql =
         "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, owner, group_id FROM sessions ORDER BY created_at ASC;";
 
@@ -144,6 +147,15 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
         command.Parameters.AddWithValue("owner", (object?)record.Owner ?? DBNull.Value);
         command.Parameters.AddWithValue("group", (object?)record.Group ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<int> PruneEventsBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(PruneEventsSql, connection);
+        command.Parameters.AddWithValue("cutoff", cutoff.ToUniversalTime().ToString("O"));
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<SessionRecord>> ListSessionsAsync(CancellationToken cancellationToken = default)

@@ -72,6 +72,14 @@ public sealed record SessionSecurityOptions
     /// </summary>
     public int MaxConcurrentSandboxes { get; init; }
 
+    /// <summary>
+    /// Transcript retention: events older than this many days are pruned from the event store by a daily
+    /// background sweep. 0 (default) = keep forever. Session catalogue rows are retained (sessions still
+    /// restore); only aged transcript content is removed. Encryption at rest remains a deployment concern
+    /// (see docs/security.md).
+    /// </summary>
+    public int TranscriptRetentionDays { get; init; }
+
     /// <summary>True when <see cref="AllowedSessionRoots"/> actually constrains anything.</summary>
     [JsonIgnore]
     public bool RestrictsDirectories => AllowedSessionRoots.Count > 0;
