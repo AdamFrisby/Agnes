@@ -12,6 +12,12 @@ public sealed class AgnesClient : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, HostConnection> _hosts = new();
 
+    // One gate per host key so concurrent AddHostAsync calls for the SAME host are serialized. Without this,
+    // two callers racing (e.g. restoring two tabs on one host at startup) could each see the other's
+    // still-connecting connection as "not Connected", dispose it as dead, and cancel the in-flight work the
+    // first caller was doing on it — surfacing as "Task cancelled" on whichever subscribe was slowest.
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectGates = new();
+
     /// <summary>All currently connected hosts, keyed by URL.</summary>
     public IReadOnlyCollection<HostConnection> Hosts => _hosts.Values.ToArray();
 
@@ -47,30 +53,37 @@ public sealed class AgnesClient : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         var key = hostUrl.TrimEnd('/');
-        if (_hosts.TryGetValue(key, out var existing))
+
+        // Serialize per host so two racing callers can't dispose each other's still-connecting connection.
+        var gate = _connectGates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            // Reuse a live connection, but never hand back a dead one: if the host restarted (or the
-            // connection dropped and auto-reconnect gave up), the pooled hub is Disconnected/Reconnecting
-            // and any call throws "the connection is not active". Drop it and reconnect fresh with the
-            // current token instead.
-            if (existing.State == AgnesConnectionState.Connected)
+            if (_hosts.TryGetValue(key, out var existing))
             {
-                return existing;
+                // Reuse a live connection, but never hand back a dead one: if the host restarted (or the
+                // connection dropped and auto-reconnect gave up), the pooled hub is Disconnected/Reconnecting
+                // and any call throws "the connection is not active". Drop it and reconnect fresh with the
+                // current token instead. The gate guarantees `existing` is never a connection another caller
+                // is still bringing up — it's either fully Connected or genuinely finished/failed.
+                if (existing.State == AgnesConnectionState.Connected)
+                {
+                    return existing;
+                }
+
+                _hosts.TryRemove(key, out _);
+                await existing.DisposeAsync().ConfigureAwait(false);
             }
 
-            _hosts.TryRemove(key, out _);
-            await existing.DisposeAsync();
+            var connection = new HostConnection(hostUrl, token, configureHttp);
+            _hosts[key] = connection;
+            await connection.ConnectAsync(cancellationToken).ConfigureAwait(false);
+            return connection;
         }
-
-        var connection = new HostConnection(hostUrl, token, configureHttp);
-        if (!_hosts.TryAdd(key, connection))
+        finally
         {
-            await connection.DisposeAsync();
-            return _hosts[key];
+            gate.Release();
         }
-
-        await connection.ConnectAsync(cancellationToken);
-        return connection;
     }
 
     public async Task RemoveHostAsync(string hostUrl)

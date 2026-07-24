@@ -120,6 +120,35 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
     }
 
     [Fact]
+    public async Task Concurrent_connects_to_one_host_share_a_connection_and_all_subscribe()
+    {
+        _factory.Adapter.Session.OnPrompt = (_, _) => Task.FromResult(StopReason.EndTurn);
+
+        // A session to reconnect to, opened on a throwaway client.
+        string sessionId;
+        await using (var opener = new AgnesClient())
+        {
+            var h = await opener.AddHostAsync("http://localhost", Token, UseTestServer());
+            sessionId = (await h.OpenSessionAsync("scripted", ".")).SessionId;
+        }
+
+        // Simulate the desktop restoring several tabs on one host at once: many concurrent AddHostAsync +
+        // Subscribe over a FRESH pool. The pool must hand every caller the same live connection — before the
+        // per-host gate, a racing caller could dispose another's still-connecting connection, cancelling its
+        // in-flight subscribe ("Task cancelled").
+        await using var client = new AgnesClient();
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            var host = await client.AddHostAsync("http://localhost", Token, UseTestServer());
+            await host.SubscribeAsync(sessionId); // must not throw on a disposed/cancelled connection
+            return host;
+        }));
+
+        Assert.All(results, r => Assert.Same(results[0], r));
+        Assert.Equal(AgnesConnectionState.Connected, results[0].State);
+    }
+
+    [Fact]
     public async Task SetMode_flows_over_the_wire_to_the_agent_session()
     {
         _factory.Adapter.Session.OnPrompt = (_, _) => Task.FromResult(StopReason.EndTurn);
