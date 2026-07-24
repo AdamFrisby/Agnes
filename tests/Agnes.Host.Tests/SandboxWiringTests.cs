@@ -480,6 +480,41 @@ public class SandboxWiringTests
     }
 
     [Fact]
+    public async Task Concurrent_sandbox_cap_refuses_beyond_the_limit()
+    {
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new ScriptedAgentAdapter()), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()],
+            security: new SessionSecurityOptions { MaxConcurrentSandboxes = 1 });
+
+        await manager.OpenSessionAsync("scripted", "/tmp/a"); // first sandbox: ok
+
+        // Second concurrent sandbox exceeds the cap.
+        var ex = await Assert.ThrowsAsync<SessionSecurityException>(() => manager.OpenSessionAsync("scripted", "/tmp/b"));
+        Assert.Contains("concurrent-sandbox limit", ex.Message);
+    }
+
+    [Fact]
+    public async Task Usage_report_attributes_sessions_and_sandboxes_to_owners()
+    {
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new ScriptedAgentAdapter()), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()]);
+
+        await manager.OpenSessionAsync("scripted", "/tmp/a", owner: "alice");
+        await manager.OpenSessionAsync("scripted", "/tmp/b", owner: "alice");
+        await manager.OpenSessionAsync("scripted", "/tmp/c", owner: "bob");
+
+        var report = manager.GetUsageReport();
+        Assert.Equal(3, report.TotalSessions);
+        Assert.Equal(3, report.TotalSandboxes);
+        Assert.Equal(2, Assert.Single(report.ByOwner, u => u.Owner == "alice").ActiveSessions);
+        Assert.Equal(1, Assert.Single(report.ByOwner, u => u.Owner == "bob").ActiveSandboxes);
+    }
+
+    [Fact]
     public async Task No_sandbox_provider_leaves_agent_on_host()
     {
         var adapter = new ScriptedAgentAdapter();

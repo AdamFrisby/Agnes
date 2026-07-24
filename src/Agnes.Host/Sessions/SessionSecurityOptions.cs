@@ -65,6 +65,13 @@ public sealed record SessionSecurityOptions
     /// </summary>
     public bool RestrictConfigToOwner { get; init; }
 
+    /// <summary>
+    /// Optional cap on the number of concurrently-running sandboxes host-wide. 0 (default) = unlimited. When the
+    /// cap is reached a new sandboxed session is refused rather than exhausting host resources for everyone.
+    /// (Per-user caps aren't provided — usage attribution is via the per-owner usage report instead.)
+    /// </summary>
+    public int MaxConcurrentSandboxes { get; init; }
+
     /// <summary>True when <see cref="AllowedSessionRoots"/> actually constrains anything.</summary>
     [JsonIgnore]
     public bool RestrictsDirectories => AllowedSessionRoots.Count > 0;

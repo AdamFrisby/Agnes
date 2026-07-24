@@ -455,6 +455,23 @@ public sealed class SessionManager : IAsyncDisposable
     public (string? Owner, string? Group) GetOwnership(string sessionId)
         => _catalog.TryGetValue(sessionId, out var r) ? (r.Owner, r.Group) : (null, null);
 
+    /// <summary>A live snapshot of resource usage by session owner — attribution for a shared host ("who to
+    /// blame"). Live sessions and their sandboxes are grouped by the owner recorded at open time.</summary>
+    public UsageReport GetUsageReport()
+    {
+        const string unowned = "(unowned)";
+        var liveSessions = _sessions.Keys.ToArray();
+        var sandboxed = new HashSet<string>(_sandboxBySession.Keys);
+
+        var byOwner = liveSessions
+            .GroupBy(id => _catalog.TryGetValue(id, out var r) && r.Owner is { Length: > 0 } o ? o : unowned)
+            .Select(g => new OwnerUsage(g.Key, g.Count(), g.Count(id => sandboxed.Contains(id))))
+            .OrderByDescending(u => u.ActiveSandboxes).ThenByDescending(u => u.ActiveSessions).ThenBy(u => u.Owner)
+            .ToArray();
+
+        return new UsageReport(liveSessions.Length, sandboxed.Count, byOwner);
+    }
+
     /// <summary>
     /// Enforces the host's session-directory allowlist (Agnes:Security:AllowedSessionRoots): a no-op when no
     /// allowlist is configured, otherwise throws <see cref="SessionSecurityException"/> if the caller-supplied
@@ -694,6 +711,17 @@ public sealed class SessionManager : IAsyncDisposable
         {
             if (sandbox is null)
             {
+                // Host-wide concurrent-sandbox cap (Agnes:Security:MaxConcurrentSandboxes): refuse a new VM once
+                // the ceiling is reached rather than exhausting host resources. Adopted/cloned sandboxes
+                // (existingSandbox) skip this — they don't allocate a fresh VM here.
+                if (_security.MaxConcurrentSandboxes > 0 && _sandboxBySession.Count >= _security.MaxConcurrentSandboxes)
+                {
+                    _logger.LogWarning("Refused a new sandbox for session {SessionId}: at the concurrent-sandbox cap ({Cap}).",
+                        sessionId, _security.MaxConcurrentSandboxes);
+                    throw new SessionSecurityException(
+                        $"This host is at its concurrent-sandbox limit ({_security.MaxConcurrentSandboxes}); try again once a session finishes.");
+                }
+
                 // Ensure the image exists (bake if missing) before launching from it — the resolved
                 // project's own sandbox image when we have a project, else the legacy global baseline.
                 var image = string.Empty;

@@ -527,7 +527,10 @@ builder.Services.AddSingleton(new Agnes.Host.Sessions.SessionSecurityOptions
     AllowedHostMcpServers = builder.Configuration.GetSection("Agnes:Security:AllowedHostMcpServers").Get<string[]>() ?? [],
     SessionIsolation = Enum.TryParse<Agnes.Host.Sessions.SessionIsolation>(
         builder.Configuration["Agnes:Security:SessionIsolation"], ignoreCase: true, out var iso) ? iso : Agnes.Host.Sessions.SessionIsolation.Shared,
+    RestrictConfigToOwner = builder.Configuration.GetValue("Agnes:Security:RestrictConfigToOwner", false),
+    MaxConcurrentSandboxes = builder.Configuration.GetValue("Agnes:Security:MaxConcurrentSandboxes", 0),
 });
+builder.Services.AddHostedService<Agnes.Host.Sessions.UsageReporter>();
 builder.Services.AddSingleton<SessionManager>();
 
 // ---- Agnes AS an MCP server (see .ideas/voice/01-voice-assistant.md) ----
@@ -1498,6 +1501,13 @@ app.MapPost("/sandboxes/reap", async (HttpContext ctx) =>
     !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
     : sessionMgr is null ? Results.NotFound()
     : Results.Ok(await sessionMgr.ReapOrphanSandboxesAsync()));
+
+// Per-owner usage attribution for the operator ("who is consuming the host"). Owner-gated when config is
+// restricted; the same snapshot is logged periodically by UsageReporter.
+app.MapGet("/admin/usage", (HttpContext ctx) =>
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
+    : sessionMgr is null ? Results.NotFound()
+    : Results.Ok(sessionMgr.GetUsageReport()));
 
 // ---- credentials: link GitHub (App-manifest flow) so sandboxes can push with scoped tokens ----
 var ghConnect = app.Services.GetService<Agnes.Host.Hosting.GitHubConnectFlow>();
