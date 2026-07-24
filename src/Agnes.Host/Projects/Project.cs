@@ -25,6 +25,10 @@ public sealed record Project
     /// <summary>What this project's sandbox VM contains (base image, packages, agents).</summary>
     public SandboxImageManifest Sandbox { get; init; } = new();
 
+    /// <summary>Per-project sandbox resource overrides (RAM/disk/CPU). Null (or any null field) inherits the
+    /// host's configured default — a project only states the caps it wants to differ.</summary>
+    public SandboxResourceOverride? SandboxResources { get; init; }
+
     /// <summary>The MCP servers available to this project's sessions.</summary>
     public IReadOnlyList<McpServerInfo> McpServers { get; init; } = [];
 

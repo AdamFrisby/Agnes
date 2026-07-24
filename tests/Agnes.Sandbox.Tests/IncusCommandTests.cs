@@ -24,6 +24,32 @@ public class IncusCommandTests
     }
 
     [Fact]
+    public void Resource_override_applies_only_the_fields_it_sets()
+    {
+        var defaults = new SandboxResourceLimits(); // 2 CPU / 12 GiB / 16 GiB
+
+        // A partial override (RAM only) keeps the configured CPU and disk.
+        var resolved = defaults.With(new SandboxResourceOverride { MemoryBytes = 32L * 1024 * 1024 * 1024 });
+        Assert.Equal(2, resolved.CpuCount);
+        Assert.Equal(32L * 1024 * 1024 * 1024, resolved.MemoryBytes);
+        Assert.Equal(16L * 1024 * 1024 * 1024, resolved.DiskBytes);
+
+        // A null (or empty) override changes nothing.
+        Assert.Same(defaults, defaults.With(null));
+        Assert.Equal(defaults, defaults.With(new SandboxResourceOverride()));
+    }
+
+    [Fact]
+    public void Build_init_reflects_the_resolved_limits()
+    {
+        var limits = new SandboxResourceLimits { CpuCount = 8, MemoryBytes = 32L * 1024 * 1024 * 1024, DiskBytes = 64L * 1024 * 1024 * 1024 };
+        var argv = IncusCommandBuilder.BuildInit(Options, "images:ubuntu/24.04/cloud", "agnes-abc", limits);
+        Assert.Contains("limits.cpu=8", argv);
+        Assert.Contains($"limits.memory={32L * 1024 * 1024 * 1024}B", argv);
+        Assert.Contains(argv, a => a == $"root,size={64L * 1024 * 1024 * 1024}B");
+    }
+
+    [Fact]
     public void Cloud_init_always_creates_the_work_directory()
     {
         // /work must exist even without a bind-mount, or `incus exec --cwd /work` fails (127) and

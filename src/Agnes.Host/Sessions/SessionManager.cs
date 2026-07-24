@@ -626,7 +626,7 @@ public sealed class SessionManager : IAsyncDisposable
                 }
 
                 sandbox = await _sandboxes.CreateAsync(
-                    new SandboxSpec { HostWorkingDirectory = effectiveDirectory, ImageReference = image }, cancellationToken).ConfigureAwait(false);
+                    new SandboxSpec { HostWorkingDirectory = effectiveDirectory, ImageReference = image, ResourceOverride = project?.SandboxResources }, cancellationToken).ConfigureAwait(false);
             }
 
             _sandboxBySession[sessionId] = sandbox;

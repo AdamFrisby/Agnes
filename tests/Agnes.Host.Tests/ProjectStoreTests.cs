@@ -1,10 +1,41 @@
 using Agnes.Host.Projects;
 using Agnes.Protocol;
+using Agnes.Sandbox;
 
 namespace Agnes.Host.Tests;
 
 public class ProjectStoreTests
 {
+    [Fact]
+    public void Sandbox_resource_override_round_trips_through_the_dto_in_gib()
+    {
+        var project = new Project
+        {
+            Name = "p",
+            SandboxResources = new SandboxResourceOverride { MemoryBytes = 32L * 1024 * 1024 * 1024, DiskBytes = 64L * 1024 * 1024 * 1024 },
+        };
+
+        var dto = ProjectMapping.ToDto(project);
+        Assert.Null(dto.SandboxCpu);          // not overridden → inherit
+        Assert.Equal(32, dto.SandboxMemoryGiB);
+        Assert.Equal(64, dto.SandboxDiskGiB);
+
+        var back = ProjectMapping.ToProject(dto);
+        Assert.Null(back.SandboxResources!.CpuCount);
+        Assert.Equal(32L * 1024 * 1024 * 1024, back.SandboxResources.MemoryBytes);
+        Assert.Equal(64L * 1024 * 1024 * 1024, back.SandboxResources.DiskBytes);
+    }
+
+    [Fact]
+    public void No_sandbox_override_maps_to_null_both_ways()
+    {
+        var dto = ProjectMapping.ToDto(new Project { Name = "p" });
+        Assert.Null(dto.SandboxCpu);
+        Assert.Null(dto.SandboxMemoryGiB);
+        Assert.Null(dto.SandboxDiskGiB);
+        Assert.Null(ProjectMapping.ToProject(dto).SandboxResources);
+    }
+
     private static ProjectStore NewStore(out string path)
     {
         path = Path.Combine(Path.GetTempPath(), $"projects-{Guid.NewGuid():n}.json");

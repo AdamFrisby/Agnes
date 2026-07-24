@@ -40,8 +40,12 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         var image = string.IsNullOrWhiteSpace(spec.ImageReference) ? _options.DefaultImage : spec.ImageReference;
         var bridge = string.IsNullOrWhiteSpace(spec.NetworkBridge) ? _options.Bridge : spec.NetworkBridge!;
 
-        _logger.LogInformation("Provisioning Incus sandbox {Name} ({Image})", name, image);
-        await _cli.RunCheckedAsync("init", IncusCommandBuilder.BuildInit(_options, image, name, spec.Limits), cancellationToken: cancellationToken).ConfigureAwait(false);
+        // Resolve resource caps: the host-configured defaults, with any per-session override applied on top.
+        var limits = _options.DefaultLimits.With(spec.ResourceOverride);
+
+        _logger.LogInformation("Provisioning Incus sandbox {Name} ({Image}) — {Cpu} CPU / {MemGiB} GiB / {DiskGiB} GiB",
+            name, image, limits.CpuCount, limits.MemoryBytes / (1024 * 1024 * 1024), limits.DiskBytes / (1024 * 1024 * 1024));
+        await _cli.RunCheckedAsync("init", IncusCommandBuilder.BuildInit(_options, image, name, limits), cancellationToken: cancellationToken).ConfigureAwait(false);
         await _cli.RunCheckedAsync("nic add", IncusCommandBuilder.BuildNicAdd(_options, name, bridge), cancellationToken: cancellationToken).ConfigureAwait(false);
         await _cli.RunCheckedAsync("cloud-init", IncusCommandBuilder.BuildConfigSetStdin(_options, name, "user.user-data"), IncusGuest.CloudInit(_options), cancellationToken).ConfigureAwait(false);
 
@@ -132,7 +136,7 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         try
         {
             progress?.Report($"Provisioning bake VM from {manifest.BaseImage}…");
-            await _cli.RunCheckedAsync("bake init", IncusCommandBuilder.BuildInit(_options, manifest.BaseImage, name, new SandboxResourceLimits()), cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _cli.RunCheckedAsync("bake init", IncusCommandBuilder.BuildInit(_options, manifest.BaseImage, name, _options.DefaultLimits), cancellationToken: cancellationToken).ConfigureAwait(false);
             await _cli.RunCheckedAsync("bake nic", IncusCommandBuilder.BuildNicAdd(_options, name, _options.Bridge), cancellationToken: cancellationToken).ConfigureAwait(false);
             await _cli.RunCheckedAsync("bake cloud-init", IncusCommandBuilder.BuildConfigSetStdin(_options, name, "user.user-data"), IncusGuest.CloudInit(_options), cancellationToken).ConfigureAwait(false);
             await _cli.RunCheckedAsync("bake start", IncusCommandBuilder.BuildStart(_options, name), cancellationToken: cancellationToken).ConfigureAwait(false);

@@ -738,6 +738,9 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
             StoragePoolName = builder.Configuration["Agnes:Sandbox:Incus:StoragePool"] ?? "default",
             DefaultImage = builder.Configuration["Agnes:Sandbox:Incus:Image"] ?? "images:ubuntu/24.04/cloud",
             Bridge = builder.Configuration["Agnes:Sandbox:Incus:Bridge"] ?? "incusbr0",
+            // Default VM resource caps, overridable per project. Config is in friendly units (CPU cores,
+            // RAM in GiB, disk in GiB); unset keeps the 2 / 12 / 16 defaults.
+            DefaultLimits = SandboxLimitsFromConfig(builder.Configuration),
         },
         sp.GetRequiredService<ILoggerFactory>()));
     builder.Services.AddSingleton<Agnes.Sandbox.ISandboxProvider>(
@@ -1264,6 +1267,23 @@ app.MapPost("/auth/keypair", async (KeypairAuthRequest request, KeypairAuth keyp
 // The host's IPv4 address on the sandbox bridge — where the MCP forward listener binds and what the
 // guest dials. Prefer the configured value; otherwise read it off the bridge interface. Null → the
 // forward proxy stays off (host MCP servers just won't reach sandboxes).
+// Builds the default sandbox resource caps from host config (friendly units), keeping the built-in
+// 2 CPU / 12 GiB / 16 GiB where a key is absent.
+static Agnes.Sandbox.SandboxResourceLimits SandboxLimitsFromConfig(IConfiguration config)
+{
+    var defaults = new Agnes.Sandbox.SandboxResourceLimits();
+    var cpu = config.GetValue<int?>("Agnes:Sandbox:Incus:Cpu");
+    var memGiB = config.GetValue<int?>("Agnes:Sandbox:Incus:MemoryGiB");
+    var diskGiB = config.GetValue<int?>("Agnes:Sandbox:Incus:DiskGiB");
+    const long giB = 1024L * 1024 * 1024;
+    return new Agnes.Sandbox.SandboxResourceLimits
+    {
+        CpuCount = cpu is > 0 ? cpu.Value : defaults.CpuCount,
+        MemoryBytes = memGiB is > 0 ? memGiB.Value * giB : defaults.MemoryBytes,
+        DiskBytes = diskGiB is > 0 ? diskGiB.Value * giB : defaults.DiskBytes,
+    };
+}
+
 static System.Net.IPAddress? ResolveBridgeAddress(string? configured, string bridge)
 {
     if (!string.IsNullOrWhiteSpace(configured) && System.Net.IPAddress.TryParse(configured, out var ip))

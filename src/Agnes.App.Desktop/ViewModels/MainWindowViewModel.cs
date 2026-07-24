@@ -1011,6 +1011,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     [ObservableProperty] private string _projApt = string.Empty;
     [ObservableProperty] private string _projNpm = string.Empty;
     [ObservableProperty] private string _projPip = string.Empty;
+    // Sandbox resource overrides — blank means "inherit the host's default".
+    [ObservableProperty] private string _projCpu = string.Empty;
+    [ObservableProperty] private string _projMemoryGiB = string.Empty;
+    [ObservableProperty] private string _projDiskGiB = string.Empty;
     [ObservableProperty] private string _projGitMode = "Ask";
     [ObservableProperty] private bool _projSkipPermissions;
     [ObservableProperty] private string _projMcpApproval = "Ask";
@@ -1061,6 +1065,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ProjApt = string.Join(' ', project.Sandbox.AptPackages);
         ProjNpm = string.Join(' ', project.Sandbox.NpmGlobals);
         ProjPip = string.Join(' ', project.Sandbox.PipPackages);
+        ProjCpu = project.SandboxCpu?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        ProjMemoryGiB = project.SandboxMemoryGiB?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        ProjDiskGiB = project.SandboxDiskGiB?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
         ProjGitMode = project.Defaults.GitCredentialMode;
         ProjSkipPermissions = project.Defaults.SkipPermissions;
         ProjMcpApproval = project.Defaults.McpApproval;
@@ -1081,6 +1088,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         if (target is null || SelectedProject is null || IsSavingProject) { return; }
 
         static IReadOnlyList<string> Split(string s) => s.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        // Blank or non-positive → inherit the host default (null on the wire).
+        static int? PositiveOrNull(string s) => int.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
         var sandbox = SelectedProject.Sandbox with { Node = ProjNode, AptPackages = Split(ProjApt), NpmGlobals = Split(ProjNpm), PipPackages = Split(ProjPip) };
         var dto = SelectedProject with
         {
@@ -1090,6 +1099,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             CredentialAccount = string.IsNullOrWhiteSpace(ProjAccount) ? null : ProjAccount,
             Repo = string.IsNullOrWhiteSpace(ProjRepo) ? null : ProjRepo.Trim(),
             Defaults = new ProjectDefaultsDto(ProjSkipPermissions, ProjGitMode, ProjMcpApproval),
+            SandboxCpu = PositiveOrNull(ProjCpu),
+            SandboxMemoryGiB = PositiveOrNull(ProjMemoryGiB),
+            SandboxDiskGiB = PositiveOrNull(ProjDiskGiB),
         };
 
         try

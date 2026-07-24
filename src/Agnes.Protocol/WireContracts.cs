@@ -239,7 +239,11 @@ public sealed record ProjectDto(
     IReadOnlyList<McpServerInfo> McpServers,
     string? CredentialAccount,
     ProjectDefaultsDto Defaults,
-    string? Repo = null);
+    string? Repo = null,
+    // Per-project sandbox resource overrides in friendly units; null inherits the host's configured default.
+    int? SandboxCpu = null,
+    int? SandboxMemoryGiB = null,
+    int? SandboxDiskGiB = null);
 
 /// <summary>
 /// One host's on-disk checkout of a workspace as the client sees it (multi-machine workspace model,

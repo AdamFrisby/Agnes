@@ -391,6 +391,25 @@
                                     <TextBox Text="{Binding ProjPip, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
                                 </StackPanel>
 
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Classes="fieldLabel" Text="VM resources" VerticalAlignment="Center" />
+                                    <ctl:InfoHint Description="Per-project sandbox VM size. Leave blank to inherit the host's default (2 CPU / 12 GiB RAM / 16 GiB disk). Applies to newly launched sessions." />
+                                </StackPanel>
+                                <Grid ColumnDefinitions="*,*,*" Margin="0,0,0,0">
+                                    <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,4,0">
+                                        <TextBlock Classes="fieldLabel" Text="CPUs" />
+                                        <TextBox Text="{Binding ProjCpu, Mode=TwoWay}" Watermark="default" FontSize="12" Padding="8,5" CornerRadius="6" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="4" Margin="2,0,2,0">
+                                        <TextBlock Classes="fieldLabel" Text="RAM (GiB)" />
+                                        <TextBox Text="{Binding ProjMemoryGiB, Mode=TwoWay}" Watermark="default" FontSize="12" Padding="8,5" CornerRadius="6" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Spacing="4" Margin="4,0,0,0">
+                                        <TextBlock Classes="fieldLabel" Text="Disk (GiB)" />
+                                        <TextBox Text="{Binding ProjDiskGiB, Mode=TwoWay}" Watermark="default" FontSize="12" Padding="8,5" CornerRadius="6" />
+                                    </StackPanel>
+                                </Grid>
+
                                 <Border Height="1" Background="{DynamicResource Line}" />
                                 <TextBlock Text="MCP servers" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
                                 <ItemsControl ItemsSource="{Binding ProjectMcp}">
