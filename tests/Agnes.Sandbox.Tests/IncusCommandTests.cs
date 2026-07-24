@@ -9,6 +9,18 @@ public class IncusCommandTests
     private static readonly IncusOptions Options = new();
 
     [Fact]
+    public void Nic_add_is_open_by_default_and_attaches_acls_when_configured()
+    {
+        var open = IncusCommandBuilder.BuildNicAdd(Options, "agnes-abc", "incusbr0");
+        Assert.Contains("nictype=bridged", open);
+        Assert.DoesNotContain(open, a => a.StartsWith("security.acls=", StringComparison.Ordinal)); // open egress
+
+        var restricted = IncusCommandBuilder.BuildNicAdd(
+            Options with { NetworkAcls = ["agnes-egress", "allow-registries"] }, "agnes-abc", "incusbr0");
+        Assert.Contains("security.acls=agnes-egress,allow-registries", restricted); // operator's egress ACLs attached
+    }
+
+    [Fact]
     public void Build_init_produces_a_vm_with_limits_and_ownership()
     {
         var argv = IncusCommandBuilder.BuildInit(Options, "images:ubuntu/24.04/cloud", "agnes-abc", new SandboxResourceLimits());
