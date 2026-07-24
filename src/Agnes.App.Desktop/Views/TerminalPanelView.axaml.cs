@@ -51,7 +51,19 @@ public partial class TerminalPanelView : UserControl
     private void TryBindEmulator()
     {
         _control ??= this.FindControl<TerminalControl>("Terminal");
-        var emulator = _control?.Terminal;
+
+        // The emulator getter can throw before the control's backend is ready (e.g. a headless/offline
+        // render). Never let that crash the app — just skip binding and retry on the next attach.
+        XTerm.Terminal? emulator;
+        try
+        {
+            emulator = _control?.Terminal;
+        }
+        catch
+        {
+            return;
+        }
+
         if (emulator is null || ReferenceEquals(emulator, _emulator))
         {
             return;

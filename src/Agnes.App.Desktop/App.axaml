@@ -7,6 +7,7 @@
              xmlns:app="using:Agnes.App.Desktop"
              xmlns:ae="using:AvaloniaEdit"
              xmlns:ctb="using:ColorTextBlock.Avalonia"
+             xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
              x:Class="Agnes.App.Desktop.App">
 
     <Application.Resources>
@@ -112,6 +113,20 @@
              ColorTextBlock's CTextBlock, and fenced code highlighting via AvaloniaEdit's TextEditor. -->
         <Style Selector="ctb|CCode">
             <Setter Property="MonospaceFontFamily" Value="{StaticResource MonoFont}" />
+        </Style>
+        <!-- Inline `code` spans: the MarkdownScrollViewer's built-in theme styles CCode with a dark box and
+             a blue, non-mono glyph that clashes with our theme. This descendant selector out-specifies that
+             bare CCode rule, forcing a monospace glyph, theme-matched foreground, and a subtle inline chip.
+             (CInline.FontFamily is what actually renders; MonospaceFontFamily alone wasn't enough.) -->
+        <Style Selector="mdxaml|MarkdownScrollViewer ctb|CCode">
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+            <Setter Property="MonospaceFontFamily" Value="{StaticResource MonoFont}" />
+            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+            <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="4,1" />
         </Style>
         <!-- Markdown body renders via ColorTextBlock; pin it to the app UI font at normal weight so chat
              text matches the rest of the app and only **bold** spans (CBold, which keeps its own Bold)
