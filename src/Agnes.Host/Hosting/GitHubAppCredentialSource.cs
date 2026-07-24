@@ -64,8 +64,22 @@ public sealed class GitHubAppCredentialSource : ICredentialSource
         var owner = slash >= 0 ? request.Repo[..slash] : string.Empty;
         var repoName = slash >= 0 ? request.Repo[(slash + 1)..] : request.Repo;
 
-        // Route by repo owner; fall back to the first linked account if none matches.
-        var config = installed.FirstOrDefault(a => string.Equals(a.Account, owner, StringComparison.OrdinalIgnoreCase)) ?? installed[0];
+        // If the request is pinned to a specific linked account (the session's project.CredentialAccount),
+        // mint ONLY against that account — deny rather than silently fall back, so a session can't reach a
+        // different tenant's account. Otherwise route by repo owner, falling back to the first linked account.
+        GitHubAppConfig? config;
+        if (request.Account is { Length: > 0 } pinned)
+        {
+            config = installed.FirstOrDefault(a => string.Equals(a.Account, pinned, StringComparison.OrdinalIgnoreCase));
+            if (config is null)
+            {
+                return null; // pinned account isn't linked/installed — refuse rather than substitute another.
+            }
+        }
+        else
+        {
+            config = installed.FirstOrDefault(a => string.Equals(a.Account, owner, StringComparison.OrdinalIgnoreCase)) ?? installed[0];
+        }
 
         var cacheKey = $"{config.AppId}/{request.Repo}";
         if (_cache.TryGetValue(cacheKey, out var cached)

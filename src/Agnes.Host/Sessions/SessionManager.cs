@@ -224,7 +224,7 @@ public sealed class SessionManager : IAsyncDisposable
             return;
         }
 
-        var cred = await _credentialListener.MintAsync(new CredentialRequest("https", host, repo, "get"), cancellationToken).ConfigureAwait(false);
+        var cred = await _credentialListener.MintAsync(new CredentialRequest("https", host, repo, "get", project.CredentialAccount), cancellationToken).ConfigureAwait(false);
         if (cred is null)
         {
             _logger.LogWarning("Session {SessionId}: no linked account can check out {Repo}; leaving the working dir empty.", sessionId, repo);
@@ -1120,7 +1120,7 @@ public sealed class SessionManager : IAsyncDisposable
     /// agent can then <c>git push</c>; the broker mints a scoped credential on the host at push time.
     /// </summary>
     private async Task AddSandboxGitCredentialsAsync(ISandbox sandbox, string sessionId, string hostWorkingDirectory,
-        string gitCredentialMode, Dictionary<string, string> env, List<SandboxCredentialFile> files, CancellationToken cancellationToken)
+        string gitCredentialMode, string? credentialAccount, Dictionary<string, string> env, List<SandboxCredentialFile> files, CancellationToken cancellationToken)
     {
         if (_credentialBroker is null || _credentialListener is null
             || string.IsNullOrWhiteSpace(gitCredentialMode) || string.Equals(gitCredentialMode, "Off", StringComparison.OrdinalIgnoreCase))
@@ -1147,7 +1147,7 @@ public sealed class SessionManager : IAsyncDisposable
         var (userName, userEmail) = await _git.GetIdentityAsync(hostWorkingDirectory, cancellationToken).ConfigureAwait(false);
 
         var mode = string.Equals(gitCredentialMode, "Trust", StringComparison.OrdinalIgnoreCase) ? "Trust" : "Ask";
-        var token = _credentialBroker.Register(new CredentialGrant(sessionId, host, "*", mode));
+        var token = _credentialBroker.Register(new CredentialGrant(sessionId, host, "*", mode, credentialAccount));
         State(sessionId).CredentialToken = token;
 
         env["AGNES_GIT_HOST"] = _credentialListener.AdvertiseHost;
@@ -1640,7 +1640,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         var mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, project, effectiveDirectory, env, files);
-        await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, env, files, cancellationToken).ConfigureAwait(false);
+        await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, project?.CredentialAccount, env, files, cancellationToken).ConfigureAwait(false);
 
         if (env.Count > 0 || files.Count > 0)
         {

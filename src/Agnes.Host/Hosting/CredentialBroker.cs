@@ -14,7 +14,10 @@ namespace Agnes.Host.Hosting;
 /// <param name="HostPattern">The allowed host — an exact host ("github.com") or "*".</param>
 /// <param name="RepoPattern">The allowed repo "owner/repo", or null/"*" for any repo on the host.</param>
 /// <param name="Mode">"Ask" (gate each use via the permission card) or "Trust" (auto-allow + audit).</param>
-public sealed record CredentialGrant(string? SessionId, string HostPattern, string? RepoPattern, string Mode)
+/// <param name="Account">The linked account this session is pinned to (from its project's CredentialAccount),
+/// or null to route by repo owner. When set, the credential source mints ONLY against this account — a session
+/// can't reach a different tenant's linked account even for a repo that account also has.</param>
+public sealed record CredentialGrant(string? SessionId, string HostPattern, string? RepoPattern, string Mode, string? Account = null)
 {
     /// <summary>Whether this grant covers the requested host + repo.</summary>
     public bool Covers(CredentialRequest request)
@@ -208,15 +211,19 @@ public sealed class CredentialBrokerListener : IAsyncDisposable
                     return;
                 }
 
-                var request = new CredentialRequest(req.Protocol ?? "https", req.Host!, NormaliseRepo(req.Path), "get");
+                var baseRequest = new CredentialRequest(req.Protocol ?? "https", req.Host!, NormaliseRepo(req.Path), "get");
                 var grant = _grants.Resolve(req.Token);
-                if (grant is null || !grant.Covers(request))
+                if (grant is null || !grant.Covers(baseRequest))
                 {
-                    _logger.LogWarning("Credential broker denied {Host}/{Repo} (out of scope)", request.Host, request.Repo);
-                    Audit(req.Token, request, allowed: false);
+                    _logger.LogWarning("Credential broker denied {Host}/{Repo} (out of scope)", baseRequest.Host, baseRequest.Repo);
+                    Audit(req.Token, baseRequest, allowed: false);
                     await ReplyAsync(stream, new { error = "not authorized" }, cancellationToken).ConfigureAwait(false);
                     return;
                 }
+
+                // Pin the resolution to the session's linked account (from its project), if any, so a session
+                // can only mint against the account it's scoped to — not any host-global linked account.
+                var request = baseRequest with { Account = grant.Account };
 
                 if (OnAuthorize is not null && !await OnAuthorize(grant, request).ConfigureAwait(false))
                 {
