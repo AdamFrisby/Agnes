@@ -206,7 +206,10 @@ public class SessionStateTests
         var sub = Assert.Single(main.Children);
         Assert.Equal("reviewer", sub.Name);
 
-        Assert.Equal(2, vm.DisplayItems.Count()); // full view: main + sub
+        // The main view shows only the main agent's items — subagent output is routed to its own view.
+        var mainView = vm.DisplayItems.ToList();
+        Assert.Single(mainView);
+        Assert.Null(mainView[0].AgentId);
 
         sub.SelectCommand.Execute(null);
         Assert.Equal("sub-1", vm.SelectedAgentId);
@@ -216,7 +219,7 @@ public class SessionStateTests
 
         main.SelectCommand.Execute(null);
         Assert.Null(vm.SelectedAgentId);
-        Assert.Equal(2, vm.DisplayItems.Count());
+        Assert.Single(vm.DisplayItems); // back to the main agent's item only
     }
 
     // ---- scheduled background tasks ----

@@ -61,17 +61,23 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
                 break;
 
             case "assistant":
+                // A subagent's messages (spawned via the Task tool) stream with parent_tool_use_id set to
+                // that Task tool-call id — the same id SubagentStartedEvent uses. Tag its events so they
+                // route to the subagent's view (not the main conversation) and its token usage doesn't
+                // bleed into the main context bar.
+                var assistantParent = GetString(line, "parent_tool_use_id");
                 foreach (var e in FromAssistant(line))
                 {
-                    yield return e;
+                    yield return assistantParent is null ? e : e with { AgentId = assistantParent };
                 }
 
                 break;
 
             case "user":
+                var userParent = GetString(line, "parent_tool_use_id");
                 foreach (var e in FromUser(line))
                 {
-                    yield return e;
+                    yield return userParent is null ? e : e with { AgentId = userParent };
                 }
 
                 break;

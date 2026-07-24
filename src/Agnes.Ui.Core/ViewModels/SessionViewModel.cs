@@ -190,7 +190,27 @@ public sealed class SessionViewModel : ObservableObject
         _transcript.SubagentAdded += Subagents.Add;
         // The ListBox observes Items directly, but the empty-state flag is a computed bool — keep it in
         // sync with the collection so "No messages yet" disappears the moment the first item arrives.
-        _transcript.Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsTranscriptEmpty));
+        _transcript.Items.CollectionChanged += (_, e) =>
+        {
+            OnPropertyChanged(nameof(IsTranscriptEmpty));
+
+            // The fast path (no subagents, main view) hands back the live Items collection — the ListBox
+            // observes it directly, so no re-raise is needed. When filtering IS active, DisplayItems is a
+            // snapshot, so re-raise it — but only when an added item actually belongs to the current view,
+            // so adding a subagent's item doesn't rebind (and scroll-reset) the main conversation.
+            if (_selectedAgentId is null && !HasSubagents)
+            {
+                return;
+            }
+
+            var affectsView = e.Action != System.Collections.Specialized.NotifyCollectionChangedAction.Add
+                || e.NewItems is null
+                || e.NewItems.Cast<TranscriptItem>().Any(i => i.AgentId == _selectedAgentId);
+            if (affectsView)
+            {
+                OnPropertyChanged(nameof(DisplayItems));
+            }
+        };
 
         foreach (var @event in _view.Events)
         {
@@ -357,13 +377,20 @@ public sealed class SessionViewModel : ObservableObject
     {
         get
         {
-            IEnumerable<TranscriptItem> basis = IsRewound ? Items.Take(_rewindIndex + 1) : Items;
-            if (_selectedAgentId is null)
+            // Fast path: no subagents and live tail → hand back the live collection so the ListBox gets
+            // incremental (virtualized) updates instead of a full rebind on every event.
+            if (_selectedAgentId is null && !HasSubagents && !IsRewound)
             {
-                return IsRewound ? basis.ToList() : Items;
+                return Items;
             }
 
-            return basis.Where(i => i.AgentId == _selectedAgentId).ToList();
+            IEnumerable<TranscriptItem> basis = IsRewound ? Items.Take(_rewindIndex + 1) : Items;
+
+            // Main view shows the main agent's items only; subagent output is routed to its own view (select
+            // the subagent in the roster) rather than cluttering the primary conversation.
+            return _selectedAgentId is null
+                ? basis.Where(i => i.AgentId is null).ToList()
+                : basis.Where(i => i.AgentId == _selectedAgentId).ToList();
         }
     }
 
@@ -459,6 +486,9 @@ public sealed class SessionViewModel : ObservableObject
         _agentNodes[sub.SubagentId] = node;
         RebuildAgentRows();
         OnPropertyChanged(nameof(HasSubagents));
+        // The first subagent flips the main view from the live collection to a filtered snapshot (subagent
+        // output is now routed out of the main conversation), so re-raise the bound list.
+        OnPropertyChanged(nameof(DisplayItems));
         RaisePanels();
     }
 
@@ -1609,6 +1639,11 @@ public sealed class SessionViewModel : ObservableObject
                 CredentialUses.Insert(0, new CredentialUseEntry(gc.Host, gc.Repo, gc.Allowed, @event.Timestamp));
                 OnPropertyChanged(nameof(HasCredentialUses));
                 RaisePanels();
+                break;
+
+            case UsageReportedEvent { AgentId: not null }:
+                // A subagent's usage — never merge it into the MAIN context bar (it briefly flashed the
+                // subagent's smaller window/occupancy before the main figure returned).
                 break;
 
             case UsageReportedEvent u:

@@ -266,4 +266,25 @@ public class ClaudeCodeStreamMapperTests
         using var resp = JsonDocument.Parse(line!);
         Assert.Equal("deny", resp.RootElement.GetProperty("response").GetProperty("response").GetProperty("behavior").GetString());
     }
+
+    [Fact]
+    public void Subagent_messages_are_tagged_with_the_parent_tool_use_id()
+    {
+        // A subagent (Task tool) streams its messages with parent_tool_use_id = the Task tool-call id.
+        var events = Map("""
+            {"type":"assistant","parent_tool_use_id":"toolu_task1","message":{"content":[{"type":"text","text":"working…"}],"usage":{"input_tokens":10}}}
+            """);
+
+        Assert.All(events, e => Assert.Equal("toolu_task1", e.AgentId));
+        Assert.Contains(events, e => e is MessageChunkEvent);
+    }
+
+    [Fact]
+    public void Main_agent_messages_have_no_agent_id()
+    {
+        var events = Map("""
+            {"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}
+            """);
+        Assert.All(events, e => Assert.Null(e.AgentId));
+    }
 }
