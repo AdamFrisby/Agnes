@@ -209,6 +209,82 @@ public class PendingQueueTests
     }
 
     [Fact]
+    public async Task Interrupt_and_send_steers_a_steerable_session_instead_of_cancelling()
+    {
+        var adapter = new SteerableScriptedAgentAdapter();
+        var store = new InMemoryEventStore();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), store, new NullBroadcaster(), NullLoggerFactory.Instance);
+
+        var prompts = new List<string>();
+        var gate = new object();
+        adapter.Session.OnPrompt = (content, _) =>
+        {
+            lock (gate)
+            {
+                prompts.Add(Text(content));
+            }
+
+            return Task.FromResult(StopReason.EndTurn);
+        };
+
+        var info = await manager.OpenSessionAsync("steerable", "/tmp/pq", useSandbox: false);
+        await manager.SetSendPolicyAsync(info.SessionId, SendPolicy.InterruptAndSend);
+
+        // Idle send starts a turn (the scripted agent never emits TurnEnded, so it stays active).
+        await manager.EnqueuePendingMessageAsync(info.SessionId, [new TextContent("first")]);
+        await WaitForAsync(() => { lock (gate) { return Task.FromResult(prompts.SequenceEqual(["first"])); } });
+
+        // A send while busy under InterruptAndSend, on a session that CAN steer, injects into the running turn
+        // (TrySteerAsync) rather than cancel-and-restart: no cancel, no new turn/prompt.
+        await manager.EnqueuePendingMessageAsync(info.SessionId, [new TextContent("second")]);
+        await WaitForAsync(() => Task.FromResult(adapter.Session.Steered.SequenceEqual(["second"])));
+
+        Assert.Equal(0, adapter.Session.Cancels);                    // injected, never interrupted
+        lock (gate) { Assert.Equal(["first"], prompts); }            // no second turn was started
+
+        // The injected message is still recorded in the log so every client sees what was steered in.
+        var events = await store.ReadSinceAsync(info.SessionId, 0);
+        Assert.Contains(events.OfType<MessageChunkEvent>(),
+            e => e.Content is TextContent { Text: "second" } && e.Role == MessageRole.User);
+    }
+
+    [Fact]
+    public async Task Interrupt_and_send_falls_back_to_cancel_then_resend_when_steering_declines()
+    {
+        var adapter = new SteerableScriptedAgentAdapter();
+        adapter.Session.SteerResult = false; // steerable-typed, but can't inject right now
+        var store = new InMemoryEventStore();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), store, new NullBroadcaster(), NullLoggerFactory.Instance);
+
+        var prompts = new List<string>();
+        var gate = new object();
+        adapter.Session.OnPrompt = (content, _) =>
+        {
+            lock (gate)
+            {
+                prompts.Add(Text(content));
+            }
+
+            return Task.FromResult(StopReason.EndTurn);
+        };
+
+        var info = await manager.OpenSessionAsync("steerable", "/tmp/pq", useSandbox: false);
+        await manager.SetSendPolicyAsync(info.SessionId, SendPolicy.InterruptAndSend);
+
+        await manager.EnqueuePendingMessageAsync(info.SessionId, [new TextContent("first")]);
+        await WaitForAsync(() => { lock (gate) { return Task.FromResult(prompts.SequenceEqual(["first"])); } });
+
+        // TrySteerAsync returns false, so the host falls back to the always-available cancel-then-resend.
+        await manager.EnqueuePendingMessageAsync(info.SessionId, [new TextContent("second")]);
+        await WaitForAsync(() => { lock (gate) { return Task.FromResult(prompts.SequenceEqual(["first", "second"])); } });
+
+        Assert.Equal(1, adapter.Session.Cancels);   // fell back to cancel
+        Assert.Empty(adapter.Session.Steered);      // nothing was injected
+    }
+
+    [Fact]
     public async Task Pending_until_ready_policy_never_auto_sends_even_when_idle()
     {
         var adapter = new ScriptedAgentAdapter();

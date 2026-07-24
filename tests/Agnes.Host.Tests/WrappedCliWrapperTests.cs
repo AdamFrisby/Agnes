@@ -112,6 +112,49 @@ public sealed class WrappedCliWrapperTests : IDisposable
     }
 
     [Fact]
+    public async Task Steering_a_wrapped_session_writes_escape_then_message_to_the_PTY()
+    {
+        await EnsurePtyAsync();
+        var adapter = new WrappedCliAdapter("cat", spawner: new PortaPtySpawner());
+        await using var host = NewHost(adapter);
+
+        var opened = await host.OpenSessionAsync(WrappedCliAdapter.AdapterId, NewDir(), useSandbox: false);
+        var terminal = adapter.LastSession!;
+
+        // Capture the raw bytes the PTY produces. cat echoes stdin back, so the ESC byte and the message text
+        // we inject both surface here.
+        var captured = new List<byte>();
+        var gate = new object();
+        terminal.OutputReceived += mem => { lock (gate) { captured.AddRange(mem.ToArray()); } };
+
+        // ISteerableSession: writes ESC (0x1b) then "more context\n" to the PTY, injecting mid-turn. Returns
+        // true because we own the input stream.
+        var steered = await terminal.TrySteerAsync([new TextContent("more context")]);
+        Assert.True(steered);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (true)
+        {
+            byte[] snapshot;
+            lock (gate)
+            {
+                snapshot = [.. captured];
+            }
+
+            if (Array.IndexOf(snapshot, (byte)0x1b) >= 0
+                && Encoding.UTF8.GetString(snapshot).Contains("more context", StringComparison.Ordinal))
+            {
+                break; // both the ESC byte and the message text reached the process
+            }
+
+            cts.Token.ThrowIfCancellationRequested();
+            await Task.Delay(20, cts.Token);
+        }
+
+        await terminal.SendEndOfInputAsync(); // let cat see EOF and exit cleanly
+    }
+
+    [Fact]
     public async Task Wrapped_session_is_registered_and_handoff_capable_via_replay()
     {
         await EnsurePtyAsync();

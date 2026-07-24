@@ -61,6 +61,90 @@ public sealed class ScriptedAgentSession : IAgentSession
     }
 }
 
+/// <summary>
+/// A scripted session that additionally implements <see cref="ISteerableSession"/> — the input-controlled
+/// steering capability (sessions/03). Records each injected message (<see cref="Steered"/>) and counts
+/// cancels (<see cref="Cancels"/>) so a test can prove the host steered instead of cancel-then-resending.
+/// <see cref="SteerResult"/> toggles whether <see cref="TrySteerAsync"/> injects (true) or declines (false,
+/// exercising the fallback branch). Like <see cref="ScriptedAgentSession"/>, it never ends its own turn.
+/// </summary>
+public sealed class SteerableScriptedAgentSession : IAgentSession, ISteerableSession
+{
+    private readonly Channel<SessionEvent> _events =
+        Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly object _gate = new();
+
+    public string AgentSessionId { get; set; } = "steerable";
+
+    public ChannelReader<SessionEvent> Events => _events.Reader;
+
+    public void Emit(SessionEvent @event) => _events.Writer.TryWrite(@event);
+
+    public Func<IReadOnlyList<ContentBlock>, SteerableScriptedAgentSession, Task<StopReason>> OnPrompt { get; set; }
+        = (_, _) => Task.FromResult(StopReason.EndTurn);
+
+    public Task<StopReason> PromptAsync(IReadOnlyList<ContentBlock> content, CancellationToken cancellationToken = default)
+        => OnPrompt(content, this);
+
+    private int _cancels;
+
+    /// <summary>How many times the host forwarded a cancel (the cancel-then-resend fallback).</summary>
+    public int Cancels => Volatile.Read(ref _cancels);
+
+    public Task CancelAsync(CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _cancels);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Whether <see cref="TrySteerAsync"/> injects (true) or declines (false → host falls back).</summary>
+    public bool SteerResult { get; set; } = true;
+
+    private readonly List<string> _steered = [];
+
+    /// <summary>The text of every message the host injected via steering, in order.</summary>
+    public IReadOnlyList<string> Steered
+    {
+        get { lock (_gate) { return [.. _steered]; } }
+    }
+
+    public Task<bool> TrySteerAsync(IReadOnlyList<ContentBlock> content, CancellationToken cancellationToken = default)
+    {
+        if (SteerResult)
+        {
+            lock (_gate)
+            {
+                _steered.Add(string.Concat(content.OfType<TextContent>().Select(t => t.Text)));
+            }
+        }
+
+        return Task.FromResult(SteerResult);
+    }
+
+    public Task RespondToPermissionAsync(string requestId, string optionId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public ValueTask DisposeAsync()
+    {
+        _events.Writer.TryComplete();
+        return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>Adapter that hands out a single, test-controlled <see cref="SteerableScriptedAgentSession"/>.</summary>
+public sealed class SteerableScriptedAgentAdapter : IAgentAdapter
+{
+    public SteerableScriptedAgentSession Session { get; } = new();
+
+    public SteerableScriptedAgentAdapter(string id = "steerable")
+        => Descriptor = new() { Id = id, DisplayName = "Steerable Scripted Agent" };
+
+    public AgentDescriptor Descriptor { get; }
+
+    public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
+        => Task.FromResult<IAgentSession>(Session);
+}
+
 /// <summary>Adapter that hands out a single, test-controlled <see cref="ScriptedAgentSession"/>.</summary>
 public sealed class ScriptedAgentAdapter : IAgentAdapter
 {

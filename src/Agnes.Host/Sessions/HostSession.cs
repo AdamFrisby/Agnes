@@ -123,10 +123,7 @@ internal sealed class HostSession : IAsyncDisposable
             _turnActive = true;
         }
 
-        foreach (var block in content)
-        {
-            await AppendAndPublishAsync(new MessageChunkEvent(MessageRole.User, block)).ConfigureAwait(false);
-        }
+        await AppendUserMessageAsync(content).ConfigureAwait(false);
 
         // The agent receives the fork seed ahead of the user's message, but only the user's message was
         // logged above — the seed is context transfer, not something a person typed.
@@ -187,12 +184,34 @@ internal sealed class HostSession : IAsyncDisposable
 
         if (interrupt)
         {
-            // Cancel-then-resend: the always-available steering fallback. True mid-turn injection
-            // (ISteerableSession) is deferred — no adapter's CLI supports receiving new input mid-turn yet.
+            // Steer-if-possible-else-fallback. When the underlying session owns its input stream
+            // (ISteerableSession — a PTY-backed / wrapped CLI), inject the message into the running turn via
+            // the escape-then-message primitive: on success the turn keeps its work and we only log the
+            // injected user message (no cancel, no new turn). Otherwise — the session can't steer, or isn't
+            // steerable at all — fall back to the always-available cancel-then-resend. Either way the user
+            // sees "steering" work without needing to know which path fired.
+            if (_agent is ISteerableSession steerable
+                && await steerable.TrySteerAsync(content, _cts.Token).ConfigureAwait(false))
+            {
+                await AppendUserMessageAsync(content).ConfigureAwait(false);
+                return;
+            }
+
             await CancelAsync().ConfigureAwait(false);
         }
 
         await PromptAsync(content).ConfigureAwait(false);
+    }
+
+    // Logs each block of a user-submitted message to the session log (User role), interleaved like every
+    // other event. Shared by the immediate-send path and the true-steering path (which injects into the live
+    // turn but still records what the person typed so every client sees it).
+    private async Task AppendUserMessageAsync(IReadOnlyList<ContentBlock> content)
+    {
+        foreach (var block in content)
+        {
+            await AppendAndPublishAsync(new MessageChunkEvent(MessageRole.User, block)).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Enqueues a message unconditionally (used by "send now" reinsertion / policy-agnostic paths).</summary>

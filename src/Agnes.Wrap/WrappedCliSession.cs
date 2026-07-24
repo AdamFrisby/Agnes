@@ -14,11 +14,15 @@ namespace Agnes.Wrap;
 /// it is captured in the same stream. Handoff is left to the host's Replay path (the log <em>is</em> the
 /// transcript).
 /// </summary>
-public sealed class WrappedCliSession : IAgentSession
+public sealed class WrappedCliSession : IAgentSession, ISteerableSession
 {
     // Cancel-current-line / interrupt (^C) and end-of-input (^D) control bytes, for CancelAsync / clean close.
     private const byte Etx = 0x03;
     private const byte Eot = 0x04;
+
+    // ESC (0x1b): interrupts the CLI's current generation the way pressing Escape does interactively — the
+    // primitive behind true mid-turn steering (see TrySteerAsync).
+    private const byte Esc = 0x1b;
 
     private readonly IPtyProcess _pty;
     private readonly string _terminalId;
@@ -116,6 +120,32 @@ public sealed class WrappedCliSession : IAgentSession
     /// <summary>A raw terminal has no ACP permission protocol, so there is nothing to answer.</summary>
     public Task RespondToPermissionAsync(string requestId, string optionId, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+
+    /// <summary>
+    /// True mid-turn steering (sessions/03): because we own the PTY's input stream we can inject a message
+    /// into the running turn rather than cancel-and-restart. Press Escape (write the ESC byte) to interrupt
+    /// the current generation the way an interactive user would, then type the new message text followed by a
+    /// newline. Returns true once injected; returns false only if the session is already disposed (no input
+    /// stream to write to), so the host falls back to cancel-then-resend.
+    /// </summary>
+    public async Task<bool> TrySteerAsync(IReadOnlyList<ContentBlock> content, CancellationToken cancellationToken = default)
+    {
+        if (_disposed != 0)
+        {
+            return false;
+        }
+
+        await WriteInputAsync(new[] { Esc }, cancellationToken).ConfigureAwait(false);
+        foreach (var block in content)
+        {
+            if (block is TextContent text)
+            {
+                await WriteInputAsync(Encoding.UTF8.GetBytes(text.Text + "\n"), cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return true;
+    }
 
     private async Task PumpOutputAsync()
     {
