@@ -33,7 +33,7 @@ public sealed partial class SessionDocument : Document, ITraySession
         CloseLoginTerminalCommand = new RelayCommand(() => LoginTerminal = null);
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
         SetPermissionModeCommand = new RelayCommand<string>(v => SkipPermissions = v == "Autonomous");
-        SetSandboxModeCommand = new RelayCommand<string>(v => { if (v is not null && SandboxAvailable) { UseSandbox = v == "On"; } });
+        SetSandboxModeCommand = new RelayCommand<string>(v => { if (v is not null && SandboxAvailable && !SandboxRequired) { UseSandbox = v == "On"; } });
         SelectAgentChoiceCommand = new RelayCommand<AgentChoice>(SelectAgentChoice);
         SelectModelChoiceCommand = new RelayCommand<ModelChoice>(SelectModelChoice);
         StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => SelectedAgent is { Available: true });
@@ -363,10 +363,28 @@ public sealed partial class SessionDocument : Document, ITraySession
 
     /// <summary>Whether the connected host can sandbox at all (from HostInfo).</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SandboxToggleEnabled))]
     private bool _sandboxAvailable;
+
+    /// <summary>Whether the host <em>requires</em> a sandbox for every session (from <see cref="HostInfo.RequireSandbox"/>):
+    /// the toggle is forced on and locked, and the host would reject an unsandboxed request anyway.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SandboxToggleEnabled))]
+    private bool _sandboxRequired;
+
+    /// <summary>The sandbox toggle is interactive only when the host supports sandboxing and doesn't force it.</summary>
+    public bool SandboxToggleEnabled => SandboxAvailable && !SandboxRequired;
 
     public bool SandboxOn => UseSandbox;
     public bool SandboxOff => !UseSandbox;
+
+    partial void OnSandboxRequiredChanged(bool value)
+    {
+        if (value)
+        {
+            UseSandbox = true; // a sandbox-required host can never start an unsandboxed session.
+        }
+    }
 
     public IRelayCommand<string> SetSandboxModeCommand { get; }
 

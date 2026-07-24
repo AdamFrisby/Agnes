@@ -364,6 +364,22 @@ public class SandboxWiringTests
     }
 
     [Fact]
+    public async Task Require_sandbox_still_opens_a_sandboxed_session()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()],
+            security: new SessionSecurityOptions { RequireSandbox = true });
+
+        var info = await manager.OpenSessionAsync("scripted", "/home/adam/project"); // useSandbox defaults true
+
+        Assert.NotNull(info.Sandbox); // the require-sandbox guard let a genuinely sandboxed session through
+        Assert.Same(sandboxes.Last, adapter.LastOptions!.Sandbox);
+    }
+
+    [Fact]
     public async Task No_sandbox_provider_leaves_agent_on_host()
     {
         var adapter = new ScriptedAgentAdapter();

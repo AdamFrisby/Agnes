@@ -510,6 +510,17 @@ builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
 // The real host-side CLI-fallback: a genuine pseudo-terminal (Porta.Pty) backing the embedded terminal and
 // provider-login flows (platform/03). SessionManager resolves it as its optional ICliFallback.
 builder.Services.AddSingleton<ICliFallback, Agnes.Host.Sessions.PortaPtyCliFallback>();
+
+// ---- session security guardrails (Agnes:Security:*) ----
+// Opt-in defence-in-depth for a shared / multi-tenant host: confine every session's working directory to a set
+// of allowed roots, and/or refuse to run any session outside a sandbox. Both default off (today's behaviour).
+// Enforced centrally in SessionManager's open path, so every entry (new / fork / cross-host handoff) is covered
+// regardless of what a client sends.
+builder.Services.AddSingleton(new Agnes.Host.Sessions.SessionSecurityOptions
+{
+    AllowedSessionRoots = builder.Configuration.GetSection("Agnes:Security:AllowedSessionRoots").Get<string[]>() ?? [],
+    RequireSandbox = builder.Configuration.GetValue("Agnes:Security:RequireSandbox", false),
+});
 builder.Services.AddSingleton<SessionManager>();
 
 // ---- Agnes AS an MCP server (see .ideas/voice/01-voice-assistant.md) ----

@@ -4,8 +4,11 @@ using Agnes.Abstractions;
 namespace Agnes.Protocol;
 
 /// <summary>Identity of a host a client can connect to. <see cref="SandboxAvailable"/> tells the client
-/// whether the host can isolate sessions in per-session VMs (so the new-session screen can default it on).</summary>
-public sealed record HostInfo(string HostId, string DisplayName, string Version, bool SandboxAvailable = false);
+/// whether the host can isolate sessions in per-session VMs (so the new-session screen can default it on).
+/// <see cref="RequireSandbox"/> (trailing-optional, so this stays wire-compatible with older clients) tells the
+/// client the host will <em>reject</em> any unsandboxed session, so the UI can force the sandbox toggle on and
+/// lock it — the host enforces this regardless of what the client sends.</summary>
+public sealed record HostInfo(string HostId, string DisplayName, string Version, bool SandboxAvailable = false, bool RequireSandbox = false);
 
 /// <summary>Request to pair a new device using the host's current pairing code.</summary>
 public sealed record PairRequest(string Code, string DeviceName);

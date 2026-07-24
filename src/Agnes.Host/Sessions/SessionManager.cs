@@ -37,6 +37,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly OneShotAgentRunner _oneShot = new();
     private readonly IReadOnlyList<IGitHostProvider> _gitHosts;
     private readonly ISandboxProvider? _sandboxes;
+    private readonly SessionSecurityOptions _security;
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
     private readonly ClaudeTokenRotationPusher? _rotationPusher;
     private readonly McpRegistry? _mcp;
@@ -150,7 +151,8 @@ public sealed class SessionManager : IAsyncDisposable
         Attention.AttentionRequestStore? attention = null,
         ICliFallback? cliFallback = null,
         Hosting.PromptLibrary? promptLibrary = null,
-        ApprovalGateService? approvals = null)
+        ApprovalGateService? approvals = null,
+        SessionSecurityOptions? security = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -160,6 +162,7 @@ public sealed class SessionManager : IAsyncDisposable
         _bus = eventBus ?? new Agnes.Abstractions.Events.EventBus();
         _logger = loggerFactory.CreateLogger<SessionManager>();
         _sandboxes = sandboxProviders?.All.FirstOrDefault();
+        _security = security ?? new SessionSecurityOptions();
         _credentialProviders = credentialProviders?.ToArray() ?? [];
         _rotationPusher = rotationPusher;
         _mcp = mcp;
@@ -436,6 +439,27 @@ public sealed class SessionManager : IAsyncDisposable
     /// <summary>Whether this host can isolate sessions in per-session sandbox VMs (a provider is configured).</summary>
     public bool SandboxAvailable => _sandboxes is not null;
 
+    /// <summary>Whether the host refuses to run any session outside a sandbox (Agnes:Security:RequireSandbox).
+    /// Surfaced to clients via <see cref="HostInfo.RequireSandbox"/> so the new-session UI can force the toggle
+    /// on; still enforced host-side regardless of what any client sends.</summary>
+    public bool SandboxRequired => _security.RequireSandbox;
+
+    /// <summary>
+    /// Enforces the host's session-directory allowlist (Agnes:Security:AllowedSessionRoots): a no-op when no
+    /// allowlist is configured, otherwise throws <see cref="SessionSecurityException"/> if the caller-supplied
+    /// directory resolves outside every allowed root. Called at each open entry BEFORE any filesystem side
+    /// effect (worktree creation, workspace copy) so a rejected request changes nothing on disk.
+    /// </summary>
+    private void EnforceDirectoryAllowed(string workingDirectory)
+    {
+        if (!SessionDirectoryPolicy.IsWithinAllowedRoots(workingDirectory, _security.AllowedSessionRoots))
+        {
+            _logger.LogWarning("Refused a session in '{Directory}': outside the configured allowed session roots.", workingDirectory);
+            throw new SessionSecurityException(
+                $"The working directory '{workingDirectory}' is not within any of this host's allowed session roots.");
+        }
+    }
+
     /// <summary>Which host-level plugin-point capabilities are actually populated right now (AC2/AC3 of
     /// .ideas/00-plugin-architecture.md) — queried live rather than cached, so it reflects the current
     /// registry state if plugins are ever installed/enabled/disabled without a restart.</summary>
@@ -460,6 +484,9 @@ public sealed class SessionManager : IAsyncDisposable
         {
             throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
         }
+
+        // Confine the session to an allowed root (if configured) before we create a worktree or launch anything.
+        EnforceDirectoryAllowed(workingDirectory);
 
         var sessionId = Guid.NewGuid().ToString("n");
         var effectiveDirectory = workingDirectory;
@@ -577,6 +604,19 @@ public sealed class SessionManager : IAsyncDisposable
         if (adapter is null)
         {
             throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
+        }
+
+        // Host policy: refuse to run outside a sandbox when the operator requires isolation for every session
+        // (Agnes:Security:RequireSandbox). Checked here at the single shared open path, so every entry — new,
+        // fork, cross-host handoff — is covered, and before any project checkout / credential work happens. An
+        // adopted or CoW-cloned VM (`existingSandbox`) counts as sandboxed.
+        if (_security.RequireSandbox && existingSandbox is null && !(_sandboxes is not null && useSandbox))
+        {
+            var reason = _sandboxes is null
+                ? "this host requires every session to run in a sandbox, but no sandbox provider is configured"
+                : "this host requires every session to run in a sandbox";
+            _logger.LogWarning("Refused an unsandboxed session {SessionId}: {Reason}.", sessionId, reason);
+            throw new SessionSecurityException($"Refused to open an unsandboxed session: {reason}.");
         }
 
         // Resolve this session's project from the working directory's repo (auto-created + editable);
@@ -717,6 +757,9 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         targetDirectory = fork.TargetDirectory;
+        // A fork writes a full copy of the workspace to an arbitrary destination — hold it to the allowlist too,
+        // before any bytes are copied.
+        EnforceDirectoryAllowed(targetDirectory);
         var adapterId = source.AdapterId;
         var sourceDir = source.WorkingDirectory;
 
@@ -829,6 +872,9 @@ public sealed class SessionManager : IAsyncDisposable
             throw new InvalidOperationException(
                 $"This host has no adapter '{state.AdapterId}' to accept the handoff.");
         }
+
+        // An accepted handoff opens a session at a directory chosen by the peer — confine it like any other.
+        EnforceDirectoryAllowed(targetWorkingDirectory);
 
         var sessionId = Guid.NewGuid().ToString("n");
         var resumeSessionId = state.Mode == HandoffSupport.NativeFork ? state.ResumeToken : null;
@@ -1154,6 +1200,19 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         var effectiveDirectory = record.WorkingDirectory;
+
+        // Re-apply the host policy on resume too (the guardrails may have been turned on since this session was
+        // first opened): a required-sandbox host refuses to relaunch a session that wasn't sandboxed, and the
+        // directory allowlist still applies to the persisted working dir. Fork-into-a-sandbox is the escape hatch.
+        if (_security.RequireSandbox && !(record.Sandboxed && _sandboxes is not null))
+        {
+            throw new SessionSecurityException(
+                "This host now requires every session to run in a sandbox; this session predates that policy and " +
+                "can't be resumed unsandboxed. Fork it to continue in a new, sandboxed session.");
+        }
+
+        EnforceDirectoryAllowed(effectiveDirectory);
+
         var project = await ResolveProjectForAsync(sessionId, effectiveDirectory, cancellationToken).ConfigureAwait(false);
 
         // Re-validate MCP on restart too (config may have changed since first open): strict aborts, lenient warns.

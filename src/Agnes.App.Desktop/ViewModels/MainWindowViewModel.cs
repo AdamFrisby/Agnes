@@ -2019,7 +2019,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             _dispatcher.Post(() =>
             {
                 doc.SandboxAvailable = hostInfo.SandboxAvailable;
-                doc.UseSandbox = hostInfo.SandboxAvailable; // default on when available
+                doc.SandboxRequired = hostInfo.RequireSandbox; // host rejects unsandboxed sessions → lock the toggle on
+                doc.UseSandbox = hostInfo.SandboxAvailable; // default on when available (forced on when required)
                 doc.ShowAgents(agents);
             });
             return true;
