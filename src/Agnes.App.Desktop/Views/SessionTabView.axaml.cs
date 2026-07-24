@@ -23,6 +23,7 @@ public partial class SessionTabView : UserControl
     private double _rightWidth = 540;
     private ScrollViewer? _transcriptScroll;
     private bool _stickToBottom = true;
+    private bool _userScrolling; // a pointer drag (scrollbar/content) is in progress — suppress auto-follow
 
     public SessionTabView()
     {
@@ -170,20 +171,52 @@ public partial class SessionTabView : UserControl
         if (_transcriptScroll is not null)
         {
             _transcriptScroll.ScrollChanged += OnTranscriptScrollChanged;
-            // Wheel-up is explicit intent to leave the bottom — release the pin IMMEDIATELY, even mid-stream.
-            // (Relying on scroll deltas alone fails while content streams: the extent grows every frame and
-            // keeps yanking the view back down before an offset-only "user scrolled up" can be detected.)
-            _transcript.AddHandler(InputElement.PointerWheelChangedEvent, OnTranscriptWheel,
-                Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            // The pin is (dis)armed by ACTUAL user input, not scroll deltas: over a big virtualized list the
+            // extent is re-estimated as items realize, so ExtentDelta fires during a plain scroll — the old
+            // delta-based release never triggered and the "follow" kept yanking back, so the scrollbar could
+            // not be dragged. Now a wheel/drag re-evaluates the pin from geometry; ScrollChanged only follows
+            // streaming content while pinned AND the user isn't actively scrolling.
+            _transcript.AddHandler(InputElement.PointerWheelChangedEvent, OnTranscriptWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            _transcript.AddHandler(InputElement.PointerPressedEvent, OnTranscriptPointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            _transcript.AddHandler(InputElement.PointerReleasedEvent, OnTranscriptPointerReleased, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            _transcript.AddHandler(InputElement.PointerCaptureLostEvent, OnTranscriptPointerCaptureLost, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        }
+    }
+
+    /// <summary>Pinned iff the viewport bottom is within a small margin of the true bottom.</summary>
+    private void ReevaluatePin()
+    {
+        if (_transcriptScroll is { } sv)
+        {
+            _stickToBottom = sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height) < 24;
+            UpdateScrollHint();
         }
     }
 
     private void OnTranscriptWheel(object? sender, PointerWheelEventArgs e)
     {
-        if (e.Delta.Y > 0) // scrolling up (wheel away from the user)
+        if (e.Delta.Y > 0)
         {
-            _stickToBottom = false;
+            _stickToBottom = false; // scrolling up (wheel away) — release immediately, even mid-stream
         }
+
+        // After the wheel scroll applies, re-evaluate (so wheeling back down to the bottom re-arms).
+        Dispatcher.UIThread.Post(ReevaluatePin, DispatcherPriority.Background);
+    }
+
+    private void OnTranscriptPointerPressed(object? sender, PointerPressedEventArgs e) => _userScrolling = true;
+
+    private void OnTranscriptPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        _userScrolling = false;
+        // A drag (scrollbar thumb or content) just ended — arm the pin from where it landed.
+        Dispatcher.UIThread.Post(ReevaluatePin, DispatcherPriority.Background);
+    }
+
+    private void OnTranscriptPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        _userScrolling = false;
+        Dispatcher.UIThread.Post(ReevaluatePin, DispatcherPriority.Background);
     }
 
     private void OnTranscriptScrollChanged(object? sender, ScrollChangedEventArgs e)
@@ -193,36 +226,21 @@ public partial class SessionTabView : UserControl
             return;
         }
 
-        var atBottom = sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height) < 24;
-
-        // Re-arm / release the pin from user-driven offset moves. Reaching the bottom always re-arms;
-        // a pure scroll (offset moved, content didn't) away from the bottom releases. Content-driven
-        // growth (ExtentDelta, i.e. our own streaming) must never flip the pin.
-        if (System.Math.Abs(e.OffsetDelta.Y) > 0.5)
-        {
-            if (atBottom)
-            {
-                _stickToBottom = true;
-            }
-            else if (System.Math.Abs(e.ExtentDelta.Y) <= 0.5)
-            {
-                _stickToBottom = false;
-            }
-        }
-
-        // Follow streaming/new content to the true bottom only while pinned.
-        if (_stickToBottom && System.Math.Abs(e.ExtentDelta.Y) > 0.5)
+        // Follow streaming/new content to the true bottom ONLY while pinned and the user isn't actively
+        // scrolling. The pin itself is never changed here (see the input handlers) — that's what lets the
+        // scrollbar be dragged over a virtualized list whose extent keeps being re-estimated.
+        if (_stickToBottom && !_userScrolling && System.Math.Abs(e.ExtentDelta.Y) > 0.5)
         {
             ScrollToEndNow();
         }
 
         UpdateStickyHeader();
-        UpdateScrollHint(atBottom);
+        UpdateScrollHint();
     }
 
     // A floating "you are here" timestamp shown while the user has scrolled up from the bottom, so long
     // conversations aren't disorienting. Hidden when pinned to the bottom (the live tail).
-    private void UpdateScrollHint(bool atBottom)
+    private void UpdateScrollHint()
     {
         var hint = this.FindControl<Border>("ScrollHint");
         if (hint is null)
@@ -230,7 +248,7 @@ public partial class SessionTabView : UserControl
             return;
         }
 
-        if (_stickToBottom || atBottom || _transcript is null || _transcriptScroll is null)
+        if (_stickToBottom || _transcript is null || _transcriptScroll is null)
         {
             hint.IsVisible = false;
             return;
@@ -275,7 +293,7 @@ public partial class SessionTabView : UserControl
     private void OnTranscriptItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         EnsureScrollHooked();
-        if (e.Action == NotifyCollectionChangedAction.Add && _stickToBottom)
+        if (e.Action == NotifyCollectionChangedAction.Add && _stickToBottom && !_userScrolling)
         {
             Dispatcher.UIThread.Post(ScrollToEndNow, DispatcherPriority.Background);
         }

@@ -15,6 +15,7 @@
 
     <UserControl.Resources>
         <appconv:IndentConverter x:Key="AgentIndent" Step="16" />
+        <appconv:SendPolicyLabelConverter x:Key="SendPolicyLabel" />
     </UserControl.Resources>
 
     <UserControl.KeyBindings>
@@ -1830,7 +1831,13 @@
                                         <TextBlock Text="When busy" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
                                         <ComboBox ItemsSource="{Binding SendPolicies}" SelectedItem="{Binding SendPolicy, Mode=TwoWay}"
                                                   FontSize="12" MinHeight="30" Padding="8,2"
-                                                  AutomationProperties.Name="Send policy while a turn is active" />
+                                                  AutomationProperties.Name="Send policy while a turn is active">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Converter={StaticResource SendPolicyLabel}}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
                                     </StackPanel>
                                 </WrapPanel>
 
