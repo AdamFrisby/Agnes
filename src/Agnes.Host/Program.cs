@@ -464,13 +464,20 @@ builder.Services.AddSingleton<IPluginRegistry<IEventStoreProvider>>(sp =>
     new PluginRegistry<IEventStoreProvider>(sp.GetServices<IEventStoreProvider>(), p => p.Name));
 
 // ---- memory search index (see .ideas/ops/02-memory-search.md) ----
-// A per-host full-text index over every session's transcript, exposed as a plugin point so an
-// embeddings-backed provider can be added later without touching core. The text-only FTS5 provider shares
-// the event store's SQLite file, so it only exists when a durable database is configured (an in-memory
-// host has no file to index). When present, the event store is wrapped so every append is indexed.
+// A per-host index over every session's transcript, exposed as a plugin point so an alternative provider can
+// be added later without touching core. The SQLite provider shares the event store's SQLite file, so it only
+// exists when a durable database is configured (an in-memory host has no file to index). When present, the
+// event store is wrapped so every append is indexed.
+//
+// Two tiers, one provider: FTS5 keyword search is always on; an optional embedding-backed SEMANTIC tier
+// switches on only when Agnes:Search:Embeddings:Provider is openai|local (default none = FTS5-only, exactly
+// as before). The embedding generator is built through Microsoft.Extensions.AI's provider-neutral
+// IEmbeddingGenerator seam and is only ever constructed when embeddings are enabled, so the default host
+// never loads the OpenAI connector. With embeddings on, keyword + semantic hits are fused (RRF).
 if (!string.IsNullOrWhiteSpace(databasePath))
 {
-    builder.Services.AddSingleton<IMemoryIndexProvider>(new SqliteMemoryIndexProvider(databasePath));
+    var embeddingGenerator = EmbeddingSelection.Build(builder.Configuration);
+    builder.Services.AddSingleton<IMemoryIndexProvider>(new SqliteMemoryIndexProvider(databasePath, embeddingGenerator));
 }
 builder.Services.AddPluginPoint<IMemoryIndexProvider>(p => p.Id);
 
