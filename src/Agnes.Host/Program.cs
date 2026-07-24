@@ -430,7 +430,9 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Sharing.SessionSharingService
     sp.GetRequiredService<Agnes.Host.Sharing.ISessionActivityProbe>(),
     Uri.TryCreate(builder.Configuration["Agnes:PublicBaseUrl"], UriKind.Absolute, out var publicBase) ? publicBase : null));
 builder.Services.AddSingleton(sp => new Agnes.Host.Sharing.SessionAccessAuthorizer(
-    sp.GetRequiredService<Agnes.Host.Sharing.SessionShareStore>()));
+    sp.GetRequiredService<Agnes.Host.Sharing.SessionShareStore>(),
+    sp.GetService<Agnes.Host.Groups.GroupMembershipService>(),
+    sp.GetService<Agnes.Host.Sessions.SessionSecurityOptions>()));
 builder.Services.AddSingleton<Agnes.Host.Sharing.PublicViewerTracker>();
 
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
@@ -523,6 +525,8 @@ builder.Services.AddSingleton(new Agnes.Host.Sessions.SessionSecurityOptions
     RequirePermissionPrompts = builder.Configuration.GetValue("Agnes:Security:RequirePermissionPrompts", false),
     AllowUnsandboxedSkipPermissions = builder.Configuration.GetValue("Agnes:Security:AllowUnsandboxedSkipPermissions", false),
     AllowedHostMcpServers = builder.Configuration.GetSection("Agnes:Security:AllowedHostMcpServers").Get<string[]>() ?? [],
+    SessionIsolation = Enum.TryParse<Agnes.Host.Sessions.SessionIsolation>(
+        builder.Configuration["Agnes:Security:SessionIsolation"], ignoreCase: true, out var iso) ? iso : Agnes.Host.Sessions.SessionIsolation.Shared,
 });
 builder.Services.AddSingleton<SessionManager>();
 
@@ -884,6 +888,27 @@ builder.Services.AddSingleton<IGitHostProvider>(sp =>
         });
 });
 builder.Services.AddPluginPoint<IGitHostProvider>(p => p.Id);
+
+// ---- group membership as a plugin point (session isolation, PerGroup) ----
+// Shipped backend: GitHub repo write-access == group membership, where a session's group id is its repo key.
+// Other backends (LDAP, SSO teams, a static roster) register as additional IGroupProvider plugins without
+// touching core. The write-access check reuses the linked GitHub App to mint a token and query the
+// collaborator-permission API; with no App linked it simply grants no group access.
+var groupWriteAccessHttp = new HttpClient();
+builder.Services.AddSingleton<Agnes.Host.Groups.IGitHubRepoWriteAccess>(sp =>
+{
+    var appStore = sp.GetService<Agnes.Host.Hosting.GitHubAppStore>();
+    var app = appStore is not null
+        ? new Agnes.Host.Hosting.GitHubAppCredentialSource(() => appStore.List(), groupWriteAccessHttp)
+        : null;
+    return new Agnes.Host.Groups.GitHubApiRepoWriteAccess(
+        groupWriteAccessHttp,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Groups.GitHubApiRepoWriteAccess>(),
+        app);
+});
+builder.Services.AddSingleton<Agnes.Host.Groups.IGroupProvider, Agnes.Host.Groups.GitHubRepoGroupProvider>();
+builder.Services.AddPluginPoint<Agnes.Host.Groups.IGroupProvider>(p => p.Id);
+builder.Services.AddSingleton<Agnes.Host.Groups.GroupMembershipService>();
 
 // ---- owner-only diagnostics: recent-log ring + crash/error telemetry (see .ideas/ops/01-...) ----
 // Agnes keeps no on-disk log to scrape, so a bounded in-memory ring captures the tail of the host log for the

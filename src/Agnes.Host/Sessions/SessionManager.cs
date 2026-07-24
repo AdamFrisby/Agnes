@@ -449,6 +449,12 @@ public sealed class SessionManager : IAsyncDisposable
     /// toggle to attended; enforced host-side regardless.</summary>
     public bool PermissionPromptsRequired => _security.RequirePermissionPrompts;
 
+    /// <summary>The recorded owner (principal id) and group (repo scope) of a session — for access decisions
+    /// under session isolation. Both null for a session opened before ownership tracking, or with no resolvable
+    /// identity / repo. Read from the in-memory catalogue (repopulated from the store on restart).</summary>
+    public (string? Owner, string? Group) GetOwnership(string sessionId)
+        => _catalog.TryGetValue(sessionId, out var r) ? (r.Owner, r.Group) : (null, null);
+
     /// <summary>
     /// Enforces the host's session-directory allowlist (Agnes:Security:AllowedSessionRoots): a no-op when no
     /// allowlist is configured, otherwise throws <see cref="SessionSecurityException"/> if the caller-supplied
@@ -504,7 +510,7 @@ public sealed class SessionManager : IAsyncDisposable
         new HostCapability(HostCapabilityIds.SandboxProvider, SandboxAvailable, FailClosed: false),
     ];
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, string? owner = null, CancellationToken cancellationToken = default)
     {
         // Event spine: a plugin may redirect the adapter/working directory or veto the open.
         var open = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionOpenEvent(adapterId, workingDirectory), cancellationToken).ConfigureAwait(false);
@@ -538,7 +544,7 @@ public sealed class SessionManager : IAsyncDisposable
 
         var info = await OpenSessionCoreAsync(
             sessionId, adapterId, effectiveDirectory, skipPermissions, mcpApproval, gitCredentialMode,
-            useSandbox, modelId, existingSandbox: null, worktree: useWorktree, cancellationToken).ConfigureAwait(false);
+            useSandbox, modelId, existingSandbox: null, worktree: useWorktree, cancellationToken, owner: owner).ConfigureAwait(false);
         await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionOpenedEvent(info.SessionId, adapterId), cancellationToken).ConfigureAwait(false);
         return info;
     }
@@ -633,7 +639,7 @@ public sealed class SessionManager : IAsyncDisposable
     private async Task<SessionInfo> OpenSessionCoreAsync(
         string sessionId, string adapterId, string effectiveDirectory,
         bool skipPermissions, string mcpApproval, string gitCredentialMode, bool useSandbox, string? modelId,
-        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken, string? resumeSessionId = null)
+        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken, string? resumeSessionId = null, string? owner = null)
     {
         var adapter = _adapters.Find(adapterId);
         if (adapter is null)
@@ -659,11 +665,13 @@ public sealed class SessionManager : IAsyncDisposable
         // Resolve this session's project from the working directory's repo (auto-created + editable);
         // the sandbox / MCP / credential steps below use the project's own config.
         Projects.Project? project = null;
+        string? group = null;
         if (_projects is not null)
         {
             var remote = await _git.GetRemoteUrlAsync(effectiveDirectory, cancellationToken).ConfigureAwait(false);
             var repoKey = GitRemote.TryParse(remote, out var remoteHost, out var remoteRepo) ? $"{remoteHost}/{remoteRepo}" : string.Empty;
             project = _projects.Resolve(repoKey);
+            group = repoKey.Length == 0 ? null : repoKey; // the session's group id (repo scope) for group-based isolation.
             State(sessionId).Project = project;
             _logger.LogInformation("Session {SessionId} uses project '{Project}' ({Scope}).",
                 sessionId, project.Name, repoKey.Length == 0 ? "default" : repoKey);
@@ -748,7 +756,7 @@ public sealed class SessionManager : IAsyncDisposable
         // Persist the initial (placeholder-id) record first so it can't overwrite the real id afterwards.
         var record = new SessionRecord(
             sessionId, adapterId, effectiveDirectory, agent.AgentSessionId,
-            worktree, skipPermissions, sandbox is not null, DateTimeOffset.UtcNow);
+            worktree, skipPermissions, sandbox is not null, DateTimeOffset.UtcNow, owner, group);
         _catalog[sessionId] = record;
         await _store.SaveSessionAsync(record, cancellationToken).ConfigureAwait(false);
 
@@ -822,7 +830,8 @@ public sealed class SessionManager : IAsyncDisposable
 
         return await OpenSessionCoreAsync(
             sessionId, adapterId, targetDirectory, skipPermissions, mcpApproval, gitCredentialMode,
-            useSandbox: sourceSandboxed, modelId: null, existingSandbox: clonedSandbox, worktree: false, cancellationToken).ConfigureAwait(false);
+            useSandbox: sourceSandboxed, modelId: null, existingSandbox: clonedSandbox, worktree: false, cancellationToken,
+            owner: cat?.Owner).ConfigureAwait(false); // a fork inherits the source session's owner.
     }
 
     /// <summary>Replay-fork: branch the conversation at a log point. Copies the workspace and inherits config

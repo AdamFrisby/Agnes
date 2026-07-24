@@ -140,8 +140,11 @@ public class PostgresEventStoreTests
         Assert.Contains("seq        BIGINT NOT NULL", PostgresEventStore.SchemaDdl);
         Assert.Contains("CREATE TABLE IF NOT EXISTS sessions", PostgresEventStore.SchemaDdl);
         Assert.Contains("session_id        TEXT PRIMARY KEY", PostgresEventStore.SchemaDdl);
-        // Idempotent bootstrap: every DDL object is guarded with IF NOT EXISTS.
-        Assert.Equal(3, CountOccurrences(PostgresEventStore.SchemaDdl, "IF NOT EXISTS"));
+        // Idempotent bootstrap: every DDL object is guarded with IF NOT EXISTS — the two tables + index, plus
+        // the additive owner/group column migrations for pre-existing databases.
+        Assert.Equal(5, CountOccurrences(PostgresEventStore.SchemaDdl, "IF NOT EXISTS"));
+        Assert.Contains("ADD COLUMN IF NOT EXISTS owner", PostgresEventStore.SchemaDdl);
+        Assert.Contains("ADD COLUMN IF NOT EXISTS group_id", PostgresEventStore.SchemaDdl);
     }
 
     [Fact]

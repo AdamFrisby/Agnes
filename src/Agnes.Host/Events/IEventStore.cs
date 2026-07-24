@@ -11,7 +11,9 @@ public sealed record SessionRecord(
     bool UseWorktree,
     bool SkipPermissions,
     bool Sandboxed,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? Owner = null,
+    string? Group = null);
 
 /// <summary>
 /// Append-only, per-session event log. Assigns a monotonic sequence to each event and

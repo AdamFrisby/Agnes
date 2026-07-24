@@ -39,8 +39,12 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
             use_worktree      BOOLEAN NOT NULL,
             skip_permissions  BOOLEAN NOT NULL,
             sandboxed         BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at        TEXT    NOT NULL
+            created_at        TEXT    NOT NULL,
+            owner             TEXT,
+            group_id          TEXT
         );
+        ALTER TABLE sessions ADD COLUMN IF NOT EXISTS owner    TEXT;
+        ALTER TABLE sessions ADD COLUMN IF NOT EXISTS group_id TEXT;
         """;
 
     internal const string InsertEventSql =
@@ -54,14 +58,14 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
 
     internal const string UpsertSessionSql =
         """
-        INSERT INTO sessions (session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at)
-        VALUES (@sid, @adapter, @wd, @agent, @wt, @skip, @sandboxed, @created)
+        INSERT INTO sessions (session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, owner, group_id)
+        VALUES (@sid, @adapter, @wd, @agent, @wt, @skip, @sandboxed, @created, @owner, @group)
         ON CONFLICT (session_id) DO UPDATE SET
             agent_session_id = EXCLUDED.agent_session_id;
         """;
 
     internal const string ListSessionsSql =
-        "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at FROM sessions ORDER BY created_at ASC;";
+        "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, owner, group_id FROM sessions ORDER BY created_at ASC;";
 
     private readonly string _connectionString;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
@@ -137,6 +141,8 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
         command.Parameters.AddWithValue("skip", record.SkipPermissions);
         command.Parameters.AddWithValue("sandboxed", record.Sandboxed);
         command.Parameters.AddWithValue("created", record.CreatedAt.ToString("O"));
+        command.Parameters.AddWithValue("owner", (object?)record.Owner ?? DBNull.Value);
+        command.Parameters.AddWithValue("group", (object?)record.Group ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -153,7 +159,9 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
                 reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.GetBoolean(4), reader.GetBoolean(5), reader.GetBoolean(6),
-                DateTimeOffset.Parse(reader.GetString(7))));
+                DateTimeOffset.Parse(reader.GetString(7)),
+                reader.IsDBNull(8) ? null : reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9)));
         }
 
         return records;

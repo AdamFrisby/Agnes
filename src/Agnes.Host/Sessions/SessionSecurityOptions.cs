@@ -48,6 +48,16 @@ public sealed record SessionSecurityOptions
     /// </summary>
     public IReadOnlyList<string> AllowedHostMcpServers { get; init; } = [];
 
+    /// <summary>
+    /// How sessions are scoped to callers on a shared host. <see cref="SessionIsolation.Shared"/> (default) is
+    /// today's behaviour (the host owner sees all; others need an explicit share). <see cref="SessionIsolation.PerUser"/>
+    /// additionally lets a caller always reach the sessions they own (across their own devices).
+    /// <see cref="SessionIsolation.PerGroup"/> further lets members of a session's group reach it (via an
+    /// <c>IGroupProvider</c> — the shipped one is GitHub repo write-access). These are additive grants layered on
+    /// top of explicit shares; the host owner remains an admin super-user in every mode.
+    /// </summary>
+    public SessionIsolation SessionIsolation { get; init; } = SessionIsolation.Shared;
+
     /// <summary>True when <see cref="AllowedSessionRoots"/> actually constrains anything.</summary>
     [JsonIgnore]
     public bool RestrictsDirectories => AllowedSessionRoots.Count > 0;
@@ -60,6 +70,19 @@ public sealed record SessionSecurityOptions
     public bool IsHostMcpServerAllowed(string serverName)
         => AllowedHostMcpServers.Count == 0
         || AllowedHostMcpServers.Any(a => string.Equals(a, serverName, StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>How sessions are scoped to callers on a shared host — see <see cref="SessionSecurityOptions.SessionIsolation"/>.</summary>
+public enum SessionIsolation
+{
+    /// <summary>Today's behaviour: host owner sees all, others need an explicit share.</summary>
+    Shared,
+
+    /// <summary>Also: a caller always reaches the sessions they own (matched across their devices).</summary>
+    PerUser,
+
+    /// <summary>Also: members of a session's group (via an <c>IGroupProvider</c>) reach it.</summary>
+    PerGroup,
 }
 
 /// <summary>
