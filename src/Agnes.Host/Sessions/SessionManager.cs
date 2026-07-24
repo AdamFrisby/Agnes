@@ -4,6 +4,7 @@ using Agnes.Abstractions.Events;
 using Agnes.Host.Approvals;
 using Agnes.Host.Files;
 using Agnes.Host.Events;
+using Agnes.Host.Sessions.Handoff;
 using Agnes.Host.Hosting;
 using Agnes.Protocol;
 using Agnes.Sandbox;
@@ -570,7 +571,7 @@ public sealed class SessionManager : IAsyncDisposable
     private async Task<SessionInfo> OpenSessionCoreAsync(
         string sessionId, string adapterId, string effectiveDirectory,
         bool skipPermissions, string mcpApproval, string gitCredentialMode, bool useSandbox, string? modelId,
-        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken)
+        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken, string? resumeSessionId = null)
     {
         var adapter = _adapters.Find(adapterId);
         if (adapter is null)
@@ -656,6 +657,9 @@ public sealed class SessionManager : IAsyncDisposable
                 SkipPermissions = skipPermissions,
                 McpConfigPath = mcpConfigPath,
                 ModelId = modelId,
+                // A native-fork handoff (connectivity/03) resumes the CLI's own conversation from the token
+                // the source host exported; a plain open passes null and starts fresh.
+                ResumeSessionId = resumeSessionId,
                 // Prepend the library's enabled system-prompt additions; adapters whose CLI accepts a
                 // system-prompt flag (e.g. Claude Code's --append-system-prompt) thread this through.
                 SystemPrompt = _prompts?.AssembleSystemPromptAdditions(),
@@ -763,6 +767,95 @@ public sealed class SessionManager : IAsyncDisposable
 
         return new Agnes.Protocol.ForkAtResult(childInfo, draft);
     }
+
+    /// <summary>Which handoff support a given adapter offers: an adapter that implements
+    /// <see cref="IHandoffCapableAdapter"/> reports its own <see cref="HandoffSupport"/>; every other adapter is
+    /// <see cref="HandoffSupport.Unsupported"/> (never a silent failure — see <see cref="PrepareHandoffAsync"/>).</summary>
+    public HandoffSupport HandoffSupportFor(string adapterId)
+        => _adapters.Find(adapterId) is IHandoffCapableAdapter cap ? cap.Support : HandoffSupport.Unsupported;
+
+    /// <summary>
+    /// Source-host half of a cross-host handoff (connectivity/03): produces a portable <see cref="HandoffState"/>
+    /// the target host feeds to <see cref="AcceptHandoffAsync"/>. A cross-host handoff is a fork whose child lives
+    /// on another host — for <see cref="HandoffSupport.Replay"/> the seed is this session's own event log (reusing
+    /// the same replay machinery as same-host forking); for <see cref="HandoffSupport.NativeFork"/> it's the CLI's
+    /// authoritative resume token, exported via <see cref="IHandoffCapableAdapter.ExportHandoffStateAsync"/>.
+    /// Refuses an <see cref="HandoffSupport.Unsupported"/> agent with a typed error (AC5).
+    /// </summary>
+    public async Task<HandoffState> PrepareHandoffAsync(string sourceSessionId, CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetSnapshotAsync(sourceSessionId, 0, cancellationToken).ConfigureAwait(false);
+        var adapterId = snapshot.Session.AdapterId;
+        var support = HandoffSupportFor(adapterId);
+        if (support == HandoffSupport.Unsupported)
+        {
+            throw new HandoffNotSupportedException(
+                $"Agent '{adapterId}' does not support session handoff to another host.");
+        }
+
+        string? resumeToken = null;
+        if (support == HandoffSupport.NativeFork
+            && _adapters.Find(adapterId) is IHandoffCapableAdapter cap
+            && _sessions.TryGetValue(sourceSessionId, out var live))
+        {
+            resumeToken = await cap.ExportHandoffStateAsync(live.Agent, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Replay carries the transcript to reconstruct on the target; native-fork carries only the token.
+        var seedEvents = support == HandoffSupport.Replay ? snapshot.Events : [];
+        return new HandoffState(sourceSessionId, adapterId, support, snapshot.Session.WorkingDirectory, resumeToken, seedEvents);
+    }
+
+    /// <summary>
+    /// Target-host half of a cross-host handoff (connectivity/03): opens a fresh session at
+    /// <paramref name="targetWorkingDirectory"/> that continues the source's conversation. For
+    /// <see cref="HandoffSupport.Replay"/> the source transcript is rendered into an invisible seed (the exact
+    /// mechanism same-host forking uses — see <see cref="BuildForkSeed"/>/<see cref="HostSession.SetPendingSeed"/>)
+    /// and a <see cref="ForkedFromEvent"/> marks the child's log; for <see cref="HandoffSupport.NativeFork"/> the
+    /// session is resumed from the exported token. The workspace is transferred separately (see
+    /// <see cref="Handoff.WorkspaceTransfer"/>), not here.
+    /// </summary>
+    public async Task<SessionInfo> AcceptHandoffAsync(
+        HandoffState state, string targetWorkingDirectory, CancellationToken cancellationToken = default)
+    {
+        if (state.Mode == HandoffSupport.Unsupported)
+        {
+            throw new HandoffNotSupportedException(
+                $"Handoff state for agent '{state.AdapterId}' is marked unsupported.");
+        }
+
+        if (_adapters.Find(state.AdapterId) is null)
+        {
+            throw new InvalidOperationException(
+                $"This host has no adapter '{state.AdapterId}' to accept the handoff.");
+        }
+
+        var sessionId = Guid.NewGuid().ToString("n");
+        var resumeSessionId = state.Mode == HandoffSupport.NativeFork ? state.ResumeToken : null;
+        var info = await OpenSessionCoreAsync(
+            sessionId, state.AdapterId, targetWorkingDirectory,
+            skipPermissions: false, mcpApproval: "Ask", gitCredentialMode: "Off",
+            useSandbox: false, modelId: null, existingSandbox: null, worktree: false,
+            cancellationToken, resumeSessionId).ConfigureAwait(false);
+
+        // Mark the child's log with its origin, then (for replay) seed the reconstructed transcript invisibly —
+        // exactly as ForkSessionAtAsync does, so a client watching the new session sees the same history.
+        var marker = await _store.AppendAsync(
+            sessionId, new ForkedFromEvent(state.SourceSessionId, GetHead(state.SeedEvents)), cancellationToken).ConfigureAwait(false);
+        await _broadcaster.PublishAsync(sessionId, marker).ConfigureAwait(false);
+
+        if (state.Mode == HandoffSupport.Replay
+            && _sessions.TryGetValue(sessionId, out var child)
+            && BuildForkSeed(state.SeedEvents) is { } seed)
+        {
+            child.SetPendingSeed([seed]);
+        }
+
+        return info;
+    }
+
+    private static long GetHead(IReadOnlyList<SessionEvent> events)
+        => events.Count == 0 ? 0 : events[^1].Sequence;
 
     // Fork "at a user message" forks BEFORE it (its text becomes an editable draft); forking at any other
     // event forks AFTER it (no draft).

@@ -49,4 +49,56 @@ public static class WorkspacePaths
         var rootWithSeparator = root + Path.DirectorySeparatorChar;
         return resolved.StartsWith(rootWithSeparator, StringComparison.Ordinal) ? resolved : null;
     }
+
+    /// <summary>
+    /// Whether <paramref name="path"/> is safe to stream wholesale as a workspace ROOT (session-handoff AC4):
+    /// a real, rooted directory that is NOT the filesystem root, the user's home directory, or any ancestor of
+    /// home (so <c>/</c>, <c>/home</c>, <c>/Users</c> are all refused). Normalizes first, so an unsafe path
+    /// reached via <c>..</c> (e.g. a project folder plus <c>../..</c> landing on home) is caught too. Guards a
+    /// handoff from accidentally streaming far more than the intended project directory.
+    /// </summary>
+    public static bool IsSafeWorkspaceRoot(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        string full;
+        try
+        {
+            full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        // The filesystem root itself (e.g. "/", "C:\").
+        var fsRoot = Path.TrimEndingDirectorySeparator(Path.GetPathRoot(full) ?? string.Empty);
+        if (full.Length == 0 || string.Equals(full, fsRoot, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // The user's home directory, or any ancestor of it.
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrEmpty(home))
+        {
+            home = Path.TrimEndingDirectorySeparator(Path.GetFullPath(home));
+            if (string.Equals(full, home, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var homeWithSeparator = home + Path.DirectorySeparatorChar;
+            var fullWithSeparator = full + Path.DirectorySeparatorChar;
+            if (homeWithSeparator.StartsWith(fullWithSeparator, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

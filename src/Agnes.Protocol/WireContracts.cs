@@ -427,6 +427,24 @@ public sealed record ForkAtRequest(string SourceSessionId, string TargetDirector
 /// editable composer draft when the fork point was a user message (else null).</summary>
 public sealed record ForkAtResult(SessionInfo Info, string? Draft);
 
+/// <summary>
+/// A portable description of a session to be resumed on a <em>different</em> host (session-handoff,
+/// see <c>.ideas/connectivity/03-session-handoff.md</c>). Produced by the source host's
+/// <c>PrepareHandoff</c> and consumed by the target host's <c>AcceptHandoff</c>. A cross-host handoff is a
+/// fork whose child lives on another host: for <see cref="HandoffSupport.Replay"/> the seed is the source's
+/// own <see cref="SessionEvent"/> log (<see cref="SeedEvents"/>), replayed on the target exactly as same-host
+/// forking already does; for <see cref="HandoffSupport.NativeFork"/> the seed is the CLI's authoritative
+/// <see cref="ResumeToken"/>, resumed from directly. The conversation seed travels in this DTO — the separate
+/// workspace-transfer step moves the files.
+/// </summary>
+public sealed record HandoffState(
+    string SourceSessionId,
+    string AdapterId,
+    HandoffSupport Mode,
+    string SourceWorkingDirectory,
+    string? ResumeToken,
+    IReadOnlyList<SessionEvent> SeedEvents);
+
 /// <summary>Stores a token credential source for a host (the low-setup fine-grained-PAT fallback).</summary>
 public sealed record StoreCredentialRequest(string Host, string Token, string? Username = null);
 

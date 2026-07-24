@@ -65,6 +65,10 @@ internal sealed class HostSession : IAsyncDisposable
     /// so the <see cref="SessionManager"/> falls back to the host-level provider (platform/03).</summary>
     public ICliFallback? CliFallback => _agent as ICliFallback;
 
+    /// <summary>The underlying agent session, for the native-fork handoff export seam (connectivity/03) — an
+    /// <see cref="IHandoffCapableAdapter"/> reads its authoritative resume token from it.</summary>
+    public IAgentSession Agent => _agent;
+
     /// <summary>Appends a chunk of CLI-fallback terminal output to the session log (interleaved with every
     /// other event, replayed via the normal snapshot/tail). Called by the <see cref="SessionManager"/> when a
     /// fallback PTY streams output (platform/03) — the existing <see cref="TerminalOutputEvent"/> path.</summary>
