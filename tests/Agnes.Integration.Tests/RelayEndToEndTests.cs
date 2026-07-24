@@ -164,6 +164,14 @@ public sealed class RelayEndToEndTests
 
             builder.ConfigureWebHost(webHost => webHost
                 .UseKestrel()
+                // appsettings.Development.json pins Kestrel to https://0.0.0.0:5081, and Kestrel's Endpoints
+                // config wins over UseUrls — so the test bound 5081 and collided with any running dev host
+                // (or a parallel test run) on that port. Override the endpoint to an ephemeral port; added
+                // after the default appsettings sources, so it takes precedence.
+                .ConfigureAppConfiguration(config => config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Kestrel:Endpoints:Https:Url"] = "https://127.0.0.1:0",
+                }))
                 .ConfigureKestrel(kestrel => kestrel.ConfigureHttpsDefaults(https =>
                     https.ServerCertificate = _cert.GetCertificate()))
                 .UseUrls("https://127.0.0.1:0"));
