@@ -27,6 +27,16 @@ public static class ClaudeCodeNative
     public static readonly string[] DefaultArguments =
         ["--print", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose"];
 
+    /// <summary>The <c>claude</c> CLI's selectable models — stable aliases it resolves to the latest concrete
+    /// model, so they don't go stale (a specific dated id can be typed as a custom entry). Kept here rather than
+    /// shared with the ACP plugin so the native plugin stays self-contained (both drive the same CLI).</summary>
+    public static IReadOnlyList<ModelInfo> Models { get; } =
+    [
+        new ModelInfo("sonnet", "Claude Sonnet (latest)"),
+        new ModelInfo("opus", "Claude Opus (latest)"),
+        new ModelInfo("haiku", "Claude Haiku (latest)"),
+    ];
+
     public static ClaudeCodeNativeAdapter Create(ILoggerFactory loggerFactory, string? command = null, IReadOnlyList<string>? arguments = null, string? claudeHome = null)
         => new(new NativeLaunchSpec
         {
@@ -35,6 +45,8 @@ public static class ClaudeCodeNative
             Descriptor = Descriptor,
             Mapper = new ClaudeCodeStreamMapper(),
             McpConfigFlag = "--mcp-config",
+            Models = Models,
+            ModelArguments = static id => ["--model", id],
             CredentialFaultClassifier = IsRecoverableCredentialFault,
             AuthStatusProbe = _ => Task.FromResult<ProviderAuthStatus?>(ProbeAuthStatus(DefaultCredentialsPath)),
         }, loggerFactory, claudeHome ?? DefaultClaudeHome);

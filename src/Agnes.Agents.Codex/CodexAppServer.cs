@@ -20,7 +20,7 @@ public sealed record CodexLaunchSpec
 /// app-server keeps a thread alive across turns, matching Agnes's persistent-session model. Streams
 /// map through <see cref="CodexMap"/>; approvals surface as permission requests.
 /// </summary>
-public sealed class CodexAppServerAdapter : IAgentAdapter
+public sealed class CodexAppServerAdapter : IAgentAdapter, IModelListingAdapter
 {
     private readonly CodexLaunchSpec _spec;
     private readonly ILoggerFactory _loggerFactory;
@@ -34,6 +34,17 @@ public sealed class CodexAppServerAdapter : IAgentAdapter
     public AgentDescriptor Descriptor => _spec.Descriptor;
 
     public bool IsAvailable() => AgentCommand.IsOnPath(_spec.Command);
+
+    /// <summary>Codex's selectable models. The app-server also accepts other ids the installed CLI knows, so
+    /// custom entry stays enabled — the picker isn't authoritative, it's a convenience over the common ones.</summary>
+    public IReadOnlyList<ModelInfo> StaticModels { get; } =
+    [
+        new ModelInfo("gpt-5-codex", "GPT-5 Codex"),
+        new ModelInfo("gpt-5", "GPT-5"),
+    ];
+
+    public Task<IReadOnlyList<ModelInfo>?> ListModelsAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<ModelInfo>?>(null);
 
     public async Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {
@@ -52,7 +63,7 @@ public sealed class CodexAppServerAdapter : IAgentAdapter
             var approvalPolicy = options.SkipPermissions ? "never" : "on-request";
             var sandbox = options.SkipPermissions && options.Sandbox is not null ? "danger-full-access" : "workspace-write";
 
-            var session = await connection.StartThreadAsync(options.WorkingDirectory, approvalPolicy, sandbox, cancellationToken).ConfigureAwait(false);
+            var session = await connection.StartThreadAsync(options.WorkingDirectory, approvalPolicy, sandbox, options.ModelId, cancellationToken).ConfigureAwait(false);
 
             // Disposing the session tears down the connection (and kills the app-server process).
             return new ConnectionOwningSession(session, connection);

@@ -22,6 +22,10 @@ internal sealed record CodexThreadStartParams
 
     /// <summary>"read-only" | "workspace-write" | "danger-full-access".</summary>
     public string? Sandbox { get; init; }
+
+    /// <summary>The model the thread should use (e.g. "gpt-5-codex"); null lets the app-server pick its default.
+    /// The server echoes the effective model back in <see cref="CodexThreadStartResult.Model"/>.</summary>
+    public string? Model { get; init; }
 }
 
 internal sealed record CodexThreadStartResult(CodexThread Thread, string? Model);

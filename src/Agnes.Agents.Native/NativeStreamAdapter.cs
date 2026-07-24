@@ -13,6 +13,14 @@ public sealed record NativeLaunchSpec
     public required AgentDescriptor Descriptor { get; init; }
     public required INativeStreamMapper Mapper { get; init; }
 
+    /// <summary>Static model catalog surfaced via <see cref="IModelListingAdapter.StaticModels"/> (empty when
+    /// this CLI has no selectable model axis, which suppresses the picker).</summary>
+    public IReadOnlyList<ModelInfo> Models { get; init; } = [];
+
+    /// <summary>Builds the CLI arguments that select a model (e.g. <c>id =&gt; ["--model", id]</c>). Null when
+    /// this CLI takes no model flag, so a requested <see cref="AgentSessionOptions.ModelId"/> is ignored.</summary>
+    public Func<string, IReadOnlyList<string>>? ModelArguments { get; init; }
+
     /// <summary>CLI flag that loads an MCP config file (e.g. "--mcp-config"), or null if unsupported.</summary>
     public string? McpConfigFlag { get; init; }
 
@@ -31,7 +39,7 @@ public sealed record NativeLaunchSpec
 /// and drives it via a <see cref="INativeStreamMapper"/>. Mirrors the ACP adapter's process handling
 /// but reads the CLI's JSONL stdout itself. Reusable across CLIs (Claude Code today; others next).
 /// </summary>
-public class NativeStreamAdapter : IAgentAdapter
+public class NativeStreamAdapter : IAgentAdapter, IModelListingAdapter
 {
     private readonly NativeLaunchSpec _spec;
     private readonly ILoggerFactory _loggerFactory;
@@ -47,6 +55,12 @@ public class NativeStreamAdapter : IAgentAdapter
     public bool IsAvailable() => AgentCommand.IsOnPath(_spec.Command);
 
     public bool IsRecoverableCredentialFault(string errorMessage) => _spec.CredentialFaultClassifier?.Invoke(errorMessage) ?? false;
+
+    // No standard machine-readable model-list call for these CLIs, so ship the static list only.
+    public IReadOnlyList<ModelInfo> StaticModels => _spec.Models;
+
+    public Task<IReadOnlyList<ModelInfo>?> ListModelsAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<ModelInfo>?>(null);
 
     public Task<ProviderAuthStatus?> GetAuthStatusAsync(CancellationToken cancellationToken = default)
         => _spec.AuthStatusProbe?.Invoke(cancellationToken) ?? Task.FromResult<ProviderAuthStatus?>(null);
@@ -71,6 +85,13 @@ public class NativeStreamAdapter : IAgentAdapter
         {
             baseArgs.Add("--resume");
             baseArgs.Add(options.ResumeSessionId);
+        }
+
+        // Select the model when the CLI takes one (e.g. claude --model <id>). A null/blank id means the
+        // CLI's own default; an adapter with no ModelArguments leaves it untouched.
+        if (options.ModelId is { Length: > 0 } modelId && _spec.ModelArguments is { } buildModel)
+        {
+            baseArgs.AddRange(buildModel(modelId));
         }
 
         // Load Agnes-managed MCP servers via the CLI's config-file flag (e.g. claude --mcp-config).

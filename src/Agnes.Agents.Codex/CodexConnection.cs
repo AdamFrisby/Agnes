@@ -45,11 +45,11 @@ internal sealed class CodexConnection : ICodexRpc, IAsyncDisposable
     }
 
     public async Task<CodexAgentSession> StartThreadAsync(
-        string workingDirectory, string approvalPolicy, string sandbox, CancellationToken cancellationToken)
+        string workingDirectory, string approvalPolicy, string sandbox, string? model, CancellationToken cancellationToken)
     {
         var result = await _rpc.InvokeWithParameterObjectAsync<CodexThreadStartResult>(
             "thread/start",
-            new CodexThreadStartParams { Cwd = workingDirectory, ApprovalPolicy = approvalPolicy, Sandbox = sandbox },
+            new CodexThreadStartParams { Cwd = workingDirectory, ApprovalPolicy = approvalPolicy, Sandbox = sandbox, Model = string.IsNullOrWhiteSpace(model) ? null : model },
             cancellationToken).ConfigureAwait(false);
 
         _session = new CodexAgentSession(result.Thread.Id, this, _logger);

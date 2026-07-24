@@ -56,7 +56,7 @@ public class CodexSessionTests
         await using var connection = new CodexConnection(client, client, NullLogger.Instance);
 
         await connection.InitializeAsync(default);
-        var session = await connection.StartThreadAsync("/tmp", "on-request", "workspace-write", default);
+        var session = await connection.StartThreadAsync("/tmp", "on-request", "workspace-write", null, default);
         Assert.Equal("th-1", session.AgentSessionId);
 
         server.OnTurn = async rpc =>
@@ -90,7 +90,7 @@ public class CodexSessionTests
         await using var connection = new CodexConnection(client, client, NullLogger.Instance);
 
         await connection.InitializeAsync(default);
-        var session = await connection.StartThreadAsync("/tmp", "on-request", "workspace-write", default);
+        var session = await connection.StartThreadAsync("/tmp", "on-request", "workspace-write", null, default);
 
         server.OnTurn = async rpc =>
         {
@@ -130,7 +130,7 @@ public class CodexSessionTests
         await using var connection = new CodexConnection(client, client, NullLogger.Instance);
 
         await connection.InitializeAsync(default);
-        var session = await connection.StartThreadAsync("/tmp", "on-request", "workspace-write", default);
+        var session = await connection.StartThreadAsync("/tmp", "on-request", "workspace-write", null, default);
 
         server.OnTurn = async rpc =>
         {
