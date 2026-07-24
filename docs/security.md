@@ -63,16 +63,33 @@ open time; the host owner remains an admin who can reach every session.
 
 ### Egress control
 
-`RequireSandbox` isolates the agent, but a sandbox still has open network by default. Restrict egress
-with **Incus network ACLs**: define a default-deny + allowlist ACL in Incus (permit only your package
-registries and git host), then attach it to every sandbox:
+`RequireSandbox` isolates the agent, but a sandbox still has open network by default. Two options, both
+**host-enforced** (a sudo agent inside the VM can't disable them):
+
+**Per-profile bridges (CodeyBox-compatible, recommended).** Egress policy lives in the host kernel
+(nftables) on one filtered bridge per profile, and the *bridge choice is the policy*. This reuses
+[CodeyBox](https://github.com/AdamFrisby/CodeyBox)'s `scripts/setup-host-networks.sh` verbatim: run it once
+to create the `cb-*` bridges (each with its own allowlist — `-` = no egress, `internet` = no-LAN, or a
+hostname allowlist), then map profile names to those bridges and pick a default:
+
+```jsonc
+"Agnes": { "Sandbox": { "Incus": {
+  "NetworkProfiles": { "locked": "cb-locked", "internet": "cb-internet" },
+  "NetworkProfile": "locked"          // default for every sandbox; a spec may request another
+} } }
+```
+
+Agnes creates each VM with `--no-profiles` and a single bridged NIC on the profile's bridge, so that
+bridge is the VM's only path out — nothing in the guest to flush. See CodeyBox's `docs/host-firewall.md`.
+
+**Incus network ACLs (Incus-only alternative).** Define a default-deny + allowlist ACL in Incus and
+attach it to every sandbox NIC:
 
 ```jsonc
 "Agnes": { "Sandbox": { "Incus": { "NetworkAcls": ["agnes-egress"] } } }
 ```
 
-Agnes references the ACL on each sandbox NIC (`security.acls`); the policy itself lives in Incus, so you
-can manage it with your own tooling. The trusted image-bake VM is left open so it can install tooling.
+Either way, the trusted image-bake VM is left open so it can install tooling.
 
 ### Usage attribution
 

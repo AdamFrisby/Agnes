@@ -38,7 +38,7 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
     {
         var name = CreateInstanceName();
         var image = string.IsNullOrWhiteSpace(spec.ImageReference) ? _options.DefaultImage : spec.ImageReference;
-        var bridge = string.IsNullOrWhiteSpace(spec.NetworkBridge) ? _options.Bridge : spec.NetworkBridge!;
+        var bridge = _options.ResolveBridge(spec.NetworkBridge, spec.NetworkProfile);
 
         _logger.LogInformation("Provisioning Incus sandbox {Name} ({Image})", name, image);
         await _cli.RunCheckedAsync("init", IncusCommandBuilder.BuildInit(_options, image, name, spec.Limits), cancellationToken: cancellationToken).ConfigureAwait(false);

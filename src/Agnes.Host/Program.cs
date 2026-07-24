@@ -762,6 +762,8 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
             DefaultImage = builder.Configuration["Agnes:Sandbox:Incus:Image"] ?? "images:ubuntu/24.04/cloud",
             Bridge = builder.Configuration["Agnes:Sandbox:Incus:Bridge"] ?? "incusbr0",
             NetworkAcls = builder.Configuration.GetSection("Agnes:Sandbox:Incus:NetworkAcls").Get<string[]>() ?? [],
+            NetworkProfiles = builder.Configuration.GetSection("Agnes:Sandbox:Incus:NetworkProfiles").Get<Dictionary<string, string>>() ?? new(),
+            DefaultNetworkProfile = builder.Configuration["Agnes:Sandbox:Incus:NetworkProfile"],
         },
         sp.GetRequiredService<ILoggerFactory>()));
     builder.Services.AddSingleton<Agnes.Sandbox.ISandboxProvider>(

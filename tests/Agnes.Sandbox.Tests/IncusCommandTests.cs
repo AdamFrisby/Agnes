@@ -9,6 +9,25 @@ public class IncusCommandTests
     private static readonly IncusOptions Options = new();
 
     [Fact]
+    public void Resolve_bridge_selects_by_profile_then_falls_back()
+    {
+        var o = Options with
+        {
+            Bridge = "incusbr0",
+            NetworkProfiles = new Dictionary<string, string> { ["locked"] = "cb-locked", ["internet"] = "cb-internet" },
+            DefaultNetworkProfile = "locked",
+        };
+
+        Assert.Equal("cb-internet", o.ResolveBridge(explicitBridge: null, profile: "internet")); // requested profile
+        Assert.Equal("cb-locked", o.ResolveBridge(explicitBridge: null, profile: null));          // default profile
+        Assert.Equal("br-explicit", o.ResolveBridge(explicitBridge: "br-explicit", profile: "internet")); // explicit wins
+        Assert.Equal("incusbr0", o.ResolveBridge(explicitBridge: null, profile: "unknown"));       // unknown → plain bridge
+
+        // No profiles configured at all → always the plain bridge.
+        Assert.Equal("incusbr0", (Options with { Bridge = "incusbr0" }).ResolveBridge(null, "locked"));
+    }
+
+    [Fact]
     public void Nic_add_is_open_by_default_and_attaches_acls_when_configured()
     {
         var open = IncusCommandBuilder.BuildNicAdd(Options, "agnes-abc", "incusbr0");

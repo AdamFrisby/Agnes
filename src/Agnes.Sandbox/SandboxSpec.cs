@@ -16,6 +16,10 @@ public sealed record SandboxSpec
 
     /// <summary>Host bridge to attach the NIC to (provider default if null).</summary>
     public string? NetworkBridge { get; init; }
+
+    /// <summary>Named network profile selecting the egress policy (resolved to a bridge by the provider's
+    /// profile→bridge map). Null = the provider's default profile. Overridden by <see cref="NetworkBridge"/>.</summary>
+    public string? NetworkProfile { get; init; }
 }
 
 /// <summary>Resource caps for a sandbox VM. Defaults match CodeyBox (2 CPU / 12 GiB / 16 GiB).</summary>
