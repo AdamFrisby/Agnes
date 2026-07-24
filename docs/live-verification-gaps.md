@@ -65,6 +65,22 @@ Nothing here is a missing feature — it's the "plug in the real thing and confi
   `Agnes.Host.Tests` — `PostgresEventStoreTests.Postgres_satisfies_the_event_store_contract` exercises the real
   round-trip.
 
+## 7. Memory search — semantic embeddings (`ops/02`)
+- **Built & offline-tested:** the FTS5 keyword tier ships and is the default. On top of it, an embedding-backed
+  **semantic** tier (config-gated behind `Agnes:Search:Embeddings:Provider=openai|local`) computes a vector per
+  indexed chunk into a sibling `event_vectors` table in the same SQLite file, ranks a query by **cosine
+  similarity**, and **fuses** the semantic ranking with the FTS5 ranking via reciprocal-rank fusion. Both
+  providers go through Microsoft.Extensions.AI's provider-neutral `IEmbeddingGenerator` (the `openai` connector,
+  pointed at api.openai.com or — for `local` — an OpenAI-compatible base URL such as Ollama/LM Studio). The
+  ranking/fusion/cosine math and the whole hybrid path are unit-tested with a **fake** `IEmbeddingGenerator`
+  returning deterministic vectors. `none`/unset stays FTS5-only (no embedding client is constructed at all).
+- **Not verified (needs a key or a local model server):** the real embedding round-trip against OpenAI or a
+  local Ollama/LM Studio endpoint — vector dimensionality, latency, and end-to-end recall quality.
+- **To test:** set `Agnes:Search:Embeddings:Provider=openai` + `Agnes:Search:Embeddings:OpenAI:ApiKey` (+ optional
+  `Model`, default `text-embedding-3-small`), **or** `=local` + `Agnes:Search:Embeddings:Local:BaseUrl` +
+  `:Local:Model` (e.g. Ollama on `http://localhost:11434/v1` with `nomic-embed-text`); index/backfill a host and
+  search — semantic-only hits (no keyword overlap) should surface alongside keyword hits.
+
 ## Capability-gated (waiting on the coding CLIs, not on us)
 - **sessions/04 subagent control** — routing a message to / stopping a *specific* subagent needs the
   CLI's own protocol to expose subagent addressing. The roster ships read-only with disabled controls
