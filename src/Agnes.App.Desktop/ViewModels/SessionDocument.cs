@@ -32,7 +32,7 @@ public sealed partial class SessionDocument : Document, ITraySession
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
         CloseLoginTerminalCommand = new RelayCommand(() => LoginTerminal = null);
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
-        SetPermissionModeCommand = new RelayCommand<string>(v => SkipPermissions = v == "Autonomous");
+        SetPermissionModeCommand = new RelayCommand<string>(v => { if (!PermissionPromptsRequired) { SkipPermissions = v == "Autonomous"; } });
         SetSandboxModeCommand = new RelayCommand<string>(v => { if (v is not null && SandboxAvailable && !SandboxRequired) { UseSandbox = v == "On"; } });
         SelectAgentChoiceCommand = new RelayCommand<AgentChoice>(SelectAgentChoice);
         SelectModelChoiceCommand = new RelayCommand<ModelChoice>(SelectModelChoice);
@@ -338,6 +338,23 @@ public sealed partial class SessionDocument : Document, ITraySession
 
     public bool PermAsk => !SkipPermissions;
     public bool PermAutonomous => SkipPermissions;
+
+    /// <summary>Whether the host forbids autonomous mode (from <see cref="HostInfo.RequirePermissionPrompts"/>):
+    /// the permission toggle is forced to attended and locked, and the host would reject an autonomous request.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PermissionToggleEnabled))]
+    private bool _permissionPromptsRequired;
+
+    /// <summary>The permission toggle is interactive only when the host doesn't force per-tool prompts.</summary>
+    public bool PermissionToggleEnabled => !PermissionPromptsRequired;
+
+    partial void OnPermissionPromptsRequiredChanged(bool value)
+    {
+        if (value)
+        {
+            SkipPermissions = false; // a prompts-required host can never start an autonomous session.
+        }
+    }
 
     /// <summary>
     /// New-session choice for a sandboxed session: whether the agent may `git push`, and how — "Off"

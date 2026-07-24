@@ -520,6 +520,9 @@ builder.Services.AddSingleton(new Agnes.Host.Sessions.SessionSecurityOptions
 {
     AllowedSessionRoots = builder.Configuration.GetSection("Agnes:Security:AllowedSessionRoots").Get<string[]>() ?? [],
     RequireSandbox = builder.Configuration.GetValue("Agnes:Security:RequireSandbox", false),
+    RequirePermissionPrompts = builder.Configuration.GetValue("Agnes:Security:RequirePermissionPrompts", false),
+    AllowUnsandboxedSkipPermissions = builder.Configuration.GetValue("Agnes:Security:AllowUnsandboxedSkipPermissions", false),
+    AllowedHostMcpServers = builder.Configuration.GetSection("Agnes:Security:AllowedHostMcpServers").Get<string[]>() ?? [],
 });
 builder.Services.AddSingleton<SessionManager>();
 

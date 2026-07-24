@@ -143,4 +143,80 @@ public class SessionSecurityTests
         Assert.True(required.SandboxRequired);
         Assert.False(optional.SandboxRequired);
     }
+
+    // ---- autonomy (skip-permissions) guardrails ----
+
+    [Fact]
+    public async Task Skip_permissions_outside_a_sandbox_is_refused_by_default()
+    {
+        var adapter = new ScriptedAgentAdapter(); // no sandbox provider → unsandboxed
+        await using var manager = Manager(adapter, new SessionSecurityOptions());
+
+        var ex = await Assert.ThrowsAsync<SessionSecurityException>(
+            () => manager.OpenSessionAsync("scripted", "/tmp/work", skipPermissions: true));
+
+        Assert.Contains("only allows autonomous mode inside a sandbox", ex.Message);
+        Assert.Null(adapter.LastOptions);
+    }
+
+    [Fact]
+    public async Task Skip_permissions_outside_a_sandbox_is_allowed_when_opted_in()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        await using var manager = Manager(adapter, new SessionSecurityOptions { AllowUnsandboxedSkipPermissions = true });
+
+        await manager.OpenSessionAsync("scripted", "/tmp/work", skipPermissions: true);
+
+        Assert.True(adapter.LastOptions!.SkipPermissions); // launched autonomous, as explicitly permitted
+    }
+
+    [Fact]
+    public async Task Require_permission_prompts_refuses_autonomous_even_when_unsandboxed_autonomy_is_allowed()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        await using var manager = Manager(adapter,
+            new SessionSecurityOptions { RequirePermissionPrompts = true, AllowUnsandboxedSkipPermissions = true });
+
+        var ex = await Assert.ThrowsAsync<SessionSecurityException>(
+            () => manager.OpenSessionAsync("scripted", "/tmp/work", skipPermissions: true));
+
+        Assert.Contains("per-tool permission prompts", ex.Message);
+        Assert.Null(adapter.LastOptions);
+    }
+
+    [Fact]
+    public async Task Attended_sessions_are_unaffected_by_the_autonomy_guards()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        await using var manager = Manager(adapter, new SessionSecurityOptions { RequirePermissionPrompts = true });
+
+        await manager.OpenSessionAsync("scripted", "/tmp/work", skipPermissions: false);
+
+        Assert.NotNull(adapter.LastOptions); // attended session launches normally
+    }
+
+    [Fact]
+    public async Task PermissionPromptsRequired_is_surfaced_from_options()
+    {
+        await using var required = Manager(new ScriptedAgentAdapter(), new SessionSecurityOptions { RequirePermissionPrompts = true });
+        await using var optional = Manager(new ScriptedAgentAdapter(), new SessionSecurityOptions());
+
+        Assert.True(required.PermissionPromptsRequired);
+        Assert.False(optional.PermissionPromptsRequired);
+    }
+
+    // ---- host-MCP allowlist (pure options) ----
+
+    [Fact]
+    public void Host_mcp_allowlist_is_open_when_empty_and_case_insensitive_when_set()
+    {
+        var open = new SessionSecurityOptions();
+        Assert.False(open.RestrictsHostMcpServers);
+        Assert.True(open.IsHostMcpServerAllowed("anything"));
+
+        var restricted = new SessionSecurityOptions { AllowedHostMcpServers = ["Files"] };
+        Assert.True(restricted.RestrictsHostMcpServers);
+        Assert.True(restricted.IsHostMcpServerAllowed("files")); // case-insensitive
+        Assert.False(restricted.IsHostMcpServerAllowed("secrets"));
+    }
 }

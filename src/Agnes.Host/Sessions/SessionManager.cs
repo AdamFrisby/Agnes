@@ -444,6 +444,11 @@ public sealed class SessionManager : IAsyncDisposable
     /// on; still enforced host-side regardless of what any client sends.</summary>
     public bool SandboxRequired => _security.RequireSandbox;
 
+    /// <summary>Whether the host forbids autonomous / skip-permissions sessions (Agnes:Security:RequirePermissionPrompts).
+    /// Surfaced via <see cref="HostInfo.RequirePermissionPrompts"/> so the new-session UI can lock the permission
+    /// toggle to attended; enforced host-side regardless.</summary>
+    public bool PermissionPromptsRequired => _security.RequirePermissionPrompts;
+
     /// <summary>
     /// Enforces the host's session-directory allowlist (Agnes:Security:AllowedSessionRoots): a no-op when no
     /// allowlist is configured, otherwise throws <see cref="SessionSecurityException"/> if the caller-supplied
@@ -457,6 +462,36 @@ public sealed class SessionManager : IAsyncDisposable
             _logger.LogWarning("Refused a session in '{Directory}': outside the configured allowed session roots.", workingDirectory);
             throw new SessionSecurityException(
                 $"The working directory '{workingDirectory}' is not within any of this host's allowed session roots.");
+        }
+    }
+
+    /// <summary>
+    /// Enforces the host's autonomy guardrails for a session about to (re)launch (Agnes:Security). Refuses an
+    /// autonomous (<c>--dangerously-skip-permissions</c>) session when the host requires per-tool permission
+    /// prompts, or when it would run outside a sandbox and unsandboxed autonomy isn't explicitly allowed. A
+    /// no-op for an attended session. <paramref name="willSandbox"/> is whether the session will actually run
+    /// inside a sandbox.
+    /// </summary>
+    private void EnforceAutonomyPolicy(string sessionId, bool skipPermissions, bool willSandbox)
+    {
+        if (!skipPermissions)
+        {
+            return;
+        }
+
+        if (_security.RequirePermissionPrompts)
+        {
+            _logger.LogWarning("Refused autonomous session {SessionId}: this host requires per-tool permission prompts.", sessionId);
+            throw new SessionSecurityException(
+                "Refused an autonomous session: this host requires per-tool permission prompts, so skip-permissions mode is disabled.");
+        }
+
+        if (!willSandbox && !_security.AllowUnsandboxedSkipPermissions)
+        {
+            _logger.LogWarning("Refused unsandboxed autonomous session {SessionId}: skip-permissions is only allowed inside a sandbox.", sessionId);
+            throw new SessionSecurityException(
+                "Refused a skip-permissions (autonomous) session outside a sandbox: this host only allows autonomous mode inside a " +
+                "sandbox (set Agnes:Security:AllowUnsandboxedSkipPermissions=true to override).");
         }
     }
 
@@ -606,11 +641,11 @@ public sealed class SessionManager : IAsyncDisposable
             throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
         }
 
-        // Host policy: refuse to run outside a sandbox when the operator requires isolation for every session
-        // (Agnes:Security:RequireSandbox). Checked here at the single shared open path, so every entry — new,
-        // fork, cross-host handoff — is covered, and before any project checkout / credential work happens. An
-        // adopted or CoW-cloned VM (`existingSandbox`) counts as sandboxed.
-        if (_security.RequireSandbox && existingSandbox is null && !(_sandboxes is not null && useSandbox))
+        // Host policy, checked here at the single shared open path so every entry — new, fork, cross-host
+        // handoff — is covered, and before any project checkout / credential work happens. `willSandbox` is
+        // whether this session will actually run inside a sandbox (an adopted / CoW-cloned VM counts).
+        var willSandbox = existingSandbox is not null || (_sandboxes is not null && useSandbox);
+        if (_security.RequireSandbox && !willSandbox)
         {
             var reason = _sandboxes is null
                 ? "this host requires every session to run in a sandbox, but no sandbox provider is configured"
@@ -618,6 +653,8 @@ public sealed class SessionManager : IAsyncDisposable
             _logger.LogWarning("Refused an unsandboxed session {SessionId}: {Reason}.", sessionId, reason);
             throw new SessionSecurityException($"Refused to open an unsandboxed session: {reason}.");
         }
+
+        EnforceAutonomyPolicy(sessionId, skipPermissions, willSandbox);
 
         // Resolve this session's project from the working directory's repo (auto-created + editable);
         // the sandbox / MCP / credential steps below use the project's own config.
@@ -954,13 +991,27 @@ public sealed class SessionManager : IAsyncDisposable
     // strict-mode failures are surfaced up front by ValidateMcpAsync, so this stays non-throwing.
     private IReadOnlyList<McpServerInfo> ApplicableMcp(Projects.Project? project, McpRunAt runAt, string? workspaceId)
     {
+        IReadOnlyList<McpServerInfo> servers;
         if (project is not null)
         {
             var want = runAt == McpRunAt.Sandbox ? "sandbox" : "host";
-            return project.McpServers.Where(s => s.Enabled && string.Equals(s.RunAt, want, StringComparison.OrdinalIgnoreCase)).ToArray();
+            servers = project.McpServers.Where(s => s.Enabled && string.Equals(s.RunAt, want, StringComparison.OrdinalIgnoreCase)).ToArray();
+        }
+        else
+        {
+            servers = _mcp?.Resolve(runAt, workspaceId, strict: false).Servers ?? [];
         }
 
-        return _mcp?.Resolve(runAt, workspaceId, strict: false).Servers ?? [];
+        // Operator allowlist (Agnes:Security:AllowedHostMcpServers): only named servers may run on the HOST
+        // (outside the sandbox). This is the single seam feeding both the unsandboxed-direct and the sandboxed
+        // host-forward paths, so a disallowed host server is never materialized, granted a forward token, or
+        // spawned. Sandbox-run servers are unaffected. Drops are surfaced to the user by ValidateMcpAsync.
+        if (runAt == McpRunAt.Host && _security.RestrictsHostMcpServers)
+        {
+            servers = servers.Where(s => _security.IsHostMcpServerAllowed(s.Name)).ToArray();
+        }
+
+        return servers;
     }
 
     /// <summary>
@@ -972,6 +1023,22 @@ public sealed class SessionManager : IAsyncDisposable
     /// </summary>
     private async Task ValidateMcpAsync(Projects.Project? project, string? workspaceId, string sessionId, CancellationToken cancellationToken)
     {
+        // Operator host-MCP allowlist: name each host-run server we're dropping because it isn't allowlisted, so
+        // the user sees they're running with fewer tools than configured. Covers both the project and global
+        // server sets (ApplicableMcp already does the actual dropping for both spawn paths).
+        if (_security.RestrictsHostMcpServers)
+        {
+            IEnumerable<McpServerInfo> configuredHost = project is not null
+                ? project.McpServers.Where(s => s.Enabled && string.Equals(s.RunAt, "host", StringComparison.OrdinalIgnoreCase))
+                : _mcp?.Resolve(McpRunAt.Host, workspaceId, strict: false).Servers ?? [];
+
+            foreach (var dropped in configuredHost.Where(s => !_security.IsHostMcpServerAllowed(s.Name)))
+            {
+                await AppendNoticeAsync(sessionId,
+                    $"MCP server '{dropped.Name}' wants to run on the host but isn't on this host's allowed-host-MCP list — skipping it.").ConfigureAwait(false);
+            }
+        }
+
         if (project is not null || _mcp is null)
         {
             return;
@@ -1204,7 +1271,8 @@ public sealed class SessionManager : IAsyncDisposable
         // Re-apply the host policy on resume too (the guardrails may have been turned on since this session was
         // first opened): a required-sandbox host refuses to relaunch a session that wasn't sandboxed, and the
         // directory allowlist still applies to the persisted working dir. Fork-into-a-sandbox is the escape hatch.
-        if (_security.RequireSandbox && !(record.Sandboxed && _sandboxes is not null))
+        var willSandbox = record.Sandboxed && _sandboxes is not null;
+        if (_security.RequireSandbox && !willSandbox)
         {
             throw new SessionSecurityException(
                 "This host now requires every session to run in a sandbox; this session predates that policy and " +
@@ -1212,6 +1280,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         EnforceDirectoryAllowed(effectiveDirectory);
+        EnforceAutonomyPolicy(sessionId, record.SkipPermissions, willSandbox);
 
         var project = await ResolveProjectForAsync(sessionId, effectiveDirectory, cancellationToken).ConfigureAwait(false);
 

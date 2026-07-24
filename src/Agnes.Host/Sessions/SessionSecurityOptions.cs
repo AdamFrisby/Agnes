@@ -25,9 +25,41 @@ public sealed record SessionSecurityOptions
     /// </summary>
     public bool RequireSandbox { get; init; }
 
+    /// <summary>
+    /// When true the host refuses any autonomous / <c>--dangerously-skip-permissions</c> session: every tool
+    /// call must be prompted. The strongest of the autonomy guardrails — overrides
+    /// <see cref="AllowUnsandboxedSkipPermissions"/>.
+    /// </summary>
+    public bool RequirePermissionPrompts { get; init; }
+
+    /// <summary>
+    /// Whether an autonomous / skip-permissions session may run <b>outside</b> a sandbox. Defaults to
+    /// <c>false</c>: dangerous autonomous mode is confined to a sandbox unless an operator explicitly opts in.
+    /// Ignored (moot) when <see cref="RequirePermissionPrompts"/> forbids autonomy outright.
+    /// </summary>
+    public bool AllowUnsandboxedSkipPermissions { get; init; }
+
+    /// <summary>
+    /// If non-empty, an allowlist (by MCP server <em>name</em>, case-insensitive) of the only servers permitted
+    /// to run with <c>RunAt=Host</c> — i.e. execute a command on the host, outside any sandbox. A host-run
+    /// server whose name isn't listed is silently dropped from a session's MCP set (a notice is surfaced), on
+    /// both the unsandboxed-direct and the sandboxed host-forward paths. Empty = unrestricted (the default):
+    /// any configured host server runs. Sandbox-run servers are unaffected.
+    /// </summary>
+    public IReadOnlyList<string> AllowedHostMcpServers { get; init; } = [];
+
     /// <summary>True when <see cref="AllowedSessionRoots"/> actually constrains anything.</summary>
     [JsonIgnore]
     public bool RestrictsDirectories => AllowedSessionRoots.Count > 0;
+
+    /// <summary>True when <see cref="AllowedHostMcpServers"/> actually constrains host MCP servers.</summary>
+    [JsonIgnore]
+    public bool RestrictsHostMcpServers => AllowedHostMcpServers.Count > 0;
+
+    /// <summary>Whether a host-run MCP server with this name is permitted (always true when no allowlist is set).</summary>
+    public bool IsHostMcpServerAllowed(string serverName)
+        => AllowedHostMcpServers.Count == 0
+        || AllowedHostMcpServers.Any(a => string.Equals(a, serverName, StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>

@@ -41,7 +41,7 @@ Host daemon ── spawns each CLI (ACP mode, or a native stream-json adapter)
             ── Avalonia desktop app · Uno web (WASM) + Android heads
 ```
 
-Full design rationale: `docs/architecture.md`. Deployment/auth/config reference: `docs/deployment.md`. Incus sandbox live-testing notes and known gotchas: `docs/sandbox-live-testing.md`.
+Full design rationale: `docs/architecture.md`. Deployment/auth/config reference: `docs/deployment.md`. Operator hardening guide (shared-host `Agnes:Security:*` guardrails, residual risks): `docs/security.md`. Incus sandbox live-testing notes and known gotchas: `docs/sandbox-live-testing.md`.
 
 ### The core idea: everything is a `SessionEvent`
 

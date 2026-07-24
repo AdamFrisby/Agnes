@@ -380,6 +380,106 @@ public class SandboxWiringTests
     }
 
     [Fact]
+    public async Task Autonomous_is_allowed_inside_a_sandbox_by_default()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()],
+            security: new SessionSecurityOptions()); // unsandboxed autonomy disallowed by default — but this IS sandboxed
+
+        var info = await manager.OpenSessionAsync("scripted", "/tmp/work", skipPermissions: true);
+
+        Assert.NotNull(info.Sandbox);
+        Assert.True(adapter.LastOptions!.SkipPermissions);
+    }
+
+    [Fact]
+    public async Task Require_permission_prompts_refuses_even_a_sandboxed_autonomous_session()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()],
+            security: new SessionSecurityOptions { RequirePermissionPrompts = true });
+
+        await Assert.ThrowsAsync<SessionSecurityException>(
+            () => manager.OpenSessionAsync("scripted", "/tmp/work", skipPermissions: true));
+
+        Assert.Null(adapter.LastOptions); // never launched
+    }
+
+    [Fact]
+    public async Task Host_mcp_allowlist_drops_disallowed_servers_from_the_forward_path()
+    {
+        var mcpFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
+        try
+        {
+            var mcp = new Agnes.Host.Hosting.McpRegistry(mcpFile);
+            mcp.Add(new Agnes.Protocol.McpServerRequest("allowed-tool", "host", true, "stdio", Command: "real-allowed"));
+            mcp.Add(new Agnes.Protocol.McpServerRequest("blocked-tool", "host", true, "stdio", Command: "real-blocked"));
+
+            var forward = new Agnes.Host.Hosting.McpForwardRegistry();
+            await using var listener = new Agnes.Host.Hosting.McpForwardListener(
+                forward, System.Net.IPAddress.Loopback, 0, "127.0.0.1",
+                NullLogger<Agnes.Host.Hosting.McpForwardListener>.Instance);
+            listener.Start();
+
+            var sandboxes = new FakeSandboxProvider();
+            await using var manager = new SessionManager(
+                TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex")), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()], null, mcp, forward, listener,
+                security: new SessionSecurityOptions { AllowedHostMcpServers = ["allowed-tool"] });
+
+            await manager.OpenSessionAsync("codex", "/tmp/project");
+
+            var bundle = Assert.Single(sandboxes.Last.Materialised);
+            var config = bundle.Files.First(f => f.HomeRelativePath == ".codex/config.toml").Contents;
+            Assert.Contains("allowed-tool", config);
+            Assert.DoesNotContain("blocked-tool", config); // dropped by the host-MCP allowlist
+
+            // The forward token grants ONLY the allowed server — the blocked one can never be spawned on the host.
+            var token = bundle.EnvironmentVariables["AGNES_MCP_TOKEN"];
+            Assert.NotNull(forward.Resolve(token, "allowed-tool"));
+            Assert.Null(forward.Resolve(token, "blocked-tool"));
+        }
+        finally
+        {
+            if (File.Exists(mcpFile)) File.Delete(mcpFile);
+        }
+    }
+
+    [Fact]
+    public async Task Host_mcp_allowlist_drops_disallowed_servers_from_the_direct_config()
+    {
+        var mcpFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
+        try
+        {
+            var mcp = new Agnes.Host.Hosting.McpRegistry(mcpFile);
+            mcp.Add(new Agnes.Protocol.McpServerRequest("allowed", "host", true, "stdio", Command: "npx", Args: ["-y", "a"]));
+            mcp.Add(new Agnes.Protocol.McpServerRequest("blocked", "host", true, "stdio", Command: "npx", Args: ["-y", "b"]));
+
+            var adapter = new ScriptedAgentAdapter("claude-code-native");
+            await using var manager = new SessionManager(
+                TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                mcp: mcp, security: new SessionSecurityOptions { AllowedHostMcpServers = ["allowed"] });
+
+            await manager.OpenSessionAsync("claude-code-native", "/tmp/work");
+
+            var config = await File.ReadAllTextAsync(adapter.LastOptions!.McpConfigPath!);
+            Assert.Contains("allowed", config);
+            Assert.DoesNotContain("blocked", config); // dropped from the host-run agent's own MCP config
+            File.Delete(adapter.LastOptions.McpConfigPath!);
+        }
+        finally
+        {
+            if (File.Exists(mcpFile)) File.Delete(mcpFile);
+        }
+    }
+
+    [Fact]
     public async Task No_sandbox_provider_leaves_agent_on_host()
     {
         var adapter = new ScriptedAgentAdapter();
