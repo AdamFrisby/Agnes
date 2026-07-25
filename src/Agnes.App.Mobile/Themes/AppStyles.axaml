@@ -1,0 +1,257 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    App-wide styles, shared by the Android head and the headless preview harness so the two can't
+    drift. Tokens and control themes live beside this in Tokens/Icons/Controls.axaml.
+  -->
+    <!-- App-wide defaults. Body text is Manrope at the brand's 15px / 1.6; a screen only restates a
+       value when it differs. -->
+  <Style Selector="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource BodyFont}" />
+    <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    <Setter Property="FontSize" Value="{StaticResource TextMd}" />
+    <Setter Property="LineHeight" Value="24" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <!-- Display type: Space Grotesk, tracked tight, per the brand. -->
+  <Style Selector="TextBlock.display">
+    <Setter Property="FontFamily" Value="{StaticResource DisplayFont}" />
+    <Setter Property="FontSize" Value="{StaticResource Text3Xl}" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="LetterSpacing" Value="{StaticResource TrackingTight}" />
+    <Setter Property="LineHeight" Value="36" />
+  </Style>
+  <Style Selector="TextBlock.headline">
+    <Setter Property="FontFamily" Value="{StaticResource DisplayFont}" />
+    <Setter Property="FontSize" Value="{StaticResource Text2Xl}" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="LetterSpacing" Value="{StaticResource TrackingTight}" />
+    <Setter Property="LineHeight" Value="30" />
+  </Style>
+  <Style Selector="TextBlock.title">
+    <Setter Property="FontSize" Value="{StaticResource TextLg}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LineHeight" Value="24" />
+  </Style>
+  <Style Selector="TextBlock.strong">
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.dim">
+    <Setter Property="Foreground" Value="{DynamicResource TextDim}" />
+  </Style>
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+    <Setter Property="FontSize" Value="{StaticResource TextSm}" />
+    <Setter Property="LineHeight" Value="20" />
+  </Style>
+  <Style Selector="TextBlock.caption">
+    <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+    <Setter Property="FontSize" Value="{StaticResource TextXs}" />
+    <Setter Property="LineHeight" Value="17" />
+  </Style>
+  <!-- An eyebrow / section heading: uppercase, wide-tracked, per the brand's caps tracking. -->
+  <Style Selector="TextBlock.section">
+    <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+    <Setter Property="FontSize" Value="{StaticResource Text2Xs}" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="LetterSpacing" Value="1" />
+    <Setter Property="Margin" Value="0,20,0,8" />
+  </Style>
+  <Style Selector="TextBlock.mono">
+    <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+    <Setter Property="FontSize" Value="{StaticResource TextSm}" />
+    <Setter Property="LineHeight" Value="19" />
+  </Style>
+
+  <!-- Card: white/panel fill, 1px hairline, 16px radius — the brand's standard surface. -->
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{DynamicResource Surface1}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusLg}" />
+    <Setter Property="Padding" Value="16" />
+  </Style>
+  <Style Selector="Border.inset">
+    <Setter Property="Background" Value="{DynamicResource Surface2}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusMd}" />
+    <Setter Property="Padding" Value="12" />
+  </Style>
+  <Style Selector="Border.divider">
+    <Setter Property="Height" Value="1" />
+    <Setter Property="Background" Value="{DynamicResource Border}" />
+  </Style>
+
+  <!-- Status dot: one glyph that answers "is this one moving, stuck, or done?" at arm's length.
+       Colour carries the state; the slow pulse is reserved for "running", so motion in the list
+       always means work is happening. -->
+  <Style Selector="Border.dot">
+    <Setter Property="Width" Value="8" />
+    <Setter Property="Height" Value="8" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}" />
+    <Setter Property="Background" Value="{DynamicResource TextMuted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.dot.running">
+    <Setter Property="Background" Value="{DynamicResource Success}" />
+    <Style.Animations>
+      <Animation Duration="0:0:1.7" IterationCount="INFINITE" Easing="SineEaseInOut">
+        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+        <KeyFrame Cue="50%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+  <Style Selector="Border.dot.needs">
+    <Setter Property="Background" Value="{DynamicResource Warning}" />
+  </Style>
+  <Style Selector="Border.dot.error">
+    <Setter Property="Background" Value="{DynamicResource Danger}" />
+  </Style>
+  <Style Selector="Border.dot.review">
+    <Setter Property="Background" Value="{DynamicResource Accent}" />
+  </Style>
+
+  <!-- Status pill: the dot's text counterpart, tinted the same way. -->
+  <Style Selector="Border.pill">
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}" />
+    <Setter Property="Padding" Value="9,3" />
+    <Setter Property="Background" Value="{DynamicResource Surface3}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.pill > TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource TextXs}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource TextDim}" />
+    <Setter Property="LineHeight" Value="16" />
+  </Style>
+  <Style Selector="Border.pill.needs">
+    <Setter Property="Background" Value="{DynamicResource WarningSoft}" />
+  </Style>
+  <Style Selector="Border.pill.needs > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Warning}" />
+  </Style>
+  <Style Selector="Border.pill.running">
+    <Setter Property="Background" Value="{DynamicResource SuccessSoft}" />
+  </Style>
+  <Style Selector="Border.pill.running > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Success}" />
+  </Style>
+  <Style Selector="Border.pill.error">
+    <Setter Property="Background" Value="{DynamicResource DangerSoft}" />
+  </Style>
+  <Style Selector="Border.pill.error > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+  </Style>
+  <Style Selector="Border.pill.accent">
+    <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+  </Style>
+  <Style Selector="Border.pill.accent > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource AccentText}" />
+  </Style>
+
+  <!-- Diff lines. Added/removed carry a tinted band and a matching foreground; hunk headers recede. -->
+  <Style Selector="TextBlock.diff">
+    <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+    <Setter Property="FontSize" Value="{StaticResource TextXs}" />
+    <Setter Property="LineHeight" Value="18" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="Padding" Value="10,1" />
+    <Setter Property="Foreground" Value="{DynamicResource TextDim}" />
+  </Style>
+  <Style Selector="TextBlock.diff.added">
+    <Setter Property="Background" Value="{DynamicResource DiffAdd}" />
+    <Setter Property="Foreground" Value="{DynamicResource DiffAddText}" />
+  </Style>
+  <Style Selector="TextBlock.diff.removed">
+    <Setter Property="Background" Value="{DynamicResource DiffDel}" />
+    <Setter Property="Foreground" Value="{DynamicResource DiffDelText}" />
+  </Style>
+  <!-- The +/- gutter: colour alone shouldn't have to carry which side of the change a line is on. -->
+  <Style Selector="TextBlock.diff.gutter">
+    <Setter Property="Padding" Value="10,1,2,1" />
+    <Setter Property="Width" Value="20" />
+    <Setter Property="Opacity" Value="0.75" />
+  </Style>
+  <Style Selector="StackPanel.added">
+    <Setter Property="Background" Value="{DynamicResource DiffAdd}" />
+  </Style>
+  <Style Selector="StackPanel.removed">
+    <Setter Property="Background" Value="{DynamicResource DiffDel}" />
+  </Style>
+
+  <Style Selector="TextBlock.diff.hunk">
+    <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- Toast: a rail of colour carries the tone; the text stays neutral and readable. -->
+  <Style Selector="Border.toast.success Border#ToastAccent">
+    <Setter Property="Background" Value="{DynamicResource Success}" />
+  </Style>
+  <Style Selector="Border.toast.warning Border#ToastAccent">
+    <Setter Property="Background" Value="{DynamicResource Warning}" />
+  </Style>
+  <Style Selector="Border.toast.danger Border#ToastAccent">
+    <Setter Property="Background" Value="{DynamicResource Danger}" />
+  </Style>
+  <Style Selector="Border.toast">
+    <Setter Property="RenderTransform" Value="translateY(0)" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" Easing="CubicEaseOut" />
+        <DoubleTransition Property="Opacity" Duration="0:0:0.22" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <!-- The "agent is working" indicator: three dots breathing out of phase. -->
+  <Style Selector="Ellipse.typing">
+    <Setter Property="Width" Value="6" />
+    <Setter Property="Height" Value="6" />
+    <Setter Property="Fill" Value="{DynamicResource TextMuted}" />
+  </Style>
+  <Style Selector="Ellipse.typing.a">
+    <Style.Animations>
+      <Animation Duration="0:0:1.1" IterationCount="INFINITE" Easing="SineEaseInOut">
+        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
+        <KeyFrame Cue="33%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+  <Style Selector="Ellipse.typing.b">
+    <Style.Animations>
+      <Animation Duration="0:0:1.1" IterationCount="INFINITE" Delay="0:0:0.18" Easing="SineEaseInOut">
+        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
+        <KeyFrame Cue="33%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+  <Style Selector="Ellipse.typing.c">
+    <Style.Animations>
+      <Animation Duration="0:0:1.1" IterationCount="INFINITE" Delay="0:0:0.36" Easing="SineEaseInOut">
+        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
+        <KeyFrame Cue="33%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.25" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+
+  <!-- A ScrollViewer that allows horizontal scrolling measures its content at infinite width, which
+       stops text wrapping. Everything in this app is a vertical scroller, so horizontal is off by
+       default; the one place that genuinely needs it (a diff) opts back in locally. -->
+  <Style Selector="ScrollViewer">
+    <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+  </Style>
+
+  <!-- Scrollbars are noise on a touch surface; the fling itself is the feedback. -->
+  <Style Selector="ScrollBar">
+    <Setter Property="Opacity" Value="0" />
+    <Setter Property="Width" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Height" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+  </Style>
+</Styles>

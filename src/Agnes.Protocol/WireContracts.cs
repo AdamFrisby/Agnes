@@ -4,11 +4,93 @@ using Agnes.Abstractions;
 namespace Agnes.Protocol;
 
 /// <summary>Identity of a host a client can connect to. <see cref="SandboxAvailable"/> tells the client
-/// whether the host can isolate sessions in per-session VMs (so the new-session screen can default it on).</summary>
-public sealed record HostInfo(string HostId, string DisplayName, string Version, bool SandboxAvailable = false);
+/// whether the host can isolate sessions in per-session VMs (so the new-session screen can default it on).
+/// <see cref="RequireSandbox"/> (trailing-optional, so this stays wire-compatible with older clients) tells the
+/// client the host will <em>reject</em> any unsandboxed session, so the UI can force the sandbox toggle on and
+/// lock it — the host enforces this regardless of what the client sends. <see cref="RequirePermissionPrompts"/>
+/// likewise tells the client the host forbids autonomous / skip-permissions mode, so the UI can lock the
+/// permission toggle to attended.</summary>
+public sealed record HostInfo(string HostId, string DisplayName, string Version, bool SandboxAvailable = false, bool RequireSandbox = false, bool RequirePermissionPrompts = false);
 
-/// <summary>Request to pair a new device using the host's current pairing code.</summary>
+/// <summary>
+/// Request to pair a new device.
+///
+/// <paramref name="Code"/> carries either the host's short bootstrap code (typed by a human, and only
+/// accepted while the host has no paired device yet) or a <see cref="PairingGrant.Secret"/> scanned from
+/// a QR — the same field because the host distinguishes them by shape, and a client that only knows the
+/// old contract keeps working.
+/// </summary>
 public sealed record PairRequest(string Code, string DeviceName);
+
+/// <summary>
+/// A one-time, high-entropy pairing secret minted by an <em>already-paired</em> device for a new one
+/// (<c>POST /pair/grant</c>), to be carried in a QR rather than typed.
+///
+/// The short bootstrap code is sized for a human to read off a screen, which caps it at around 40 bits.
+/// A grant is never typed, so it isn't capped: it is 256 bits of CSPRNG output, single-use, and
+/// short-lived. <see cref="Secret"/> is returned exactly once and is never recoverable from the host.
+/// </summary>
+public sealed record PairingGrant(string Secret, string DeepLink, DateTimeOffset ExpiresAt);
+
+/// <summary>
+/// A new device asking an already-paired one to vouch for it (<c>POST /pair/request</c>), for when
+/// scanning a QR isn't possible. The device presents the SPKI public key it will authenticate with.
+/// </summary>
+public sealed record PairApprovalRequest(string PublicKey, string DeviceName);
+
+/// <summary>
+/// The host's answer to a pairing request: poll <see cref="RequestId"/> until it's approved.
+///
+/// <see cref="VerificationCode"/> is a comparison value, not a secret — it is derived from the
+/// requesting device's public key and the request id, so the requesting device computes the same digits
+/// independently. The human compares the two screens, which is what stops an attacker's request being
+/// approved in place of yours. Being a comparison value rather than a secret is why six digits is
+/// enough here where forty bits was not enough for the bootstrap code.
+/// </summary>
+public sealed record PairApprovalPending(string RequestId, string VerificationCode, DateTimeOffset ExpiresAt);
+
+/// <summary>One pairing request awaiting a decision, as shown to an already-paired device.</summary>
+public sealed record PendingPairApproval(
+    string RequestId,
+    string DeviceName,
+    string VerificationCode,
+    DateTimeOffset RequestedAt,
+    DateTimeOffset ExpiresAt);
+
+/// <summary>Where a pairing request has got to.</summary>
+public enum PairApprovalState
+{
+    Pending,
+    Approved,
+    Denied,
+
+    /// <summary>Expired, or never existed. Deliberately indistinguishable, so polling can't enumerate ids.</summary>
+    Unknown,
+}
+
+/// <summary>The result of polling a pairing request. <see cref="Token"/> is set exactly once, on the
+/// first poll after approval.</summary>
+public sealed record PairApprovalStatus(PairApprovalState State, string? DeviceId = null, string? Token = null);
+
+/// <summary>
+/// The six digits shown on both screens during approval pairing.
+///
+/// This lives in the shared wire contract on purpose. The security property depends on the requesting
+/// device computing the digits <em>itself</em> rather than displaying what the host sent — otherwise a
+/// substituted key would show matching numbers on both screens and the comparison would prove nothing.
+/// Two implementations that could drift apart would quietly destroy that, so there is exactly one.
+/// </summary>
+public static class PairVerification
+{
+    /// <summary>Derives the comparison digits from the requesting device's public key and the request id.</summary>
+    public static string Derive(string publicKey, string requestId)
+    {
+        var digest = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(publicKey.Trim() + "\n" + requestId));
+        var value = ((digest[0] << 16) | (digest[1] << 8) | digest[2]) % 1_000_000;
+        return value.ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
+    }
+}
 
 /// <summary>A successful pairing — the per-device token to store and connect with (shown once).
 /// Shared by every bootstrap method (pairing code, GitHub SSO, keypair).</summary>

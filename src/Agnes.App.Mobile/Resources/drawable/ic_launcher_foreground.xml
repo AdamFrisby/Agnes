@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Agnes squid mark (Multitudal brand asset), scaled into the adaptive-icon safe zone so no
+  launcher mask clips a tentacle. Authored on the mark's native 256 grid and shrunk by a group
+  transform rather than by re-drawing, so it stays identical to the source SVG.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:aapt="http://schemas.android.com/aapt"
+        android:width="108dp"
+        android:height="108dp"
+        android:viewportWidth="256"
+        android:viewportHeight="256">
+  <group android:pivotX="128" android:pivotY="128" android:scaleX="0.6" android:scaleY="0.6">
+
+    <!-- hood -->
+    <path android:pathData="M 111.30 38.32 Q 128.00 24.00 144.70 38.32 L 146.30 39.68 Q 163.00 54.00 168.89 75.20 L 172.11 86.80 Q 178.00 108.00 156.00 108.00 L 100.00 108.00 Q 78.00 108.00 83.89 86.80 L 87.11 75.20 Q 93.00 54.00 109.70 39.68 Z">
+      <aapt:attr name="android:fillColor">
+        <gradient android:type="linear" android:startX="128" android:startY="20" android:endX="128" android:endY="108">
+          <item android:offset="0" android:color="#5940D6" />
+          <item android:offset="1" android:color="#7A4FE8" />
+        </gradient>
+      </aapt:attr>
+    </path>
+
+    <!-- fins -->
+    <path android:fillColor="#6A48E0" android:pathData="M 55.94 76.99 Q 48.00 76.00 53.09 69.82 L 70.91 48.18 Q 76.00 42.00 76.84 49.96 L 79.16 72.04 Q 80.00 80.00 72.06 79.01 Z" />
+    <path android:fillColor="#6A48E0" android:pathData="M 200.06 76.99 Q 208.00 76.00 202.91 69.82 L 185.09 48.18 Q 180.00 42.00 179.16 49.96 L 176.84 72.04 Q 176.00 80.00 183.94 79.01 Z" />
+
+    <!-- head -->
+    <path android:pathData="M 84.00 138.00 Q 84.00 120.00 102.00 120.00 L 154.00 120.00 Q 172.00 120.00 172.00 138.00 L 172.00 160.00 Q 172.00 178.00 154.00 178.00 L 102.00 178.00 Q 84.00 178.00 84.00 160.00 Z">
+      <aapt:attr name="android:fillColor">
+        <gradient android:type="linear" android:startX="84" android:startY="120" android:endX="172" android:endY="178">
+          <item android:offset="0" android:color="#8A55EE" />
+          <item android:offset="1" android:color="#C858C8" />
+        </gradient>
+      </aapt:attr>
+    </path>
+
+    <!-- tentacles -->
+    <path android:pathData="M 96 192 L 96 214 Q 96 226 85 226" android:strokeWidth="16" android:strokeLineCap="round">
+      <aapt:attr name="android:strokeColor">
+        <gradient android:type="linear" android:startX="96" android:startY="184" android:endX="96" android:endY="234">
+          <item android:offset="0" android:color="#B85CE0" />
+          <item android:offset="1" android:color="#D85CB8" />
+        </gradient>
+      </aapt:attr>
+    </path>
+    <path android:pathData="M 118 192 L 118 210" android:strokeWidth="16" android:strokeLineCap="round">
+      <aapt:attr name="android:strokeColor">
+        <gradient android:type="linear" android:startX="118" android:startY="184" android:endX="118" android:endY="218">
+          <item android:offset="0" android:color="#D055B0" />
+          <item android:offset="1" android:color="#E85D95" />
+        </gradient>
+      </aapt:attr>
+    </path>
+    <path android:pathData="M 140 192 L 140 232" android:strokeWidth="16" android:strokeLineCap="round">
+      <aapt:attr name="android:strokeColor">
+        <gradient android:type="linear" android:startX="140" android:startY="184" android:endX="140" android:endY="240">
+          <item android:offset="0" android:color="#E0558E" />
+          <item android:offset="1" android:color="#F27078" />
+        </gradient>
+      </aapt:attr>
+    </path>
+    <path android:pathData="M 162 192 L 162 212 Q 162 224 173 224" android:strokeWidth="16" android:strokeLineCap="round">
+      <aapt:attr name="android:strokeColor">
+        <gradient android:type="linear" android:startX="162" android:startY="184" android:endX="162" android:endY="232">
+          <item android:offset="0" android:color="#EF6A78" />
+          <item android:offset="1" android:color="#FF8A66" />
+        </gradient>
+      </aapt:attr>
+    </path>
+
+    <!-- face -->
+    <path android:fillColor="#FFFFFF" android:pathData="M 102.5 129 a 4.5 4.5 0 1 0 9 0 a 4.5 4.5 0 1 0 -9 0 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 144.5 129 a 4.5 4.5 0 1 0 9 0 a 4.5 4.5 0 1 0 -9 0 Z" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="6.5" android:pathData="M 95.5 152 a 11.5 11.5 0 1 0 23 0 a 11.5 11.5 0 1 0 -23 0 Z" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="6.5" android:pathData="M 137.5 152 a 11.5 11.5 0 1 0 23 0 a 11.5 11.5 0 1 0 -23 0 Z" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="6.5" android:strokeLineCap="round" android:pathData="M 119 152 L 137 152" />
+
+  </group>
+</vector>

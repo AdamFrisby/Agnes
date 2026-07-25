@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             x:Class="Agnes.App.Mobile.Controls.PageHeader">
+  <!--
+    The app bar for a pushed page: back, title, and whatever the page wants on the right.
+
+    The background runs under the status bar while the content sits below it — that inset is why this
+    isn't just a Grid at the top of each page.
+  -->
+  <Border Background="{DynamicResource Surface1}"
+          BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+    <StackPanel>
+    <c:SafeSpacer Edge="Top" />
+    <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="56">
+      <Button Name="BackButton" Grid.Column="0" Theme="{StaticResource IconButton}">
+        <c:Icon Data="{StaticResource IconChevronLeft}" Size="24" Stroke="{DynamicResource Text}" />
+      </Button>
+
+      <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="2,0,8,0">
+        <TextBlock Name="TitleText" FontWeight="SemiBold" FontSize="{StaticResource TextLg}"
+                   LineHeight="22" MaxLines="1" TextTrimming="CharacterEllipsis" />
+        <TextBlock Name="SubtitleText" Classes="caption" MaxLines="1" TextTrimming="CharacterEllipsis"
+                   IsVisible="False" />
+      </StackPanel>
+
+      <ContentPresenter Name="ActionSlot" Grid.Column="2" VerticalAlignment="Center" />
+    </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

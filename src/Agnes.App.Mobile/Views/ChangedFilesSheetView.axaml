@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.ChangedFilesSheetView"
+             x:DataType="vm:ChangedFilesSheetViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="12,10,12,24">
+
+      <ItemsControl ItemsSource="{Binding Session.ModifiedFiles}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Button Theme="{StaticResource RowButton}" Padding="10,12"
+                    Command="{Binding $parent[UserControl].DataContext.OpenCommand}"
+                    CommandParameter="{Binding}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconFile}" Size="17"
+                        Stroke="{DynamicResource Accent}" Margin="0,0,12,0" />
+                <StackPanel Grid.Column="1" Spacing="2">
+                  <!-- The path reads right-to-left on a phone: the leaf matters most, so the head is what
+                       gets trimmed. -->
+                  <TextBlock Text="{Binding Name}" Classes="mono" MaxLines="1"
+                             TextTrimming="PrefixCharacterEllipsis" />
+                  <TextBlock Text="{Binding StatusText}" Classes="caption" />
+                </StackPanel>
+                <c:Icon Grid.Column="2" Data="{StaticResource IconChevronRight}" Size="16"
+                        Stroke="{DynamicResource TextMuted}" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <TextBlock Classes="dim" Margin="12,30,12,0" TextAlignment="Center"
+                 IsVisible="{Binding IsEmpty}"
+                 Text="Nothing changed yet. Edits show up here the moment the agent makes one." />
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

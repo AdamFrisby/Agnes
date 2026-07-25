@@ -41,15 +41,20 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
                 use_worktree      INTEGER NOT NULL,
                 skip_permissions  INTEGER NOT NULL,
                 sandboxed         INTEGER NOT NULL DEFAULT 0,
-                created_at        TEXT NOT NULL
+                created_at        TEXT NOT NULL,
+                model_id          TEXT,
+                owner             TEXT,
+                group_id          TEXT
             );
             """;
         command.ExecuteNonQuery();
 
-        // Additive migration for DBs created before the column existed. SQLite has no ADD COLUMN IF NOT
-        // EXISTS, so add it and swallow the "duplicate column name" error when it's already there —
-        // critical so an existing catalogue (with real sessions) still loads instead of throwing on read.
+        // Additive migrations for DBs created before these columns existed. SQLite has no ADD COLUMN IF NOT
+        // EXISTS, so add each and swallow the "duplicate column name" error when it's already there — critical
+        // so an existing catalogue (with real sessions) still loads instead of throwing on read.
         AddColumnIfMissing(connection, "sessions", "model_id TEXT");
+        AddColumnIfMissing(connection, "sessions", "owner TEXT");
+        AddColumnIfMissing(connection, "sessions", "group_id TEXT");
     }
 
     private static void AddColumnIfMissing(SqliteConnection connection, string table, string columnDef)
@@ -72,11 +77,13 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            INSERT INTO sessions (session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id)
-            VALUES ($sid, $adapter, $wd, $agent, $wt, $skip, $sandboxed, $created, $model)
+            INSERT INTO sessions (session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id, owner, group_id)
+            VALUES ($sid, $adapter, $wd, $agent, $wt, $skip, $sandboxed, $created, $model, $owner, $group)
             ON CONFLICT(session_id) DO UPDATE SET
                 agent_session_id = excluded.agent_session_id,
-                model_id = excluded.model_id;
+                model_id = excluded.model_id,
+                owner = excluded.owner,
+                group_id = excluded.group_id;
             """;
         command.Parameters.AddWithValue("$sid", record.SessionId);
         command.Parameters.AddWithValue("$adapter", record.AdapterId);
@@ -87,7 +94,20 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         command.Parameters.AddWithValue("$sandboxed", record.Sandboxed ? 1 : 0);
         command.Parameters.AddWithValue("$created", record.CreatedAt.ToString("O"));
         command.Parameters.AddWithValue("$model", (object?)record.ModelId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$owner", (object?)record.Owner ?? DBNull.Value);
+        command.Parameters.AddWithValue("$group", (object?)record.Group ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<int> PruneEventsBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        await using var connection = Open();
+        await using var command = connection.CreateCommand();
+        // ts is the ISO-8601 round-trip ("O") UTC string written on append; that format sorts lexicographically,
+        // so a string comparison is a correct chronological comparison here.
+        command.CommandText = "DELETE FROM events WHERE ts < $cutoff;";
+        command.Parameters.AddWithValue("$cutoff", cutoff.ToUniversalTime().ToString("O"));
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<SessionRecord>> ListSessionsAsync(CancellationToken cancellationToken = default)
@@ -95,7 +115,7 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         await using var connection = Open();
         await using var command = connection.CreateCommand();
         command.CommandText =
-            "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id FROM sessions ORDER BY created_at ASC;";
+            "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id, owner, group_id FROM sessions ORDER BY created_at ASC;";
         var records = new List<SessionRecord>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -105,7 +125,9 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.GetInt64(4) != 0, reader.GetInt64(5) != 0, reader.GetInt64(6) != 0,
                 DateTimeOffset.Parse(reader.GetString(7)),
-                reader.IsDBNull(8) ? null : reader.GetString(8)));
+                reader.IsDBNull(8) ? null : reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? null : reader.GetString(10)));
         }
 
         return records;

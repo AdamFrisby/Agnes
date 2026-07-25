@@ -35,11 +35,30 @@ public static class PairingReachability
         return boundAddresses?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
     }
 
-    /// <summary>The <c>agnes://pair</c> deep link over a reachable address — what a QR encodes so a scanning
-    /// device connects to the right host. The address is a value, not a secret; the pairing code is entered
-    /// or vouched for separately by the already-trusted device.</summary>
-    public static string BuildDeepLink(string reachableAddress)
-        => "agnes://pair?host=" + Uri.EscapeDataString(reachableAddress);
+    /// <summary>
+    /// The <c>agnes://pair</c> deep link a QR encodes, so a scanning device connects to the right host.
+    ///
+    /// The address alone is a value, not a secret — that form is served unauthenticated at
+    /// <c>GET /pair/qr</c> and still requires the scanning device to authenticate separately. When a
+    /// <paramref name="grant"/> is supplied the link *is* a credential: it carries a 256-bit one-time
+    /// secret minted by an already-paired device, and the QR showing it must be treated accordingly
+    /// (which is why the clients that display one can hide it again).
+    /// </summary>
+    public static string BuildDeepLink(string reachableAddress, string? grant = null, string? sessionId = null)
+    {
+        var link = "agnes://pair?host=" + Uri.EscapeDataString(reachableAddress);
+        if (!string.IsNullOrWhiteSpace(grant))
+        {
+            link += "&grant=" + Uri.EscapeDataString(grant);
+        }
+
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            link += "&session=" + Uri.EscapeDataString(sessionId);
+        }
+
+        return link;
+    }
 }
 
 /// <summary>

@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ApplicationId>dev.agnes.app</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Avalonia/XAML codegen produces warnings we don't want to fail the build (same posture as the
+         desktop head). -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Reflection-heavy (Avalonia bindings + System.Text.Json over the wire contract): don't trim. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <AndroidLinkMode>None</AndroidLinkMode>
+    <AndroidUseInterpreter>false</AndroidUseInterpreter>
+    <!-- AOT requires trimming, which we can't enable while bindings and the wire contract are resolved
+         reflectively. Release therefore JITs, like the desktop head. -->
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Android" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Markdown.Avalonia" Version="12.0.0-a3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Brand fonts (Space Grotesk / Manrope / JetBrains Mono), embedded so typography is identical on
+         every device rather than falling back to whatever the OEM ships. -->
+    <AvaloniaResource Include="Assets\**" Exclude="Assets\**\*.md" />
+    <None Include="Assets\**\*.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Agnes.Abstractions\Agnes.Abstractions.csproj" />
+    <ProjectReference Include="..\Agnes.Protocol\Agnes.Protocol.csproj" />
+    <ProjectReference Include="..\Agnes.Client\Agnes.Client.csproj" />
+    <ProjectReference Include="..\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
+    <ProjectReference Include="..\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
+  </ItemGroup>
+
+</Project>

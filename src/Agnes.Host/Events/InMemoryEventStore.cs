@@ -57,6 +57,20 @@ public sealed class InMemoryEventStore : IEventStore
     public Task<IReadOnlyList<SessionRecord>> ListSessionsAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<SessionRecord>>(_catalog.Values.ToArray());
 
+    public Task<int> PruneEventsBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        var removed = 0;
+        foreach (var log in _logs.Values)
+        {
+            lock (log.Gate)
+            {
+                removed += log.Events.RemoveAll(e => e.Timestamp < cutoff);
+            }
+        }
+
+        return Task.FromResult(removed);
+    }
+
     private sealed class SessionLog
     {
         public object Gate { get; } = new();

@@ -18,10 +18,12 @@ namespace Agnes.App.Desktop.ViewModels;
 public sealed partial class SessionDocument : Document, ITraySession
 {
     private readonly ITabController _controller;
+    private readonly Agnes.Ui.Core.IUiDispatcher _dispatcher;
 
-    public SessionDocument(ITabController controller)
+    public SessionDocument(ITabController controller, Agnes.Ui.Core.IUiDispatcher? dispatcher = null)
     {
         _controller = controller;
+        _dispatcher = dispatcher ?? Agnes.Ui.Core.ImmediateDispatcher.Instance;
         _workingDirectory = controller.DefaultWorkingDirectory;
         // Disabled until the URL field is more than the "https://" prefill, so Connect can't fire on junk.
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this),
@@ -32,8 +34,8 @@ public sealed partial class SessionDocument : Document, ITraySession
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
         CloseLoginTerminalCommand = new RelayCommand(() => LoginTerminal = null);
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
-        SetPermissionModeCommand = new RelayCommand<string>(v => SkipPermissions = v == "Autonomous");
-        SetSandboxModeCommand = new RelayCommand<string>(v => { if (v is not null && SandboxAvailable) { UseSandbox = v == "On"; } });
+        SetPermissionModeCommand = new RelayCommand<string>(v => { if (!PermissionPromptsRequired) { SkipPermissions = v == "Autonomous"; } });
+        SetSandboxModeCommand = new RelayCommand<string>(v => { if (v is not null && SandboxAvailable && !SandboxRequired) { UseSandbox = v == "On"; } });
         SelectAgentChoiceCommand = new RelayCommand<AgentChoice>(SelectAgentChoice);
         SelectModelChoiceCommand = new RelayCommand<ModelChoice>(SelectModelChoice);
         StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => SelectedAgent is { Available: true });
@@ -258,6 +260,17 @@ public sealed partial class SessionDocument : Document, ITraySession
         StatusText = $"Applied profile \"{profile.Name}\" — adjust anything, then Start.";
     }
 
+    /// <summary>
+    /// The pairing QR for this tab: scan it on a phone to pair that device *and* land straight in this
+    /// session. Built lazily, because it mints nothing until asked — the code it shows is a credential.
+    /// </summary>
+    public ConnectQrViewModel ConnectQr => _connectQr ??= new ConnectQrViewModel(
+        () => Host is { } host && !string.IsNullOrEmpty(HostToken) ? (host.HostUrl, HostToken) : null,
+        Session?.SessionId,
+        _dispatcher);
+
+    private ConnectQrViewModel? _connectQr;
+
     [ObservableProperty]
     private SessionViewModel? _session;
 
@@ -339,6 +352,23 @@ public sealed partial class SessionDocument : Document, ITraySession
     public bool PermAsk => !SkipPermissions;
     public bool PermAutonomous => SkipPermissions;
 
+    /// <summary>Whether the host forbids autonomous mode (from <see cref="HostInfo.RequirePermissionPrompts"/>):
+    /// the permission toggle is forced to attended and locked, and the host would reject an autonomous request.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PermissionToggleEnabled))]
+    private bool _permissionPromptsRequired;
+
+    /// <summary>The permission toggle is interactive only when the host doesn't force per-tool prompts.</summary>
+    public bool PermissionToggleEnabled => !PermissionPromptsRequired;
+
+    partial void OnPermissionPromptsRequiredChanged(bool value)
+    {
+        if (value)
+        {
+            SkipPermissions = false; // a prompts-required host can never start an autonomous session.
+        }
+    }
+
     /// <summary>
     /// New-session choice for a sandboxed session: whether the agent may `git push`, and how — "Off"
     /// (no credentials), "Ask" (a permission card per push), or "Trust" (auto-allow). Default "Off".
@@ -363,10 +393,28 @@ public sealed partial class SessionDocument : Document, ITraySession
 
     /// <summary>Whether the connected host can sandbox at all (from HostInfo).</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SandboxToggleEnabled))]
     private bool _sandboxAvailable;
+
+    /// <summary>Whether the host <em>requires</em> a sandbox for every session (from <see cref="HostInfo.RequireSandbox"/>):
+    /// the toggle is forced on and locked, and the host would reject an unsandboxed request anyway.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SandboxToggleEnabled))]
+    private bool _sandboxRequired;
+
+    /// <summary>The sandbox toggle is interactive only when the host supports sandboxing and doesn't force it.</summary>
+    public bool SandboxToggleEnabled => SandboxAvailable && !SandboxRequired;
 
     public bool SandboxOn => UseSandbox;
     public bool SandboxOff => !UseSandbox;
+
+    partial void OnSandboxRequiredChanged(bool value)
+    {
+        if (value)
+        {
+            UseSandbox = true; // a sandbox-required host can never start an unsandboxed session.
+        }
+    }
 
     public IRelayCommand<string> SetSandboxModeCommand { get; }
 

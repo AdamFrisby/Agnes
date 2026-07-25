@@ -159,6 +159,37 @@
                         <TextBlock Classes="scopeNote">
                             <Run Text="Paired with the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
                         </TextBlock>
+
+                        <!-- Devices asking to join, above the paired list: this is the decision that
+                             hasn't been made yet, and it's the one worth reading carefully. The digits are
+                             derived from the asking device's own key, so the comparison is the security
+                             check — approving without it proves nothing. -->
+                        <StackPanel Spacing="8" IsVisible="{Binding HasPendingApprovals}">
+                            <TextBlock Text="Asking to join" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" />
+                            <ItemsControl ItemsSource="{Binding PendingApprovals}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
+                                                CornerRadius="10" Padding="12,10" Margin="0,0,0,8">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                                                <StackPanel Grid.Column="0" Spacing="3">
+                                                    <TextBlock Text="{Binding DeviceName}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" />
+                                                    <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
+                                                        <Run Text="Check it shows" /><Run Text=" " /><Run Text="{Binding VerificationCode}" FontFamily="{DynamicResource MonoFont}" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource Fg}" /><Run Text=" " /><Run Text="before approving" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Decline" FontSize="11" Padding="9,3" Background="Transparent" Foreground="#E5484D"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.DenyDeviceCommand}" CommandParameter="{Binding RequestId}" />
+                                                <Button Grid.Column="2" Content="Approve" FontSize="11" Padding="9,3" Classes="seg"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.ApproveDeviceCommand}" CommandParameter="{Binding RequestId}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
                         <ItemsControl ItemsSource="{Binding Devices}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>

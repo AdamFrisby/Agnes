@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.PromptsPageView"
+             x:DataType="vm:PromptsPageViewModel"
+             Background="{DynamicResource Bg}">
+  <Grid RowDefinitions="Auto,*">
+    <c:PageHeader Grid.Row="0" Title="Prompts" />
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="16,12,16,28" Spacing="10">
+
+        <TextBlock Classes="dim" LineHeight="22"
+                   Text="The host's saved prompts. Copy one, or type its slash token in the composer and it expands in place." />
+
+        <TextBlock Classes="muted" Text="{Binding Library.Status}"
+                   IsVisible="{Binding Library.Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        <ItemsControl ItemsSource="{Binding Library.Prompts}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Theme="{StaticResource CardButton}" Margin="0,0,0,8" Padding="14"
+                      Command="{Binding $parent[UserControl].DataContext.CopyCommand}"
+                      CommandParameter="{Binding}">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,10,0">
+                    <TextBlock Text="{Binding Title}" Classes="strong" />
+                    <TextBlock Text="{Binding MarkdownBody}" Classes="muted" MaxLines="2"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  <c:Icon Grid.Column="1" Data="{StaticResource IconCopy}" Size="18"
+                          Stroke="{DynamicResource TextMuted}" VerticalAlignment="Center" />
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Classes="section" Text="SLASH TOKENS"
+                   IsVisible="{Binding Library.Templates.Count}" />
+        <ItemsControl ItemsSource="{Binding Library.Templates}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="pill accent" Margin="0,0,8,8">
+                <TextBlock Text="{Binding SlashToken}" />
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

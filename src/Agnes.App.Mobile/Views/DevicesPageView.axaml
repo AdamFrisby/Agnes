@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.DevicesPageView"
+             x:DataType="vm:DevicesPageViewModel"
+             Background="{DynamicResource Bg}">
+  <Grid RowDefinitions="Auto,*">
+    <c:PageHeader Grid.Row="0" Title="Paired devices">
+      <c:PageHeader.Action>
+        <Button Theme="{StaticResource IconButton}"
+                Command="{Binding RefreshCommand}">
+          <c:Icon Data="{StaticResource IconRefresh}" Size="20" Stroke="{DynamicResource TextDim}" />
+        </Button>
+      </c:PageHeader.Action>
+    </c:PageHeader>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="16,12,16,28" Spacing="10">
+
+        <TextBlock Classes="dim" LineHeight="22"
+                   Text="Every device that paired with this host holds its own token. Revoking one cuts it off immediately and leaves the others alone." />
+
+        <TextBlock Classes="muted" Text="{Binding Status}" />
+
+        <ItemsControl ItemsSource="{Binding Devices}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="card" Margin="0,0,0,8" Padding="14">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Grid.Column="0" Spacing="3" Margin="0,0,10,0">
+                    <TextBlock Text="{Binding Name}" Classes="strong" />
+                    <TextBlock Classes="caption"
+                               Text="{Binding PairedAt, StringFormat='Paired {0:d MMM yyyy}'}" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Theme="{StaticResource DangerButton}" MinHeight="38"
+                          Padding="14,0" Content="Revoke"
+                          Command="{Binding $parent[UserControl].DataContext.RevokeCommand}"
+                          CommandParameter="{Binding}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

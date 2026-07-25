@@ -142,6 +142,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SetThemeCommand = new RelayCommand<string>(t => { if (t is not null) { Theme = t; } });
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
         RevokeDeviceCommand = new AsyncRelayCommand<string>(RevokeDeviceAsync);
+        ApproveDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: true));
+        DenyDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: false));
         LoadMcpServersCommand = new AsyncRelayCommand(LoadMcpServersAsync);
         AddMcpServerCommand = new AsyncRelayCommand(AddMcpServerAsync);
         RemoveMcpServerCommand = new AsyncRelayCommand<string>(RemoveMcpServerAsync);
@@ -473,6 +475,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public IAsyncRelayCommand LoadDevicesCommand { get; }
     public IAsyncRelayCommand<string> RevokeDeviceCommand { get; }
 
+    /// <summary>Devices asking to be let onto this host, waiting on a human here to vouch for them.</summary>
+    public ObservableCollection<PendingPairApproval> PendingApprovals { get; } = [];
+
+    public bool HasPendingApprovals => PendingApprovals.Count > 0;
+
+    public IAsyncRelayCommand<string> ApproveDeviceCommand { get; }
+    public IAsyncRelayCommand<string> DenyDeviceCommand { get; }
+
     private (string Url, string Token)? ActiveHttpHost()
     {
         static bool IsHttp(SessionDocument d) =>
@@ -515,16 +525,59 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             DevicesStatus = "Loading…";
             var list = await DeviceManagement.ListAsync(target.Value.Url, target.Value.Token);
+
+            // Requests to join load on the same trip. A host that predates approval pairing simply
+            // returns none, so this never turns an older host into an error.
+            var waiting = await PairingManagement.PendingAsync(target.Value.Url, target.Value.Token);
+
             _dispatcher.Post(() =>
             {
                 Devices.Clear();
                 foreach (var d in list) { Devices.Add(d); }
+
+                PendingApprovals.Clear();
+                foreach (var p in waiting) { PendingApprovals.Add(p); }
+                OnPropertyChanged(nameof(HasPendingApprovals));
+
                 DevicesStatus = list.Count == 0 ? "No paired devices." : $"{list.Count} paired device(s).";
             });
         }
         catch (Exception ex)
         {
             _dispatcher.Post(() => DevicesStatus = "Couldn't load devices: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Answers a device's request to join. The digits shown beside it are derived from that device's own
+    /// public key, so approving is only meaningful once a human has compared them against the asking
+    /// device's screen — the UI says so, and there is no way to approve without seeing them.
+    /// </summary>
+    private async Task DecideApprovalAsync(string? requestId, bool approve)
+    {
+        var target = ActiveHttpHost();
+        if (target is null || string.IsNullOrEmpty(requestId))
+        {
+            return;
+        }
+
+        try
+        {
+            if (approve)
+            {
+                await PairingManagement.ApproveAsync(target.Value.Url, target.Value.Token, requestId);
+            }
+            else
+            {
+                await PairingManagement.DenyAsync(target.Value.Url, target.Value.Token, requestId);
+            }
+
+            await LoadDevicesAsync();
+            _dispatcher.Post(() => DevicesStatus = approve ? "Device approved." : "Request declined.");
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => DevicesStatus = "Couldn't answer that request: " + ex.Message);
         }
     }
 
@@ -2031,7 +2084,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             _dispatcher.Post(() =>
             {
                 doc.SandboxAvailable = hostInfo.SandboxAvailable;
-                doc.UseSandbox = hostInfo.SandboxAvailable; // default on when available
+                doc.SandboxRequired = hostInfo.RequireSandbox; // host rejects unsandboxed sessions → lock the toggle on
+                doc.PermissionPromptsRequired = hostInfo.RequirePermissionPrompts; // host forbids autonomous → lock to attended
+                doc.UseSandbox = hostInfo.SandboxAvailable; // default on when available (forced on when required)
                 doc.ShowAgents(agents);
             });
             return true;
@@ -2547,7 +2602,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     private SessionDocument CreateTab()
     {
-        var doc = new SessionDocument(this) { Title = "New session", CanClose = true };
+        // The real UI dispatcher, not the inline fallback: the QR view model completes HTTP work on a
+        // background thread and then touches bound state.
+        var doc = new SessionDocument(this, _dispatcher) { Title = "New session", CanClose = true };
         doc.ShowHosts(_knownHosts);
         return doc;
     }

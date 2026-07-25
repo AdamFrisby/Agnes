@@ -1,0 +1,123 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.SessionsView"
+             x:DataType="vm:SessionsViewModel">
+  <!--
+    Home. One card per session, ordered by how much it wants you: blocked first, then running, then
+    unread, then recent. The card has to be readable at arm's length — state dot, name, one line of what
+    it last said, and how big the change is — because the most common use of this screen is a glance to
+    decide whether to open anything at all.
+  -->
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- ===== header ===== -->
+    <StackPanel Grid.Row="0">
+      <c:SafeSpacer Edge="Top" />
+      <Grid Margin="16,10,8,10" ColumnDefinitions="Auto,*,Auto">
+        <c:AgnesMark Grid.Column="0" Width="30" Height="30" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Classes="headline" Text="Agnes" Margin="10,0,0,0"
+                   VerticalAlignment="Center" />
+        <Button Grid.Column="2" Theme="{StaticResource IconButton}" Command="{Binding RefreshCommand}">
+          <c:Icon Data="{StaticResource IconRefresh}" Size="21" Stroke="{DynamicResource TextDim}" />
+        </Button>
+      </Grid>
+
+      <!-- Host chip: which machine is actually running these agents, and whether it's reachable.
+           Tapping it opens the host list — the phone is useless without one, so it stays visible. -->
+      <Button Margin="16,0,16,12" Theme="{StaticResource ChipButton}"
+              HorizontalAlignment="Left" Command="{Binding ShowHostsCommand}">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Border Classes="dot" Classes.running="{Binding AnyHostOnline}" />
+          <TextBlock Text="{Binding HostSummary}" FontSize="{StaticResource TextSm}"
+                     Foreground="{DynamicResource TextDim}" />
+          <c:Icon Data="{StaticResource IconChevronDown}" Size="14" Stroke="{DynamicResource TextMuted}" />
+        </StackPanel>
+      </Button>
+    </StackPanel>
+
+    <!-- ===== list ===== -->
+    <Panel Grid.Row="1">
+
+      <ScrollViewer>
+        <ItemsControl ItemsSource="{Binding All}" Margin="12,0,12,110">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SessionEntry">
+              <Button Theme="{StaticResource CardButton}" Margin="0,0,0,10"
+                      Command="{Binding $parent[UserControl].DataContext.OpenCommand}"
+                      CommandParameter="{Binding}">
+                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto,Auto">
+
+                  <!-- state + name + age -->
+                  <Border Grid.Row="0" Grid.Column="0" Classes="dot" Margin="0,0,10,0"
+                          Classes.running="{Binding IsRunning}"
+                          Classes.needs="{Binding IsNeedsInput}"
+                          Classes.error="{Binding IsError}"
+                          Classes.review="{Binding IsReadyForReview}" />
+
+                  <TextBlock Grid.Row="0" Grid.Column="1" Classes="title" Text="{Binding Title}"
+                             TextTrimming="CharacterEllipsis" MaxLines="1" />
+
+                  <!-- unread marker: a dot, not a count — the count of unseen events isn't actionable -->
+                  <Ellipse Grid.Row="0" Grid.Column="2" Width="7" Height="7" Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           Fill="{DynamicResource Accent}" IsVisible="{Binding IsUnread}" />
+
+                  <TextBlock Grid.Row="0" Grid.Column="3" Classes="caption" Text="{Binding Age}"
+                             Margin="10,0,0,0" VerticalAlignment="Center" />
+
+                  <!-- project · agent -->
+                  <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Classes="mono"
+                             Margin="0,3,0,0" TextTrimming="CharacterEllipsis" MaxLines="1"
+                             Foreground="{DynamicResource TextMuted}" Text="{Binding ProjectLine}" />
+
+                  <!-- last line + status -->
+                  <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,10,0,0" Spacing="10">
+                    <TextBlock Text="{Binding Preview}" Classes="dim" MaxLines="2"
+                               TextTrimming="CharacterEllipsis" FontSize="{StaticResource TextSm}"
+                               LineHeight="20" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <Border Classes="pill"
+                              Classes.needs="{Binding IsNeedsInput}"
+                              Classes.running="{Binding IsRunning}"
+                              Classes.error="{Binding IsError}">
+                        <TextBlock Text="{Binding StatusText}" />
+                      </Border>
+                      <TextBlock Classes="caption" Text="{Binding CountsText}" VerticalAlignment="Center"
+                                 IsVisible="{Binding HasCounts}" />
+                    </StackPanel>
+                  </StackPanel>
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- ===== empty state =====
+           Teaches the one thing that has to be true for the app to work: a host runs the agents. -->
+      <StackPanel IsVisible="{Binding IsEmpty}" VerticalAlignment="Center" HorizontalAlignment="Center"
+                  Margin="40,0,40,80" Spacing="14">
+        <c:AgnesMark Width="72" Height="72" HorizontalAlignment="Center" Opacity="0.9" />
+        <TextBlock Classes="headline" Text="No sessions yet" HorizontalAlignment="Center"
+                   TextAlignment="Center" />
+        <TextBlock Classes="dim" TextAlignment="Center" LineHeight="22"
+                   Text="One host runs the agents; this phone drives them. Start a session and we'll keep the whole history." />
+        <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Center"
+                Command="{Binding ShowHostsCommand}" Content="Connect a host" />
+      </StackPanel>
+
+      <!-- ===== new session ===== -->
+      <Button Theme="{StaticResource FabButton}"
+              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+              Margin="0,0,16,20" Command="{Binding NewSessionCommand}">
+        <StackPanel Orientation="Horizontal" Spacing="9">
+          <c:Icon Data="{StaticResource IconPlus}" Size="20" Stroke="White" StrokeThickness="2.1" />
+          <TextBlock Text="New session" Foreground="White" FontWeight="SemiBold" />
+        </StackPanel>
+      </Button>
+    </Panel>
+  </Grid>
+</UserControl>

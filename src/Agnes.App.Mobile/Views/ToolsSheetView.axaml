@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.ToolsSheetView"
+             x:DataType="vm:ToolsSheetViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="12,10,12,24">
+
+      <ItemsControl ItemsSource="{Binding Session.VisibleToolActivity}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Button Theme="{StaticResource RowButton}" Padding="10,11"
+                    Command="{Binding $parent[UserControl].DataContext.OpenCommand}"
+                    CommandParameter="{Binding}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconTerminal}" Size="16"
+                        Stroke="{DynamicResource TextDim}" Margin="0,0,12,0" />
+                <StackPanel Grid.Column="1" Spacing="2">
+                  <TextBlock Text="{Binding Name}" Classes="mono" MaxLines="1"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Kind}" Classes="caption" />
+                </StackPanel>
+                <Border Grid.Column="2" Classes="pill" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding StatusText}" />
+                </Border>
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Center" Margin="0,8,0,0"
+              IsVisible="{Binding Session.HasMoreTools}"
+              Content="{Binding Session.MoreToolsLabel}"
+              Command="{Binding Session.ShowAllToolsCommand}" />
+
+      <TextBlock Classes="dim" Margin="12,30,12,0" TextAlignment="Center"
+                 IsVisible="{Binding IsEmpty}"
+                 Text="No tools run yet." />
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

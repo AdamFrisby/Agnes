@@ -52,6 +52,20 @@ internal static class IncusCommandBuilder
         r.Add("nictype=bridged");
         r.Add($"parent={bridge}");
         r.Add("name=eth0");
+
+        // Egress control: attach the operator's Incus network ACL(s) to the NIC. The ACL policy (default-deny +
+        // allowlist) lives in Incus; Agnes just references it here, so a run-away agent's traffic is filtered.
+        var acls = o.NetworkAcls.Where(a => !string.IsNullOrWhiteSpace(a)).ToArray();
+        if (acls.Length > 0)
+        {
+            foreach (var acl in acls)
+            {
+                IncusInputValidation.ValidateOpaque(acl, "networkAcl", 128);
+            }
+
+            r.Add($"security.acls={string.Join(',', acls)}");
+        }
+
         return r;
     }
 

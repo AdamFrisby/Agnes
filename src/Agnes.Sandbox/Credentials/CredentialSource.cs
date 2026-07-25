@@ -9,7 +9,7 @@ namespace Agnes.Sandbox.Credentials;
 /// <param name="Host">e.g. "github.com".</param>
 /// <param name="Repo">Normalised "owner/repo" (no ".git", no slashes), or null if git didn't send a path.</param>
 /// <param name="Operation">The git credential operation — only "get" reaches the broker.</param>
-public sealed record CredentialRequest(string Protocol, string Host, string? Repo, string Operation);
+public sealed record CredentialRequest(string Protocol, string Host, string? Repo, string Operation, string? Account = null);
 
 /// <summary>A resolved git credential. For GitHub app tokens <see cref="Username"/> is "x-access-token".</summary>
 public sealed record GitCredential(string Username, string Password, DateTimeOffset? ExpiresAt = null);

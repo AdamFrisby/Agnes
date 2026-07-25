@@ -32,7 +32,9 @@
       "tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj",
       "tests/Agnes.Relay.Tests/Agnes.Relay.Tests.csproj",
       "tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj",
-      "tests/Agnes.Cli.Tests/Agnes.Cli.Tests.csproj"
+      "tests/Agnes.Cli.Tests/Agnes.Cli.Tests.csproj",
+      "tools/Agnes.MobilePreview/Agnes.MobilePreview.csproj",
+      "tests/Agnes.Mobile.Tests/Agnes.Mobile.Tests.csproj"
     ]
   }
 }

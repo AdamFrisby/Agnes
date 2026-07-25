@@ -1,0 +1,82 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Agnes.App.Mobile.Controls.AgnesMark">
+  <!--
+    The Agnes squid, from the Multitudal brand assets. Redrawn as Avalonia geometry rather than shipped
+    as an SVG because Avalonia has no built-in SVG renderer and a raster would soften on a 3x display.
+
+    The source uses userSpaceOnUse gradients over the 256 grid; each is expressed here as a relative
+    gradient over its own shape, whose bounds match the original gradient span closely enough to be
+    indistinguishable at icon sizes.
+  -->
+  <Viewbox Stretch="Uniform">
+    <Canvas Width="256" Height="256">
+
+      <!-- hood -->
+      <Path Data="M 111.30 38.32 Q 128.00 24.00 144.70 38.32 L 146.30 39.68 Q 163.00 54.00 168.89 75.20 L 172.11 86.80 Q 178.00 108.00 156.00 108.00 L 100.00 108.00 Q 78.00 108.00 83.89 86.80 L 87.11 75.20 Q 93.00 54.00 109.70 39.68 Z">
+        <Path.Fill>
+          <LinearGradientBrush StartPoint="50%,0%" EndPoint="50%,100%">
+            <GradientStop Color="#5940D6" Offset="0" />
+            <GradientStop Color="#7A4FE8" Offset="1" />
+          </LinearGradientBrush>
+        </Path.Fill>
+      </Path>
+
+      <!-- fins -->
+      <Path Fill="#6A48E0" Data="M 55.94 76.99 Q 48.00 76.00 53.09 69.82 L 70.91 48.18 Q 76.00 42.00 76.84 49.96 L 79.16 72.04 Q 80.00 80.00 72.06 79.01 Z" />
+      <Path Fill="#6A48E0" Data="M 200.06 76.99 Q 208.00 76.00 202.91 69.82 L 185.09 48.18 Q 180.00 42.00 179.16 49.96 L 176.84 72.04 Q 176.00 80.00 183.94 79.01 Z" />
+
+      <!-- head -->
+      <Path Data="M 84.00 138.00 Q 84.00 120.00 102.00 120.00 L 154.00 120.00 Q 172.00 120.00 172.00 138.00 L 172.00 160.00 Q 172.00 178.00 154.00 178.00 L 102.00 178.00 Q 84.00 178.00 84.00 160.00 Z">
+        <Path.Fill>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Color="#8A55EE" Offset="0" />
+            <GradientStop Color="#C858C8" Offset="1" />
+          </LinearGradientBrush>
+        </Path.Fill>
+      </Path>
+
+      <!-- tentacles, violet through coral left to right -->
+      <Path Data="M 96 192 L 96 214 Q 96 226 85 226" StrokeThickness="16" StrokeLineCap="Round" StrokeJoin="Round">
+        <Path.Stroke>
+          <LinearGradientBrush StartPoint="50%,0%" EndPoint="50%,100%">
+            <GradientStop Color="#B85CE0" Offset="0" />
+            <GradientStop Color="#D85CB8" Offset="1" />
+          </LinearGradientBrush>
+        </Path.Stroke>
+      </Path>
+      <Path Data="M 118 192 L 118 210" StrokeThickness="16" StrokeLineCap="Round">
+        <Path.Stroke>
+          <LinearGradientBrush StartPoint="50%,0%" EndPoint="50%,100%">
+            <GradientStop Color="#D055B0" Offset="0" />
+            <GradientStop Color="#E85D95" Offset="1" />
+          </LinearGradientBrush>
+        </Path.Stroke>
+      </Path>
+      <Path Data="M 140 192 L 140 232" StrokeThickness="16" StrokeLineCap="Round">
+        <Path.Stroke>
+          <LinearGradientBrush StartPoint="50%,0%" EndPoint="50%,100%">
+            <GradientStop Color="#E0558E" Offset="0" />
+            <GradientStop Color="#F27078" Offset="1" />
+          </LinearGradientBrush>
+        </Path.Stroke>
+      </Path>
+      <Path Data="M 162 192 L 162 212 Q 162 224 173 224" StrokeThickness="16" StrokeLineCap="Round" StrokeJoin="Round">
+        <Path.Stroke>
+          <LinearGradientBrush StartPoint="50%,0%" EndPoint="50%,100%">
+            <GradientStop Color="#EF6A78" Offset="0" />
+            <GradientStop Color="#FF8A66" Offset="1" />
+          </LinearGradientBrush>
+        </Path.Stroke>
+      </Path>
+
+      <!-- face -->
+      <Ellipse Canvas.Left="102.5" Canvas.Top="124.5" Width="9" Height="9" Fill="White" />
+      <Ellipse Canvas.Left="144.5" Canvas.Top="124.5" Width="9" Height="9" Fill="White" />
+      <Ellipse Canvas.Left="95.5" Canvas.Top="140.5" Width="23" Height="23" Stroke="White" StrokeThickness="6.5" />
+      <Ellipse Canvas.Left="137.5" Canvas.Top="140.5" Width="23" Height="23" Stroke="White" StrokeThickness="6.5" />
+      <Line StartPoint="119,152" EndPoint="137,152" Stroke="White" StrokeThickness="6.5" StrokeLineCap="Round" />
+
+    </Canvas>
+  </Viewbox>
+</UserControl>

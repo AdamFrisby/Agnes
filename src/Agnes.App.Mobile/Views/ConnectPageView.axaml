@@ -1,0 +1,156 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.ConnectPageView"
+             x:DataType="vm:ConnectPageViewModel"
+             Background="{DynamicResource Bg}">
+  <!--
+    Address first, then only the sign-in methods the host actually offers. Presenting three buttons and
+    letting two of them fail is the usual way this screen goes wrong.
+  -->
+  <Grid RowDefinitions="Auto,*">
+
+    <c:PageHeader Grid.Row="0" Title="Connect a host" />
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="16,16,16,28" Spacing="10">
+
+        <StackPanel Spacing="8" Margin="0,0,0,6">
+          <c:AgnesMark Width="56" Height="56" HorizontalAlignment="Left" />
+          <TextBlock Classes="headline" Text="One host runs the agents." />
+          <TextBlock Classes="dim" LineHeight="22"
+                     Text="Point this phone at the machine running Agnes. Pairing gives it its own token, revocable from either end." />
+        </StackPanel>
+
+        <TextBlock Classes="section" Text="ADDRESS" />
+        <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding Address, Mode=TwoWay}"
+                 PlaceholderText="https://your-host:5099" FontFamily="{StaticResource MonoFont}"
+                 FontSize="{StaticResource TextSm}" />
+        <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding Name, Mode=TwoWay}"
+                 PlaceholderText="Name it (optional)" />
+
+        <!-- Reachability, stated in its own right and before any credential is asked for. Typing a
+             pairing code into an address with nothing behind it can only fail confusingly. -->
+        <Border Classes="inset" IsVisible="{Binding HasReachNote}" Padding="12,10">
+          <Grid ColumnDefinitions="Auto,*">
+            <Border Grid.Column="0" Classes="dot" Margin="0,0,10,0" VerticalAlignment="Top"
+                    Classes.running="{Binding IsFound}"
+                    Classes.needs="{Binding IsAnswered}"
+                    Classes.error="{Binding IsUnreachable}" />
+            <TextBlock Grid.Column="1" Text="{Binding ReachText}" FontSize="{StaticResource TextSm}"
+                       Foreground="{DynamicResource TextDim}" />
+          </Grid>
+        </Border>
+
+        <!-- ===== pairing code ===== -->
+        <StackPanel Spacing="10" IsVisible="{Binding ShowPairing}">
+          <TextBlock Classes="section" Text="PAIRING CODE" />
+          <TextBlock Classes="muted"
+                     Text="The host logs one at startup, like K7QX-M3RT. It's good once — pairing it rotates it." />
+          <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding Code, Mode=TwoWay}"
+                   PlaceholderText="ABCD-EFGH" FontFamily="{StaticResource MonoFont}"
+                   FontSize="{StaticResource TextLg}" LetterSpacing="1" />
+          <Button Theme="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
+                  Command="{Binding PairCommand}">
+            <TextBlock Text="Pair this device" Foreground="White" FontWeight="SemiBold" />
+          </Button>
+        </StackPanel>
+
+        <!-- ===== GitHub device flow ===== -->
+        <StackPanel Spacing="10" IsVisible="{Binding ShowGitHub}">
+          <TextBlock Classes="section" Text="OR SIGN IN" />
+          <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
+                  Command="{Binding GitHubCommand}" Content="Continue with GitHub" />
+
+          <Border Classes="card" IsVisible="{Binding IsGitHubAuthorizing}" Padding="14">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="muted" Text="Enter this code in the browser we just opened:" />
+              <Border Classes="inset">
+                <TextBlock Text="{Binding UserCode}" Classes="mono" FontSize="{StaticResource Text2Xl}"
+                           HorizontalAlignment="Center" LetterSpacing="2" />
+              </Border>
+              <Grid ColumnDefinitions="*,10,*">
+                <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Copy code"
+                        Command="{Binding CopyUserCodeCommand}" />
+                <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="Open again"
+                        Command="{Binding OpenVerificationCommand}" />
+              </Grid>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- ===== device keypair ===== -->
+        <StackPanel Spacing="10" IsVisible="{Binding ShowKeypair}">
+          <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
+                  Command="{Binding KeyCommand}" Content="Use this device's key" />
+
+          <Border Classes="card" IsVisible="{Binding ShowKey}" Padding="14">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="muted"
+                         Text="Add this line to the host's authorized_keys, then try again." />
+              <Border Classes="inset">
+                <TextBlock Text="{Binding PublicKeyLine}" Classes="mono" TextWrapping="Wrap"
+                           FontSize="{StaticResource TextXs}" />
+              </Border>
+              <Button Theme="{StaticResource SecondaryButton}" Content="Copy key"
+                      Command="{Binding CopyKeyCommand}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- ===== ask a paired device =====
+             The path when there is no QR to scan. The digits are a comparison value, not a secret:
+             they prove the request being approved is this one, and knowing them grants nothing. -->
+        <StackPanel Spacing="10" IsVisible="{Binding ShowAskApproval}">
+          <TextBlock Classes="section" Text="OR ASK A DEVICE YOU ALREADY USE" />
+          <TextBlock Classes="muted"
+                     Text="Send a request to this host, then approve it from a device that's already paired." />
+
+          <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
+                  Command="{Binding AskApprovalCommand}" Content="Ask for approval" />
+        </StackPanel>
+
+        <StackPanel Spacing="10" IsVisible="{Binding IsAwaitingApproval}">
+          <TextBlock Classes="section" Text="WAITING TO BE APPROVED" />
+          <Border Classes="card" Padding="16">
+            <StackPanel Spacing="12">
+              <TextBlock Classes="muted"
+                         Text="Check that your other device shows these same digits, then approve there." />
+              <Border Classes="inset">
+                <TextBlock Text="{Binding VerificationCode}" Classes="mono"
+                           FontSize="{StaticResource Text3Xl}" LineHeight="38" LetterSpacing="6"
+                           HorizontalAlignment="Center" />
+              </Border>
+              <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                <Ellipse Classes="typing a" />
+                <Ellipse Classes="typing b" />
+                <Ellipse Classes="typing c" />
+                <TextBlock Text="Waiting for approval" Classes="caption" VerticalAlignment="Center" />
+              </StackPanel>
+              <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Center"
+                      Command="{Binding CancelApprovalCommand}" Content="Cancel" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- ===== status ===== -->
+        <Border Classes="inset" IsVisible="{Binding HasStatus}" Margin="0,6,0,0">
+          <TextBlock Text="{Binding Status}" FontSize="{StaticResource TextSm}"
+                     Foreground="{DynamicResource TextDim}" />
+        </Border>
+
+        <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Center" Margin="0,10,0,0"
+                Command="{Binding DocsCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <TextBlock Text="How do I run a host?" Foreground="{DynamicResource TextDim}"
+                       FontSize="{StaticResource TextSm}" />
+            <c:Icon Data="{StaticResource IconExternalLink}" Size="15" Stroke="{DynamicResource TextDim}" />
+          </StackPanel>
+        </Button>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

@@ -1,0 +1,449 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             xmlns:tr="using:Agnes.Ui.Core.Transcript"
+             x:Class="Agnes.App.Mobile.Views.SessionPageView"
+             x:DataType="vm:SessionPageViewModel"
+             Background="{DynamicResource Bg}">
+  <!--
+    One live session, owning the whole display.
+
+    Reading top to bottom: app bar, a strip of chips that open the detail sheets, the transcript, then —
+    pinned above the composer — anything blocking the agent, then the composer itself. The pinning is
+    the important part: an approval is the highest-value thing you can do from a phone, so it is never
+    something you have to scroll to find.
+  -->
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+
+    <!-- ===================== app bar ===================== -->
+    <Border Grid.Row="0" Background="{DynamicResource Surface1}">
+      <StackPanel>
+      <c:SafeSpacer Edge="Top" />
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" Height="56">
+
+        <Button Grid.Column="0" Theme="{StaticResource IconButton}"
+                Command="{Binding BackCommand}">
+          <c:Icon Data="{StaticResource IconChevronLeft}" Size="24" Stroke="{DynamicResource Text}" />
+        </Button>
+
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="2,0,8,0">
+          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="{StaticResource TextMd}"
+                     LineHeight="19" MaxLines="1" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding Subtitle}" Classes="caption" MaxLines="1"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <!-- Live activity, as motion rather than a word: three dots while a turn runs. -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
+                    Margin="0,0,6,0" IsVisible="{Binding IsTurnActive}">
+          <Ellipse Classes="typing a" />
+          <Ellipse Classes="typing b" />
+          <Ellipse Classes="typing c" />
+        </StackPanel>
+
+        <Button Grid.Column="3" Theme="{StaticResource IconButton}" Command="{Binding ShowActionsCommand}">
+          <c:Icon Data="{StaticResource IconMoreVertical}" Size="22" Stroke="{DynamicResource TextDim}" />
+        </Button>
+      </Grid>
+      </StackPanel>
+    </Border>
+
+    <!-- ===================== chip strip =====================
+         The desktop's left column and right preview, folded into one scrollable row. Each chip only
+         appears once it has something to say, so a fresh session starts clean. -->
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                  Background="{DynamicResource Surface1}">
+      <StackPanel Orientation="Horizontal" Spacing="8" Margin="12,0,12,10">
+
+        <Button Theme="{StaticResource ChipButton}" Command="{Binding ShowPlanCommand}"
+                IsVisible="{Binding HasPlan}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <c:Icon Data="{StaticResource IconListChecks}" Size="15" Stroke="{DynamicResource TextDim}" />
+            <TextBlock Text="Plan" />
+          </StackPanel>
+        </Button>
+
+        <Button Theme="{StaticResource ChipButton}" Command="{Binding ShowFilesCommand}"
+                IsVisible="{Binding HasFiles}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <c:Icon Data="{StaticResource IconFile}" Size="15" Stroke="{DynamicResource Accent}" />
+            <TextBlock Text="{Binding FilesChip}" />
+          </StackPanel>
+        </Button>
+
+        <Button Theme="{StaticResource ChipButton}" Command="{Binding ShowToolsCommand}"
+                IsVisible="{Binding HasTools}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <c:Icon Data="{StaticResource IconTerminal}" Size="15" Stroke="{DynamicResource TextDim}" />
+            <TextBlock Text="{Binding ToolsChip}" />
+          </StackPanel>
+        </Button>
+
+        <Button Theme="{StaticResource ChipButton}" Command="{Binding ShowGitCommand}"
+                IsVisible="{Binding HasGit}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <c:Icon Data="{StaticResource IconGitBranch}" Size="15" Stroke="{DynamicResource Success}" />
+            <TextBlock Text="{Binding GitBranch}" />
+          </StackPanel>
+        </Button>
+
+        <Button Theme="{StaticResource ChipButton}" Command="{Binding ShowAgentsCommand}"
+                IsVisible="{Binding HasSubagents}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <c:Icon Data="{StaticResource IconUsers}" Size="15" Stroke="{DynamicResource TextDim}" />
+            <TextBlock Text="Agents" />
+          </StackPanel>
+        </Button>
+
+        <Button Theme="{StaticResource ChipButton}" Command="{Binding ShowQueueCommand}"
+                IsVisible="{Binding HasQueue}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <c:Icon Data="{StaticResource IconLayers}" Size="15" Stroke="{DynamicResource Warning}" />
+            <TextBlock Text="{Binding QueueCount, StringFormat='{}{0} queued'}" />
+          </StackPanel>
+        </Button>
+
+        <Button Theme="{StaticResource ChipButton}" Command="{Binding ShowInfoCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <c:Icon Data="{StaticResource IconShield}" Size="15" Stroke="{DynamicResource TextDim}"
+                    IsVisible="{Binding HasSandbox}" />
+            <c:Icon Data="{StaticResource IconGauge}" Size="15" Stroke="{DynamicResource TextDim}"
+                    IsVisible="{Binding !HasSandbox}" />
+            <TextBlock Text="Session" />
+          </StackPanel>
+        </Button>
+
+        <!-- Autonomous mode is worth stating loudly: this session acts without asking. -->
+        <Border Classes="pill needs" VerticalAlignment="Center" IsVisible="{Binding IsAutonomous}">
+          <TextBlock Text="Autonomous" />
+        </Border>
+
+        <Border Classes="pill" VerticalAlignment="Center" IsVisible="{Binding IsReadOnly}">
+          <TextBlock Text="Watching · read-only" />
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- ===================== connection banner ===================== -->
+    <Border Grid.Row="2" Background="{DynamicResource WarningSoft}" Padding="14,10"
+            IsVisible="{Binding ShowBanner}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <c:Icon Grid.Column="0" Data="{StaticResource IconWifiOff}" Size="18"
+                Stroke="{DynamicResource Warning}" Margin="0,0,10,0" />
+        <TextBlock Grid.Column="1" Text="{Binding BannerText}" Foreground="{DynamicResource Warning}"
+                   FontSize="{StaticResource TextSm}" VerticalAlignment="Center" />
+        <Button Grid.Column="2" Theme="{StaticResource ChipButton}" Content="Retry" MinHeight="30"
+                Command="{Binding RetryCommand}" IsVisible="{Binding CanRetry}" />
+      </Grid>
+    </Border>
+
+    <!-- ===================== transcript ===================== -->
+    <Panel Grid.Row="3">
+      <!-- MaxWidth pinned to the viewport, and the inset moved to the item list's margin: the transcript
+           is measured with an unbounded width (a scroller's content always is), and the markdown engine
+           sizes itself to its longest line rather than wrapping. Clamping here is what makes every reply
+           wrap to the screen instead of running off it. -->
+      <ScrollViewer Name="TranscriptScroll" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl Name="Transcript" ItemsSource="{Binding Session.DisplayItems}"
+                      Margin="12,12,12,4" HorizontalAlignment="Left"
+                      MaxWidth="{Binding $parent[ScrollViewer].Viewport.Width}">
+          <ItemsControl.DataTemplates>
+
+            <!-- ===== message ===== -->
+            <DataTemplate DataType="tr:MessageBubbleItem">
+              <Grid Margin="0,0,0,14">
+
+                <!-- You: a right-aligned bubble, so your own words are findable when scrolling back. -->
+                <Border IsVisible="{Binding IsUser}" HorizontalAlignment="Right" MaxWidth="320"
+                        Background="{DynamicResource UserBubble}"
+                        CornerRadius="16,16,4,16" Padding="14,10">
+                  <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                       FontSize="{StaticResource TextMd}" LineHeight="23" />
+                </Border>
+
+                <!-- The agent: full width, markdown. A bubble would waste a third of a phone's width on
+                     the thing you most want to read. -->
+                <StackPanel IsVisible="{Binding !IsUser}" Spacing="6">
+                  <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding !IsThought}">
+                    <c:Icon Data="{StaticResource IconSparkles}" Size="14" Stroke="{DynamicResource Accent}" />
+                    <TextBlock Text="Agent" Classes="caption" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AccentText}" />
+                  </StackPanel>
+                  <c:MarkdownBlock Markdown="{Binding Text}" IsVisible="{Binding !IsThought}" />
+
+                  <!-- Thinking: dimmed and off by default (Appearance). On a phone it is usually noise
+                       between you and the answer. -->
+                  <Border Classes="inset" Padding="12,9"
+                          IsVisible="{Binding $parent[ItemsControl].DataContext.ShowThinking}">
+                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontStyle="Italic"
+                                         FontSize="{StaticResource TextSm}" LineHeight="20"
+                                         Foreground="{DynamicResource TextMuted}" />
+                  </Border>
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+
+            <!-- ===== tool call =====
+                 One compact line. A phone transcript drowns if every Read is a paragraph, so the detail
+                 is a tap away instead of inline. -->
+            <DataTemplate DataType="tr:ToolCallItem">
+              <Button Theme="{StaticResource RowButton}" Padding="0" Margin="0,0,0,8"
+                      Command="{Binding $parent[ItemsControl].DataContext.OpenToolCommand}"
+                      CommandParameter="{Binding}">
+                <Border Classes="inset" Padding="12,9">
+                  <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                    <c:Icon Grid.Column="0" Data="{StaticResource IconTerminal}" Size="15"
+                            Stroke="{DynamicResource Accent}" Margin="0,0,9,0" />
+                    <TextBlock Grid.Column="1" Classes="mono" Text="{Binding KindLabel}"
+                               Foreground="{DynamicResource TextDim}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Title}" Margin="8,0,0,0"
+                               Foreground="{DynamicResource TextMuted}" MaxLines="1"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
+                      <TextBlock Classes="caption" Text="{Binding DurationText}" VerticalAlignment="Center"
+                                 IsVisible="{Binding HasDuration}" />
+                      <Border Classes="pill" IsVisible="{Binding ShowStatus}">
+                        <TextBlock Text="{Binding StatusText}" />
+                      </Border>
+                      <c:Icon Data="{StaticResource IconChevronRight}" Size="14" VerticalAlignment="Center"
+                              Stroke="{DynamicResource TextMuted}" IsVisible="{Binding HasDetail}" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </Button>
+            </DataTemplate>
+
+            <!-- ===== plan ===== -->
+            <DataTemplate DataType="tr:PlanItemView">
+              <Border Classes="card" Margin="0,0,0,12" Padding="14">
+                <StackPanel Spacing="9">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <c:Icon Data="{StaticResource IconListChecks}" Size="16" Stroke="{DynamicResource Accent}" />
+                    <TextBlock Text="Plan" Classes="strong" FontSize="{StaticResource TextSm}" />
+                  </StackPanel>
+                  <ItemsControl ItemsSource="{Binding Entries}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Grid ColumnDefinitions="Auto,*" Margin="0,3">
+                          <Border Grid.Column="0" Classes="dot" Margin="0,0,10,0" Width="6" Height="6" />
+                          <TextBlock Grid.Column="1" Text="{Binding Content}"
+                                     FontSize="{StaticResource TextSm}" LineHeight="20" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+
+            <!-- ===== permission (resolved) =====
+                 An open request is promoted to the pinned card below; what stays inline is the record of
+                 what was decided, so the transcript reads as a complete history. -->
+            <DataTemplate DataType="tr:PermissionItem">
+              <Border Classes="inset" Margin="0,0,0,10" Padding="12,9" IsVisible="{Binding Resolved}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <c:Icon Grid.Column="0" Data="{StaticResource IconShield}" Size="15"
+                          Stroke="{DynamicResource TextMuted}" Margin="0,0,9,0" />
+                  <TextBlock Grid.Column="1" Text="{Binding Title}" Classes="muted" MaxLines="1"
+                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <Border Grid.Column="2" Classes="pill">
+                    <TextBlock Text="{Binding ResolutionText}" />
+                  </Border>
+                </Grid>
+              </Border>
+            </DataTemplate>
+
+            <!-- ===== notice ===== -->
+            <DataTemplate DataType="tr:NoticeItem">
+              <TextBlock Text="{Binding Text}" Classes="caption" TextAlignment="Center"
+                         Margin="0,6,0,14" Foreground="{DynamicResource TextMuted}" />
+            </DataTemplate>
+
+            <!-- ===== structured question (resolved) ===== -->
+            <DataTemplate DataType="tr:QuestionItem">
+              <Border Classes="inset" Margin="0,0,0,10" Padding="12,9" IsVisible="{Binding Resolved}">
+                <TextBlock Text="Answered" Classes="muted" />
+              </Border>
+            </DataTemplate>
+
+          </ItemsControl.DataTemplates>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- Empty transcript: say what to do, not that there's nothing. -->
+      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="40,0" Spacing="10"
+                  IsVisible="{Binding Session.IsTranscriptEmpty, FallbackValue=False}">
+        <c:AgnesMark Width="56" Height="56" HorizontalAlignment="Center" Opacity="0.85" />
+        <TextBlock Classes="dim" TextAlignment="Center" LineHeight="22"
+                   Text="Ready. Ask for something — it keeps working while your phone is in your pocket." />
+      </StackPanel>
+
+      <!-- Reattaching (opened before the subscription landed). -->
+      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12"
+                  IsVisible="{Binding !IsLive}">
+        <TextBlock Classes="dim" Text="Reattaching to this session…" TextAlignment="Center" />
+        <Button Theme="{StaticResource OutlineButton}" Content="Retry" HorizontalAlignment="Center"
+                Command="{Binding RetryCommand}" />
+      </StackPanel>
+
+      <!-- Jump-to-latest: appears only when scrolled away from the tail. -->
+      <Button Name="JumpToLatest" Theme="{StaticResource ChipButton}"
+              HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,12"
+              IsVisible="False">
+        <StackPanel Orientation="Horizontal" Spacing="7">
+          <c:Icon Data="{StaticResource IconArrowDown}" Size="15" Stroke="{DynamicResource AccentText}" />
+          <TextBlock Text="Latest" Foreground="{DynamicResource AccentText}" />
+        </StackPanel>
+      </Button>
+    </Panel>
+
+    <!-- ===================== blocked: the pinned card ===================== -->
+    <Border Grid.Row="4" Background="{DynamicResource Surface1}" Padding="12,12,12,0"
+            IsVisible="{Binding HasPermission}">
+      <Border BorderBrush="{DynamicResource Warning}" BorderThickness="1.5"
+              CornerRadius="{StaticResource RadiusLg}" Background="{DynamicResource WarningSoft}"
+              Padding="14">
+        <StackPanel Spacing="11">
+
+          <StackPanel Spacing="3">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <c:Icon Data="{StaticResource IconShield}" Size="16" Stroke="{DynamicResource Warning}" />
+              <TextBlock Text="Needs your approval" Classes="caption" FontWeight="Bold"
+                         Foreground="{DynamicResource Warning}" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Text="{Binding Permission.Title}" Classes="strong" Margin="0,3,0,0" />
+            <!-- The two facts that decide the answer: what it touches, and whether it can be undone. -->
+            <TextBlock Text="{Binding Permission.ResourceText}" Classes="mono"
+                       Foreground="{DynamicResource TextDim}" Margin="0,2,0,0" />
+            <TextBlock Text="{Binding Permission.ReversibleText}" Classes="caption"
+                       Foreground="{DynamicResource Danger}" IsVisible="{Binding !Permission.Reversible}" />
+            <TextBlock Text="{Binding Permission.ReversibleText}" Classes="caption"
+                       IsVisible="{Binding Permission.Reversible}" />
+          </StackPanel>
+
+          <TextBlock Text="{Binding Permission.NarrowestOptionHint}" Classes="caption"
+                     IsVisible="{Binding Permission.HasNarrowestHint}" />
+
+          <Grid ColumnDefinitions="*,10,*">
+            <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Deny"
+                    Command="{Binding DenyCommand}" />
+            <Button Grid.Column="2" Theme="{StaticResource SuccessButton}" Content="Allow once"
+                    Command="{Binding AllowCommand}" />
+          </Grid>
+
+          <!-- Every option the agent offered, including the "always" ones — those also record a standing
+               trust rule, so they get their own row rather than hiding behind the two big buttons. -->
+          <ItemsControl ItemsSource="{Binding StandingOptions}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Theme="{StaticResource ChipButton}" Margin="0,0,8,0" Content="{Binding Name}"
+                        Command="{Binding $parent[ItemsControl].DataContext.RespondWithCommand}"
+                        CommandParameter="{Binding}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </Border>
+
+    <!-- ===================== composer ===================== -->
+    <Border Grid.Row="5" Background="{DynamicResource Surface1}"
+            BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0">
+      <StackPanel Margin="12,10,12,0" Spacing="9">
+
+        <!-- slash suggestions -->
+        <ItemsControl ItemsSource="{Binding Session.SlashSuggestions}"
+                      IsVisible="{Binding Session.ShowSlash, FallbackValue=False}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Theme="{StaticResource RowButton}" Padding="12,10"
+                      Command="{Binding $parent[ItemsControl].DataContext.ApplySlashCommand}"
+                      CommandParameter="{Binding}">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Classes="mono" Text="{Binding Name, StringFormat='/{0}'}"
+                             Foreground="{DynamicResource AccentText}" />
+                  <TextBlock Classes="muted" Text="{Binding Description}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- attachments -->
+        <ItemsControl ItemsSource="{Binding Session.Attachments}"
+                      IsVisible="{Binding Session.HasAttachments, FallbackValue=False}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Theme="{StaticResource ChipButton}" Margin="0,0,8,6"
+                      Command="{Binding $parent[ItemsControl].DataContext.RemoveAttachmentCommand}"
+                      CommandParameter="{Binding}">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                  <c:Icon Data="{StaticResource IconPaperclip}" Size="13" Stroke="{DynamicResource TextMuted}" />
+                  <TextBlock Text="{Binding Label}" />
+                  <c:Icon Data="{StaticResource IconX}" Size="12" Stroke="{DynamicResource TextMuted}" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- What the send button will do right now — the same gesture sends when idle and queues while a
+             turn runs, and that must never be a surprise. -->
+        <TextBlock Text="{Binding SendHint}" Classes="caption" IsVisible="{Binding HasSendHint}"
+                   Margin="4,0,0,0" />
+
+        <!--
+          One pill holding everything: dictate, the field, and the actions. The buttons live *inside* the
+          border rather than floating over it, so the whole thing reads as a single control and nothing
+          can overhang the screen edge.
+
+          Send is always present — while a turn runs it queues rather than interrupting, and the hint
+          above says so. Stop appears alongside it only while there's something to stop, so the
+          destructive action is never the one your thumb lands on by default.
+        -->
+        <Border Background="{DynamicResource Surface2}"
+                CornerRadius="{StaticResource RadiusXl}"
+                BorderBrush="{DynamicResource Border}" BorderThickness="1.5"
+                Padding="4" IsEnabled="{Binding !IsReadOnly}">
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+            <Button Grid.Column="0" Theme="{StaticResource IconButton}" Width="40" Height="40"
+                    Command="{Binding DictateCommand}" IsVisible="{Binding CanDictate}"
+                    VerticalAlignment="Bottom">
+              <c:Icon Data="{StaticResource IconMic}" Size="20" Stroke="{DynamicResource TextDim}" />
+            </Button>
+
+            <TextBox Grid.Column="1" Theme="{StaticResource ComposerTextBox}"
+                     Text="{Binding Session.PromptText, Mode=TwoWay}"
+                     PlaceholderText="Ask for something" Margin="6,0" />
+
+            <Button Grid.Column="2" Theme="{StaticResource IconButton}" Width="40" Height="40"
+                    Background="{DynamicResource DangerSoft}" Margin="0,0,4,0"
+                    Command="{Binding StopCommand}" IsVisible="{Binding IsTurnActive}"
+                    VerticalAlignment="Bottom">
+              <c:Icon Data="{StaticResource IconStop}" Size="15" Stroke="{DynamicResource Danger}"
+                      Fill="{DynamicResource Danger}" />
+            </Button>
+
+            <Button Grid.Column="3" Theme="{StaticResource SendButton}" Width="42" Height="42"
+                    Command="{Binding SendCommand}" IsEnabled="{Binding CanSend}"
+                    VerticalAlignment="Bottom">
+              <c:Icon Data="{StaticResource IconSend}" Size="19" Stroke="White" StrokeThickness="2" />
+            </Button>
+          </Grid>
+        </Border>
+
+        <TextBlock Text="This session is a read-only watch of a CLI running outside Agnes."
+                   Classes="caption" IsVisible="{Binding IsReadOnly}" TextAlignment="Center" />
+        <c:SafeSpacer Edge="Bottom" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

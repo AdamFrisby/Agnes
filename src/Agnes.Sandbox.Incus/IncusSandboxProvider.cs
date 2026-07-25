@@ -38,7 +38,7 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
     {
         var name = CreateInstanceName();
         var image = string.IsNullOrWhiteSpace(spec.ImageReference) ? _options.DefaultImage : spec.ImageReference;
-        var bridge = string.IsNullOrWhiteSpace(spec.NetworkBridge) ? _options.Bridge : spec.NetworkBridge!;
+        var bridge = _options.ResolveBridge(spec.NetworkBridge, spec.NetworkProfile);
 
         // Resolve resource caps: the host-configured defaults, with any per-session override applied on top.
         var limits = _options.DefaultLimits.With(spec.ResourceOverride);

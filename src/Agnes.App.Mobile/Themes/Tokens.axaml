@@ -1,0 +1,157 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    Multitudal design tokens, as consumed by the Agnes mobile client.
+
+    Source of truth is the brand bundle's `tokens/*.css`; this file is its Avalonia translation.
+    Two variants:
+      · Dark  — the Agnes console palette from `ui_kits/agnes` (#0F0A22 / #16112E / #1C1740, accent
+                #B06CF0). This is the default: a coding-agent client lives on a phone at odd hours,
+                and the kit itself is authored dark.
+      · Light — the shared Multitudal neutrals (cool, faintly violet; never neutral grey, never warm)
+                on near-white surfaces, ink #1D1546, accent indigo-600.
+
+    Colour roles, not colour names: a screen asks for `Surface2` or `Danger`, never a hex literal.
+    The Agnes gradient (violet → magenta → coral) is the one signature flourish and is used at most
+    once per view — brand CTA, the mark, an active accent edge.
+  -->
+  <ResourceDictionary.ThemeDictionaries>
+
+    <!-- ============================ DARK (Agnes console) ============================ -->
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="Bg" Color="#0F0A22" />
+      <SolidColorBrush x:Key="Surface1" Color="#16112E" />
+      <SolidColorBrush x:Key="Surface2" Color="#1C1740" />
+      <SolidColorBrush x:Key="Surface3" Color="#241E4E" />
+      <SolidColorBrush x:Key="Scrim" Color="#8C120C2E" />
+      <SolidColorBrush x:Key="Border" Color="#1FFFFFFF" />
+      <SolidColorBrush x:Key="BorderStrong" Color="#33FFFFFF" />
+
+      <SolidColorBrush x:Key="Text" Color="#E6E3F7" />
+      <SolidColorBrush x:Key="TextDim" Color="#9C97C4" />
+      <SolidColorBrush x:Key="TextMuted" Color="#6B6796" />
+      <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFF" />
+
+      <SolidColorBrush x:Key="Accent" Color="#B06CF0" />
+      <SolidColorBrush x:Key="AccentText" Color="#D9B8FF" />
+      <SolidColorBrush x:Key="AccentSoft" Color="#2EB06CF0" />
+      <SolidColorBrush x:Key="AccentEdge" Color="#4DB06CF0" />
+
+      <SolidColorBrush x:Key="Success" Color="#3ADBB4" />
+      <SolidColorBrush x:Key="SuccessSoft" Color="#243ADBB4" />
+      <SolidColorBrush x:Key="Warning" Color="#FFC53D" />
+      <SolidColorBrush x:Key="WarningSoft" Color="#26FFC53D" />
+      <SolidColorBrush x:Key="Danger" Color="#FF7BA5" />
+      <SolidColorBrush x:Key="DangerSoft" Color="#26F0356F" />
+      <SolidColorBrush x:Key="Info" Color="#38BDF8" />
+      <SolidColorBrush x:Key="InfoSoft" Color="#2438BDF8" />
+
+      <!-- chat -->
+      <SolidColorBrush x:Key="UserBubble" Color="#241E4E" />
+      <SolidColorBrush x:Key="AgentBubble" Color="#16112E" />
+
+      <!-- diff / code -->
+      <SolidColorBrush x:Key="DiffAdd" Color="#1A3ADBB4" />
+      <SolidColorBrush x:Key="DiffAddText" Color="#6FEBC5" />
+      <SolidColorBrush x:Key="DiffDel" Color="#1FF0356F" />
+      <SolidColorBrush x:Key="DiffDelText" Color="#FF9BBB" />
+      <SolidColorBrush x:Key="CodeBg" Color="#120C2E" />
+
+      <!-- Elevation: cool violet, never black. -->
+      <Color x:Key="ShadowColor">#66120C2E</Color>
+    </ResourceDictionary>
+
+    <!-- ============================ LIGHT (Multitudal neutrals) ============================ -->
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="Bg" Color="#F5F5FA" />
+      <SolidColorBrush x:Key="Surface1" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="Surface2" Color="#F5F5FA" />
+      <SolidColorBrush x:Key="Surface3" Color="#ECECF4" />
+      <SolidColorBrush x:Key="Scrim" Color="#8C120C2E" />
+      <SolidColorBrush x:Key="Border" Color="#DEDEEB" />
+      <SolidColorBrush x:Key="BorderStrong" Color="#C6C6DA" />
+
+      <SolidColorBrush x:Key="Text" Color="#1D1546" />
+      <SolidColorBrush x:Key="TextDim" Color="#4E4E68" />
+      <SolidColorBrush x:Key="TextMuted" Color="#6E6E8C" />
+      <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFF" />
+
+      <SolidColorBrush x:Key="Accent" Color="#4F46E5" />
+      <SolidColorBrush x:Key="AccentText" Color="#4338CA" />
+      <SolidColorBrush x:Key="AccentSoft" Color="#EFEFFE" />
+      <SolidColorBrush x:Key="AccentEdge" Color="#C4C4FB" />
+
+      <SolidColorBrush x:Key="Success" Color="#12B886" />
+      <SolidColorBrush x:Key="SuccessSoft" Color="#DCFBEF" />
+      <SolidColorBrush x:Key="Warning" Color="#B37209" />
+      <SolidColorBrush x:Key="WarningSoft" Color="#FEF3D6" />
+      <SolidColorBrush x:Key="Danger" Color="#F0356F" />
+      <SolidColorBrush x:Key="DangerSoft" Color="#FEE0EA" />
+      <SolidColorBrush x:Key="Info" Color="#0EA5E9" />
+      <SolidColorBrush x:Key="InfoSoft" Color="#DFF4FE" />
+
+      <SolidColorBrush x:Key="UserBubble" Color="#EFEFFE" />
+      <SolidColorBrush x:Key="AgentBubble" Color="#FFFFFF" />
+
+      <SolidColorBrush x:Key="DiffAdd" Color="#DCFBEF" />
+      <SolidColorBrush x:Key="DiffAddText" Color="#0B7A5A" />
+      <SolidColorBrush x:Key="DiffDel" Color="#FEE0EA" />
+      <SolidColorBrush x:Key="DiffDelText" Color="#B01B4C" />
+      <SolidColorBrush x:Key="CodeBg" Color="#F5F5FA" />
+
+      <Color x:Key="ShadowColor">#1F1D1546</Color>
+    </ResourceDictionary>
+
+  </ResourceDictionary.ThemeDictionaries>
+
+  <!-- ================= the Agnes signature gradient =================
+       violet → magenta → coral. The brand interpolates in OKLCH to keep mid-tones vivid; Avalonia
+       interpolates in sRGB, so the midpoints are placed explicitly at the OKLCH-correct colours
+       rather than letting a two-stop ramp mix through a muddy centre. -->
+  <LinearGradientBrush x:Key="GradAgnes" StartPoint="0%,0%" EndPoint="100%,100%">
+    <GradientStop Color="#5940D6" Offset="0.0" />
+    <GradientStop Color="#8A55EE" Offset="0.28" />
+    <GradientStop Color="#C858C8" Offset="0.58" />
+    <GradientStop Color="#E86D9A" Offset="0.8" />
+    <GradientStop Color="#FF8A66" Offset="1.0" />
+  </LinearGradientBrush>
+
+  <!-- Horizontal variant, for edges and progress fills. -->
+  <LinearGradientBrush x:Key="GradAgnesH" StartPoint="0%,0%" EndPoint="100%,0%">
+    <GradientStop Color="#5940D6" Offset="0.0" />
+    <GradientStop Color="#8A55EE" Offset="0.28" />
+    <GradientStop Color="#C858C8" Offset="0.58" />
+    <GradientStop Color="#E86D9A" Offset="0.8" />
+    <GradientStop Color="#FF8A66" Offset="1.0" />
+  </LinearGradientBrush>
+
+  <!-- ================= geometry (4px grid; brand radii) ================= -->
+  <!-- 48 is the Android minimum comfortable touch target; nothing tappable goes below it. -->
+  <x:Double x:Key="TouchMin">48</x:Double>
+  <CornerRadius x:Key="RadiusXs">5</CornerRadius>
+  <CornerRadius x:Key="RadiusSm">8</CornerRadius>
+  <CornerRadius x:Key="RadiusMd">12</CornerRadius>
+  <CornerRadius x:Key="RadiusLg">16</CornerRadius>
+  <CornerRadius x:Key="RadiusXl">22</CornerRadius>
+  <CornerRadius x:Key="RadiusPill">999</CornerRadius>
+  <CornerRadius x:Key="RadiusSheet">22,22,0,0</CornerRadius>
+
+  <!-- ================= type ================= -->
+  <!-- Display = Space Grotesk, UI/body = Manrope, code/logs = JetBrains Mono. All three are the
+       brand's declared Google-Font substitutes for the (unprovided) real wordmark font. -->
+  <FontFamily x:Key="DisplayFont">avares://Agnes.App.Mobile/Assets/Fonts#Space Grotesk</FontFamily>
+  <FontFamily x:Key="BodyFont">avares://Agnes.App.Mobile/Assets/Fonts#Manrope</FontFamily>
+  <FontFamily x:Key="MonoFont">avares://Agnes.App.Mobile/Assets/Fonts#JetBrains Mono</FontFamily>
+
+  <x:Double x:Key="Text2Xs">11</x:Double>
+  <x:Double x:Key="TextXs">12</x:Double>
+  <x:Double x:Key="TextSm">13</x:Double>
+  <x:Double x:Key="TextMd">15</x:Double>
+  <x:Double x:Key="TextLg">17</x:Double>
+  <x:Double x:Key="TextXl">20</x:Double>
+  <x:Double x:Key="Text2Xl">24</x:Double>
+  <x:Double x:Key="Text3Xl">30</x:Double>
+
+  <!-- Display type is tracked tight, per the brand's −0.02/−0.03em. -->
+  <x:Double x:Key="TrackingTight">-0.4</x:Double>
+</ResourceDictionary>

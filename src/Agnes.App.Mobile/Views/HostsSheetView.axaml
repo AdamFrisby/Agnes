@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.HostsSheetView"
+             x:DataType="vm:HostsSheetViewModel">
+  <Grid RowDefinitions="*,Auto">
+
+    <ScrollViewer Grid.Row="0">
+      <ItemsControl ItemsSource="{Binding Hosts}" Margin="12,10,12,10">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Classes="card" Margin="0,0,0,8" Padding="14">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <Border Grid.Column="0" Classes="dot" Classes.running="{Binding IsOnline}"
+                        Margin="0,0,12,0" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Spacing="2" Margin="0,0,10,0">
+                  <TextBlock Text="{Binding Name}" Classes="strong" />
+                  <TextBlock Text="{Binding Url}" Classes="mono"
+                             Foreground="{DynamicResource TextMuted}" MaxLines="1"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding StateText}" Classes="caption" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                  <Button Theme="{StaticResource IconButton}" Width="42" Height="42"
+                          Command="{Binding $parent[UserControl].DataContext.ReconnectCommand}"
+                          CommandParameter="{Binding}">
+                    <c:Icon Data="{StaticResource IconRefresh}" Size="18" Stroke="{DynamicResource TextDim}" />
+                  </Button>
+                  <Button Theme="{StaticResource IconButton}" Width="42" Height="42"
+                          IsVisible="{Binding !IsBuiltIn}"
+                          Command="{Binding $parent[UserControl].DataContext.ForgetCommand}"
+                          CommandParameter="{Binding}">
+                    <c:Icon Data="{StaticResource IconTrash}" Size="18" Stroke="{DynamicResource Danger}" />
+                  </Button>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <Border Grid.Row="1" Padding="16,8,16,22">
+      <Button Theme="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
+              Command="{Binding AddHostCommand}">
+        <StackPanel Orientation="Horizontal" Spacing="9">
+          <c:Icon Data="{StaticResource IconPlus}" Size="19" Stroke="White" StrokeThickness="2.1" />
+          <TextBlock Text="Pair a host" Foreground="White" FontWeight="SemiBold" />
+        </StackPanel>
+      </Button>
+    </Border>
+  </Grid>
+</UserControl>

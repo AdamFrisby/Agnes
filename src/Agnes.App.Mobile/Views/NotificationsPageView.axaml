@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.NotificationsPageView"
+             x:DataType="vm:NotificationsPageViewModel"
+             Background="{DynamicResource Bg}">
+  <Grid RowDefinitions="Auto,*">
+    <c:PageHeader Grid.Row="0" Title="Notifications" />
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="16,12,16,28" Spacing="10">
+
+        <TextBlock Classes="dim" LineHeight="22" Margin="0,0,0,4"
+                   Text="Agnes only notifies when the app isn't open — if you're already looking at it, you get a banner instead." />
+
+        <Border Classes="card" Padding="0">
+          <StackPanel>
+            <Button Theme="{StaticResource RowButton}" Command="{Binding ToggleBlockedCommand}">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                  <TextBlock Text="An agent is blocked" />
+                  <TextBlock Classes="caption"
+                             Text="It needs an approval or an answer and can't continue without you." />
+                </StackPanel>
+                <ToggleButton Grid.Column="1" Theme="{StaticResource MobileSwitch}" IsHitTestVisible="False"
+                              IsChecked="{Binding NotifyOnBlocked, Mode=OneWay}" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+            <Border Classes="divider" />
+            <Button Theme="{StaticResource RowButton}" Command="{Binding ToggleCompleteCommand}">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                  <TextBlock Text="A turn finished" />
+                  <TextBlock Classes="caption" Text="The agent is done and there's something to read." />
+                </StackPanel>
+                <ToggleButton Grid.Column="1" Theme="{StaticResource MobileSwitch}" IsHitTestVisible="False"
+                              IsChecked="{Binding NotifyOnComplete, Mode=OneWay}" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+          </StackPanel>
+        </Border>
+
+        <TextBlock Classes="section" Text="FEEDBACK" />
+        <Border Classes="card" Padding="0">
+          <Button Theme="{StaticResource RowButton}" Command="{Binding ToggleHapticsCommand}">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                <TextBlock Text="Haptics" />
+                <TextBlock Classes="caption"
+                           Text="A tick when a prompt leaves, a pulse when a turn ends, a heavier one when something needs you." />
+              </StackPanel>
+              <ToggleButton Grid.Column="1" Theme="{StaticResource MobileSwitch}" IsHitTestVisible="False"
+                            IsChecked="{Binding Haptics, Mode=OneWay}" VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

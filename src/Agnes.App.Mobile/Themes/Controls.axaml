@@ -1,0 +1,470 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    Mobile control themes, built on the Multitudal tokens. Written from scratch rather than restyling
+    Fluent's desktop defaults: the sizing, press feedback and hit areas are the whole point here, and
+    patching them onto a pointer-oriented theme leaves 32px targets and hover states that never fire on
+    a touch screen.
+
+    Brand rules encoded below:
+      · press scales to 0.97 (buttons) / 0.9 (icon buttons); no colour flip on press;
+      · motion is 120ms with ease `cubic-bezier(.2,.7,.3,1)`, bouncier on toggles;
+      · the Agnes gradient is the primary CTA fill — one hero gradient per view, everything else solid;
+      · radii follow the brand scale (controls 8–12, cards 16, sheets 22, pills 999);
+      · nothing interactive is smaller than TouchMin (48) in its tappable dimension.
+  -->
+
+  <!-- ================= buttons ================= -->
+
+  <!-- Primary = the Agnes gradient. Reserved for the single most important action on a screen. -->
+  <ControlTheme x:Key="PrimaryButton" TargetType="Button">
+    <Setter Property="Background" Value="{StaticResource GradAgnesH}" />
+    <Setter Property="Foreground" Value="#FFFFFF" />
+    <Setter Property="FontFamily" Value="{StaticResource BodyFont}" />
+    <Setter Property="FontSize" Value="{StaticResource TextMd}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="MinHeight" Value="{StaticResource TouchMin}" />
+    <Setter Property="Padding" Value="20,0" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="RenderTransform" Value="none" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12" Easing="CubicEaseOut" />
+        <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="root"
+                Background="{TemplateBinding Background}"
+                CornerRadius="{StaticResource RadiusMd}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Name="PART_ContentPresenter"
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pressed">
+      <Setter Property="RenderTransform" Value="scale(0.97)" />
+      <Setter Property="Opacity" Value="0.88" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.38" />
+    </Style>
+  </ControlTheme>
+
+  <!-- Solid accent, for a strong action that isn't the screen's hero. -->
+  <ControlTheme x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+    <Setter Property="Background" Value="{DynamicResource Accent}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextOnAccent}" />
+  </ControlTheme>
+
+  <ControlTheme x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+    <Setter Property="Background" Value="{DynamicResource Surface3}" />
+    <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    <Setter Property="FontWeight" Value="Medium" />
+  </ControlTheme>
+
+  <ControlTheme x:Key="OutlineButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="root"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{DynamicResource BorderStrong}"
+                BorderThickness="1.5"
+                CornerRadius="{StaticResource RadiusMd}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <ControlTheme x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+    <Setter Property="Background" Value="{DynamicResource DangerSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+  </ControlTheme>
+
+  <ControlTheme x:Key="SuccessButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+    <Setter Property="Background" Value="{DynamicResource Success}" />
+    <Setter Property="Foreground" Value="#08231C" />
+  </ControlTheme>
+
+  <ControlTheme x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource TextDim}" />
+    <Setter Property="FontWeight" Value="Medium" />
+  </ControlTheme>
+
+  <!-- A square, thumb-sized tap target for a single glyph (app bar, composer, sheet headers). -->
+  <ControlTheme x:Key="IconButton" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Width" Value="{StaticResource TouchMin}" />
+    <Setter Property="Height" Value="{StaticResource TouchMin}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="RenderTransform" Value="none" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12" Easing="CubicEaseOut" />
+        <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" CornerRadius="{StaticResource RadiusPill}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pressed">
+      <Setter Property="RenderTransform" Value="scale(0.9)" />
+      <Setter Property="Opacity" Value="0.75" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.3" />
+    </Style>
+  </ControlTheme>
+
+  <!-- The composer's send/stop control: the gradient, as a circle. -->
+  <ControlTheme x:Key="SendButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+    <Setter Property="Background" Value="{StaticResource GradAgnes}" />
+    <Setter Property="Width" Value="46" />
+    <Setter Property="Height" Value="46" />
+  </ControlTheme>
+
+  <!-- A small inline chip: filter, tag, quick action above the composer. -->
+  <ControlTheme x:Key="ChipButton" TargetType="Button">
+    <Setter Property="Background" Value="{DynamicResource Surface2}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextDim}" />
+    <Setter Property="FontFamily" Value="{StaticResource BodyFont}" />
+    <Setter Property="FontSize" Value="{StaticResource TextSm}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="MinHeight" Value="34" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="RenderTransform" Value="none" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12" Easing="CubicEaseOut" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}"
+                BorderBrush="{DynamicResource Border}" BorderThickness="1"
+                CornerRadius="{StaticResource RadiusSm}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pressed">
+      <Setter Property="RenderTransform" Value="scale(0.94)" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+  </ControlTheme>
+
+  <!-- A whole card that is itself the tap target (a session, a host, an agent). The press scale is
+       gentler than a button's because the surface is large — 0.97 on a full-width card reads as a jolt. -->
+  <ControlTheme x:Key="CardButton" TargetType="Button">
+    <Setter Property="Background" Value="{DynamicResource Surface1}" />
+    <Setter Property="Padding" Value="16" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="RenderTransform" Value="none" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12" Easing="CubicEaseOut" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="card"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{DynamicResource Border}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource RadiusLg}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="Stretch" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pressed">
+      <Setter Property="RenderTransform" Value="scale(0.985)" />
+    </Style>
+    <Style Selector="^:pressed /template/ Border#card">
+      <Setter Property="Background" Value="{DynamicResource Surface2}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+  </ControlTheme>
+
+  <!-- A row in a grouped list (settings, sheets, pickers): full-bleed, no chrome of its own. -->
+  <ControlTheme x:Key="RowButton" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="16,14" />
+    <Setter Property="MinHeight" Value="{StaticResource TouchMin}" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="row" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Stretch" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pressed /template/ Border#row">
+      <Setter Property="Background" Value="{DynamicResource Surface2}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+  </ControlTheme>
+
+  <!-- The floating action button: the one gradient on the sessions screen, and the only way to start
+       something new. Extended (icon + label) because a bare "+" on a first launch is a riddle. -->
+  <ControlTheme x:Key="FabButton" TargetType="Button">
+    <Setter Property="Background" Value="{StaticResource GradAgnesH}" />
+    <Setter Property="Foreground" Value="#FFFFFF" />
+    <Setter Property="FontFamily" Value="{StaticResource BodyFont}" />
+    <Setter Property="FontSize" Value="{StaticResource TextMd}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Height" Value="54" />
+    <Setter Property="Padding" Value="20,0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="RenderTransform" Value="none" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12" Easing="CubicEaseOut" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}"
+                CornerRadius="{StaticResource RadiusPill}"
+                Padding="{TemplateBinding Padding}"
+                BoxShadow="0 10 30 -8 #66B06CF0">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pressed">
+      <Setter Property="RenderTransform" Value="scale(0.96)" />
+    </Style>
+  </ControlTheme>
+
+  <!-- ================= segmented control ================= -->
+  <!-- Two or three mutually-exclusive options in a pill; the mobile stand-in for a radio group. -->
+  <ControlTheme x:Key="SegmentButton" TargetType="RadioButton">
+    <Setter Property="Foreground" Value="{DynamicResource TextDim}" />
+    <Setter Property="FontFamily" Value="{StaticResource BodyFont}" />
+    <Setter Property="FontSize" Value="{StaticResource TextSm}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="MinHeight" Value="38" />
+    <Setter Property="Padding" Value="14,0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="seg" Background="Transparent"
+                CornerRadius="{StaticResource RadiusSm}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:checked /template/ Border#seg">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="^:checked">
+      <Setter Property="Foreground" Value="{DynamicResource TextOnAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+  </ControlTheme>
+
+  <!-- ================= bottom navigation ================= -->
+  <ControlTheme x:Key="NavButton" TargetType="RadioButton">
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="Transparent" MinHeight="{StaticResource TouchMin}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:checked">
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+    </Style>
+  </ControlTheme>
+
+  <!-- ================= text input ================= -->
+  <ControlTheme x:Key="MobileTextBox" TargetType="TextBox">
+    <Setter Property="Background" Value="{DynamicResource Surface2}" />
+    <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource Accent}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource AccentSoft}" />
+    <Setter Property="FontFamily" Value="{StaticResource BodyFont}" />
+    <Setter Property="FontSize" Value="{StaticResource TextMd}" />
+    <Setter Property="MinHeight" Value="{StaticResource TouchMin}" />
+    <Setter Property="Padding" Value="14,12" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="box"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{DynamicResource Border}"
+                BorderThickness="1.5"
+                CornerRadius="{StaticResource RadiusMd}">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <ContentPresenter Grid.Column="0" Content="{TemplateBinding InnerLeftContent}" />
+            <Panel Grid.Column="1" Margin="{TemplateBinding Padding}">
+              <TextBlock Name="PART_Watermark"
+                         Text="{TemplateBinding PlaceholderText}"
+                         Foreground="{DynamicResource TextMuted}"
+                         TextWrapping="{TemplateBinding TextWrapping}"
+                         IsVisible="{TemplateBinding Text, Converter={x:Static StringConverters.IsNullOrEmpty}}"
+                         VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+              <TextPresenter Name="PART_TextPresenter"
+                             Text="{TemplateBinding Text, Mode=TwoWay}"
+                             CaretBrush="{TemplateBinding CaretBrush}"
+                             SelectionBrush="{TemplateBinding SelectionBrush}"
+                             SelectionStart="{TemplateBinding SelectionStart}"
+                             SelectionEnd="{TemplateBinding SelectionEnd}"
+                             TextWrapping="{TemplateBinding TextWrapping}"
+                             TextAlignment="{TemplateBinding TextAlignment}"
+                             PasswordChar="{TemplateBinding PasswordChar}"
+                             RevealPassword="{TemplateBinding RevealPassword}"
+                             VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+            </Panel>
+            <ContentPresenter Grid.Column="2" Content="{TemplateBinding InnerRightContent}" />
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:focus /template/ Border#box">
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+  </ControlTheme>
+
+  <!-- The composer field: borderless, grows with content, inside the composer bar's own frame. -->
+  <ControlTheme x:Key="ComposerTextBox" TargetType="TextBox" BasedOn="{StaticResource MobileTextBox}">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="MinHeight" Value="42" />
+    <Setter Property="Padding" Value="4,10" />
+    <Setter Property="AcceptsReturn" Value="True" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="MaxHeight" Value="164" />
+    <Setter Property="VerticalContentAlignment" Value="Top" />
+    <Style Selector="^ /template/ Border#box">
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="^:focus /template/ Border#box">
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+  </ControlTheme>
+
+  <!-- ================= switch ================= -->
+  <!-- On-state is the brand gradient, per the design system's Switch. -->
+  <ControlTheme x:Key="MobileSwitch" TargetType="ToggleButton">
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Width" Value="48" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="track" Background="{DynamicResource Surface3}"
+                CornerRadius="{StaticResource RadiusPill}"
+                BorderBrush="{DynamicResource Border}" BorderThickness="1">
+          <Ellipse Name="knob" Width="20" Height="20" Margin="3,0"
+                   Fill="{DynamicResource TextMuted}" HorizontalAlignment="Left">
+            <Ellipse.Transitions>
+              <Transitions>
+                <!-- ease-bounce: the brand's toggles overshoot slightly. -->
+                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" Easing="BackEaseOut" />
+              </Transitions>
+            </Ellipse.Transitions>
+          </Ellipse>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:checked /template/ Border#track">
+      <Setter Property="Background" Value="{StaticResource GradAgnesH}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="^:checked /template/ Ellipse#knob">
+      <Setter Property="Fill" Value="#FFFFFF" />
+      <Setter Property="RenderTransform" Value="translateX(20px)" />
+    </Style>
+    <Style Selector="^:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+  </ControlTheme>
+
+  <!-- ================= lists ================= -->
+  <!-- Touch lists own their row chrome; the item container contributes nothing but a hit area. -->
+  <ControlTheme x:Key="FlatListItem" TargetType="ListBoxItem">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          HorizontalAlignment="Stretch" />
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <ControlTheme x:Key="FlatListBox" TargetType="ListBox">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="ItemContainerTheme" Value="{StaticResource FlatListItem}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ScrollViewer Name="PART_ScrollViewer"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto"
+                      Background="{TemplateBinding Background}">
+          <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" Margin="{TemplateBinding Padding}" />
+        </ScrollViewer>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+</ResourceDictionary>

@@ -26,6 +26,7 @@ ROOT="$(pwd)"
 OUT="$ROOT/builds"
 
 DESKTOP_PROJ="src/Agnes.App.Desktop/Agnes.App.Desktop.csproj"
+MOBILE_PROJ="src/Agnes.App.Mobile/Agnes.App.Mobile.csproj"
 HOST_PROJ="src/Agnes.Host/Agnes.Host.csproj"
 UNO_PROJ="src/Agnes.App/Agnes.App/Agnes.App.csproj"
 CONFIG="Release"
@@ -89,17 +90,22 @@ if want mac; then
 fi
 
 # ---- android apk ----
+# The Android client is its own Avalonia head (src/Agnes.App.Mobile), not a target of the Uno app: it
+# is a ground-up phone UI rather than the desktop layout reflowed, so it shares Agnes.Ui.Core and
+# nothing else. Needs the android workload plus a JDK and the Android SDK.
 if want android; then
   if dotnet workload list 2>/dev/null | grep -qw android; then
-    echo "==> android apk"
+    echo "==> android apk (Avalonia)"
     rm -rf "$OUT/android"; mkdir -p "$OUT/android"
-    dotnet publish "$UNO_PROJ" -f net10.0-android -c "$CONFIG" --nologo -o "$OUT/android/_stage" >/dev/null
-    # Collect whatever apk the Android build produced (signed + unsigned), from the publish output and
-    # the project's android bin — whichever the SDK wrote them to.
-    find "$OUT/android/_stage" -name '*.apk' -exec cp -f {} "$OUT/android/" \; 2>/dev/null
-    find src/Agnes.App -path '*net10.0-android*' -name '*.apk' -exec cp -f {} "$OUT/android/" \; 2>/dev/null
+    dotnet publish "$MOBILE_PROJ" -f net10.0-android -c "$CONFIG" --nologo -o "$OUT/android/_stage" >/dev/null
+    # Prefer the signed APK — the SDK emits both, and only the signed one will install. Look in the
+    # publish output first, then in the project's own bin, since which one the Android SDK writes to
+    # varies with how the build was invoked.
+    apk="$(find "$OUT/android/_stage" "$(dirname "$MOBILE_PROJ")/bin" -name '*-Signed.apk' 2>/dev/null | head -1)"
+    [ -n "$apk" ] || apk="$(find "$OUT/android/_stage" "$(dirname "$MOBILE_PROJ")/bin" -name '*.apk' 2>/dev/null | head -1)"
+    [ -n "$apk" ] && cp -f "$apk" "$OUT/android/Agnes.apk"
     rm -rf "$OUT/android/_stage"
-    ls "$OUT/android"/*.apk >/dev/null 2>&1 || echo "   (no .apk produced — check the android SDK / signing keystore)"
+    [ -f "$OUT/android/Agnes.apk" ] || echo "   (no .apk produced — check the android SDK / signing keystore)"
   else
     echo "!! skipping android — the 'android' workload isn't installed (dotnet workload install android)"
   fi

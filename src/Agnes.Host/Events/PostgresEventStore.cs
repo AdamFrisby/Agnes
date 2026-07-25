@@ -39,10 +39,15 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
             use_worktree      BOOLEAN NOT NULL,
             skip_permissions  BOOLEAN NOT NULL,
             sandboxed         BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at        TEXT    NOT NULL
+            created_at        TEXT    NOT NULL,
+            model_id          TEXT,
+            owner             TEXT,
+            group_id          TEXT
         );
-        -- Additive migration for catalogues created before the column existed.
+        -- Additive migrations for catalogues created before these columns existed.
         ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model_id TEXT;
+        ALTER TABLE sessions ADD COLUMN IF NOT EXISTS owner    TEXT;
+        ALTER TABLE sessions ADD COLUMN IF NOT EXISTS group_id TEXT;
         """;
 
     internal const string InsertEventSql =
@@ -56,15 +61,20 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
 
     internal const string UpsertSessionSql =
         """
-        INSERT INTO sessions (session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id)
-        VALUES (@sid, @adapter, @wd, @agent, @wt, @skip, @sandboxed, @created, @model)
+        INSERT INTO sessions (session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id, owner, group_id)
+        VALUES (@sid, @adapter, @wd, @agent, @wt, @skip, @sandboxed, @created, @model, @owner, @group)
         ON CONFLICT (session_id) DO UPDATE SET
             agent_session_id = EXCLUDED.agent_session_id,
-            model_id = EXCLUDED.model_id;
+            model_id = EXCLUDED.model_id,
+            owner = EXCLUDED.owner,
+            group_id = EXCLUDED.group_id;
         """;
 
+    internal const string PruneEventsSql =
+        "DELETE FROM events WHERE ts < @cutoff;";
+
     internal const string ListSessionsSql =
-        "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id FROM sessions ORDER BY created_at ASC;";
+        "SELECT session_id, adapter_id, working_directory, agent_session_id, use_worktree, skip_permissions, sandboxed, created_at, model_id, owner, group_id FROM sessions ORDER BY created_at ASC;";
 
     private readonly string _connectionString;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
@@ -141,7 +151,18 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
         command.Parameters.AddWithValue("sandboxed", record.Sandboxed);
         command.Parameters.AddWithValue("created", record.CreatedAt.ToString("O"));
         command.Parameters.AddWithValue("model", (object?)record.ModelId ?? DBNull.Value);
+        command.Parameters.AddWithValue("owner", (object?)record.Owner ?? DBNull.Value);
+        command.Parameters.AddWithValue("group", (object?)record.Group ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<int> PruneEventsBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(PruneEventsSql, connection);
+        command.Parameters.AddWithValue("cutoff", cutoff.ToUniversalTime().ToString("O"));
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<SessionRecord>> ListSessionsAsync(CancellationToken cancellationToken = default)
@@ -158,7 +179,9 @@ public sealed class PostgresEventStore : IEventStore, IDisposable
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.GetBoolean(4), reader.GetBoolean(5), reader.GetBoolean(6),
                 DateTimeOffset.Parse(reader.GetString(7)),
-                reader.IsDBNull(8) ? null : reader.GetString(8)));
+                reader.IsDBNull(8) ? null : reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? null : reader.GetString(10)));
         }
 
         return records;

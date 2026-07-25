@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Headless preview harness for the Android client.
+
+    The mobile head can only be *run* on a device, which makes "does it actually render" an expensive
+    question during development and an unanswerable one in CI. This project compiles the same views,
+    view models and theme files against desktop Avalonia and renders them offscreen with Skia, so a
+    broken binding, a missing resource or an unloadable font fails here instead of on a phone.
+
+    It links the mobile sources rather than referencing the project, because a net10.0-android assembly
+    can't be referenced from a desktop one. The assembly name deliberately matches the mobile head so
+    the `avares://Agnes.App.Mobile/...` font URIs resolve identically.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Agnes.App.Mobile</AssemblyName>
+    <RootNamespace>Agnes.App.Mobile.Preview</RootNamespace>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Markdown.Avalonia" Version="12.0.0-a3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Agnes.Abstractions\Agnes.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Protocol\Agnes.Protocol.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Client\Agnes.Client.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
+    <ProjectReference Include="..\..\src\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The platform-neutral half of the mobile head, linked in. Anything under Platform/, the
+       Android-only services, and the Android entry points are deliberately excluded. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Agnes.App.Mobile\ViewModels\**\*.cs" LinkBase="Mobile\ViewModels" />
+    <Compile Include="..\..\src\Agnes.App.Mobile\Views\**\*.cs" LinkBase="Mobile\Views" />
+    <Compile Include="..\..\src\Agnes.App.Mobile\Controls\**\*.cs" LinkBase="Mobile\Controls" />
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\JsonStore.cs" LinkBase="Mobile\Services" />
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\AppState.cs" LinkBase="Mobile\Services" />
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\HostBook.cs" LinkBase="Mobile\Services" />
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\IHaptics.cs" LinkBase="Mobile\Services" />
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\MobileConnector.cs" LinkBase="Mobile\Services" />
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\MobileDispatcher.cs" LinkBase="Mobile\Services" />
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\ThemeApplier.cs" LinkBase="Mobile\Services" />
+    <Compile Include="*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaXaml Include="..\..\src\Agnes.App.Mobile\Views\**\*.axaml" Link="Views\%(Filename)%(Extension)" />
+    <AvaloniaXaml Include="..\..\src\Agnes.App.Mobile\Controls\**\*.axaml" Link="Controls\%(Filename)%(Extension)" />
+    <AvaloniaXaml Include="..\..\src\Agnes.App.Mobile\Themes\**\*.axaml" Link="Themes\%(Filename)%(Extension)" />
+    <AvaloniaResource Include="..\..\src\Agnes.App.Mobile\Assets\**" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

@@ -37,6 +37,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly OneShotAgentRunner _oneShot = new();
     private readonly IReadOnlyList<IGitHostProvider> _gitHosts;
     private readonly ISandboxProvider? _sandboxes;
+    private readonly SessionSecurityOptions _security;
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
     private readonly ClaudeTokenRotationPusher? _rotationPusher;
     private readonly McpRegistry? _mcp;
@@ -150,7 +151,8 @@ public sealed class SessionManager : IAsyncDisposable
         Attention.AttentionRequestStore? attention = null,
         ICliFallback? cliFallback = null,
         Hosting.PromptLibrary? promptLibrary = null,
-        ApprovalGateService? approvals = null)
+        ApprovalGateService? approvals = null,
+        SessionSecurityOptions? security = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -160,6 +162,7 @@ public sealed class SessionManager : IAsyncDisposable
         _bus = eventBus ?? new Agnes.Abstractions.Events.EventBus();
         _logger = loggerFactory.CreateLogger<SessionManager>();
         _sandboxes = sandboxProviders?.All.FirstOrDefault();
+        _security = security ?? new SessionSecurityOptions();
         _credentialProviders = credentialProviders?.ToArray() ?? [];
         _rotationPusher = rotationPusher;
         _mcp = mcp;
@@ -221,7 +224,7 @@ public sealed class SessionManager : IAsyncDisposable
             return;
         }
 
-        var cred = await _credentialListener.MintAsync(new CredentialRequest("https", host, repo, "get"), cancellationToken).ConfigureAwait(false);
+        var cred = await _credentialListener.MintAsync(new CredentialRequest("https", host, repo, "get", project.CredentialAccount), cancellationToken).ConfigureAwait(false);
         if (cred is null)
         {
             _logger.LogWarning("Session {SessionId}: no linked account can check out {Repo}; leaving the working dir empty.", sessionId, repo);
@@ -436,6 +439,85 @@ public sealed class SessionManager : IAsyncDisposable
     /// <summary>Whether this host can isolate sessions in per-session sandbox VMs (a provider is configured).</summary>
     public bool SandboxAvailable => _sandboxes is not null;
 
+    /// <summary>Whether the host refuses to run any session outside a sandbox (Agnes:Security:RequireSandbox).
+    /// Surfaced to clients via <see cref="HostInfo.RequireSandbox"/> so the new-session UI can force the toggle
+    /// on; still enforced host-side regardless of what any client sends.</summary>
+    public bool SandboxRequired => _security.RequireSandbox;
+
+    /// <summary>Whether the host forbids autonomous / skip-permissions sessions (Agnes:Security:RequirePermissionPrompts).
+    /// Surfaced via <see cref="HostInfo.RequirePermissionPrompts"/> so the new-session UI can lock the permission
+    /// toggle to attended; enforced host-side regardless.</summary>
+    public bool PermissionPromptsRequired => _security.RequirePermissionPrompts;
+
+    /// <summary>The recorded owner (principal id) and group (repo scope) of a session — for access decisions
+    /// under session isolation. Both null for a session opened before ownership tracking, or with no resolvable
+    /// identity / repo. Read from the in-memory catalogue (repopulated from the store on restart).</summary>
+    public (string? Owner, string? Group) GetOwnership(string sessionId)
+        => _catalog.TryGetValue(sessionId, out var r) ? (r.Owner, r.Group) : (null, null);
+
+    /// <summary>A live snapshot of resource usage by session owner — attribution for a shared host ("who to
+    /// blame"). Live sessions and their sandboxes are grouped by the owner recorded at open time.</summary>
+    public UsageReport GetUsageReport()
+    {
+        const string unowned = "(unowned)";
+        var liveSessions = _sessions.Keys.ToArray();
+        var sandboxed = new HashSet<string>(_sandboxBySession.Keys);
+
+        var byOwner = liveSessions
+            .GroupBy(id => _catalog.TryGetValue(id, out var r) && r.Owner is { Length: > 0 } o ? o : unowned)
+            .Select(g => new OwnerUsage(g.Key, g.Count(), g.Count(id => sandboxed.Contains(id))))
+            .OrderByDescending(u => u.ActiveSandboxes).ThenByDescending(u => u.ActiveSessions).ThenBy(u => u.Owner)
+            .ToArray();
+
+        return new UsageReport(liveSessions.Length, sandboxed.Count, byOwner);
+    }
+
+    /// <summary>
+    /// Enforces the host's session-directory allowlist (Agnes:Security:AllowedSessionRoots): a no-op when no
+    /// allowlist is configured, otherwise throws <see cref="SessionSecurityException"/> if the caller-supplied
+    /// directory resolves outside every allowed root. Called at each open entry BEFORE any filesystem side
+    /// effect (worktree creation, workspace copy) so a rejected request changes nothing on disk.
+    /// </summary>
+    private void EnforceDirectoryAllowed(string workingDirectory)
+    {
+        if (!SessionDirectoryPolicy.IsWithinAllowedRoots(workingDirectory, _security.AllowedSessionRoots))
+        {
+            _logger.LogWarning("Refused a session in '{Directory}': outside the configured allowed session roots.", workingDirectory);
+            throw new SessionSecurityException(
+                $"The working directory '{workingDirectory}' is not within any of this host's allowed session roots.");
+        }
+    }
+
+    /// <summary>
+    /// Enforces the host's autonomy guardrails for a session about to (re)launch (Agnes:Security). Refuses an
+    /// autonomous (<c>--dangerously-skip-permissions</c>) session when the host requires per-tool permission
+    /// prompts, or when it would run outside a sandbox and unsandboxed autonomy isn't explicitly allowed. A
+    /// no-op for an attended session. <paramref name="willSandbox"/> is whether the session will actually run
+    /// inside a sandbox.
+    /// </summary>
+    private void EnforceAutonomyPolicy(string sessionId, bool skipPermissions, bool willSandbox)
+    {
+        if (!skipPermissions)
+        {
+            return;
+        }
+
+        if (_security.RequirePermissionPrompts)
+        {
+            _logger.LogWarning("Refused autonomous session {SessionId}: this host requires per-tool permission prompts.", sessionId);
+            throw new SessionSecurityException(
+                "Refused an autonomous session: this host requires per-tool permission prompts, so skip-permissions mode is disabled.");
+        }
+
+        if (!willSandbox && !_security.AllowUnsandboxedSkipPermissions)
+        {
+            _logger.LogWarning("Refused unsandboxed autonomous session {SessionId}: skip-permissions is only allowed inside a sandbox.", sessionId);
+            throw new SessionSecurityException(
+                "Refused a skip-permissions (autonomous) session outside a sandbox: this host only allows autonomous mode inside a " +
+                "sandbox (set Agnes:Security:AllowUnsandboxedSkipPermissions=true to override).");
+        }
+    }
+
     /// <summary>Which host-level plugin-point capabilities are actually populated right now (AC2/AC3 of
     /// .ideas/00-plugin-architecture.md) — queried live rather than cached, so it reflects the current
     /// registry state if plugins are ever installed/enabled/disabled without a restart.</summary>
@@ -445,7 +527,7 @@ public sealed class SessionManager : IAsyncDisposable
         new HostCapability(HostCapabilityIds.SandboxProvider, SandboxAvailable, FailClosed: false),
     ];
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, string? owner = null, CancellationToken cancellationToken = default)
     {
         // Event spine: a plugin may redirect the adapter/working directory or veto the open.
         var open = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionOpenEvent(adapterId, workingDirectory), cancellationToken).ConfigureAwait(false);
@@ -460,6 +542,9 @@ public sealed class SessionManager : IAsyncDisposable
         {
             throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
         }
+
+        // Confine the session to an allowed root (if configured) before we create a worktree or launch anything.
+        EnforceDirectoryAllowed(workingDirectory);
 
         var sessionId = Guid.NewGuid().ToString("n");
         var effectiveDirectory = workingDirectory;
@@ -476,7 +561,7 @@ public sealed class SessionManager : IAsyncDisposable
 
         var info = await OpenSessionCoreAsync(
             sessionId, adapterId, effectiveDirectory, skipPermissions, mcpApproval, gitCredentialMode,
-            useSandbox, modelId, existingSandbox: null, worktree: useWorktree, cancellationToken).ConfigureAwait(false);
+            useSandbox, modelId, existingSandbox: null, worktree: useWorktree, cancellationToken, owner: owner).ConfigureAwait(false);
         await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionOpenedEvent(info.SessionId, adapterId), cancellationToken).ConfigureAwait(false);
         return info;
     }
@@ -571,7 +656,7 @@ public sealed class SessionManager : IAsyncDisposable
     private async Task<SessionInfo> OpenSessionCoreAsync(
         string sessionId, string adapterId, string effectiveDirectory,
         bool skipPermissions, string mcpApproval, string gitCredentialMode, bool useSandbox, string? modelId,
-        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken, string? resumeSessionId = null)
+        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken, string? resumeSessionId = null, string? owner = null)
     {
         var adapter = _adapters.Find(adapterId);
         if (adapter is null)
@@ -579,14 +664,31 @@ public sealed class SessionManager : IAsyncDisposable
             throw new InvalidOperationException($"Unknown agent adapter '{adapterId}'.");
         }
 
+        // Host policy, checked here at the single shared open path so every entry — new, fork, cross-host
+        // handoff — is covered, and before any project checkout / credential work happens. `willSandbox` is
+        // whether this session will actually run inside a sandbox (an adopted / CoW-cloned VM counts).
+        var willSandbox = existingSandbox is not null || (_sandboxes is not null && useSandbox);
+        if (_security.RequireSandbox && !willSandbox)
+        {
+            var reason = _sandboxes is null
+                ? "this host requires every session to run in a sandbox, but no sandbox provider is configured"
+                : "this host requires every session to run in a sandbox";
+            _logger.LogWarning("Refused an unsandboxed session {SessionId}: {Reason}.", sessionId, reason);
+            throw new SessionSecurityException($"Refused to open an unsandboxed session: {reason}.");
+        }
+
+        EnforceAutonomyPolicy(sessionId, skipPermissions, willSandbox);
+
         // Resolve this session's project from the working directory's repo (auto-created + editable);
         // the sandbox / MCP / credential steps below use the project's own config.
         Projects.Project? project = null;
+        string? group = null;
         if (_projects is not null)
         {
             var remote = await _git.GetRemoteUrlAsync(effectiveDirectory, cancellationToken).ConfigureAwait(false);
             var repoKey = GitRemote.TryParse(remote, out var remoteHost, out var remoteRepo) ? $"{remoteHost}/{remoteRepo}" : string.Empty;
             project = _projects.Resolve(repoKey);
+            group = repoKey.Length == 0 ? null : repoKey; // the session's group id (repo scope) for group-based isolation.
             State(sessionId).Project = project;
             _logger.LogInformation("Session {SessionId} uses project '{Project}' ({Scope}).",
                 sessionId, project.Name, repoKey.Length == 0 ? "default" : repoKey);
@@ -609,6 +711,17 @@ public sealed class SessionManager : IAsyncDisposable
         {
             if (sandbox is null)
             {
+                // Host-wide concurrent-sandbox cap (Agnes:Security:MaxConcurrentSandboxes): refuse a new VM once
+                // the ceiling is reached rather than exhausting host resources. Adopted/cloned sandboxes
+                // (existingSandbox) skip this — they don't allocate a fresh VM here.
+                if (_security.MaxConcurrentSandboxes > 0 && _sandboxBySession.Count >= _security.MaxConcurrentSandboxes)
+                {
+                    _logger.LogWarning("Refused a new sandbox for session {SessionId}: at the concurrent-sandbox cap ({Cap}).",
+                        sessionId, _security.MaxConcurrentSandboxes);
+                    throw new SessionSecurityException(
+                        $"This host is at its concurrent-sandbox limit ({_security.MaxConcurrentSandboxes}); try again once a session finishes.");
+                }
+
                 // Ensure the image exists (bake if missing) before launching from it — the resolved
                 // project's own sandbox image when we have a project, else the legacy global baseline.
                 var image = string.Empty;
@@ -671,7 +784,7 @@ public sealed class SessionManager : IAsyncDisposable
         // Persist the initial (placeholder-id) record first so it can't overwrite the real id afterwards.
         var record = new SessionRecord(
             sessionId, adapterId, effectiveDirectory, agent.AgentSessionId,
-            worktree, skipPermissions, sandbox is not null, DateTimeOffset.UtcNow, modelId);
+            worktree, skipPermissions, sandbox is not null, DateTimeOffset.UtcNow, modelId, owner, group);
         _catalog[sessionId] = record;
         await _store.SaveSessionAsync(record, cancellationToken).ConfigureAwait(false);
 
@@ -717,6 +830,9 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         targetDirectory = fork.TargetDirectory;
+        // A fork writes a full copy of the workspace to an arbitrary destination — hold it to the allowlist too,
+        // before any bytes are copied.
+        EnforceDirectoryAllowed(targetDirectory);
         var adapterId = source.AdapterId;
         var sourceDir = source.WorkingDirectory;
 
@@ -742,7 +858,8 @@ public sealed class SessionManager : IAsyncDisposable
 
         return await OpenSessionCoreAsync(
             sessionId, adapterId, targetDirectory, skipPermissions, mcpApproval, gitCredentialMode,
-            useSandbox: sourceSandboxed, modelId: null, existingSandbox: clonedSandbox, worktree: false, cancellationToken).ConfigureAwait(false);
+            useSandbox: sourceSandboxed, modelId: null, existingSandbox: clonedSandbox, worktree: false, cancellationToken,
+            owner: cat?.Owner).ConfigureAwait(false); // a fork inherits the source session's owner.
     }
 
     /// <summary>Replay-fork: branch the conversation at a log point. Copies the workspace and inherits config
@@ -830,6 +947,9 @@ public sealed class SessionManager : IAsyncDisposable
                 $"This host has no adapter '{state.AdapterId}' to accept the handoff.");
         }
 
+        // An accepted handoff opens a session at a directory chosen by the peer — confine it like any other.
+        EnforceDirectoryAllowed(targetWorkingDirectory);
+
         var sessionId = Guid.NewGuid().ToString("n");
         var resumeSessionId = state.Mode == HandoffSupport.NativeFork ? state.ResumeToken : null;
         var info = await OpenSessionCoreAsync(
@@ -908,13 +1028,27 @@ public sealed class SessionManager : IAsyncDisposable
     // strict-mode failures are surfaced up front by ValidateMcpAsync, so this stays non-throwing.
     private IReadOnlyList<McpServerInfo> ApplicableMcp(Projects.Project? project, McpRunAt runAt, string? workspaceId)
     {
+        IReadOnlyList<McpServerInfo> servers;
         if (project is not null)
         {
             var want = runAt == McpRunAt.Sandbox ? "sandbox" : "host";
-            return project.McpServers.Where(s => s.Enabled && string.Equals(s.RunAt, want, StringComparison.OrdinalIgnoreCase)).ToArray();
+            servers = project.McpServers.Where(s => s.Enabled && string.Equals(s.RunAt, want, StringComparison.OrdinalIgnoreCase)).ToArray();
+        }
+        else
+        {
+            servers = _mcp?.Resolve(runAt, workspaceId, strict: false).Servers ?? [];
         }
 
-        return _mcp?.Resolve(runAt, workspaceId, strict: false).Servers ?? [];
+        // Operator allowlist (Agnes:Security:AllowedHostMcpServers): only named servers may run on the HOST
+        // (outside the sandbox). This is the single seam feeding both the unsandboxed-direct and the sandboxed
+        // host-forward paths, so a disallowed host server is never materialized, granted a forward token, or
+        // spawned. Sandbox-run servers are unaffected. Drops are surfaced to the user by ValidateMcpAsync.
+        if (runAt == McpRunAt.Host && _security.RestrictsHostMcpServers)
+        {
+            servers = servers.Where(s => _security.IsHostMcpServerAllowed(s.Name)).ToArray();
+        }
+
+        return servers;
     }
 
     /// <summary>
@@ -926,6 +1060,22 @@ public sealed class SessionManager : IAsyncDisposable
     /// </summary>
     private async Task ValidateMcpAsync(Projects.Project? project, string? workspaceId, string sessionId, CancellationToken cancellationToken)
     {
+        // Operator host-MCP allowlist: name each host-run server we're dropping because it isn't allowlisted, so
+        // the user sees they're running with fewer tools than configured. Covers both the project and global
+        // server sets (ApplicableMcp already does the actual dropping for both spawn paths).
+        if (_security.RestrictsHostMcpServers)
+        {
+            IEnumerable<McpServerInfo> configuredHost = project is not null
+                ? project.McpServers.Where(s => s.Enabled && string.Equals(s.RunAt, "host", StringComparison.OrdinalIgnoreCase))
+                : _mcp?.Resolve(McpRunAt.Host, workspaceId, strict: false).Servers ?? [];
+
+            foreach (var dropped in configuredHost.Where(s => !_security.IsHostMcpServerAllowed(s.Name)))
+            {
+                await AppendNoticeAsync(sessionId,
+                    $"MCP server '{dropped.Name}' wants to run on the host but isn't on this host's allowed-host-MCP list — skipping it.").ConfigureAwait(false);
+            }
+        }
+
         if (project is not null || _mcp is null)
         {
             return;
@@ -998,7 +1148,7 @@ public sealed class SessionManager : IAsyncDisposable
     /// agent can then <c>git push</c>; the broker mints a scoped credential on the host at push time.
     /// </summary>
     private async Task AddSandboxGitCredentialsAsync(ISandbox sandbox, string sessionId, string hostWorkingDirectory,
-        string gitCredentialMode, Dictionary<string, string> env, List<SandboxCredentialFile> files, CancellationToken cancellationToken)
+        string gitCredentialMode, string? credentialAccount, Dictionary<string, string> env, List<SandboxCredentialFile> files, CancellationToken cancellationToken)
     {
         if (_credentialBroker is null || _credentialListener is null
             || string.IsNullOrWhiteSpace(gitCredentialMode) || string.Equals(gitCredentialMode, "Off", StringComparison.OrdinalIgnoreCase))
@@ -1025,7 +1175,7 @@ public sealed class SessionManager : IAsyncDisposable
         var (userName, userEmail) = await _git.GetIdentityAsync(hostWorkingDirectory, cancellationToken).ConfigureAwait(false);
 
         var mode = string.Equals(gitCredentialMode, "Trust", StringComparison.OrdinalIgnoreCase) ? "Trust" : "Ask";
-        var token = _credentialBroker.Register(new CredentialGrant(sessionId, host, "*", mode));
+        var token = _credentialBroker.Register(new CredentialGrant(sessionId, host, "*", mode, credentialAccount));
         State(sessionId).CredentialToken = token;
 
         env["AGNES_GIT_HOST"] = _credentialListener.AdvertiseHost;
@@ -1154,6 +1304,21 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         var effectiveDirectory = record.WorkingDirectory;
+
+        // Re-apply the host policy on resume too (the guardrails may have been turned on since this session was
+        // first opened): a required-sandbox host refuses to relaunch a session that wasn't sandboxed, and the
+        // directory allowlist still applies to the persisted working dir. Fork-into-a-sandbox is the escape hatch.
+        var willSandbox = record.Sandboxed && _sandboxes is not null;
+        if (_security.RequireSandbox && !willSandbox)
+        {
+            throw new SessionSecurityException(
+                "This host now requires every session to run in a sandbox; this session predates that policy and " +
+                "can't be resumed unsandboxed. Fork it to continue in a new, sandboxed session.");
+        }
+
+        EnforceDirectoryAllowed(effectiveDirectory);
+        EnforceAutonomyPolicy(sessionId, record.SkipPermissions, willSandbox);
+
         var project = await ResolveProjectForAsync(sessionId, effectiveDirectory, cancellationToken).ConfigureAwait(false);
 
         // Re-validate MCP on restart too (config may have changed since first open): strict aborts, lenient warns.
@@ -1552,7 +1717,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         var mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, project, effectiveDirectory, env, files);
-        await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, env, files, cancellationToken).ConfigureAwait(false);
+        await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, project?.CredentialAccount, env, files, cancellationToken).ConfigureAwait(false);
 
         if (env.Count > 0 || files.Count > 0)
         {

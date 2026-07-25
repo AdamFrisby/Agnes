@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Themed-icon layer. Android tints this flat, so it is the same squid silhouette with every gradient
+  collapsed to a single fill — a gradient here would be replaced by the system tint anyway and the
+  face details would disappear into it, so they are punched out as holes instead.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+        android:width="108dp"
+        android:height="108dp"
+        android:viewportWidth="256"
+        android:viewportHeight="256"
+        android:tint="?attr/colorControlNormal">
+  <group android:pivotX="128" android:pivotY="128" android:scaleX="0.6" android:scaleY="0.6">
+    <path android:fillColor="#FFFFFF" android:pathData="M 111.30 38.32 Q 128.00 24.00 144.70 38.32 L 146.30 39.68 Q 163.00 54.00 168.89 75.20 L 172.11 86.80 Q 178.00 108.00 156.00 108.00 L 100.00 108.00 Q 78.00 108.00 83.89 86.80 L 87.11 75.20 Q 93.00 54.00 109.70 39.68 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 55.94 76.99 Q 48.00 76.00 53.09 69.82 L 70.91 48.18 Q 76.00 42.00 76.84 49.96 L 79.16 72.04 Q 80.00 80.00 72.06 79.01 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M 200.06 76.99 Q 208.00 76.00 202.91 69.82 L 185.09 48.18 Q 180.00 42.00 179.16 49.96 L 176.84 72.04 Q 176.00 80.00 183.94 79.01 Z" />
+    <path android:fillColor="#FFFFFF" android:fillType="evenOdd"
+          android:pathData="M 84.00 138.00 Q 84.00 120.00 102.00 120.00 L 154.00 120.00 Q 172.00 120.00 172.00 138.00 L 172.00 160.00 Q 172.00 178.00 154.00 178.00 L 102.00 178.00 Q 84.00 178.00 84.00 160.00 Z M 102.5 129 a 4.5 4.5 0 1 0 9 0 a 4.5 4.5 0 1 0 -9 0 Z M 144.5 129 a 4.5 4.5 0 1 0 9 0 a 4.5 4.5 0 1 0 -9 0 Z M 99 152 a 8 8 0 1 0 16 0 a 8 8 0 1 0 -16 0 Z M 141 152 a 8 8 0 1 0 16 0 a 8 8 0 1 0 -16 0 Z" />
+    <path android:fillColor="#FFFFFF" android:strokeWidth="16" android:strokeLineCap="round" android:strokeColor="#FFFFFF" android:pathData="M 96 192 L 96 214 Q 96 226 85 226" />
+    <path android:fillColor="#FFFFFF" android:strokeWidth="16" android:strokeLineCap="round" android:strokeColor="#FFFFFF" android:pathData="M 118 192 L 118 210" />
+    <path android:fillColor="#FFFFFF" android:strokeWidth="16" android:strokeLineCap="round" android:strokeColor="#FFFFFF" android:pathData="M 140 192 L 140 232" />
+    <path android:fillColor="#FFFFFF" android:strokeWidth="16" android:strokeLineCap="round" android:strokeColor="#FFFFFF" android:pathData="M 162 192 L 162 212 Q 162 224 173 224" />
+  </group>
+</vector>

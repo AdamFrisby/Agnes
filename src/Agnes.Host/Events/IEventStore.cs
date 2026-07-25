@@ -12,7 +12,9 @@ public sealed record SessionRecord(
     bool SkipPermissions,
     bool Sandboxed,
     DateTimeOffset CreatedAt,
-    string? ModelId = null);
+    string? ModelId = null,
+    string? Owner = null,
+    string? Group = null);
 
 /// <summary>
 /// Append-only, per-session event log. Assigns a monotonic sequence to each event and
@@ -36,4 +38,13 @@ public interface IEventStore
 
     /// <summary>Lists all catalogued sessions (for restore on startup).</summary>
     Task<IReadOnlyList<SessionRecord>> ListSessionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retention: deletes events stamped strictly before <paramref name="cutoff"/> and returns how many were
+    /// removed. Session catalogue rows are kept (so a session still restores); only transcript content ages
+    /// out. Sequence numbers stay monotonic (gaps are fine). A no-op-friendly default so alternative stores
+    /// needn't implement pruning.
+    /// </summary>
+    Task<int> PruneEventsBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+        => Task.FromResult(0);
 }

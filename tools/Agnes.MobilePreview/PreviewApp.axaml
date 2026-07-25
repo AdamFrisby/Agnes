@@ -1,0 +1,21 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Agnes.App.Mobile.Preview.PreviewApp"
+             RequestedThemeVariant="Dark">
+  <!-- Mirrors the Android head's App.axaml exactly; the styles themselves live in the shared
+       Themes/AppStyles.axaml so the two can't drift. -->
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="/Themes/Tokens.axaml" />
+        <ResourceInclude Source="/Themes/Icons.axaml" />
+        <ResourceInclude Source="/Themes/Controls.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="/Themes/AppStyles.axaml" />
+  </Application.Styles>
+</Application>

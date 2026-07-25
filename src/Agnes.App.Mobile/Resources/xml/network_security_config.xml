@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Agnes hosts are self-run: typically a machine on your LAN or a tailnet, reached over TLS with a
+  certificate the user installed themselves. Cleartext stays disabled everywhere; we additionally trust
+  user-installed CAs so a self-signed host certificate added to the device's credential store works
+  without weakening anything else.
+-->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors>
+      <certificates src="system" />
+      <certificates src="user" />
+    </trust-anchors>
+  </base-config>
+</network-security-config>

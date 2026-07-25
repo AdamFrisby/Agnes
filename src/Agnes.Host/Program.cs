@@ -125,7 +125,12 @@ var devicesFile = builder.Configuration["Agnes:DevicesFile"] is { Length: > 0 } 
 builder.Services.AddSingleton(sp => new DeviceRegistry(
     builder.Configuration["Agnes:PairingToken"], devicesFile,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<DeviceRegistry>(),
-    pairingEnabled: builder.Configuration.GetValue("Agnes:Auth:Pairing:Enabled", true)));
+    pairingEnabled: builder.Configuration.GetValue("Agnes:Auth:Pairing:Enabled", true),
+    // The typed code closes once a device is paired; an operator who genuinely needs it back (a lab
+    // host that is re-paired constantly, say) can opt out of the lockout.
+    allowCodeAfterFirstDevice: builder.Configuration.GetValue("Agnes:Auth:Pairing:AllowCodeAfterFirstDevice", false)));
+builder.Services.AddSingleton<PairingGrants>();
+builder.Services.AddSingleton<PairingApprovals>();
 
 // ---- GitHub SSO (OAuth device flow) — optional strong auth for internet-facing hosts ----
 var gitHubAuth = new GitHubAuthOptions
@@ -430,7 +435,9 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Sharing.SessionSharingService
     sp.GetRequiredService<Agnes.Host.Sharing.ISessionActivityProbe>(),
     Uri.TryCreate(builder.Configuration["Agnes:PublicBaseUrl"], UriKind.Absolute, out var publicBase) ? publicBase : null));
 builder.Services.AddSingleton(sp => new Agnes.Host.Sharing.SessionAccessAuthorizer(
-    sp.GetRequiredService<Agnes.Host.Sharing.SessionShareStore>()));
+    sp.GetRequiredService<Agnes.Host.Sharing.SessionShareStore>(),
+    sp.GetService<Agnes.Host.Groups.GroupMembershipService>(),
+    sp.GetService<Agnes.Host.Sessions.SessionSecurityOptions>()));
 builder.Services.AddSingleton<Agnes.Host.Sharing.PublicViewerTracker>();
 
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
@@ -510,6 +517,27 @@ builder.Services.AddSingleton<ISessionBroadcaster, SignalRBroadcaster>();
 // The real host-side CLI-fallback: a genuine pseudo-terminal (Porta.Pty) backing the embedded terminal and
 // provider-login flows (platform/03). SessionManager resolves it as its optional ICliFallback.
 builder.Services.AddSingleton<ICliFallback, Agnes.Host.Sessions.PortaPtyCliFallback>();
+
+// ---- session security guardrails (Agnes:Security:*) ----
+// Opt-in defence-in-depth for a shared / multi-tenant host: confine every session's working directory to a set
+// of allowed roots, and/or refuse to run any session outside a sandbox. Both default off (today's behaviour).
+// Enforced centrally in SessionManager's open path, so every entry (new / fork / cross-host handoff) is covered
+// regardless of what a client sends.
+builder.Services.AddSingleton(new Agnes.Host.Sessions.SessionSecurityOptions
+{
+    AllowedSessionRoots = builder.Configuration.GetSection("Agnes:Security:AllowedSessionRoots").Get<string[]>() ?? [],
+    RequireSandbox = builder.Configuration.GetValue("Agnes:Security:RequireSandbox", false),
+    RequirePermissionPrompts = builder.Configuration.GetValue("Agnes:Security:RequirePermissionPrompts", false),
+    AllowUnsandboxedSkipPermissions = builder.Configuration.GetValue("Agnes:Security:AllowUnsandboxedSkipPermissions", false),
+    AllowedHostMcpServers = builder.Configuration.GetSection("Agnes:Security:AllowedHostMcpServers").Get<string[]>() ?? [],
+    SessionIsolation = Enum.TryParse<Agnes.Host.Sessions.SessionIsolation>(
+        builder.Configuration["Agnes:Security:SessionIsolation"], ignoreCase: true, out var iso) ? iso : Agnes.Host.Sessions.SessionIsolation.Shared,
+    RestrictConfigToOwner = builder.Configuration.GetValue("Agnes:Security:RestrictConfigToOwner", false),
+    MaxConcurrentSandboxes = builder.Configuration.GetValue("Agnes:Security:MaxConcurrentSandboxes", 0),
+    TranscriptRetentionDays = builder.Configuration.GetValue("Agnes:Security:TranscriptRetentionDays", 0),
+});
+builder.Services.AddHostedService<Agnes.Host.Sessions.UsageReporter>();
+builder.Services.AddHostedService<Agnes.Host.Events.TranscriptRetentionService>();
 builder.Services.AddSingleton<SessionManager>();
 
 // ---- Agnes AS an MCP server (see .ideas/voice/01-voice-assistant.md) ----
@@ -741,6 +769,9 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
             // Default VM resource caps, overridable per project. Config is in friendly units (CPU cores,
             // RAM in GiB, disk in GiB); unset keeps the 2 / 12 / 16 defaults.
             DefaultLimits = SandboxLimitsFromConfig(builder.Configuration),
+            NetworkAcls = builder.Configuration.GetSection("Agnes:Sandbox:Incus:NetworkAcls").Get<string[]>() ?? [],
+            NetworkProfiles = builder.Configuration.GetSection("Agnes:Sandbox:Incus:NetworkProfiles").Get<Dictionary<string, string>>() ?? new(),
+            DefaultNetworkProfile = builder.Configuration["Agnes:Sandbox:Incus:NetworkProfile"],
         },
         sp.GetRequiredService<ILoggerFactory>()));
     builder.Services.AddSingleton<Agnes.Sandbox.ISandboxProvider>(
@@ -873,6 +904,27 @@ builder.Services.AddSingleton<IGitHostProvider>(sp =>
         });
 });
 builder.Services.AddPluginPoint<IGitHostProvider>(p => p.Id);
+
+// ---- group membership as a plugin point (session isolation, PerGroup) ----
+// Shipped backend: GitHub repo write-access == group membership, where a session's group id is its repo key.
+// Other backends (LDAP, SSO teams, a static roster) register as additional IGroupProvider plugins without
+// touching core. The write-access check reuses the linked GitHub App to mint a token and query the
+// collaborator-permission API; with no App linked it simply grants no group access.
+var groupWriteAccessHttp = new HttpClient();
+builder.Services.AddSingleton<Agnes.Host.Groups.IGitHubRepoWriteAccess>(sp =>
+{
+    var appStore = sp.GetService<Agnes.Host.Hosting.GitHubAppStore>();
+    var app = appStore is not null
+        ? new Agnes.Host.Hosting.GitHubAppCredentialSource(() => appStore.List(), groupWriteAccessHttp)
+        : null;
+    return new Agnes.Host.Groups.GitHubApiRepoWriteAccess(
+        groupWriteAccessHttp,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Groups.GitHubApiRepoWriteAccess>(),
+        app);
+});
+builder.Services.AddSingleton<Agnes.Host.Groups.IGroupProvider, Agnes.Host.Groups.GitHubRepoGroupProvider>();
+builder.Services.AddPluginPoint<Agnes.Host.Groups.IGroupProvider>(p => p.Id);
+builder.Services.AddSingleton<Agnes.Host.Groups.GroupMembershipService>();
 
 // ---- owner-only diagnostics: recent-log ring + crash/error telemetry (see .ideas/ops/01-...) ----
 // Agnes keeps no on-disk log to scrape, so a bounded in-memory ring captures the tail of the host log for the
@@ -1112,17 +1164,36 @@ app.MapGet("/pair/qr", (HostReachability reach, IConfiguration cfg) =>
 });
 
 // Pair a new device with the current code; returns a durable per-device token (shown once).
-app.MapPost("/pair", async (PairRequest request) =>
+app.MapPost("/pair", async (PairRequest request, PairingGrants grants) =>
 {
     if (!tokens.PairingEnabled)
     {
         return Results.Json(new { error = "Pairing-code sign-in is disabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
     }
 
+    // The same field carries either a QR grant (256-bit, minted by an already-paired device) or the
+    // typed bootstrap code. Try the strong one first: a grant is unguessable, so accepting it costs
+    // nothing, while the code is closed as soon as the host has a device that could have vouched.
+    if (grants.TryRedeem(request.Code, out _))
+    {
+        var granted = tokens.IssueDeviceToken(request.DeviceName, subject: "pairing", kind: "pairing-grant");
+        await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(
+            granted.DeviceId, granted.DeviceName, "pairing-grant", "pairing-grant"));
+        return Results.Ok(new PairResponse(granted.DeviceId, granted.DeviceName, granted.Token));
+    }
+
     var result = tokens.TryPair(request.Code, request.DeviceName);
     if (result is null)
     {
-        return Results.Json(new { error = "Invalid or expired pairing code." }, statusCode: StatusCodes.Status401Unauthorized);
+        return Results.Json(
+            new
+            {
+                error = tokens.HasPairedDevice
+                    ? "This host already has a paired device, so the typed code is closed. "
+                      + "Scan a QR from a paired device, or ask one to approve this device."
+                    : "Invalid or expired pairing code.",
+            },
+            statusCode: StatusCodes.Status401Unauthorized);
     }
 
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "pairing", "pairing"));
@@ -1314,6 +1385,23 @@ static bool Authorized(HttpContext ctx, DeviceRegistry reg)
     return reg.IsValid(token);
 }
 
+// Authorization for host-wide CONFIG mutations (image manifest, projects, MCP registry, sandbox lifecycle):
+// a valid token, plus — when Agnes:Security:RestrictConfigToOwner is set — the host owner specifically.
+static bool AuthorizedForConfig(HttpContext ctx, DeviceRegistry reg)
+{
+    var header = ctx.Request.Headers.Authorization.ToString();
+    var token = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? header["Bearer ".Length..]
+        : ctx.Request.Query[WireProtocol.TokenParameter].ToString();
+    if (!reg.IsValid(token))
+    {
+        return false;
+    }
+
+    var restrict = ctx.RequestServices.GetService<Agnes.Host.Sessions.SessionSecurityOptions>()?.RestrictConfigToOwner ?? false;
+    return !restrict || reg.IsOwner(reg.ResolveCallerId(token));
+}
+
 // The human-readable page shown in the browser tab at the end of the OIDC redirect flow. On success the
 // minted device token is embedded as JSON in a hidden element so a client driving an embedded browser can
 // read it back (shown once); it's never placed in a URL or logged.
@@ -1331,6 +1419,102 @@ static string OidcCallbackPage(string title, string message, PairResponse? pairi
         </body></html>
         """;
 }
+
+// ---- stronger pairing: QR grants, and approval by an already-paired device ----
+
+// Mint a one-time 256-bit grant to put in a QR. Authenticated on purpose: holding a device token IS the
+// vouching, so only a device the host already trusts can invite another one.
+app.MapPost("/pair/grant", (HttpContext ctx, PairingGrants grants, HostReachability reach, IConfiguration cfg, string? session) =>
+{
+    if (!Authorized(ctx, tokens))
+    {
+        return Results.Unauthorized();
+    }
+
+    var reachable = PairingReachability.Resolve(cfg["Agnes:PublicUrl"], reach.Endpoint);
+    return string.IsNullOrWhiteSpace(reachable)
+        ? Results.Json(
+            new { error = "This host has no externally-reachable address to advertise yet. Set Agnes:PublicUrl if it sits behind a reverse proxy." },
+            statusCode: StatusCodes.Status503ServiceUnavailable)
+        : Results.Ok(grants.Mint(reachable, session));
+});
+
+// Drop a displayed grant early — what "hide the QR" calls, so a code that was on screen stops working
+// the moment it stops being visible rather than lingering for its full lifetime.
+app.MapDelete("/pair/grant/{secret}", (HttpContext ctx, PairingGrants grants, string secret) =>
+{
+    if (!Authorized(ctx, tokens))
+    {
+        return Results.Unauthorized();
+    }
+
+    grants.Revoke(secret);
+    return Results.NoContent();
+});
+
+// A new device asks to be vouched for. Unauthenticated by necessity — this is the caller with no
+// credential yet — so it is bounded, short-lived, and grants nothing until a human approves.
+app.MapPost("/pair/request", (PairApprovalRequest request, PairingApprovals approvals) =>
+{
+    if (string.IsNullOrWhiteSpace(request.PublicKey))
+    {
+        return Results.BadRequest(new { error = "A public key is required." });
+    }
+
+    var pending = approvals.Open(request.PublicKey, request.DeviceName);
+    return pending is null
+        ? Results.Json(new { error = "Too many pairing requests are already waiting. Try again shortly." },
+            statusCode: StatusCodes.Status429TooManyRequests)
+        : Results.Ok(pending);
+});
+
+// What's waiting for a human, for an already-paired device to show and act on.
+app.MapGet("/pair/pending", (HttpContext ctx, PairingApprovals approvals) =>
+    Authorized(ctx, tokens) ? Results.Ok(approvals.Pending()) : Results.Unauthorized());
+
+app.MapPost("/pair/approve/{requestId}", async (HttpContext ctx, PairingApprovals approvals, string requestId) =>
+{
+    if (!Authorized(ctx, tokens))
+    {
+        return Results.Unauthorized();
+    }
+
+    PairingResult? issued = null;
+    var ok = approvals.Approve(requestId, (name, publicKey) =>
+    {
+        issued = tokens.IssueDeviceToken(name, subject: "approved:" + Fingerprint(publicKey), kind: "approval");
+        return issued;
+    });
+
+    if (!ok)
+    {
+        return Results.NotFound(new { error = "That request is no longer waiting." });
+    }
+
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(
+        issued!.DeviceId, issued.DeviceName, "approval", "approval"));
+    return Results.NoContent();
+});
+
+app.MapPost("/pair/deny/{requestId}", (HttpContext ctx, PairingApprovals approvals, string requestId) =>
+{
+    if (!Authorized(ctx, tokens))
+    {
+        return Results.Unauthorized();
+    }
+
+    return approvals.Deny(requestId) ? Results.NoContent() : Results.NotFound();
+});
+
+// Polled by the requesting device until a human decides. Unauthenticated — the request id is the only
+// thing the caller has — so the token is handed over exactly once and unknown ids look like expired ones.
+app.MapGet("/pair/request/{requestId}", (PairingApprovals approvals, string requestId)
+    => Results.Ok(approvals.Poll(requestId)));
+
+// A short, stable label for a device's key in the audit trail — never the key itself.
+static string Fingerprint(string publicKey)
+    => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+        System.Text.Encoding.UTF8.GetBytes(publicKey.Trim())))[..16].ToLowerInvariant();
 
 app.MapGet("/devices", (HttpContext ctx) =>
     Authorized(ctx, tokens) ? Results.Ok(tokens.ListDevices()) : Results.Unauthorized());
@@ -1384,14 +1568,14 @@ app.MapGet("/mcp/effective", async (HttpContext ctx, string? workspaceId, string
         : Results.Unauthorized());
 
 app.MapPost("/mcp", (HttpContext ctx, McpServerRequest request) =>
-    Authorized(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());
+    AuthorizedForConfig(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());
 
 app.MapPut("/mcp/{id}", (HttpContext ctx, string id, McpServerRequest request) =>
-    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
     : mcp.Update(id, request) is { } updated ? Results.Ok(updated) : Results.NotFound());
 
 app.MapDelete("/mcp/{id}", (HttpContext ctx, string id) =>
-    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
     : mcp.Remove(id) ? Results.NoContent() : Results.NotFound());
 
 // ---- baked sandbox image (only when sandboxing is configured) ----
@@ -1409,7 +1593,7 @@ app.MapGet("/sandbox/image/status", (HttpContext ctx) =>
 
 app.MapPut("/sandbox/image", (HttpContext ctx, SandboxImageDto dto) =>
 {
-    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (images is null) return Results.NotFound();
     _ = images.SaveAndRebuildAsync(SandboxImageMapping.ToManifest(dto)); // rebuild runs in the background
     return Results.Ok(SandboxImageMapping.Status(images.Status));
@@ -1417,7 +1601,7 @@ app.MapPut("/sandbox/image", (HttpContext ctx, SandboxImageDto dto) =>
 
 app.MapPost("/sandbox/image/rebuild", (HttpContext ctx) =>
 {
-    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (images is null) return Results.NotFound();
     _ = images.RebuildAsync();
     return Results.Ok(SandboxImageMapping.Status(images.Status));
@@ -1433,7 +1617,7 @@ app.MapGet("/sandboxes", (HttpContext ctx) =>
 
 app.MapDelete("/sandboxes/{sessionId}", async (HttpContext ctx, string sessionId) =>
 {
-    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (sessionMgr is null) return Results.NotFound();
     await sessionMgr.DeleteSandboxAsync(sessionId);
     return Results.Ok(sessionMgr.ListSandboxes());
@@ -1459,9 +1643,16 @@ app.MapGet("/sandboxes/orphans", async (HttpContext ctx) =>
     : Results.Ok(await sessionMgr.ListOrphanVmNamesAsync()));
 
 app.MapPost("/sandboxes/reap", async (HttpContext ctx) =>
-    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
     : sessionMgr is null ? Results.NotFound()
     : Results.Ok(await sessionMgr.ReapOrphanSandboxesAsync()));
+
+// Per-owner usage attribution for the operator ("who is consuming the host"). Owner-gated when config is
+// restricted; the same snapshot is logged periodically by UsageReporter.
+app.MapGet("/admin/usage", (HttpContext ctx) =>
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
+    : sessionMgr is null ? Results.NotFound()
+    : Results.Ok(sessionMgr.GetUsageReport()));
 
 // ---- credentials: link GitHub (App-manifest flow) so sandboxes can push with scoped tokens ----
 var ghConnect = app.Services.GetService<Agnes.Host.Hosting.GitHubConnectFlow>();
@@ -1530,7 +1721,7 @@ app.MapGet("/projects/resolve", async (HttpContext ctx, string? dir) =>
 
 app.MapPut("/projects/{id}", (HttpContext ctx, string id, ProjectDto dto) =>
 {
-    if (!Authorized(ctx, tokens)) return Results.Unauthorized();
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (projects is null) return Results.NotFound();
     var saved = projects.Save(Agnes.Host.Projects.ProjectMapping.ToProject(dto with { Id = id }));
     _ = images?.RebuildForProjectAsync(saved); // re-bake the project's sandbox image in the background
@@ -1538,7 +1729,7 @@ app.MapPut("/projects/{id}", (HttpContext ctx, string id, ProjectDto dto) =>
 });
 
 app.MapDelete("/projects/{id}", (HttpContext ctx, string id) =>
-    !Authorized(ctx, tokens) ? Results.Unauthorized()
+    !AuthorizedForConfig(ctx, tokens) ? Results.Unauthorized()
     : projects is null ? Results.NotFound()
     : projects.Remove(id) ? Results.NoContent() : Results.NotFound());
 

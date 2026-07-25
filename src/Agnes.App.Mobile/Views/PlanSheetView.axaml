@@ -1,0 +1,20 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.PlanSheetView"
+             x:DataType="vm:PlanSheetViewModel">
+  <ScrollViewer>
+    <ItemsControl ItemsSource="{Binding Entries}" Margin="20,14,20,28">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Grid ColumnDefinitions="Auto,*" Margin="0,7">
+            <Border Grid.Column="0" Classes="dot" Width="7" Height="7" Margin="0,0,12,0"
+                    VerticalAlignment="Top" Background="{DynamicResource Accent}" />
+            <TextBlock Grid.Column="1" Text="{Binding Content}" LineHeight="22" />
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </ScrollViewer>
+</UserControl>

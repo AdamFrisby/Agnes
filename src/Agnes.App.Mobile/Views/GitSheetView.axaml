@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.GitSheetView"
+             x:DataType="vm:GitSheetViewModel">
+  <!--
+    Enough git for a phone: see what changed, commit it, move it. Anything that needs a real diff review
+    or conflict resolution belongs on the desktop, and the sheet doesn't pretend otherwise.
+  -->
+  <ScrollViewer>
+    <StackPanel Margin="16,12,16,28" Spacing="12">
+
+      <ItemsControl ItemsSource="{Binding Session.GitChanges}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnDefinitions="Auto,*" Margin="0,4">
+              <Border Grid.Column="0" Classes="pill" Margin="0,0,10,0" MinWidth="30">
+                <TextBlock Text="{Binding Status}" HorizontalAlignment="Center" />
+              </Border>
+              <TextBlock Grid.Column="1" Text="{Binding Path}" Classes="mono" MaxLines="1"
+                         TextTrimming="PrefixCharacterEllipsis" VerticalAlignment="Center" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <TextBlock Classes="dim" IsVisible="{Binding !Session.GitDirty}"
+                 Text="Working tree is clean." />
+
+      <TextBlock Classes="section" Text="COMMIT" />
+      <TextBox Theme="{StaticResource MobileTextBox}"
+               Text="{Binding Session.CommitMessage, Mode=TwoWay}"
+               PlaceholderText="What changed, and why" AcceptsReturn="True" TextWrapping="Wrap"
+               MinHeight="80" VerticalContentAlignment="Top" />
+
+      <Grid ColumnDefinitions="*,10,*">
+        <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Suggest"
+                Command="{Binding GenerateCommand}" />
+        <Button Grid.Column="2" Theme="{StaticResource AccentButton}" Content="Commit"
+                Command="{Binding CommitCommand}" />
+      </Grid>
+
+      <TextBlock Classes="section" Text="REMOTE" />
+      <Grid ColumnDefinitions="*,10,*,10,*">
+        <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Pull"
+                Command="{Binding PullCommand}" />
+        <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="Push"
+                Command="{Binding PushCommand}" />
+        <Button Grid.Column="4" Theme="{StaticResource SecondaryButton}" Content="Stash"
+                Command="{Binding StashCommand}" />
+      </Grid>
+
+      <Border Classes="inset" IsVisible="{Binding Session.HasGitOpMessage}">
+        <TextBlock Text="{Binding Session.GitOpMessage}" FontSize="{StaticResource TextSm}"
+                   Foreground="{DynamicResource TextDim}" />
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

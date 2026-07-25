@@ -7,6 +7,7 @@
     <Project Path="src/Agnes.Agents.Native/Agnes.Agents.Native.csproj" />
     <Project Path="src/Agnes.Agents.Codex/Agnes.Agents.Codex.csproj" />
     <Project Path="src/Agnes.App.Desktop/Agnes.App.Desktop.csproj" />
+    <Project Path="src/Agnes.App.Mobile/Agnes.App.Mobile.csproj" />
     <Project Path="src/Agnes.Client.Simulation/Agnes.Client.Simulation.csproj" />
     <Project Path="src/Agnes.Client/Agnes.Client.csproj" />
     <Project Path="src/Agnes.Cli/Agnes.Cli.csproj" />
@@ -26,6 +27,7 @@
     <Project Path="tests/Agnes.Agents.Native.Tests/Agnes.Agents.Native.Tests.csproj" />
     <Project Path="tests/Agnes.Agents.Codex.Tests/Agnes.Agents.Codex.Tests.csproj" />
     <Project Path="tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj" />
+    <Project Path="tests/Agnes.Mobile.Tests/Agnes.Mobile.Tests.csproj" />
     <Project Path="tests/Agnes.Host.Tests/Agnes.Host.Tests.csproj" />
     <Project Path="tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj" />
     <Project Path="tests/Agnes.Relay.Tests/Agnes.Relay.Tests.csproj" />
@@ -38,5 +40,6 @@
   <Folder Name="/tools/">
     <Project Path="tools/Agnes.Record/Agnes.Record.csproj" />
     <Project Path="tools/Agnes.Screenshots/Agnes.Screenshots.csproj" />
+    <Project Path="tools/Agnes.MobilePreview/Agnes.MobilePreview.csproj" />
   </Folder>
 </Solution>
