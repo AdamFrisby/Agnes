@@ -36,10 +36,11 @@
         <!-- ===== pairing code ===== -->
         <StackPanel Spacing="10" IsVisible="{Binding SupportsPairing}">
           <TextBlock Classes="section" Text="PAIRING CODE" />
-          <TextBlock Classes="muted" Text="The host prints a short code on startup. It's good once." />
+          <TextBlock Classes="muted"
+                     Text="The host logs one at startup, like K7QX-M3RT. It's good once — pairing it rotates it." />
           <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding Code, Mode=TwoWay}"
-                   PlaceholderText="123 456" FontFamily="{StaticResource MonoFont}"
-                   FontSize="{StaticResource TextLg}" />
+                   PlaceholderText="ABCD-EFGH" FontFamily="{StaticResource MonoFont}"
+                   FontSize="{StaticResource TextLg}" LetterSpacing="1" />
           <Button Theme="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
                   Command="{Binding PairCommand}">
             <TextBlock Text="Pair this device" Foreground="White" FontWeight="SemiBold" />

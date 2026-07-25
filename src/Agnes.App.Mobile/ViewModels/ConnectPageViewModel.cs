@@ -191,6 +191,24 @@ public sealed partial class ConnectPageViewModel : PageViewModel
     public IRelayCommand CopyUserCodeCommand { get; }
     public IRelayCommand DocsCommand { get; }
 
+    /// <summary>
+    /// Puts a typed code into the exact shape the host compares against.
+    ///
+    /// The host checks the code with a fixed-time byte comparison of the trimmed string, so it is both
+    /// case- and hyphen-sensitive — and an Android keyboard hands you lowercase by default. Rather than
+    /// let that fail as "wrong code", the letters are upper-cased and the grouping hyphen is rebuilt, so
+    /// "k7qx m3rt", "K7QXM3RT" and "K7QX-M3RT" all pair.
+    /// </summary>
+    public static string NormalizeCode(string entry)
+    {
+        var chars = entry.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray();
+        var compact = new string(chars);
+
+        // Only re-group when it's the length the host issues; anything else is passed through so a
+        // pre-issued bootstrap token pasted into the same field still reaches the fallback path intact.
+        return compact.Length == 8 ? compact[..4] + "-" + compact[4..] : entry.Trim();
+    }
+
     private async Task PairAsync()
     {
         var url = Address.Trim();
@@ -200,7 +218,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
             // The field takes a pairing code, which is exchanged for a durable per-device token. A
             // pre-issued bootstrap token pasted in the same field still works: if pairing refuses it, we
             // fall through and try it as a token directly.
-            var entry = Code.Trim();
+            var entry = NormalizeCode(Code);
             string token;
             var pairingFailed = false;
             try
@@ -216,7 +234,8 @@ public sealed partial class ConnectPageViewModel : PageViewModel
 
             if (!await FinishAsync(url, token).ConfigureAwait(false) && pairingFailed)
             {
-                Report("That code didn't work — it may have expired. Get a fresh one from the host.", error: true, busy: false);
+                Report("That code didn't work. It's single-use and rotates after a few bad tries — "
+                    + "check the host's log for the current one.", error: true, busy: false);
             }
         }
         catch (Exception ex)
