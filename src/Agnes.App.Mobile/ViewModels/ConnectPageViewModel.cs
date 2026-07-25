@@ -1,5 +1,6 @@
 using Agnes.App.Mobile.Services;
 using Agnes.Client;
+using Agnes.Protocol;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -62,6 +63,13 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         OpenVerificationCommand = new RelayCommand(() => _shell.OpenUrl(VerificationUri));
         CopyUserCodeCommand = new RelayCommand(() => _shell.CopyToClipboard(UserCode, "Code"));
         DocsCommand = new RelayCommand(() => _shell.OpenUrl(DocsUrl));
+        AskApprovalCommand = new AsyncRelayCommand(AskApprovalAsync, () => CanSignIn && !IsAwaitingApproval);
+        CancelApprovalCommand = new RelayCommand(() =>
+        {
+            _approvalPolling?.Cancel();
+            IsAwaitingApproval = false;
+            Status = string.Empty;
+        });
 
         if (prefillUrl is not null)
         {
@@ -113,6 +121,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         PairCommand.NotifyCanExecuteChanged();
         GitHubCommand.NotifyCanExecuteChanged();
         KeyCommand.NotifyCanExecuteChanged();
+        AskApprovalCommand.NotifyCanExecuteChanged();
     }
 
     private static bool IsValidUrl(string url)
@@ -230,6 +239,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
     [NotifyPropertyChangedFor(nameof(ShowPairing))]
     [NotifyPropertyChangedFor(nameof(ShowGitHub))]
     [NotifyPropertyChangedFor(nameof(ShowKeypair))]
+    [NotifyPropertyChangedFor(nameof(ShowAskApproval))]
     private HostReach _reach = HostReach.Unknown;
 
     [ObservableProperty]
@@ -249,6 +259,11 @@ public sealed partial class ConnectPageViewModel : PageViewModel
     public bool ShowGitHub => ShowSignIn && SupportsGitHub;
 
     public bool ShowKeypair => ShowSignIn && SupportsKeypair;
+
+    /// <summary>The offer to ask a paired device. It gives way to the digits once a request is out —
+    /// which then stay put even if the host stops answering mid-wait, because a request that's already
+    /// been made is still approvable and the human still needs the digits to compare.</summary>
+    public bool ShowAskApproval => ShowSignIn && !IsAwaitingApproval;
 
     public bool HasReachNote => Reach is not HostReach.Unknown;
 
@@ -307,6 +322,106 @@ public sealed partial class ConnectPageViewModel : PageViewModel
     public IRelayCommand OpenVerificationCommand { get; }
     public IRelayCommand CopyUserCodeCommand { get; }
     public IRelayCommand DocsCommand { get; }
+
+    /// <summary>Ask an already-paired device to vouch for this one — the path when there's no QR to scan.</summary>
+    public IAsyncRelayCommand AskApprovalCommand { get; }
+
+    public IRelayCommand CancelApprovalCommand { get; }
+
+    // ---- approval pairing (this device is the one asking) ----
+
+    private CancellationTokenSource? _approvalPolling;
+
+    /// <summary>True while this device is waiting for a human on another device to decide.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowAskApproval))]
+    private bool _isAwaitingApproval;
+
+    /// <summary>
+    /// The six digits to compare with the ones shown on the approving device. Derived here from this
+    /// device's own key, not taken on trust from the host — that independence is the entire point.
+    /// </summary>
+    [ObservableProperty]
+    private string _verificationCode = string.Empty;
+
+    partial void OnIsAwaitingApprovalChanged(bool value) => AskApprovalCommand.NotifyCanExecuteChanged();
+
+    private async Task AskApprovalAsync()
+    {
+        var url = Address.Trim();
+        _approvalPolling?.Cancel();
+        var cts = new CancellationTokenSource();
+        _approvalPolling = cts;
+
+        Report("Asking to be approved…", error: false, busy: true);
+        try
+        {
+            var publicKey = PairingApproval.LocalPublicKey();
+            var pending = await PairingApproval
+                .RequestAsync(url, publicKey, _shell.DeviceName, cancellationToken: cts.Token)
+                .ConfigureAwait(false);
+
+            _shell.Dispatcher.Post(() =>
+            {
+                VerificationCode = pending.VerificationCode;
+                IsAwaitingApproval = true;
+                IsBusy = false;
+                Status = "Compare these digits on your other device, then approve there.";
+                StatusIsError = false;
+            });
+
+            await PollUntilDecidedAsync(url, pending, cts.Token).ConfigureAwait(false);
+        }
+        catch (PairingRefusedException refused)
+        {
+            Report(refused.Message, error: true, busy: false);
+            _shell.Dispatcher.Post(() => IsAwaitingApproval = false);
+        }
+        catch (OperationCanceledException)
+        {
+            // the user backed out
+        }
+        catch (Exception ex) when (IsUnreachableFailure(ex))
+        {
+            Report($"Couldn't reach {HostLabel(url)} — {AuthDiscovery.DescribeFailure(ex)}", error: true, busy: false);
+            _shell.Dispatcher.Post(() => IsAwaitingApproval = false);
+        }
+    }
+
+    /// <summary>
+    /// Polls until a human decides or the request lapses. Every two seconds: fast enough that approving
+    /// feels immediate, slow enough not to hammer an unauthenticated endpoint.
+    /// </summary>
+    private async Task PollUntilDecidedAsync(string url, PairApprovalPending pending, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested && DateTimeOffset.UtcNow < pending.ExpiresAt)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+
+            var status = await PairingApproval.PollAsync(url, pending.RequestId, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            switch (status.State)
+            {
+                case PairApprovalState.Approved when status.Token is { Length: > 0 } token:
+                    _shell.Dispatcher.Post(() => IsAwaitingApproval = false);
+                    await FinishAsync(url, token).ConfigureAwait(false);
+                    return;
+
+                case PairApprovalState.Denied:
+                    _shell.Dispatcher.Post(() => IsAwaitingApproval = false);
+                    Report("That device declined the request.", error: true, busy: false);
+                    return;
+
+                case PairApprovalState.Unknown:
+                    _shell.Dispatcher.Post(() => IsAwaitingApproval = false);
+                    Report("The request expired. Ask again when you're at the other device.", error: true, busy: false);
+                    return;
+            }
+        }
+
+        _shell.Dispatcher.Post(() => IsAwaitingApproval = false);
+    }
 
     /// <summary>
     /// Puts a typed code into the exact shape the host compares against.

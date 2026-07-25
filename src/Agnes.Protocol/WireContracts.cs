@@ -72,6 +72,26 @@ public enum PairApprovalState
 /// first poll after approval.</summary>
 public sealed record PairApprovalStatus(PairApprovalState State, string? DeviceId = null, string? Token = null);
 
+/// <summary>
+/// The six digits shown on both screens during approval pairing.
+///
+/// This lives in the shared wire contract on purpose. The security property depends on the requesting
+/// device computing the digits <em>itself</em> rather than displaying what the host sent — otherwise a
+/// substituted key would show matching numbers on both screens and the comparison would prove nothing.
+/// Two implementations that could drift apart would quietly destroy that, so there is exactly one.
+/// </summary>
+public static class PairVerification
+{
+    /// <summary>Derives the comparison digits from the requesting device's public key and the request id.</summary>
+    public static string Derive(string publicKey, string requestId)
+    {
+        var digest = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(publicKey.Trim() + "\n" + requestId));
+        var value = ((digest[0] << 16) | (digest[1] << 8) | digest[2]) % 1_000_000;
+        return value.ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
+    }
+}
+
 /// <summary>A successful pairing — the per-device token to store and connect with (shown once).
 /// Shared by every bootstrap method (pairing code, GitHub SSO, keypair).</summary>
 public sealed record PairResponse(string DeviceId, string DeviceName, string Token);

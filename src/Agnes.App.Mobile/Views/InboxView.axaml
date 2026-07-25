@@ -27,6 +27,55 @@
     <ScrollViewer Grid.Row="1">
       <StackPanel Margin="12,0,12,24">
 
+        <!-- ===== devices asking to join =====
+             Above the agent approvals deliberately: letting a device onto a host is the larger and less
+             reversible decision of the two, and it's the one an attacker would want you to skim past. -->
+        <TextBlock Classes="section" Text="DEVICES ASKING TO JOIN" Margin="4,4,0,8"
+                   IsVisible="{Binding HasPendingDevices}" />
+
+        <ItemsControl ItemsSource="{Binding PendingDevices}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PendingDeviceRow">
+              <Border Classes="card" Margin="0,0,0,10" BorderBrush="{DynamicResource Accent}"
+                      BorderThickness="1.5">
+                <StackPanel Spacing="14">
+
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <c:Icon Data="{StaticResource IconShield}" Size="18" Stroke="{DynamicResource AccentText}"
+                            VerticalAlignment="Center" />
+                    <TextBlock Classes="title" Text="{Binding DeviceName}" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  <TextBlock Classes="muted" Margin="0,-8,0,0"
+                             Text="{Binding HostName, StringFormat='wants to use {0}'}" />
+
+                  <!-- The digits are the whole security story: they're derived from the asking device's
+                       key, so matching screens is what proves you're approving that device and not
+                       someone else's request that arrived at the same moment. -->
+                  <Border Classes="inset">
+                    <StackPanel Spacing="6">
+                      <TextBlock Classes="caption" Text="CHECK THESE MATCH ITS SCREEN"
+                                 HorizontalAlignment="Center" />
+                      <TextBlock Text="{Binding VerificationCode}" Classes="mono"
+                                 FontSize="{StaticResource Text3Xl}" LineHeight="38" LetterSpacing="6"
+                                 HorizontalAlignment="Center" />
+                    </StackPanel>
+                  </Border>
+
+                  <Grid ColumnDefinitions="*,10,*">
+                    <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Decline"
+                            Command="{Binding $parent[UserControl].DataContext.DenyDeviceCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Grid.Column="2" Theme="{StaticResource SuccessButton}" Content="Approve"
+                            Command="{Binding $parent[UserControl].DataContext.ApproveDeviceCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
         <!-- ===== blocked ===== -->
         <TextBlock Classes="section" Text="WAITING ON YOU" Margin="4,4,0,8"
                    IsVisible="{Binding HasBlocked}" />

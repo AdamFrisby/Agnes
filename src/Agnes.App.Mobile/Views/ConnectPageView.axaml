@@ -100,6 +100,41 @@
           </Border>
         </StackPanel>
 
+        <!-- ===== ask a paired device =====
+             The path when there is no QR to scan. The digits are a comparison value, not a secret:
+             they prove the request being approved is this one, and knowing them grants nothing. -->
+        <StackPanel Spacing="10" IsVisible="{Binding ShowAskApproval}">
+          <TextBlock Classes="section" Text="OR ASK A DEVICE YOU ALREADY USE" />
+          <TextBlock Classes="muted"
+                     Text="Send a request to this host, then approve it from a device that's already paired." />
+
+          <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
+                  Command="{Binding AskApprovalCommand}" Content="Ask for approval" />
+        </StackPanel>
+
+        <StackPanel Spacing="10" IsVisible="{Binding IsAwaitingApproval}">
+          <TextBlock Classes="section" Text="WAITING TO BE APPROVED" />
+          <Border Classes="card" Padding="16">
+            <StackPanel Spacing="12">
+              <TextBlock Classes="muted"
+                         Text="Check that your other device shows these same digits, then approve there." />
+              <Border Classes="inset">
+                <TextBlock Text="{Binding VerificationCode}" Classes="mono"
+                           FontSize="{StaticResource Text3Xl}" LineHeight="38" LetterSpacing="6"
+                           HorizontalAlignment="Center" />
+              </Border>
+              <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                <Ellipse Classes="typing a" />
+                <Ellipse Classes="typing b" />
+                <Ellipse Classes="typing c" />
+                <TextBlock Text="Waiting for approval" Classes="caption" VerticalAlignment="Center" />
+              </StackPanel>
+              <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Center"
+                      Command="{Binding CancelApprovalCommand}" Content="Cancel" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
         <!-- ===== status ===== -->
         <Border Classes="inset" IsVisible="{Binding HasStatus}" Margin="0,6,0,0">
           <TextBlock Text="{Binding Status}" FontSize="{StaticResource TextSm}"

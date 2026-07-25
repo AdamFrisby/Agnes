@@ -172,6 +172,17 @@ In the desktop client this lives on a session's context menu, beside *Restart ag
 **Hide** revokes the grant server-side, so the code stops working the moment it leaves the screen
 rather than lingering for the rest of its five minutes.
 
+The approval flow is reachable from both ends in both clients:
+
+| | Asking to join | Deciding |
+|---|---|---|
+| **Desktop** | — | *Settings → Devices*, above the paired list: each waiting device with its six digits, **Approve** / **Decline**. |
+| **Android** | *Connect a host → "Ask for approval"*, which then shows the digits and polls. | *Inbox → "Devices asking to join"*, above the agent approvals. |
+
+Both approver surfaces show the digits *next to the buttons*, because approving without comparing them
+is the one way to use this mechanism and get nothing from it. Declining is the same size and distance
+as approving: "I wasn't expecting this" should be the cheap answer.
+
 ## Data at rest
 
 The event store holds **full session transcripts** — which routinely contain secrets that flowed

@@ -1,6 +1,7 @@
 using Agnes.App.Mobile.Services;
 using Agnes.App.Mobile.ViewModels;
 using Agnes.App.Mobile.Views;
+using Agnes.Protocol;
 using Agnes.Ui.Core.Transcript;
 using Avalonia;
 using Avalonia.Controls;
@@ -110,10 +111,17 @@ public static class Program
             }
         }
 
-        // 6) The inbox, with that same request waiting in it.
+        // 6) The inbox, with that same request waiting in it — plus a device asking to join, which the
+        //    simulated host can't produce, so it's injected directly into the collection the view binds.
         shell.SelectTab(ShellTab.Inbox);
-        Settle(500);
+        Settle(500); // the tab's own refresh runs first and would otherwise clear the injected row
+        shell.Inbox.PendingDevices.Add(new PendingDeviceRow(
+            shell.Hosts.Links[0],
+            new PendingPairApproval("req-preview", "Ada's laptop", "418302",
+                DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch.AddMinutes(10))));
+        Settle(300);
         Shot(window, "07-inbox");
+        shell.Inbox.PendingDevices.Clear();
 
         // 7) Starting a session.
         shell.SelectTab(ShellTab.Sessions);
@@ -137,6 +145,14 @@ public static class Program
             Pump(() => connect.IsUnreachable, 6000);
             Settle(400);
             Shot(window, "09b-connect-unreachable");
+
+            // 8c) Waiting for a device you already use to approve this one. Reaching this state for real
+            //     needs a live host, so the state itself is set — the view is the thing under test.
+            connect.IsAwaitingApproval = true;
+            connect.VerificationCode = "418302";
+            Settle(400);
+            Shot(window, "09c-connect-awaiting");
+            connect.CancelApprovalCommand.Execute(null);
         }
 
         // 9) Settings, and the light theme (the brand's default surface treatment).

@@ -144,17 +144,10 @@ public sealed class PairingApprovals
         return new PairApprovalStatus(PairApprovalState.Approved, request.DeviceId, token);
     }
 
-    /// <summary>
-    /// The six digits both screens must show. SHA-256 over the requesting device's public key and the
-    /// request id: the requesting device can compute it without being told, so substituting a different
-    /// key changes the number and the mismatch is visible.
-    /// </summary>
+    /// <summary>The six digits both screens must show — the shared derivation, so the host and the
+    /// requesting device can never disagree about them.</summary>
     public static string DeriveVerificationCode(string publicKey, string requestId)
-    {
-        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(publicKey.Trim() + "\n" + requestId));
-        var value = ((digest[0] << 16) | (digest[1] << 8) | digest[2]) % 1_000_000;
-        return value.ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
-    }
+        => PairVerification.Derive(publicKey, requestId);
 
     private void Sweep()
     {

@@ -1,10 +1,22 @@
 using System.Collections.ObjectModel;
 using Agnes.App.Mobile.Services;
+using Agnes.Client;
 using Agnes.Protocol;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.App.Mobile.ViewModels;
+
+/// <summary>A device asking to be let onto a host, awaiting a human.</summary>
+public sealed record PendingDeviceRow(HostLink Host, PendingPairApproval Pending)
+{
+    public string DeviceName => Pending.DeviceName;
+
+    public string HostName => Host.Name;
+
+    /// <summary>The digits that must match the ones on the asking device's screen.</summary>
+    public string VerificationCode => Pending.VerificationCode;
+}
 
 /// <summary>One thing blocking an agent, wherever it came from.</summary>
 public sealed partial class BlockerRow : ObservableObject
@@ -66,10 +78,20 @@ public sealed partial class InboxViewModel : ObservableObject
         });
         AllowCommand = new RelayCommand<BlockerRow>(row => Answer(row, allow: true));
         DenyCommand = new RelayCommand<BlockerRow>(row => Answer(row, allow: false));
+        ApproveDeviceCommand = new AsyncRelayCommand<PendingDeviceRow>(row => DecideAsync(row, approve: true));
+        DenyDeviceCommand = new AsyncRelayCommand<PendingDeviceRow>(row => DecideAsync(row, approve: false));
 
         // The blocked list is a live projection of the sessions list, so it re-derives whenever any
         // session's attention state moves rather than being polled.
         _sessions.AttentionChanged += () => _shell.Dispatcher.Post(Rebuild);
+
+        // The join-requests section tracks its own collection, so anything that touches it — a refresh,
+        // an answered request — updates the header and the empty state without a second call.
+        PendingDevices.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasPendingDevices));
+            OnPropertyChanged(nameof(IsEmpty));
+        };
     }
 
     /// <summary>Agents blocked on a human, newest first.</summary>
@@ -77,6 +99,16 @@ public sealed partial class InboxViewModel : ObservableObject
 
     /// <summary>Background runs that completed while you weren't looking.</summary>
     public ObservableCollection<InboxRun> Finished { get; } = [];
+
+    /// <summary>Devices asking to be let onto a host this phone is already paired with. This belongs in
+    /// the inbox for the same reason approvals do: it is a thing waiting on a human.</summary>
+    public ObservableCollection<PendingDeviceRow> PendingDevices { get; } = [];
+
+    public bool HasPendingDevices => PendingDevices.Count > 0;
+
+    public IAsyncRelayCommand<PendingDeviceRow> ApproveDeviceCommand { get; }
+
+    public IAsyncRelayCommand<PendingDeviceRow> DenyDeviceCommand { get; }
 
     public IAsyncRelayCommand RefreshCommand { get; }
     public IRelayCommand<BlockerRow> OpenCommand { get; }
@@ -92,7 +124,7 @@ public sealed partial class InboxViewModel : ObservableObject
 
     public bool HasFinished => Finished.Count > 0;
 
-    public bool IsEmpty => !HasBlocked && !HasFinished && !IsRefreshing;
+    public bool IsEmpty => !HasBlocked && !HasFinished && !HasPendingDevices && !IsRefreshing;
 
     /// <summary>Rebuilds the blocked list from what the live sessions currently report.</summary>
     private void Rebuild()
@@ -148,6 +180,22 @@ public sealed partial class InboxViewModel : ObservableObject
             }
         }
 
+        // Devices asking to join, from every host this device could vouch on.
+        var waiting = new List<PendingDeviceRow>();
+        foreach (var link in _hosts.Real.Where(l => l.IsOnline))
+        {
+            try
+            {
+                var pending = await PairingManagement
+                    .PendingAsync(link.Url, link.Saved.Token).ConfigureAwait(false);
+                waiting.AddRange(pending.Select(p => new PendingDeviceRow(link, p)));
+            }
+            catch
+            {
+                // A host that predates approval pairing simply has none.
+            }
+        }
+
         _shell.Dispatcher.Post(() =>
         {
             Finished.Clear();
@@ -156,10 +204,53 @@ public sealed partial class InboxViewModel : ObservableObject
                 Finished.Add(run);
             }
 
+            PendingDevices.Clear();
+            foreach (var row in waiting.OrderByDescending(r => r.Pending.RequestedAt))
+            {
+                PendingDevices.Add(row);
+            }
+
             IsRefreshing = false;
             OnPropertyChanged(nameof(HasFinished));
+            OnPropertyChanged(nameof(HasPendingDevices));
             OnPropertyChanged(nameof(IsEmpty));
         });
+    }
+
+    /// <summary>
+    /// Approves or declines a device. Approving mints its token host-side; declining is deliberately
+    /// just as easy to reach, because "I didn't expect this" should be the cheap answer.
+    /// </summary>
+    private async Task DecideAsync(PendingDeviceRow? row, bool approve)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (approve)
+            {
+                await PairingManagement.ApproveAsync(row.Host.Url, row.Host.Saved.Token, row.Pending.RequestId)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await PairingManagement.DenyAsync(row.Host.Url, row.Host.Saved.Token, row.Pending.RequestId)
+                    .ConfigureAwait(false);
+            }
+
+            _shell.Haptics.Tick();
+            _shell.Toast(approve ? $"{row.DeviceName} can now use {row.Host.Name}" : "Declined",
+                approve ? ToastKind.Success : ToastKind.Warning);
+        }
+        catch (Exception ex)
+        {
+            _shell.Toast("Couldn't answer that request: " + ex.Message, ToastKind.Danger);
+        }
+
+        await RefreshAsync().ConfigureAwait(false);
     }
 
     private void Answer(BlockerRow? row, bool allow)

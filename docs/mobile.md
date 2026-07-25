@@ -44,7 +44,7 @@ Everything in the design follows from that list.
 | Tab | Answers |
 | --- | --- |
 | **Sessions** | What is happening right now. One card per session, ordered by need: blocked first, then running, then unread, then recent. |
-| **Inbox** | What is waiting on *you*. Open approvals and questions across every host, answerable inline. Finished background runs below. |
+| **Inbox** | What is waiting on *you*. Devices asking to join a host, then open approvals and questions across every host, answerable inline. Finished background runs below. |
 | **Search** | What was ever said. Open sessions searched locally as you type; the host's full-text index over every recorded session on submit. |
 | **More** | Hosts and pairing, appearance, notifications, prompts, paired devices. |
 
@@ -65,6 +65,12 @@ pinned directly above the composer, and it also appears in the Inbox where it ca
 opening the session at all. The card states the two facts that decide the answer — what the tool
 touches, and whether it can be undone — and puts Deny and Allow as full-width targets. This is the
 single thing a phone is genuinely *better* at than a laptop, so it never requires scrolling to find.
+
+**Letting a device in is an inbox item too.** A device asking to join a host sits above the agent
+approvals, because it is the larger and less reversible of the two decisions and the one an attacker
+would want you to skim past. The card leads with the six digits that must match the asking device's
+screen — see [security.md](security.md) for why those digits are what makes the approval mean
+anything.
 
 **Send never means two things silently.** The same gesture sends when idle and queues while a turn is
 running; the composer says which, above the field, whenever it isn't obvious. Stop appears beside Send
