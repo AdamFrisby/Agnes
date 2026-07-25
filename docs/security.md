@@ -172,6 +172,20 @@ In the desktop client this lives on a session's context menu, beside *Restart ag
 **Hide** revokes the grant server-side, so the code stops working the moment it leaves the screen
 rather than lingering for the rest of its five minutes.
 
+**The address in a QR is a choice, not a fact.** A host advertises one address (`Agnes:PublicUrl`, else
+whatever the transport resolved), and for a QR that is frequently the wrong one: a host bound to
+loopback is reachable from the desktop client beside it and unreachable from the phone holding the
+camera. So a grant response also carries every address the host believes it answers on — the operator
+override, the transport's, each non-loopback interface (which is where a Tailscale `100.64/10` address
+turns up), the hostname, and loopback last — and the client offers them, plus free text for anything the
+host can't see for itself such as a port-forward or a MagicDNS name.
+
+Switching address does **not** re-mint. The secret is bound to the host, not to a route: it is minted by
+the host and redeemed at whichever address the scanning device reaches it on, so the client re-encodes
+the same grant locally. A code already on screen stays the code that works, and no extra credential is
+issued to try a second address. If the chosen address is wrong the phone simply fails to connect —
+redeeming at a *different* host fails, because that host never minted the secret.
+
 The approval flow is reachable from both ends in both clients:
 
 | | Asking to join | Deciding |

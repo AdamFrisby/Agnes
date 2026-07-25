@@ -45,20 +45,7 @@ public static class PairingReachability
     /// (which is why the clients that display one can hide it again).
     /// </summary>
     public static string BuildDeepLink(string reachableAddress, string? grant = null, string? sessionId = null)
-    {
-        var link = "agnes://pair?host=" + Uri.EscapeDataString(reachableAddress);
-        if (!string.IsNullOrWhiteSpace(grant))
-        {
-            link += "&grant=" + Uri.EscapeDataString(grant);
-        }
-
-        if (!string.IsNullOrWhiteSpace(sessionId))
-        {
-            link += "&session=" + Uri.EscapeDataString(sessionId);
-        }
-
-        return link;
-    }
+        => PairingLink.Build(reachableAddress, grant, sessionId);
 }
 
 /// <summary>
@@ -70,4 +57,8 @@ public sealed class HostReachability
 {
     /// <summary>The address(es) the active transport exposed at startup, or null before it has come up.</summary>
     public TransportEndpoint? Endpoint { get; set; }
+
+    /// <summary>What the server actually bound to, which is the only source of the scheme and port needed
+    /// to turn this machine's interface addresses into candidates a phone could dial.</summary>
+    public IReadOnlyList<string> BoundAddresses { get; set; } = [];
 }

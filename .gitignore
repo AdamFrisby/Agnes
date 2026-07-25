@@ -504,3 +504,6 @@ scratch-shots/
 .claude/
 
 references/
+
+# Desktop client state, written when the app or the screenshot harness is run from the repo root.
+/Agnes/

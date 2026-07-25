@@ -2119,6 +2119,32 @@
                                         Foreground="Black" Background="White" />
                     </Border>
 
+                    <!-- Which address the code points at. The host guesses, and for a QR it often guesses
+                         wrong: it may be bound to loopback, or advertise a LAN address to a phone that is
+                         only on Tailscale. Switching re-encodes the same grant locally — nothing is
+                         re-minted, so the code already scanned stays the code that works. -->
+                    <StackPanel Spacing="4" IsVisible="{Binding ConnectQr.IsVisible}">
+                        <TextBlock Text="Device connects to" FontSize="11" Foreground="{DynamicResource FgDim}" />
+
+                        <!-- The list the host offered. Shown as a dropdown rather than type-ahead so the
+                             alternatives are visible without knowing to look for them — the whole point is
+                             that the address the host picked may be one this phone can't route to. -->
+                        <ComboBox ItemsSource="{Binding ConnectQr.Addresses}"
+                                  SelectedItem="{Binding ConnectQr.Address, Mode=TwoWay}"
+                                  IsVisible="{Binding ConnectQr.HasAddressChoice}"
+                                  HorizontalAlignment="Stretch" FontFamily="{StaticResource MonoFont}" FontSize="11"
+                                  ToolTip.Tip="Addresses this host reports answering on. Pick the one the scanning device can reach — a LAN or Tailscale address, not loopback." />
+
+                        <TextBlock Text="or type another" FontSize="10" Margin="0,2,0,0"
+                                   Foreground="{DynamicResource FgFaint}"
+                                   IsVisible="{Binding ConnectQr.HasAddressChoice}" />
+
+                        <TextBox Text="{Binding ConnectQr.Address, Mode=TwoWay}"
+                                 FontFamily="{StaticResource MonoFont}" FontSize="11"
+                                 Watermark="https://192.168.1.20:5099"
+                                 ToolTip.Tip="Any address the device can reach — a port-forward or a MagicDNS name the host can't see for itself." />
+                    </StackPanel>
+
                     <SelectableTextBlock Text="{Binding ConnectQr.DeepLink}" TextWrapping="Wrap"
                                          IsVisible="{Binding ConnectQr.IsVisible}"
                                          FontFamily="{StaticResource MonoFont}" FontSize="10"

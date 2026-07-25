@@ -1411,12 +1411,21 @@ app.MapPost("/pair/grant", (HttpContext ctx, PairingGrants grants, HostReachabil
         return Results.Unauthorized();
     }
 
+    var candidates = HostAddresses.Candidates(cfg["Agnes:PublicUrl"], reach.Endpoint, reach.BoundAddresses);
     var reachable = PairingReachability.Resolve(cfg["Agnes:PublicUrl"], reach.Endpoint);
+
+    // A QR encoding loopback is a QR no phone can ever act on, so when that is all the transport could
+    // resolve, start from something routable instead. The client can still switch to any of the rest.
+    if (string.IsNullOrWhiteSpace(reachable) || HostAddresses.IsLoopback(reachable))
+    {
+        reachable = HostAddresses.FirstRoutable(candidates) ?? reachable;
+    }
+
     return string.IsNullOrWhiteSpace(reachable)
         ? Results.Json(
             new { error = "This host has no externally-reachable address to advertise yet. Set Agnes:PublicUrl if it sits behind a reverse proxy." },
             statusCode: StatusCodes.Status503ServiceUnavailable)
-        : Results.Ok(grants.Mint(reachable, session));
+        : Results.Ok(grants.Mint(reachable, session, candidates));
 });
 
 // Drop a displayed grant early — what "hide the QR" calls, so a code that was on screen stops working
@@ -1769,7 +1778,9 @@ app.Lifetime.ApplicationStarted.Register(() =>
         // actionable error rather than silently leaving the host unreachable/unintended (AC6).
         var endpoint = transport.ExposeAsync(new HostExposureContext(bound)).GetAwaiter().GetResult();
         // Publish the reachable endpoint so the pairing QR/deep-link advertises it, not a bound LAN address.
-        app.Services.GetRequiredService<HostReachability>().Endpoint = endpoint;
+        var reachability = app.Services.GetRequiredService<HostReachability>();
+        reachability.Endpoint = endpoint;
+        reachability.BoundAddresses = bound;
         app.Logger.LogInformation("Transport '{Transport}' ({Hint}): clients reach this host at {Addresses}.",
             transport.DisplayName, endpoint.DisplayHint, string.Join(", ", endpoint.ClientAddresses));
     }
