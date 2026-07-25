@@ -30,7 +30,59 @@ public sealed record PairRequest(string Code, string DeviceName);
 /// A grant is never typed, so it isn't capped: it is 256 bits of CSPRNG output, single-use, and
 /// short-lived. <see cref="Secret"/> is returned exactly once and is never recoverable from the host.
 /// </summary>
-public sealed record PairingGrant(string Secret, string DeepLink, DateTimeOffset ExpiresAt);
+public sealed record PairingGrant(
+    string Secret,
+    string DeepLink,
+    DateTimeOffset ExpiresAt,
+    IReadOnlyList<string>? Addresses = null);
+
+/// <summary>
+/// Builds the <c>agnes://pair</c> deep link a QR encodes.
+///
+/// Shared rather than host-only because the address in a link is not bound to the grant: the secret is
+/// minted by the host and redeemed at whichever address the scanning device reaches it on. A client that
+/// knows the host answers on an address the host itself can't see — a LAN interface when it bound
+/// loopback, a Tailscale name, a port-forward — can therefore re-encode the same grant against that
+/// address locally, with no second round trip and nothing re-minted.
+/// </summary>
+public static class PairingLink
+{
+    public static string Build(string hostAddress, string? grant = null, string? sessionId = null)
+    {
+        var link = "agnes://pair?host=" + Uri.EscapeDataString(hostAddress.Trim());
+        if (!string.IsNullOrWhiteSpace(grant))
+        {
+            link += "&grant=" + Uri.EscapeDataString(grant);
+        }
+
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            link += "&session=" + Uri.EscapeDataString(sessionId);
+        }
+
+        return link;
+    }
+
+    /// <summary>The <c>host</c> an existing link carries, so a client can show it as the current choice.</summary>
+    public static string? HostOf(string deepLink)
+    {
+        if (!Uri.TryCreate(deepLink, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var split = pair.Split('=', 2);
+            if (split.Length == 2 && split[0] == "host")
+            {
+                return Uri.UnescapeDataString(split[1]);
+            }
+        }
+
+        return null;
+    }
+}
 
 /// <summary>
 /// A new device asking an already-paired one to vouch for it (<c>POST /pair/request</c>), for when

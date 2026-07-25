@@ -24,7 +24,7 @@ public class OverlayPanelGateTests
     [Fact]
     public void Overlays_stay_hidden_until_a_session_is_live_and_toggled()
     {
-        var doc = new SessionDocument(new NullTabController());
+        var doc = new SessionDocument(new NullTabController(), ImmediateDispatcher.Instance);
 
         // Host-picker stage: no session yet.
         Assert.False(doc.IsLive);
