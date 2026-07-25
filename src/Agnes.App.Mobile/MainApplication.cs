@@ -26,12 +26,18 @@ public sealed class MainApplication : AvaloniaAndroidApplication<App>
     {
     }
 
-    public override void OnCreate()
+    /// <summary>
+    /// Runs before Avalonia starts, which is early enough to hand the application context to
+    /// <see cref="AndroidHost"/>.
+    ///
+    /// Deliberately not <c>OnCreate</c>: overriding a Java method here would put a native method on this
+    /// class's Java-callable wrapper, and the wrapper for an Application deriving from a *generic* base
+    /// is the exact thing that fails to bind in a packaged APK. Keeping the override managed-only means
+    /// there is nothing to bind. See the marshal-methods note in the csproj.
+    /// </summary>
+    protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
         AndroidHost.Attach(this);
-        base.OnCreate();
+        return base.CustomizeAppBuilder(builder).LogToTrace();
     }
-
-    protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
-        => base.CustomizeAppBuilder(builder).LogToTrace();
 }

@@ -21,6 +21,14 @@
          reflectively. Release therefore JITs, like the desktop head. -->
     <RunAOTCompilation>false</RunAOTCompilation>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+    <!--
+      Marshal methods (Release default) pre-bind each Java-callable wrapper's native methods, but they
+      are emitted by the linker — which AndroidLinkMode=None above turns off. The result is an APK whose
+      wrappers declare native methods that nothing implements and that no longer self-register, so it
+      dies on launch with `UnsatisfiedLinkError: No implementation found for ... n_onCreate()` before any
+      of our code runs. Debug never enables them, which is why only the packaged APK was affected.
+    -->
+    <AndroidEnableMarshalMethods>false</AndroidEnableMarshalMethods>
   </PropertyGroup>
 
   <ItemGroup>
