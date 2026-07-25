@@ -924,7 +924,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             {
                 // Open a tab attached to the resumed session (reuses the reconnect flow).
                 var descriptor = new SessionDescriptor(ActiveHostName, target.Value.Url, target.Value.Token, info.SessionId, info.AdapterId, sandbox.Title);
-                var doc = new SessionDocument(this)
+                var doc = new SessionDocument(this, _dispatcher)
                 {
                     Title = sandbox.Title,
                     CanClose = true,
@@ -2014,7 +2014,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         foreach (var descriptor in saved)
         {
-            var doc = new SessionDocument(this)
+            var doc = new SessionDocument(this, _dispatcher)
             {
                 Title = descriptor.Title,
                 CanClose = true,
@@ -2858,7 +2858,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ArchivedSessions.Remove(descriptor);
         _archiveStore.Save(ArchivedSessions.ToList());
 
-        var doc = new SessionDocument(this)
+        var doc = new SessionDocument(this, _dispatcher)
         {
             Title = descriptor.Title,
             CanClose = true,
@@ -2879,7 +2879,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             return;
         }
 
-        var copy = new SessionDocument(this)
+        var copy = new SessionDocument(this, _dispatcher)
         {
             Title = $"{doc.Title} (view)",
             CanClose = true,
@@ -2923,7 +2923,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             return Task.CompletedTask;
         }
 
-        var doc = new SessionDocument(this)
+        var doc = new SessionDocument(this, _dispatcher)
         {
             Title = "New session",
             CanClose = true,
@@ -3055,7 +3055,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         prompt.Busy = true;
         prompt.ErrorText = null;
 
-        var fork = new SessionDocument(this)
+        var fork = new SessionDocument(this, _dispatcher)
         {
             Title = $"{doc.Title} (fork)",
             CanClose = true,

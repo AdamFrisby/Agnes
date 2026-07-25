@@ -2089,7 +2089,12 @@
              Shown only on request, and hidden again from here. The code it carries is a one-time
              credential, not an address, so "hide" revokes it server-side rather than just clearing the
              pixels — see ConnectQrViewModel. -->
-        <Border IsVisible="{Binding ConnectQr.IsVisible}"
+        <!-- Spans both rows: this is a modal scrim over the whole tab, not a docked panel like the
+             terminal and file browser below, which sit in row 1. Without the span it lands in row 0 —
+             the auto-height status strip — where it draws at nearly zero height, so asking for the QR
+             appears to do nothing while the view model is left visible and the menu item stays disabled. -->
+        <Border Grid.Row="0" Grid.RowSpan="2"
+                IsVisible="{Binding ConnectQr.IsPanelOpen}"
                 Background="#CC000000" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
             <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                     CornerRadius="12" Padding="24" MaxWidth="420"
@@ -2097,21 +2102,32 @@
                 <StackPanel Spacing="14">
                     <TextBlock Text="Scan to connect a device to this session"
                                FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource Fg}" />
-                    <TextBlock Text="Point your phone's camera at this. It pairs the device with this host and opens this session."
-                               TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource FgDim}" />
 
-                    <Border Background="White" CornerRadius="8" Padding="12" HorizontalAlignment="Center">
+                    <!-- Why there is no code, when there isn't one. Without this the whole feature fails
+                         silently: the menu item greys out for the length of the request and nothing else
+                         ever happens. -->
+                    <TextBlock Text="{Binding ConnectQr.Error}" IsVisible="{Binding ConnectQr.HasError}"
+                               TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Warn}" />
+
+                    <TextBlock Text="Point your phone's camera at this. It pairs the device with this host and opens this session."
+                               TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource FgDim}"
+                               IsVisible="{Binding ConnectQr.IsVisible}" />
+
+                    <Border Background="White" CornerRadius="8" Padding="12" HorizontalAlignment="Center"
+                            IsVisible="{Binding ConnectQr.IsVisible}">
                         <ctl:QrCodeView Matrix="{Binding ConnectQr.Matrix}" Width="260" Height="260"
                                         Foreground="Black" Background="White" />
                     </Border>
 
                     <SelectableTextBlock Text="{Binding ConnectQr.DeepLink}" TextWrapping="Wrap"
+                                         IsVisible="{Binding ConnectQr.IsVisible}"
                                          FontFamily="{StaticResource MonoFont}" FontSize="10"
                                          Foreground="{DynamicResource FgDim}"
                                          ToolTip.Tip="The link this code encodes — copy it if the camera won't focus." />
 
                     <TextBlock Text="This code is a credential. It works once, expires in a few minutes, and stops working the moment you hide it."
-                               TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource Warn}" />
+                               TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource Warn}"
+                               IsVisible="{Binding ConnectQr.IsVisible}" />
 
                     <Button Content="Hide" Command="{Binding ConnectQr.HideCommand}"
                             HorizontalAlignment="Right" Padding="16,6" CornerRadius="6"

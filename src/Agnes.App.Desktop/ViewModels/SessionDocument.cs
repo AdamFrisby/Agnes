@@ -20,10 +20,16 @@ public sealed partial class SessionDocument : Document, ITraySession
     private readonly ITabController _controller;
     private readonly Agnes.Ui.Core.IUiDispatcher _dispatcher;
 
-    public SessionDocument(ITabController controller, Agnes.Ui.Core.IUiDispatcher? dispatcher = null)
+    /// <param name="dispatcher">
+    /// Required, not defaulted: everything here that completes off the UI thread posts through it, and a
+    /// silent fallback to an inline dispatcher means those updates run on a worker thread, where Avalonia
+    /// throws and the failure disappears into an unobserved task. Making the caller pass one is what stops
+    /// a new call site quietly losing it.
+    /// </param>
+    public SessionDocument(ITabController controller, Agnes.Ui.Core.IUiDispatcher dispatcher)
     {
         _controller = controller;
-        _dispatcher = dispatcher ?? Agnes.Ui.Core.ImmediateDispatcher.Instance;
+        _dispatcher = dispatcher;
         _workingDirectory = controller.DefaultWorkingDirectory;
         // Disabled until the URL field is more than the "https://" prefill, so Connect can't fire on junk.
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this),
@@ -266,7 +272,7 @@ public sealed partial class SessionDocument : Document, ITraySession
     /// </summary>
     public ConnectQrViewModel ConnectQr => _connectQr ??= new ConnectQrViewModel(
         () => Host is { } host && !string.IsNullOrEmpty(HostToken) ? (host.HostUrl, HostToken) : null,
-        Session?.SessionId,
+        () => Session?.SessionId,
         _dispatcher);
 
     private ConnectQrViewModel? _connectQr;

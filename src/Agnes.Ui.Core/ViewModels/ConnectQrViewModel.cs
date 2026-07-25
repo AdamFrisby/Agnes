@@ -18,19 +18,24 @@ namespace Agnes.Ui.Core.ViewModels;
 public sealed partial class ConnectQrViewModel : ObservableObject
 {
     private readonly Func<(string HostUrl, string Token)?> _host;
-    private readonly string? _sessionId;
+    private readonly Func<string?> _sessionId;
     private readonly IUiDispatcher _dispatcher;
 
     /// <param name="host">Where to mint from, resolved late — a session's host isn't known at construction.</param>
-    /// <param name="sessionId">Carried into the link so a scanning device lands in this session, not just on the host.</param>
-    public ConnectQrViewModel(Func<(string HostUrl, string Token)?> host, string? sessionId, IUiDispatcher dispatcher)
+    /// <param name="sessionId">
+    /// Carried into the link so a scanning device lands in this session, not just on the host. Resolved
+    /// late for the same reason as the host: this view model is built when its tab's view loads, which is
+    /// before the session it belongs to exists. Capturing the id then would capture null every time, and
+    /// the QR would silently pair the phone to the host without opening anything.
+    /// </param>
+    public ConnectQrViewModel(Func<(string HostUrl, string Token)?> host, Func<string?> sessionId, IUiDispatcher dispatcher)
     {
         _host = host;
         _sessionId = sessionId;
         _dispatcher = dispatcher;
 
         ShowCommand = new AsyncRelayCommand(ShowAsync, () => !IsVisible && !IsBusy);
-        HideCommand = new AsyncRelayCommand(HideAsync, () => IsVisible);
+        HideCommand = new AsyncRelayCommand(HideAsync, () => IsPanelOpen);
     }
 
     /// <summary>The QR grid to draw, or null when nothing is on screen.</summary>
@@ -43,15 +48,24 @@ public sealed partial class ConnectQrViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]
+    [NotifyPropertyChangedFor(nameof(IsPanelOpen))]
     private string _error = string.Empty;
 
     public bool HasError => Error.Length > 0;
+
+    /// <summary>
+    /// Whether the panel is on screen at all — a QR to scan, or an explanation of why there isn't one.
+    /// A failure that only sets <see cref="Error"/> with nothing bound to it is indistinguishable from
+    /// the menu item doing nothing, which is exactly how this failed in the field.
+    /// </summary>
+    public bool IsPanelOpen => IsVisible || HasError;
 
     [ObservableProperty]
     private bool _isBusy;
 
     /// <summary>Whether a live grant is on screen right now.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPanelOpen))]
     private bool _isVisible;
 
     /// <summary>When the displayed grant stops working by itself.</summary>
@@ -70,7 +84,14 @@ public sealed partial class ConnectQrViewModel : ObservableObject
         HideCommand.NotifyCanExecuteChanged();
     }
 
+    partial void OnErrorChanged(string value) => HideCommand.NotifyCanExecuteChanged();
+
     partial void OnIsBusyChanged(bool value) => ShowCommand.NotifyCanExecuteChanged();
+
+    /// <summary>How long to wait for a host to mint. Short on purpose: this runs from a menu item whose
+    /// enabled state tracks the request, so a host that accepts the connection and then goes quiet would
+    /// otherwise leave that item disabled for HttpClient's 100-second default with nothing on screen.</summary>
+    private static readonly TimeSpan MintTimeout = TimeSpan.FromSeconds(15);
 
     private async Task ShowAsync()
     {
@@ -83,8 +104,9 @@ public sealed partial class ConnectQrViewModel : ObservableObject
         _dispatcher.Post(() => { IsBusy = true; Error = string.Empty; });
         try
         {
+            using var timeout = new CancellationTokenSource(MintTimeout);
             var grant = await PairingManagement
-                .MintGrantAsync(target.HostUrl, target.Token, _sessionId)
+                .MintGrantAsync(target.HostUrl, target.Token, _sessionId(), cancellationToken: timeout.Token)
                 .ConfigureAwait(false);
 
             _dispatcher.Post(() =>
@@ -102,6 +124,14 @@ public sealed partial class ConnectQrViewModel : ObservableObject
                 ExpiresAt = grant.ExpiresAt;
                 Matrix = QrMatrix.Encode(grant.DeepLink);
                 IsVisible = true;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            _dispatcher.Post(() =>
+            {
+                IsBusy = false;
+                Error = $"{target.HostUrl} didn't answer within {MintTimeout.TotalSeconds:0} seconds.";
             });
         }
         catch (Exception ex)
@@ -128,6 +158,7 @@ public sealed partial class ConnectQrViewModel : ObservableObject
             Matrix = null;
             DeepLink = string.Empty;
             ExpiresAt = null;
+            Error = string.Empty;
             IsVisible = false;
         });
 
