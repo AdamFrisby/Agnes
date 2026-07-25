@@ -212,13 +212,14 @@ public class AttentionRequestTests
         var path = Path.Combine(Path.GetTempPath(), "agnes-devices-" + Guid.NewGuid().ToString("n"), "devices.json");
         var registry = new Agnes.Host.Hosting.DeviceRegistry(bootstrapToken: null, path, pairingEnabled: true);
 
+        // The typed code bootstraps the first device only; a second one arrives the way a QR grant or an
+        // approval issues it. What's under test here is caller-id scoping, not how the devices got in.
         var a = registry.TryPair(registry.PairingCode, "caller-a");
-        var b = registry.TryPair(registry.PairingCode, "caller-b");
         Assert.NotNull(a);
-        Assert.NotNull(b);
+        var b = registry.IssueDeviceToken("caller-b", subject: "pairing", kind: "pairing-grant");
 
         Assert.Equal(a!.DeviceId, registry.ResolveCallerId(a.Token));
-        Assert.Equal(b!.DeviceId, registry.ResolveCallerId(b.Token));
+        Assert.Equal(b.DeviceId, registry.ResolveCallerId(b.Token));
         Assert.NotEqual(registry.ResolveCallerId(a.Token), registry.ResolveCallerId(b.Token));
         Assert.Null(registry.ResolveCallerId("not-a-real-token"));
         Assert.Null(registry.ResolveCallerId(null));

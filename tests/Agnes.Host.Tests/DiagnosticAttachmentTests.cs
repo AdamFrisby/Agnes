@@ -99,8 +99,10 @@ public class DiagnosticAttachmentTests : IDisposable
     public void DeviceRegistry_owner_is_the_bootstrap_and_the_earliest_paired_device()
     {
         var reg = new DeviceRegistry("boot-token", _deviceFile);
+        // Only the first device can use the typed code; the second arrives by grant/approval, which is
+        // what issuing a device token directly models.
         var first = reg.TryPair(reg.PairingCode, "laptop")!;
-        var second = reg.TryPair(reg.PairingCode, "phone")!;
+        var second = reg.IssueDeviceToken("phone", subject: "pairing", kind: "pairing-grant");
 
         Assert.Equal("bootstrap", reg.ResolveCallerId("boot-token"));
         Assert.True(reg.IsOwner("bootstrap"));               // the operator's bootstrap token

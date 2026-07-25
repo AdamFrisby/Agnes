@@ -133,6 +133,39 @@ at an arbitrary command — treat it as admin-only.
   `false`). Set an explicit `Agnes:AllowedOrigins` for the web client.
 - Auth endpoints are rate-limited (`Agnes:Auth:RateLimit:*`).
 
+### The typed pairing code is a bootstrap, not a way in
+
+The short code the host logs at startup (`ABCD-EFGH`) is sized to be read off a screen and typed, which
+caps it at about **40 bits**. That is defensible exactly once — on a host nobody has connected to yet,
+behind rate limiting and a rotate-on-failure counter. It is not defensible as a standing way to join a
+host that is already in use.
+
+So **the code stops working the moment the first device pairs.** After that, a new device joins one of
+two ways, both of which require an already-trusted device to participate:
+
+| | What it is | Entropy |
+|---|---|---|
+| **QR grant** | An already-paired device calls `POST /pair/grant`; the host mints a **256-bit** single-use secret with a 5-minute lifetime and returns it inside an `agnes://pair?host=…&grant=…` deep link to encode as a QR. The scanning device redeems it at `POST /pair`. | 256 bits, never typed |
+| **Approval** | The new device posts its public key to `POST /pair/request`; an already-paired device sees it at `GET /pair/pending` and calls `POST /pair/approve/{id}`. | n/a — nothing is guessed |
+
+Both are single-use. A grant is destroyed on redemption (so a photographed QR can't be replayed) and
+can be revoked early — which is what "hide the QR" does, so a code that was on a screen stops working
+when it stops being visible.
+
+The approval flow shows **six digits on both screens**. Those digits are a *comparison value, not a
+credential*: knowing them grants nothing. They are derived as `SHA-256(publicKey ‖ requestId)`, so the
+requesting device computes them independently rather than being told them — substituting a different
+key changes the number, which is what makes the comparison meaningful. This is why six digits is
+enough here when forty bits was not enough for the bootstrap code. The issued token is handed to the
+requesting device on its next poll and never shown to the approver.
+
+An operator who genuinely needs the old behaviour (a lab host that is re-paired constantly) can set
+`Agnes:Auth:Pairing:AllowCodeAfterFirstDevice=true`. Don't do this on a shared host.
+
+**A QR carrying a grant is a credential.** Treat a screen showing one the way you'd treat a password on
+a whiteboard — that is why the clients that display one can hide it again, and why the grant is revoked
+when they do.
+
 ## Data at rest
 
 The event store holds **full session transcripts** — which routinely contain secrets that flowed

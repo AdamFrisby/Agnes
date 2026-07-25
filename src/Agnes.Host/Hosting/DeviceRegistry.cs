@@ -27,14 +27,21 @@ public sealed class DeviceRegistry
     private readonly string _path;
     private readonly ILogger<DeviceRegistry>? _logger;
     private readonly bool _pairingEnabled;
+    private readonly bool _allowCodeAfterFirstDevice;
     private int _pairingFailures;
 
-    public DeviceRegistry(string? bootstrapToken, string dataFilePath, ILogger<DeviceRegistry>? logger = null, bool pairingEnabled = true)
+    public DeviceRegistry(
+        string? bootstrapToken,
+        string dataFilePath,
+        ILogger<DeviceRegistry>? logger = null,
+        bool pairingEnabled = true,
+        bool allowCodeAfterFirstDevice = false)
     {
         _bootstrapToken = string.IsNullOrWhiteSpace(bootstrapToken) ? null : bootstrapToken;
         _path = dataFilePath;
         _logger = logger;
         _pairingEnabled = pairingEnabled;
+        _allowCodeAfterFirstDevice = allowCodeAfterFirstDevice;
         // Don't mint (or expose) a pairing code at all when the method is disabled for an internet-facing host.
         PairingCode = pairingEnabled ? GeneratePairingCode() : string.Empty;
         Load();
@@ -154,7 +161,22 @@ public sealed class DeviceRegistry
             : null;
     }
 
-    /// <summary>Pairs a new device given the current pairing code; returns its durable token.</summary>
+    /// <summary>
+    /// Whether any device has paired yet. The typed bootstrap code is only accepted while this is false —
+    /// see <see cref="TryPair"/>.
+    /// </summary>
+    public bool HasPairedDevice => !_devices.IsEmpty;
+
+    /// <summary>
+    /// Pairs a new device given the current typed bootstrap code; returns its durable token.
+    ///
+    /// **The code only works until the first device pairs.** It is short because a human reads it off a
+    /// screen and types it, which caps it at around forty bits — fine as a one-shot bootstrap for a host
+    /// nobody is connected to yet, and not fine as a standing way in. Once there is a device that could
+    /// vouch instead, the stronger paths take over: a 256-bit QR grant minted by that device, or an
+    /// explicit approval of a request. An operator who genuinely needs the code back can re-enable it
+    /// with <c>Agnes:Auth:Pairing:AllowCodeAfterFirstDevice</c>.
+    /// </summary>
     public PairingResult? TryPair(string? code, string? deviceName)
     {
         lock (_gate)
@@ -162,6 +184,14 @@ public sealed class DeviceRegistry
             if (!_pairingEnabled)
             {
                 return null; // pairing-code bootstrap turned off (GitHub SSO / keypair only).
+            }
+
+            if (HasPairedDevice && !_allowCodeAfterFirstDevice)
+            {
+                _logger?.LogWarning(
+                    "Refused a pairing-code attempt: this host already has a paired device, so the typed code "
+                    + "is closed. Use a QR grant or an approval from the paired device.");
+                return null;
             }
 
             if (string.IsNullOrWhiteSpace(code) || !FixedTimeEquals(code.Trim(), PairingCode))
