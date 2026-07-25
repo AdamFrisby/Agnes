@@ -336,11 +336,13 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
 
     /// <summary>Opens the connect screen pre-filled from an <c>agnes://</c> deep link, so a host's QR
     /// removes the address-and-code typing entirely.</summary>
-    public void BeginPairing(string hostUrl, string? code)
+    /// <param name="autoSubmit">True for a scanned grant: it wasn't typed, so there is nothing for the
+    /// user to check before submitting, and making them tap a button adds a step and no safety.</param>
+    public void BeginPairing(string hostUrl, string? code, string? sessionId = null, bool autoSubmit = false)
     {
         PopToRoot();
         SelectTab(ShellTab.Sessions);
-        Push(new ConnectPageViewModel(this, Hosts, Sessions, hostUrl, code));
+        Push(new ConnectPageViewModel(this, Hosts, Sessions, hostUrl, code, sessionId, autoSubmit));
     }
 
     /// <summary>Opens a session by id if this device knows it (used by notification taps).</summary>

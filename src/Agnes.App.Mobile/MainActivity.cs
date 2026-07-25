@@ -93,10 +93,14 @@ public sealed class MainActivity : AvaloniaMainActivity
         if (intent.Action == Intent.ActionView && intent.Data is { Scheme: "agnes" } uri)
         {
             var host = uri.GetQueryParameter("host");
+            // `grant` is a scanned one-time secret; `code` is a typed bootstrap code. `session` rides
+            // along when the QR came from a specific session, so scanning lands you in it.
+            var grant = uri.GetQueryParameter("grant");
             var code = uri.GetQueryParameter("code");
+            var session = uri.GetQueryParameter("session");
             if (!string.IsNullOrWhiteSpace(host))
             {
-                shell.Dispatcher.Post(() => shell.BeginPairing(host!, code));
+                shell.Dispatcher.Post(() => shell.BeginPairing(host!, grant ?? code, session, autoSubmit: !string.IsNullOrWhiteSpace(grant)));
             }
         }
     }

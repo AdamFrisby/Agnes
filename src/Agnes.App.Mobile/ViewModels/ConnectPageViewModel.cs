@@ -38,11 +38,20 @@ public sealed partial class ConnectPageViewModel : PageViewModel
     private readonly SessionsViewModel _sessions;
     private CancellationTokenSource? _discovery;
 
-    public ConnectPageViewModel(IAppShell shell, HostBook hosts, SessionsViewModel sessions, string? prefillUrl = null, string? prefillCode = null)
+    public ConnectPageViewModel(
+        IAppShell shell,
+        HostBook hosts,
+        SessionsViewModel sessions,
+        string? prefillUrl = null,
+        string? prefillCode = null,
+        string? sessionId = null,
+        bool autoSubmit = false)
     {
         _shell = shell;
         _hosts = hosts;
         _sessions = sessions;
+        _sessionId = sessionId;
+        _autoSubmit = autoSubmit;
         _address = prefillUrl ?? "https://";
         _code = prefillCode ?? string.Empty;
 
@@ -59,6 +68,18 @@ public sealed partial class ConnectPageViewModel : PageViewModel
             _ = DiscoverAsync();
         }
     }
+
+    /// <summary>The session a scanned QR came from, opened once pairing succeeds.</summary>
+    private readonly string? _sessionId;
+
+    /// <summary>Set for a scanned grant. It was never typed, so there is nothing to review — pair as soon
+    /// as the probe confirms the host is there, rather than making the user tap a button.</summary>
+    private readonly bool _autoSubmit;
+
+    private bool _autoSubmitted;
+
+    /// <summary>Whether this screen arrived from a scan rather than being typed into.</summary>
+    public bool IsFromScan => _autoSubmit;
 
     private const string DocsUrl = "https://github.com/AdamFrisby/Agnes/blob/main/docs/deployment.md";
 
@@ -174,6 +195,12 @@ public sealed partial class ConnectPageViewModel : PageViewModel
                 SupportsKeypair = probe.Methods.Keypair;
                 _gitHubClientId = probe.Methods.GitHubClientId;
                 RaiseCanSignIn();
+
+                if (_autoSubmit && !_autoSubmitted && CanSignIn && Code.Trim().Length > 0)
+                {
+                    _autoSubmitted = true;
+                    _ = PairAsync();
+                }
             });
         }
         catch (OperationCanceledException)
@@ -454,6 +481,14 @@ public sealed partial class ConnectPageViewModel : PageViewModel
             return false;
         }
 
+        // A QR scanned from a session carries that session, so the scan lands where it was taken from
+        // rather than on a generic "now pick something" screen.
+        if (_sessionId is { Length: > 0 } sessionId)
+        {
+            await AdoptScannedSessionAsync(link, host, sessionId, name).ConfigureAwait(false);
+            return true;
+        }
+
         _shell.Dispatcher.Post(() =>
         {
             IsBusy = false;
@@ -464,6 +499,39 @@ public sealed partial class ConnectPageViewModel : PageViewModel
             _sessions.StartNew();
         });
         return true;
+    }
+
+    /// <summary>Subscribes to the session a scanned QR pointed at and opens it. Falls back to the normal
+    /// post-pairing screen if that session is gone — the pairing itself still succeeded.</summary>
+    private async Task AdoptScannedSessionAsync(HostLink link, IAgnesHost host, string sessionId, string name)
+    {
+        try
+        {
+            var view = await host.SubscribeAsync(sessionId).ConfigureAwait(false);
+            _shell.Dispatcher.Post(() =>
+            {
+                IsBusy = false;
+                _shell.Haptics.Success();
+                _shell.Toast($"Paired with {name}", ToastKind.Success);
+                _shell.Pop();
+
+                var title = view.Info?.WorkingDirectory ?? sessionId;
+                var session = _sessions.Build(host, view, title);
+                var saved = new SavedSession(link.Name, link.Url, link.Saved.Token, sessionId,
+                    view.Info?.AdapterId ?? "agent", title, view.Info?.WorkingDirectory ?? string.Empty);
+                _sessions.Adopt(link, session, saved);
+            });
+        }
+        catch
+        {
+            _shell.Dispatcher.Post(() =>
+            {
+                IsBusy = false;
+                _shell.Toast($"Paired with {name}, but that session is no longer open.", ToastKind.Warning);
+                _shell.Pop();
+                _sessions.StartNew();
+            });
+        }
     }
 
     private void Report(string message, bool error, bool busy) => _shell.Dispatcher.Post(() =>

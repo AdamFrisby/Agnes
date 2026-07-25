@@ -18,10 +18,12 @@ namespace Agnes.App.Desktop.ViewModels;
 public sealed partial class SessionDocument : Document, ITraySession
 {
     private readonly ITabController _controller;
+    private readonly Agnes.Ui.Core.IUiDispatcher _dispatcher;
 
-    public SessionDocument(ITabController controller)
+    public SessionDocument(ITabController controller, Agnes.Ui.Core.IUiDispatcher? dispatcher = null)
     {
         _controller = controller;
+        _dispatcher = dispatcher ?? Agnes.Ui.Core.ImmediateDispatcher.Instance;
         _workingDirectory = controller.DefaultWorkingDirectory;
         // Disabled until the URL field is more than the "https://" prefill, so Connect can't fire on junk.
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this),
@@ -257,6 +259,17 @@ public sealed partial class SessionDocument : Document, ITraySession
 
         StatusText = $"Applied profile \"{profile.Name}\" — adjust anything, then Start.";
     }
+
+    /// <summary>
+    /// The pairing QR for this tab: scan it on a phone to pair that device *and* land straight in this
+    /// session. Built lazily, because it mints nothing until asked — the code it shows is a credential.
+    /// </summary>
+    public ConnectQrViewModel ConnectQr => _connectQr ??= new ConnectQrViewModel(
+        () => Host is { } host && !string.IsNullOrEmpty(HostToken) ? (host.HostUrl, HostToken) : null,
+        Session?.SessionId,
+        _dispatcher);
+
+    private ConnectQrViewModel? _connectQr;
 
     [ObservableProperty]
     private SessionViewModel? _session;

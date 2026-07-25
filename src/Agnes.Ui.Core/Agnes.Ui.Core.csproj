@@ -14,6 +14,9 @@
     <!-- One MVVM stack across all heads (Desktop already uses it); replaces the former hand-rolled
          ObservableObject/RelayCommand/AsyncRelayCommand in this project. -->
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- QR encoding for pairing/session codes. Pure managed, MIT, no native or System.Drawing
+         dependency — it only ever produces a module matrix here, which each head draws itself. -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -419,6 +419,10 @@
                                     <MenuItem Header="Restart agent" Command="{Binding Session.RestartAgentCommand}"
                                               ToolTip.Tip="Relaunch the agent process and resume the conversation — recovers a crashed or hung agent." />
                                     <Separator />
+                                    <MenuItem Header="Show QR to connect a device to this session…"
+                                              Command="{Binding ConnectQr.ShowCommand}"
+                                              ToolTip.Tip="Displays a one-time code a phone can scan to pair with this host and open this session. It is a credential — hide it when you're done." />
+                                    <Separator />
                                     <MenuItem Header="Open in new window" Command="{Binding MoveToWindowCommand}" />
                                     <Separator />
                                     <MenuItem Header="Duplicate (same session)" Command="{Binding DuplicateCommand}" />
@@ -2080,6 +2084,41 @@
                 </Grid>
                 <views:TerminalPanelView Grid.Row="1" DataContext="{Binding LoginTerminal}" />
             </Grid>
+        </Border>
+        <!-- ===== pairing QR =====
+             Shown only on request, and hidden again from here. The code it carries is a one-time
+             credential, not an address, so "hide" revokes it server-side rather than just clearing the
+             pixels — see ConnectQrViewModel. -->
+        <Border IsVisible="{Binding ConnectQr.IsVisible}"
+                Background="#CC000000" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                    CornerRadius="12" Padding="24" MaxWidth="420"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="Scan to connect a device to this session"
+                               FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource Fg}" />
+                    <TextBlock Text="Point your phone's camera at this. It pairs the device with this host and opens this session."
+                               TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource FgDim}" />
+
+                    <Border Background="White" CornerRadius="8" Padding="12" HorizontalAlignment="Center">
+                        <ctl:QrCodeView Matrix="{Binding ConnectQr.Matrix}" Width="260" Height="260"
+                                        Foreground="Black" Background="White" />
+                    </Border>
+
+                    <SelectableTextBlock Text="{Binding ConnectQr.DeepLink}" TextWrapping="Wrap"
+                                         FontFamily="{StaticResource MonoFont}" FontSize="10"
+                                         Foreground="{DynamicResource FgDim}"
+                                         ToolTip.Tip="The link this code encodes — copy it if the camera won't focus." />
+
+                    <TextBlock Text="This code is a credential. It works once, expires in a few minutes, and stops working the moment you hide it."
+                               TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource Warn}" />
+
+                    <Button Content="Hide" Command="{Binding ConnectQr.HideCommand}"
+                            HorizontalAlignment="Right" Padding="16,6" CornerRadius="6"
+                            Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1" />
+                </StackPanel>
+            </Border>
         </Border>
     </Grid>
 </UserControl>

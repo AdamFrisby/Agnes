@@ -166,6 +166,12 @@ An operator who genuinely needs the old behaviour (a lab host that is re-paired 
 a whiteboard — that is why the clients that display one can hide it again, and why the grant is revoked
 when they do.
 
+In the desktop client this lives on a session's context menu, beside *Restart agent*:
+**"Show QR to connect a device to this session…"**. Scanning it with a phone's camera pairs the device
+*and* opens that session, because the grant carries the session id alongside the host address.
+**Hide** revokes the grant server-side, so the code stops working the moment it leaves the screen
+rather than lingering for the rest of its five minutes.
+
 ## Data at rest
 
 The event store holds **full session transcripts** — which routinely contain secrets that flowed

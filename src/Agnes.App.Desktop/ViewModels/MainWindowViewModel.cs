@@ -2537,7 +2537,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     private SessionDocument CreateTab()
     {
-        var doc = new SessionDocument(this) { Title = "New session", CanClose = true };
+        // The real UI dispatcher, not the inline fallback: the QR view model completes HTTP work on a
+        // background thread and then touches bound state.
+        var doc = new SessionDocument(this, _dispatcher) { Title = "New session", CanClose = true };
         doc.ShowHosts(_knownHosts);
         return doc;
     }
