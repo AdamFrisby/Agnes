@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status-bar icon. Android masks small icons to a flat silhouette, so this is the squid reduced to
+  hood + head + tentacles with the eyes punched out — it still reads as Agnes at 24dp, where the full
+  gradient mark would just be a white blob.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+        android:width="24dp"
+        android:height="24dp"
+        android:viewportWidth="256"
+        android:viewportHeight="256">
+  <group android:pivotX="128" android:pivotY="128" android:scaleX="1.05" android:scaleY="1.05">
+    <path android:fillColor="#FFFFFF" android:pathData="M 111.30 38.32 Q 128.00 24.00 144.70 38.32 L 146.30 39.68 Q 163.00 54.00 168.89 75.20 L 172.11 86.80 Q 178.00 108.00 156.00 108.00 L 100.00 108.00 Q 78.00 108.00 83.89 86.80 L 87.11 75.20 Q 93.00 54.00 109.70 39.68 Z" />
+    <path android:fillColor="#FFFFFF" android:fillType="evenOdd"
+          android:pathData="M 84.00 138.00 Q 84.00 120.00 102.00 120.00 L 154.00 120.00 Q 172.00 120.00 172.00 138.00 L 172.00 160.00 Q 172.00 178.00 154.00 178.00 L 102.00 178.00 Q 84.00 178.00 84.00 160.00 Z M 97 150 a 10 10 0 1 0 20 0 a 10 10 0 1 0 -20 0 Z M 139 150 a 10 10 0 1 0 20 0 a 10 10 0 1 0 -20 0 Z" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="16" android:strokeLineCap="round" android:pathData="M 96 192 L 96 214" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="16" android:strokeLineCap="round" android:pathData="M 118 192 L 118 208" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="16" android:strokeLineCap="round" android:pathData="M 140 192 L 140 220" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="16" android:strokeLineCap="round" android:pathData="M 162 192 L 162 206" />
+  </group>
+</vector>

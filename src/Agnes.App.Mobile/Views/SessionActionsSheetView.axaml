@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.SessionActionsSheetView"
+             x:DataType="vm:SessionActionsSheetViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="16,12,16,28" Spacing="12">
+
+      <TextBlock Classes="section" Text="NAME" Margin="0" />
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBox Grid.Column="0" Theme="{StaticResource MobileTextBox}"
+                 Text="{Binding RenameText, Mode=TwoWay}" PlaceholderText="Session name" />
+        <Button Grid.Column="1" Margin="10,0,0,0" Theme="{StaticResource AccentButton}" Padding="18,0"
+                Content="Save" Command="{Binding RenameCommand}" />
+      </Grid>
+
+      <Border Classes="card" Padding="0">
+        <StackPanel>
+          <Button Theme="{StaticResource RowButton}" Command="{Binding PinCommand}">
+            <Grid ColumnDefinitions="Auto,*">
+              <c:Icon Grid.Column="0" Data="{StaticResource IconStar}" Size="18"
+                      Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+              <TextBlock Grid.Column="1" Text="{Binding PinLabel}" />
+            </Grid>
+          </Button>
+          <Border Classes="divider" Margin="50,0,0,0" />
+          <Button Theme="{StaticResource RowButton}" Command="{Binding MarkUnreadCommand}"
+                  IsEnabled="{Binding HasSession}">
+            <Grid ColumnDefinitions="Auto,*">
+              <c:Icon Grid.Column="0" Data="{StaticResource IconEye}" Size="18"
+                      Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+              <TextBlock Grid.Column="1" Text="Mark unread" />
+            </Grid>
+          </Button>
+          <Border Classes="divider" Margin="50,0,0,0" />
+          <Button Theme="{StaticResource RowButton}" Command="{Binding CopyLinkCommand}"
+                  IsEnabled="{Binding HasSession}">
+            <Grid ColumnDefinitions="Auto,*">
+              <c:Icon Grid.Column="0" Data="{StaticResource IconCopy}" Size="18"
+                      Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Copy session link" />
+                <TextBlock Classes="caption" Text="Any Agnes client can reattach to the same live session." />
+              </StackPanel>
+            </Grid>
+          </Button>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card" Padding="0">
+        <Button Theme="{StaticResource RowButton}" Command="{Binding ForgetCommand}">
+          <Grid ColumnDefinitions="Auto,*">
+            <c:Icon Grid.Column="0" Data="{StaticResource IconTrash}" Size="18"
+                    Stroke="{DynamicResource Danger}" Margin="0,0,14,0" />
+            <StackPanel Grid.Column="1">
+              <TextBlock Text="Remove from this device" Foreground="{DynamicResource Danger}" />
+              <!-- Said plainly, because "remove" next to a running agent reads as "kill it". -->
+              <TextBlock Classes="caption" Text="The session keeps running on the host." />
+            </StackPanel>
+          </Grid>
+        </Button>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

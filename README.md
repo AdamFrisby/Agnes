@@ -1,6 +1,6 @@
 # Agnes
 
-**A remote interface to coding CLIs.** Run one **host** where your coding agents live (Claude Code, OpenCode, and Codex today); connect from **many clients** — a full-featured desktop app plus web and mobile (Android). Think `claude` in `tmux` + `ssh`, but without tmux's limits: no fixed character grid, unlimited server-side scrollback, and each client renders at its own size.
+**A remote interface to coding CLIs.** Run one **host** where your coding agents live (Claude Code, OpenCode, and Codex today); connect from **many clients** — a full-featured desktop app, an Android app built for one thumb, and a web head. Think `claude` in `tmux` + `ssh`, but without tmux's limits: no fixed character grid, unlimited server-side scrollback, and each client renders at its own size.
 
 > Status: **alpha**. Working today: event-sourced sessions with restart-resume, per-device pairing auth over TLS, an Avalonia desktop client, a browser (WASM) client served by the host, and optional per-session Incus VM sandboxing. See [`docs/architecture.md`](docs/architecture.md) and [`docs/deployment.md`](docs/deployment.md).
 
@@ -49,7 +49,7 @@ Host daemon ── spawns each CLI (ACP mode, or a native stream-json adapter)
             ── ASP.NET Core + SignalR hub (TLS + per-device pairing tokens)
                      │  Agnes wire protocol
    Clients ── Agnes.Client connection pool (many hosts, dozens of agents)
-            ── Avalonia desktop app · Uno web (WASM) + Android heads
+            ── Avalonia desktop app · Avalonia Android app · Uno web (WASM) head
 ```
 
 Full design: [`docs/architecture.md`](docs/architecture.md).
@@ -68,7 +68,8 @@ Full design: [`docs/architecture.md`](docs/architecture.md).
 | `src/Agnes.Sandbox` / `Agnes.Sandbox.Incus` | Optional per-session VM sandboxing (see [`docs/sandbox-live-testing.md`](docs/sandbox-live-testing.md)) |
 | `src/Agnes.Ui.Core` | Framework-agnostic view models + ACP-event render logic (shared by all UIs) |
 | `src/Agnes.App.Desktop` | Avalonia desktop client (primary, full-featured) |
-| `src/Agnes.App` | Uno multi-head app: web (WASM) + Android + a desktop head |
+| `src/Agnes.App.Mobile` | Avalonia **Android** app — a phone-first client, not the desktop reflowed ([docs](docs/mobile.md)) |
+| `src/Agnes.App` | Uno app: web (WASM) + a desktop head |
 | `tests/*` | Unit + integration tests, a fake ACP agent, and offline simulated/recorded hosts |
 
 ## Build
@@ -80,11 +81,18 @@ dotnet build Agnes.Core.slnf     # backend + tests (what CI builds)
 dotnet test  Agnes.Core.slnf
 ```
 
-The Uno UI app is a separate subtree (`src/Agnes.App`) with its own solution and build config. Its WebAssembly head needs the `wasm-tools` workload; the Android head needs the `android` workload:
+The Android app needs the `android` workload (plus a JDK and the Android SDK); the Uno web head needs `wasm-tools`:
 
 ```bash
+dotnet build src/Agnes.App.Mobile/Agnes.App.Mobile.csproj                     # Android
 dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-desktop      # Linux/macOS/Windows (Skia)
 dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-browserwasm  # web
+```
+
+The Android UI can also be compiled and *rendered* without the workload, which is how CI covers it:
+
+```bash
+dotnet run --project tools/Agnes.MobilePreview -- screenshots/mobile         # PNGs of every screen
 ```
 
 ## Package native apps
@@ -110,7 +118,7 @@ builds/
   linux/    Agnes              + host/Agnes.Host            # linux-x64
   mac/arm64 Agnes              + host/Agnes.Host            # osx-arm64 (Apple Silicon)
   mac/x64   Agnes              + host/Agnes.Host            # osx-x64 (Intel)
-  android/  *.apk  (signed + unsigned)                      # needs the `android` workload
+  android/  Agnes.apk                                       # needs the `android` workload
   web/      static WebAssembly site (serve the folder)      # needs the `wasm-tools` workload
 ```
 
@@ -119,7 +127,7 @@ The desktop client and host are **self-contained, single-file** native executabl
 ## Run the walking skeleton
 
 1. **Host** — from `src/Agnes.Host`, `dotnet run` (or `docker compose up`, see [`docs/deployment.md`](docs/deployment.md)). It logs an `Agnes pairing code`. (Claude Code's ACP bridge launches on demand via `npx @zed-industries/claude-code-acp`; configure commands in `appsettings.json`.)
-2. **Client** — run the Avalonia desktop app (`src/Agnes.App.Desktop`) or the Uno web head. Enter the host URL (`https://localhost:5081`), the pairing code (a per-device token is issued and stored), choose ask-first or autonomous, pick an agent, and start.
+2. **Client** — run the Avalonia desktop app (`src/Agnes.App.Desktop`), sideload the Android app, or use the web head. Enter the host URL (`https://localhost:5081`), the pairing code (a per-device token is issued and stored), choose ask-first or autonomous, pick an agent, and start.
 
 The transcript renders reflowable ACP events (messages, tool calls, plans, permission prompts); open a second client to see the same session replay via snapshot + live tail. Agents that aren't installed on the host are shown greyed-out.
 

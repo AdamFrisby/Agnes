@@ -1,0 +1,126 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.MoreView"
+             x:DataType="vm:MoreViewModel">
+  <!--
+    Deliberately shallow. The desktop client's settings tab has a dozen categories because it manages the
+    host; this one manages the phone, and hands off to the host's own surfaces where it must.
+  -->
+  <Grid RowDefinitions="Auto,*">
+
+    <StackPanel Grid.Row="0">
+      <c:SafeSpacer Edge="Top" />
+      <TextBlock Classes="headline" Text="More" Margin="16,10,16,12" />
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="12,0,12,24" Spacing="16">
+
+        <TextBlock Classes="section" Text="CONNECTION" Margin="4,0,0,0" />
+        <Border Classes="card" Padding="0">
+          <StackPanel>
+            <Button Theme="{StaticResource RowButton}" Command="{Binding HostsCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconServer}" Size="20"
+                        Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="Hosts" />
+                  <TextBlock Classes="caption" Text="{Binding HostsDetail}" />
+                </StackPanel>
+                <c:Icon Grid.Column="2" Data="{StaticResource IconChevronRight}" Size="17"
+                        Stroke="{DynamicResource TextMuted}" />
+              </Grid>
+            </Button>
+            <Border Classes="divider" Margin="52,0,0,0" />
+            <Button Theme="{StaticResource RowButton}" Command="{Binding AddHostCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconPlus}" Size="20"
+                        Stroke="{DynamicResource AccentText}" Margin="0,0,14,0" />
+                <TextBlock Grid.Column="1" Text="Pair a new host"
+                           Foreground="{DynamicResource AccentText}" />
+              </Grid>
+            </Button>
+            <Border Classes="divider" Margin="52,0,0,0" />
+            <Button Theme="{StaticResource RowButton}" Command="{Binding DevicesCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconKey}" Size="20"
+                        Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="Paired devices" />
+                  <TextBlock Classes="caption" Text="Revoke access for a lost machine" />
+                </StackPanel>
+                <c:Icon Grid.Column="2" Data="{StaticResource IconChevronRight}" Size="17"
+                        Stroke="{DynamicResource TextMuted}" />
+              </Grid>
+            </Button>
+          </StackPanel>
+        </Border>
+
+        <TextBlock Classes="section" Text="THIS DEVICE" Margin="4,0,0,0" />
+        <Border Classes="card" Padding="0">
+          <StackPanel>
+            <Button Theme="{StaticResource RowButton}" Command="{Binding AppearanceCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconEye}" Size="20"
+                        Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="Appearance" />
+                  <TextBlock Classes="caption" Text="Theme, text size, what the transcript shows" />
+                </StackPanel>
+                <c:Icon Grid.Column="2" Data="{StaticResource IconChevronRight}" Size="17"
+                        Stroke="{DynamicResource TextMuted}" />
+              </Grid>
+            </Button>
+            <Border Classes="divider" Margin="52,0,0,0" />
+            <Button Theme="{StaticResource RowButton}" Command="{Binding NotificationsCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconBell}" Size="20"
+                        Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="Notifications" />
+                  <TextBlock Classes="caption" Text="When Agnes may interrupt you" />
+                </StackPanel>
+                <c:Icon Grid.Column="2" Data="{StaticResource IconChevronRight}" Size="17"
+                        Stroke="{DynamicResource TextMuted}" />
+              </Grid>
+            </Button>
+          </StackPanel>
+        </Border>
+
+        <TextBlock Classes="section" Text="ON THE HOST" Margin="4,0,0,0" />
+        <Border Classes="card" Padding="0">
+          <StackPanel>
+            <Button Theme="{StaticResource RowButton}" Command="{Binding PromptsCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconListChecks}" Size="20"
+                        Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="Prompts" />
+                  <TextBlock Classes="caption" Text="Saved instructions, so you don't retype them" />
+                </StackPanel>
+                <c:Icon Grid.Column="2" Data="{StaticResource IconChevronRight}" Size="17"
+                        Stroke="{DynamicResource TextMuted}" />
+              </Grid>
+            </Button>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Padding="0" Margin="0,4,0,0">
+          <Button Theme="{StaticResource RowButton}" Command="{Binding AboutCommand}">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <c:Icon Grid.Column="0" Data="{StaticResource IconInfo}" Size="20"
+                      Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+              <TextBlock Grid.Column="1" Text="About Agnes" />
+              <c:Icon Grid.Column="2" Data="{StaticResource IconChevronRight}" Size="17"
+                      Stroke="{DynamicResource TextMuted}" />
+            </Grid>
+          </Button>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

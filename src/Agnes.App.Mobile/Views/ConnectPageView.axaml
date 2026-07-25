@@ -1,0 +1,109 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.ConnectPageView"
+             x:DataType="vm:ConnectPageViewModel"
+             Background="{DynamicResource Bg}">
+  <!--
+    Address first, then only the sign-in methods the host actually offers. Presenting three buttons and
+    letting two of them fail is the usual way this screen goes wrong.
+  -->
+  <Grid RowDefinitions="Auto,*">
+
+    <c:PageHeader Grid.Row="0" Title="Connect a host" />
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="16,16,16,28" Spacing="10">
+
+        <StackPanel Spacing="8" Margin="0,0,0,6">
+          <c:AgnesMark Width="56" Height="56" HorizontalAlignment="Left" />
+          <TextBlock Classes="headline" Text="One host runs the agents." />
+          <TextBlock Classes="dim" LineHeight="22"
+                     Text="Point this phone at the machine running Agnes. Pairing gives it its own token, revocable from either end." />
+        </StackPanel>
+
+        <TextBlock Classes="section" Text="ADDRESS" />
+        <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding Address, Mode=TwoWay}"
+                 PlaceholderText="https://your-host:5099" FontFamily="{StaticResource MonoFont}"
+                 FontSize="{StaticResource TextSm}" />
+        <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding Name, Mode=TwoWay}"
+                 PlaceholderText="Name it (optional)" />
+
+        <TextBlock Classes="caption" Text="Checking what this host offers…" IsVisible="{Binding IsDiscovering}" />
+
+        <!-- ===== pairing code ===== -->
+        <StackPanel Spacing="10" IsVisible="{Binding SupportsPairing}">
+          <TextBlock Classes="section" Text="PAIRING CODE" />
+          <TextBlock Classes="muted" Text="The host prints a short code on startup. It's good once." />
+          <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding Code, Mode=TwoWay}"
+                   PlaceholderText="123 456" FontFamily="{StaticResource MonoFont}"
+                   FontSize="{StaticResource TextLg}" />
+          <Button Theme="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
+                  Command="{Binding PairCommand}">
+            <TextBlock Text="Pair this device" Foreground="White" FontWeight="SemiBold" />
+          </Button>
+        </StackPanel>
+
+        <!-- ===== GitHub device flow ===== -->
+        <StackPanel Spacing="10" IsVisible="{Binding SupportsGitHub}">
+          <TextBlock Classes="section" Text="OR SIGN IN" />
+          <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
+                  Command="{Binding GitHubCommand}" Content="Continue with GitHub" />
+
+          <Border Classes="card" IsVisible="{Binding IsGitHubAuthorizing}" Padding="14">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="muted" Text="Enter this code in the browser we just opened:" />
+              <Border Classes="inset">
+                <TextBlock Text="{Binding UserCode}" Classes="mono" FontSize="{StaticResource Text2Xl}"
+                           HorizontalAlignment="Center" LetterSpacing="2" />
+              </Border>
+              <Grid ColumnDefinitions="*,10,*">
+                <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Copy code"
+                        Command="{Binding CopyUserCodeCommand}" />
+                <Button Grid.Column="2" Theme="{StaticResource SecondaryButton}" Content="Open again"
+                        Command="{Binding OpenVerificationCommand}" />
+              </Grid>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- ===== device keypair ===== -->
+        <StackPanel Spacing="10" IsVisible="{Binding SupportsKeypair}">
+          <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
+                  Command="{Binding KeyCommand}" Content="Use this device's key" />
+
+          <Border Classes="card" IsVisible="{Binding ShowKey}" Padding="14">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="muted"
+                         Text="Add this line to the host's authorized_keys, then try again." />
+              <Border Classes="inset">
+                <TextBlock Text="{Binding PublicKeyLine}" Classes="mono" TextWrapping="Wrap"
+                           FontSize="{StaticResource TextXs}" />
+              </Border>
+              <Button Theme="{StaticResource SecondaryButton}" Content="Copy key"
+                      Command="{Binding CopyKeyCommand}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- ===== status ===== -->
+        <Border Classes="inset" IsVisible="{Binding HasStatus}" Margin="0,6,0,0">
+          <TextBlock Text="{Binding Status}" FontSize="{StaticResource TextSm}"
+                     Foreground="{DynamicResource TextDim}" />
+        </Border>
+
+        <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Center" Margin="0,10,0,0"
+                Command="{Binding DocsCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <TextBlock Text="How do I run a host?" Foreground="{DynamicResource TextDim}"
+                       FontSize="{StaticResource TextSm}" />
+            <c:Icon Data="{StaticResource IconExternalLink}" Size="15" Stroke="{DynamicResource TextDim}" />
+          </StackPanel>
+        </Button>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

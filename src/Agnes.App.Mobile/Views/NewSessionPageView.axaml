@@ -1,0 +1,178 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.NewSessionPageView"
+             x:DataType="vm:NewSessionPageViewModel"
+             Background="{DynamicResource Bg}">
+  <!--
+    One scrolling form with Start pinned to the bottom. The desktop walks host → agent → options across
+    three screens; on a phone that's three chances to lose the thread, and scrolling back up to commit is
+    what makes an app feel like a web page.
+  -->
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <c:PageHeader Grid.Row="0" Title="New session" />
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="16,12,16,20" Spacing="8">
+
+        <!-- ===== host ===== -->
+        <TextBlock Classes="section" Text="HOST" Margin="0,0,0,4" IsVisible="{Binding HasChoiceOfHosts}" />
+        <ItemsControl ItemsSource="{Binding Hosts}" IsVisible="{Binding HasChoiceOfHosts}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Theme="{StaticResource ChipButton}" Margin="0,0,8,8"
+                      Command="{Binding $parent[UserControl].DataContext.SelectHostCommand}"
+                      CommandParameter="{Binding}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Border Classes="dot" Classes.running="{Binding IsOnline}" />
+                  <TextBlock Text="{Binding Name}" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ===== saved profiles: the fastest path, so it comes first ===== -->
+        <TextBlock Classes="section" Text="START FROM A PROFILE" IsVisible="{Binding HasProfiles}" />
+        <ItemsControl ItemsSource="{Binding Profiles}" IsVisible="{Binding HasProfiles}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Theme="{StaticResource ChipButton}" Margin="0,0,8,8" Content="{Binding Name}"
+                      Command="{Binding $parent[UserControl].DataContext.ApplyProfileCommand}"
+                      CommandParameter="{Binding}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ===== agent ===== -->
+        <TextBlock Classes="section" Text="AGENT" />
+
+        <TextBlock Classes="muted" Text="Loading agents…" IsVisible="{Binding IsLoadingAgents}" />
+
+        <ItemsControl ItemsSource="{Binding Agents}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:AgentOption">
+              <Button Theme="{StaticResource CardButton}" Margin="0,0,0,8" Padding="14"
+                      IsEnabled="{Binding Available}"
+                      Command="{Binding $parent[UserControl].DataContext.SelectAgentCommand}"
+                      CommandParameter="{Binding}">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <!-- Selection is a filled radio rather than a highlight: on a card list a background
+                       tint reads as "disabled" as often as "chosen". -->
+                  <Border Grid.Column="0" Width="20" Height="20" Margin="0,0,12,0"
+                          CornerRadius="{StaticResource RadiusPill}"
+                          BorderBrush="{DynamicResource BorderStrong}" BorderThickness="2"
+                          VerticalAlignment="Center">
+                    <Ellipse Width="10" Height="10" Fill="{DynamicResource Accent}"
+                             IsVisible="{Binding IsSelected}" />
+                  </Border>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{Binding Name}" Classes="strong" />
+                    <TextBlock Text="{Binding Detail}" Classes="caption" />
+                  </StackPanel>
+                  <Border Grid.Column="2" Classes="pill" Classes.running="{Binding IsSignedIn}"
+                          IsVisible="{Binding HasAuth}">
+                    <TextBlock Text="{Binding AuthText}" />
+                  </Border>
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ===== working folder ===== -->
+        <TextBlock Classes="section" Text="FOLDER ON THE HOST" />
+        <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding WorkingDirectory, Mode=TwoWay}"
+                 PlaceholderText="/home/you/project" FontFamily="{StaticResource MonoFont}"
+                 FontSize="{StaticResource TextSm}" />
+
+        <!-- ===== how much rope ===== -->
+        <TextBlock Classes="section" Text="PERMISSIONS" />
+        <Border Classes="card" Padding="14">
+          <StackPanel Spacing="12">
+            <StackPanel Spacing="3">
+              <TextBlock Text="Tool calls" Classes="strong" />
+              <TextBlock Classes="caption"
+                         Text="Ask first is safer from a phone — you may not be watching when it wants to run something." />
+            </StackPanel>
+            <Border Background="{DynamicResource Surface2}" CornerRadius="{StaticResource RadiusSm}"
+                    Padding="3" IsEnabled="{Binding !PermissionsLocked}">
+              <Grid ColumnDefinitions="*,*">
+                <RadioButton Grid.Column="0" GroupName="perm" Theme="{StaticResource SegmentButton}"
+                             Content="Ask first" IsChecked="{Binding PermissionAsk, Mode=OneWay}"
+                             Command="{Binding SetPermissionCommand}" CommandParameter="ask" />
+                <RadioButton Grid.Column="1" GroupName="perm" Theme="{StaticResource SegmentButton}"
+                             Content="Autonomous" IsChecked="{Binding PermissionAuto, Mode=OneWay}"
+                             Command="{Binding SetPermissionCommand}" CommandParameter="auto" />
+              </Grid>
+            </Border>
+            <TextBlock Classes="caption" IsVisible="{Binding PermissionsLocked}"
+                       Text="This host requires per-tool approval." />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Padding="14">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" Spacing="3" Margin="0,0,12,0">
+              <TextBlock Text="Sandbox" Classes="strong" />
+              <TextBlock Classes="caption"
+                         Text="Run the agent in a throwaway VM instead of directly on the host." />
+              <TextBlock Classes="caption" Foreground="{DynamicResource Warning}"
+                         IsVisible="{Binding !SandboxAvailable}"
+                         Text="This host can't sandbox." />
+            </StackPanel>
+            <ToggleButton Grid.Column="1" Theme="{StaticResource MobileSwitch}"
+                          IsChecked="{Binding UseSandbox, Mode=TwoWay}"
+                          IsEnabled="{Binding !SandboxLocked}" VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+
+        <Border Classes="card" Padding="14">
+          <StackPanel Spacing="12">
+            <StackPanel Spacing="3">
+              <TextBlock Text="Git credentials" Classes="strong" />
+              <TextBlock Classes="caption" Text="Whether a sandboxed agent may push, and how." />
+            </StackPanel>
+            <Border Background="{DynamicResource Surface2}" CornerRadius="{StaticResource RadiusSm}" Padding="3">
+              <Grid ColumnDefinitions="*,*,*">
+                <RadioButton Grid.Column="0" GroupName="git" Theme="{StaticResource SegmentButton}"
+                             Content="Off" IsChecked="{Binding GitOff, Mode=OneWay}"
+                             Command="{Binding SetGitCredentialCommand}" CommandParameter="Off" />
+                <RadioButton Grid.Column="1" GroupName="git" Theme="{StaticResource SegmentButton}"
+                             Content="Ask" IsChecked="{Binding GitAsk, Mode=OneWay}"
+                             Command="{Binding SetGitCredentialCommand}" CommandParameter="Ask" />
+                <RadioButton Grid.Column="2" GroupName="git" Theme="{StaticResource SegmentButton}"
+                             Content="Trust" IsChecked="{Binding GitTrust, Mode=OneWay}"
+                             Command="{Binding SetGitCredentialCommand}" CommandParameter="Trust" />
+              </Grid>
+            </Border>
+          </StackPanel>
+        </Border>
+
+        <TextBlock Text="{Binding Status}" Classes="muted" IsVisible="{Binding HasStatus}"
+                   Margin="0,6,0,0" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Start stays under the thumb, always. -->
+    <Border Grid.Row="2" Background="{DynamicResource Surface1}"
+            BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0">
+      <StackPanel>
+        <Button Theme="{StaticResource PrimaryButton}" Margin="16,12" HorizontalAlignment="Stretch"
+                Command="{Binding StartCommand}">
+          <TextBlock Text="Start session" Foreground="White" FontWeight="SemiBold" />
+        </Button>
+        <c:SafeSpacer Edge="Bottom" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

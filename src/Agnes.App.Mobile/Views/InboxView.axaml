@@ -1,0 +1,109 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.InboxView"
+             x:DataType="vm:InboxViewModel">
+  <!--
+    The inbox — the reason to have Agnes on a phone at all.
+
+    An agent blocked on an approval is an agent doing nothing. Answering takes two seconds and shouldn't
+    need a laptop, so approvals are answerable *here*, without opening the session: the card states what
+    the tool will touch and whether it can be undone, and Allow/Deny are full-width targets.
+  -->
+  <Grid RowDefinitions="Auto,*">
+
+    <StackPanel Grid.Row="0">
+      <c:SafeSpacer Edge="Top" />
+      <Grid Margin="16,10,8,12" ColumnDefinitions="*,Auto">
+        <TextBlock Grid.Column="0" Classes="headline" Text="Inbox" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Theme="{StaticResource IconButton}" Command="{Binding RefreshCommand}">
+          <c:Icon Data="{StaticResource IconRefresh}" Size="21" Stroke="{DynamicResource TextDim}" />
+        </Button>
+      </Grid>
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="12,0,12,24">
+
+        <!-- ===== blocked ===== -->
+        <TextBlock Classes="section" Text="WAITING ON YOU" Margin="4,4,0,8"
+                   IsVisible="{Binding HasBlocked}" />
+
+        <ItemsControl ItemsSource="{Binding Blocked}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:BlockerRow">
+              <Border Classes="card" Margin="0,0,0,10" BorderBrush="{DynamicResource Warning}"
+                      BorderThickness="1.5">
+                <StackPanel Spacing="12">
+
+                  <StackPanel Spacing="4">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Classes="pill needs"><TextBlock Text="{Binding Kind}" /></Border>
+                      <TextBlock Classes="caption" Text="{Binding SessionTitle}" VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock Classes="title" Text="{Binding Title}" Margin="0,4,0,0" />
+                    <TextBlock Classes="muted" Text="{Binding Detail}" />
+                  </StackPanel>
+
+                  <!-- Answer here. Deny is first-position-safe: both are full targets, and neither is a
+                       tiny link you can hit by accident while scrolling. -->
+                  <Grid ColumnDefinitions="*,10,*" IsVisible="{Binding CanAnswerHere}">
+                    <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Deny"
+                            Command="{Binding $parent[UserControl].DataContext.DenyCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Grid.Column="2" Theme="{StaticResource SuccessButton}" Content="Allow"
+                            Command="{Binding $parent[UserControl].DataContext.AllowCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+
+                  <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Left" Padding="0"
+                          Command="{Binding $parent[UserControl].DataContext.OpenCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="Open the session" Foreground="{DynamicResource AccentText}"
+                                 FontSize="{StaticResource TextSm}" FontWeight="SemiBold" />
+                      <c:Icon Data="{StaticResource IconChevronRight}" Size="15"
+                              Stroke="{DynamicResource AccentText}" />
+                    </StackPanel>
+                  </Button>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ===== finished ===== -->
+        <TextBlock Classes="section" Text="FINISHED WHILE YOU WERE AWAY" Margin="4,10,0,8"
+                   IsVisible="{Binding HasFinished}" />
+
+        <ItemsControl ItemsSource="{Binding Finished}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="card" Margin="0,0,0,8" Padding="14">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="strong" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="muted" Text="{Binding Summary}" MaxLines="3"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="caption" Text="{Binding CompletedAt, StringFormat='{}{0:d MMM HH:mm}'}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ===== empty ===== -->
+        <StackPanel IsVisible="{Binding IsEmpty}" Margin="24,60,24,0" Spacing="12">
+          <c:Icon Data="{StaticResource IconCheckCircle}" Size="46" Stroke="{DynamicResource Success}"
+                  HorizontalAlignment="Center" />
+          <TextBlock Classes="title" Text="Nothing is waiting" HorizontalAlignment="Center" />
+          <TextBlock Classes="dim" TextAlignment="Center" LineHeight="22"
+                     Text="Approvals and questions land here the moment an agent needs a human. Go grab lunch." />
+        </StackPanel>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

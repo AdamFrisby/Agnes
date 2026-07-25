@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!--
+    The app/launch theme.
+
+    The parent MUST be a Theme.AppCompat descendant: Avalonia's AvaloniaActivity derives from AndroidX's
+    AppCompatActivity, which asserts exactly that in onCreate and otherwise throws
+    "You need to use a Theme.AppCompat theme (or descendant) with this activity" — an immediate crash on
+    launch, before a line of Avalonia code runs. A platform theme (Theme.Material.*) looks equivalent and
+    is not.
+
+    Otherwise it is deliberately edge-to-edge and dark: the app's own chrome takes over as soon as
+    Avalonia's surface is up, and a dark launch window avoids the white flash that reads as a stall on a
+    phone. windowLayoutInDisplayCutoutMode=shortEdges lets content run under the notch; the app applies
+    the safe-area insets itself (see SafeSpacer).
+  -->
+  <style name="AgnesSplashTheme" parent="Theme.AppCompat.NoActionBar">
+    <item name="android:windowBackground">@color/agnes_window_background</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+    <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+  </style>
+</resources>

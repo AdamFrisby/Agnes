@@ -1,0 +1,78 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.AppearancePageView"
+             x:DataType="vm:AppearancePageViewModel"
+             Background="{DynamicResource Bg}">
+  <Grid RowDefinitions="Auto,*">
+    <c:PageHeader Grid.Row="0" Title="Appearance" />
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="16,12,16,28" Spacing="10">
+
+        <TextBlock Classes="section" Text="THEME" Margin="0,0,0,4" />
+        <Border Background="{DynamicResource Surface2}" CornerRadius="{StaticResource RadiusSm}" Padding="3">
+          <Grid ColumnDefinitions="*,*,*">
+            <RadioButton Grid.Column="0" GroupName="theme" Theme="{StaticResource SegmentButton}"
+                         Content="System" IsChecked="{Binding ThemeSystem, Mode=OneWay}"
+                         Command="{Binding SetThemeCommand}" CommandParameter="System" />
+            <RadioButton Grid.Column="1" GroupName="theme" Theme="{StaticResource SegmentButton}"
+                         Content="Light" IsChecked="{Binding ThemeLight, Mode=OneWay}"
+                         Command="{Binding SetThemeCommand}" CommandParameter="Light" />
+            <RadioButton Grid.Column="2" GroupName="theme" Theme="{StaticResource SegmentButton}"
+                         Content="Dark" IsChecked="{Binding ThemeDark, Mode=OneWay}"
+                         Command="{Binding SetThemeCommand}" CommandParameter="Dark" />
+          </Grid>
+        </Border>
+
+        <TextBlock Classes="section" Text="TEXT SIZE" />
+        <Border Background="{DynamicResource Surface2}" CornerRadius="{StaticResource RadiusSm}" Padding="3">
+          <Grid ColumnDefinitions="*,*,*,*">
+            <RadioButton Grid.Column="0" GroupName="scale" Theme="{StaticResource SegmentButton}"
+                         Content="Small" IsChecked="{Binding ScaleSmall, Mode=OneWay}"
+                         Command="{Binding SetScaleCommand}" CommandParameter="small" />
+            <RadioButton Grid.Column="1" GroupName="scale" Theme="{StaticResource SegmentButton}"
+                         Content="Normal" IsChecked="{Binding ScaleNormal, Mode=OneWay}"
+                         Command="{Binding SetScaleCommand}" CommandParameter="normal" />
+            <RadioButton Grid.Column="2" GroupName="scale" Theme="{StaticResource SegmentButton}"
+                         Content="Large" IsChecked="{Binding ScaleLarge, Mode=OneWay}"
+                         Command="{Binding SetScaleCommand}" CommandParameter="large" />
+            <RadioButton Grid.Column="3" GroupName="scale" Theme="{StaticResource SegmentButton}"
+                         Content="XL" IsChecked="{Binding ScaleXLarge, Mode=OneWay}"
+                         Command="{Binding SetScaleCommand}" CommandParameter="xlarge" />
+          </Grid>
+        </Border>
+
+        <TextBlock Classes="section" Text="TRANSCRIPT" />
+        <Border Classes="card" Padding="0">
+          <StackPanel>
+            <Button Theme="{StaticResource RowButton}" Command="{Binding ToggleThinkingCommand}">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                  <TextBlock Text="Show the agent's thinking" />
+                  <TextBlock Classes="caption"
+                             Text="Off by default — on a phone it's usually noise between you and the answer." />
+                </StackPanel>
+                <ToggleButton Grid.Column="1" Theme="{StaticResource MobileSwitch}" IsHitTestVisible="False"
+                              IsChecked="{Binding ShowThinking, Mode=OneWay}" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+            <Border Classes="divider" />
+            <Button Theme="{StaticResource RowButton}" Command="{Binding ToggleMotionCommand}">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                  <TextBlock Text="Reduce motion" />
+                  <TextBlock Classes="caption" Text="Calms the pulsing status indicators." />
+                </StackPanel>
+                <ToggleButton Grid.Column="1" Theme="{StaticResource MobileSwitch}" IsHitTestVisible="False"
+                              IsChecked="{Binding ReducedMotion, Mode=OneWay}" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

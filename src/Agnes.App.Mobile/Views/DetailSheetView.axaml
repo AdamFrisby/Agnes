@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.DetailSheetView"
+             x:DataType="vm:DetailSheetViewModel">
+  <!--
+    A tool's output, a file's diff, or a long message. Three renderings because agent output really does
+    arrive in three shapes, and a diff shown as plain text is unreadable on a narrow screen.
+  -->
+  <Grid RowDefinitions="*,Auto">
+
+    <ScrollViewer Grid.Row="0" Padding="0,8,0,8">
+      <Panel>
+        <!-- diff: horizontally scrollable, because wrapping a diff destroys it -->
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                      IsVisible="{Binding IsDiff}">
+          <ItemsControl ItemsSource="{Binding DiffLines}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal"
+                            Classes.added="{Binding IsAdded}"
+                            Classes.removed="{Binding IsRemoved}">
+                  <TextBlock Classes="diff gutter" Text="{Binding Marker}"
+                             Classes.added="{Binding IsAdded}"
+                             Classes.removed="{Binding IsRemoved}" />
+                  <TextBlock Classes="diff"
+                             Classes.added="{Binding IsAdded}"
+                             Classes.removed="{Binding IsRemoved}"
+                             Classes.hunk="{Binding IsHunk}"
+                             Text="{Binding Text}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <c:MarkdownBlock Markdown="{Binding Body}" IsVisible="{Binding IsMarkdown}" Margin="20,0" />
+
+        <SelectableTextBlock Text="{Binding Body}" Classes="mono" IsVisible="{Binding IsPlain}"
+                             Margin="20,0" TextWrapping="Wrap" />
+      </Panel>
+    </ScrollViewer>
+
+    <Border Grid.Row="1" Padding="16,10,16,20">
+      <Button Theme="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
+              Command="{Binding CopyCommand}">
+        <StackPanel Orientation="Horizontal" Spacing="9">
+          <c:Icon Data="{StaticResource IconCopy}" Size="17" Stroke="{DynamicResource Text}" />
+          <TextBlock Text="Copy" />
+        </StackPanel>
+      </Button>
+    </Border>
+  </Grid>
+</UserControl>

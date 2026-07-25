@@ -1,6 +1,9 @@
 <Project Sdk="Uno.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net10.0-android;net10.0-browserwasm;net10.0-desktop</TargetFrameworks>
+    <!-- Android is no longer an Uno target: the phone client is its own Avalonia head
+         (src/Agnes.App.Mobile), designed for one thumb rather than reflowed from the desktop layout.
+         What's left here is the web (WASM) head plus its desktop counterpart. -->
+    <TargetFrameworks>net10.0-browserwasm;net10.0-desktop</TargetFrameworks>
 
     <OutputType>Exe</OutputType>
     <UnoSingleProject>true</UnoSingleProject>

@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.SearchView"
+             x:DataType="vm:SearchViewModel">
+  <!--
+    Two tiers, because they answer different questions. Open sessions are searched locally as you type
+    ("where in this conversation did it touch the config"). The host's full-text index covers every
+    session it ever recorded, including closed ones, and runs when you submit ("what did I do about that
+    bug last week") — a network round trip, so it waits for intent rather than firing per keystroke.
+  -->
+  <Grid RowDefinitions="Auto,*">
+
+    <StackPanel Grid.Row="0">
+      <c:SafeSpacer Edge="Top" />
+      <TextBlock Classes="headline" Text="Search" Margin="16,10,16,12" />
+
+      <Grid Margin="16,0,16,12" ColumnDefinitions="*,Auto">
+        <TextBox Grid.Column="0" Theme="{StaticResource MobileTextBox}"
+                 Text="{Binding Query, Mode=TwoWay}"
+                 PlaceholderText="Search everything ever said">
+          <TextBox.InnerLeftContent>
+            <c:Icon Data="{StaticResource IconSearch}" Size="18" Margin="14,0,0,0"
+                    Stroke="{DynamicResource TextMuted}" VerticalAlignment="Center" />
+          </TextBox.InnerLeftContent>
+          <TextBox.InnerRightContent>
+            <Button Theme="{StaticResource IconButton}" Width="40" Height="40" Margin="0,0,4,0"
+                    IsVisible="{Binding HasQuery}" Command="{Binding ClearCommand}">
+              <c:Icon Data="{StaticResource IconX}" Size="16" Stroke="{DynamicResource TextMuted}" />
+            </Button>
+          </TextBox.InnerRightContent>
+        </TextBox>
+        <Button Grid.Column="1" Margin="10,0,0,0" Theme="{StaticResource AccentButton}"
+                Padding="16,0" Content="Go" Command="{Binding SubmitCommand}"
+                IsEnabled="{Binding HasQuery}" />
+      </Grid>
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="12,0,12,24">
+
+        <!-- ===== open sessions ===== -->
+        <TextBlock Classes="section" Text="IN OPEN SESSIONS" Margin="4,0,0,8" IsVisible="{Binding HasLocal}" />
+
+        <ItemsControl ItemsSource="{Binding Local}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:LocalHit">
+              <Button Theme="{StaticResource CardButton}" Margin="0,0,0,8" Padding="14"
+                      Command="{Binding $parent[UserControl].DataContext.OpenLocalCommand}"
+                      CommandParameter="{Binding}">
+                <StackPanel Spacing="5">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Classes="pill accent"><TextBlock Text="{Binding Kind}" /></Border>
+                    <TextBlock Classes="caption" Text="{Binding SessionTitle}" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  <TextBlock Text="{Binding Snippet}" Classes="dim" MaxLines="3"
+                             FontSize="{StaticResource TextSm}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ===== host history ===== -->
+        <TextBlock Classes="section" Text="ACROSS ALL RECORDED HISTORY" Margin="4,10,0,8" />
+
+        <TextBlock Classes="muted" Margin="4,0,0,10" Text="{Binding History.Status}"
+                   IsVisible="{Binding History.Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        <ItemsControl ItemsSource="{Binding History.Results}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Theme="{StaticResource CardButton}" Margin="0,0,0,8" Padding="14"
+                      Command="{Binding $parent[UserControl].DataContext.History.OpenResultCommand}"
+                      CommandParameter="{Binding}">
+                <StackPanel Spacing="5">
+                  <TextBlock Classes="caption" Text="{Binding When}" />
+                  <TextBlock Text="{Binding Snippet}" Classes="dim" MaxLines="3"
+                             FontSize="{StaticResource TextSm}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel IsVisible="{Binding !HasQuery}" Margin="24,50,24,0" Spacing="12">
+          <c:Icon Data="{StaticResource IconSearch}" Size="42" Stroke="{DynamicResource TextMuted}"
+                  HorizontalAlignment="Center" />
+          <TextBlock Classes="dim" TextAlignment="Center" LineHeight="22"
+                     Text="Every session is event-sourced, so nothing scrolls out of reach. Search a file name, an error, a phrase you remember." />
+        </StackPanel>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

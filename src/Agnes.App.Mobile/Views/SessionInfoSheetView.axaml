@@ -1,0 +1,136 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.SessionInfoSheetView"
+             x:DataType="vm:SessionInfoSheetViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="16,12,16,28" Spacing="12">
+
+      <!-- ===== context window ===== -->
+      <StackPanel Spacing="7" IsVisible="{Binding HasContext}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Text="Context used" Classes="strong" />
+          <TextBlock Grid.Column="1" Text="{Binding ContextText}" Classes="caption"
+                     VerticalAlignment="Center" />
+        </Grid>
+        <!-- A real meter, not an estimate: it only appears when the agent actually reports both numbers. -->
+        <c:Meter Fraction="{Binding ContextFraction}"
+                 Track="{DynamicResource Surface3}"
+                 Fill="{StaticResource GradAgnesH}" />
+      </StackPanel>
+
+      <StackPanel Spacing="4" IsVisible="{Binding Session.UsageSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+        <TextBlock Text="Reported cost" Classes="strong" />
+        <TextBlock Text="{Binding Session.UsageSummary}" Classes="mono" />
+      </StackPanel>
+
+      <!-- ===== mode ===== -->
+      <StackPanel Spacing="8" IsVisible="{Binding Session.HasModes}">
+        <TextBlock Classes="section" Text="MODE" Margin="0" />
+        <ItemsControl ItemsSource="{Binding Session.Modes}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Theme="{StaticResource ChipButton}" Margin="0,0,8,8" Content="{Binding Name}"
+                      Command="{Binding $parent[UserControl].DataContext.SetModeCommand}"
+                      CommandParameter="{Binding}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Classes="caption" Text="{Binding Session.CurrentModeName, StringFormat='Currently: {0}'}" />
+      </StackPanel>
+
+      <!-- ===== what a send does mid-turn ===== -->
+      <TextBlock Classes="section" Text="WHILE A TURN IS RUNNING" Margin="0" />
+      <Border Background="{DynamicResource Surface2}" CornerRadius="{StaticResource RadiusSm}" Padding="3">
+        <Grid ColumnDefinitions="*,*,*">
+          <RadioButton Grid.Column="0" GroupName="policy" Theme="{StaticResource SegmentButton}"
+                       Content="Queue" IsChecked="{Binding PolicyQueue, Mode=OneWay}"
+                       Command="{Binding SetPolicyCommand}" CommandParameter="QueueInAgent" />
+          <RadioButton Grid.Column="1" GroupName="policy" Theme="{StaticResource SegmentButton}"
+                       Content="Interrupt" IsChecked="{Binding PolicyInterrupt, Mode=OneWay}"
+                       Command="{Binding SetPolicyCommand}" CommandParameter="InterruptAndSend" />
+          <RadioButton Grid.Column="2" GroupName="policy" Theme="{StaticResource SegmentButton}"
+                       Content="Hold" IsChecked="{Binding PolicyPending, Mode=OneWay}"
+                       Command="{Binding SetPolicyCommand}" CommandParameter="PendingUntilReady" />
+        </Grid>
+      </Border>
+
+      <!-- ===== sandbox ===== -->
+      <StackPanel Spacing="8" IsVisible="{Binding Session.HasSandbox}">
+        <TextBlock Classes="section" Text="SANDBOX" Margin="0" />
+        <Border Classes="inset">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Grid.Column="0" Data="{StaticResource IconShield}" Size="17"
+                    Stroke="{DynamicResource Success}" Margin="0,0,10,0" />
+            <TextBlock Grid.Column="1" Text="{Binding Session.SandboxSummary}" VerticalAlignment="Center"
+                       FontSize="{StaticResource TextSm}" />
+            <Button Grid.Column="2" Theme="{StaticResource ChipButton}" Content="Pause" MinHeight="32"
+                    Command="{Binding PauseSandboxCommand}" IsVisible="{Binding !Session.SandboxPaused}" />
+            <Button Grid.Column="2" Theme="{StaticResource ChipButton}" Content="Resume" MinHeight="32"
+                    Command="{Binding ResumeSandboxCommand}" IsVisible="{Binding Session.SandboxPaused}" />
+          </Grid>
+        </Border>
+      </StackPanel>
+
+      <!-- ===== audit trails ===== -->
+      <StackPanel Spacing="6" IsVisible="{Binding Session.HasApprovals}">
+        <TextBlock Classes="section" Text="APPROVALS" Margin="0" />
+        <ItemsControl ItemsSource="{Binding Session.Approvals}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                <TextBlock Grid.Column="0" Text="{Binding Title}" Classes="muted" MaxLines="1"
+                           TextTrimming="CharacterEllipsis" Margin="0,0,10,0" />
+                <Border Grid.Column="1" Classes="pill"><TextBlock Text="{Binding Outcome}" /></Border>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <!-- ===== actions ===== -->
+      <TextBlock Classes="section" Text="ACTIONS" Margin="0" />
+      <Border Classes="card" Padding="0">
+        <StackPanel>
+          <Button Theme="{StaticResource RowButton}" Command="{Binding CopyHandoffCommand}">
+            <Grid ColumnDefinitions="Auto,*">
+              <c:Icon Grid.Column="0" Data="{StaticResource IconCopy}" Size="18"
+                      Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Copy session link" />
+                <TextBlock Classes="caption" Text="Pick this session up on another device." />
+              </StackPanel>
+            </Grid>
+          </Button>
+          <Border Classes="divider" Margin="50,0,0,0" />
+          <Button Theme="{StaticResource RowButton}" Command="{Binding CompactCommand}">
+            <Grid ColumnDefinitions="Auto,*">
+              <c:Icon Grid.Column="0" Data="{StaticResource IconLayers}" Size="18"
+                      Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Compact the context" />
+                <TextBlock Classes="caption" Text="Ask the agent to summarize and free up its window." />
+              </StackPanel>
+            </Grid>
+          </Button>
+          <Border Classes="divider" Margin="50,0,0,0" />
+          <Button Theme="{StaticResource RowButton}" Command="{Binding RestartAgentCommand}">
+            <Grid ColumnDefinitions="Auto,*">
+              <c:Icon Grid.Column="0" Data="{StaticResource IconRefresh}" Size="18"
+                      Stroke="{DynamicResource Warning}" Margin="0,0,14,0" />
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="Restart the agent" Foreground="{DynamicResource Warning}" />
+                <TextBlock Classes="caption" Text="Relaunch and resume — for a crashed or hung agent." />
+              </StackPanel>
+            </Grid>
+          </Button>
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

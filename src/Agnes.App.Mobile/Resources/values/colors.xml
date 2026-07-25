@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Matches the app's dark surface so the launch window and the first frame agree. -->
+  <color name="agnes_window_background">#0F1115</color>
+  <color name="agnes_accent">#6D8BFF</color>
+</resources>

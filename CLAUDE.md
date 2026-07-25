@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Agnes: a remote interface to coding CLIs. One **host** daemon runs coding agents (Claude Code, OpenCode, Codex) in their **ACP** (Agent Client Protocol) mode; **many clients** (Avalonia desktop, Uno web/WASM, Android) connect to it, similar to `claude` in `tmux`+`ssh` but without a fixed character grid — sessions are event-sourced and reflow natively per client. Status: alpha (see `README.md`, `docs/architecture.md`).
+Agnes: a remote interface to coding CLIs. One **host** daemon runs coding agents (Claude Code, OpenCode, Codex) in their **ACP** (Agent Client Protocol) mode; **many clients** (Avalonia desktop, Avalonia Android, Uno web/WASM) connect to it, similar to `claude` in `tmux`+`ssh` but without a fixed character grid — sessions are event-sourced and reflow natively per client. Status: alpha (see `README.md`, `docs/architecture.md`).
 
 ## Build & test
 
@@ -19,7 +19,22 @@ dotnet test tests/Agnes.Host.Tests --filter FullyQualifiedName~AuthRateLimitTest
 
 Tests use **xunit**. `tests/Agnes.TestKit` holds shared fakes (e.g. `FakeAcpAgent`); `tests/Agnes.Integration.Tests` and the `recordings/*.json` fixtures (`RecordedHost`) drive end-to-end scenarios offline without a real CLI or VM.
 
-The Uno UI app (`src/Agnes.App`) is a separate subtree with its own solution, not in `Agnes.Core.slnf`. Its web head needs the `wasm-tools` workload, the Android head needs `android`:
+The Android client (`src/Agnes.App.Mobile`) needs the `android` workload, a JDK 17+, and the Android SDK (API 36 platform + build-tools):
+
+```bash
+dotnet build   src/Agnes.App.Mobile/Agnes.App.Mobile.csproj              # compile
+dotnet publish src/Agnes.App.Mobile/Agnes.App.Mobile.csproj -c Release \
+  -f net10.0-android                                                     # signed APK
+```
+
+Its views and view models are also compiled — and **rendered** — without the workload by the headless
+preview harness, which is part of `Agnes.Core.slnf` and so runs in CI:
+
+```bash
+dotnet run --project tools/Agnes.MobilePreview -- screenshots/mobile     # PNGs of every screen
+```
+
+The Uno UI app (`src/Agnes.App`) is a separate subtree with its own solution, not in `Agnes.Core.slnf`. Its web head needs the `wasm-tools` workload:
 
 ```bash
 dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-desktop       # Linux/macOS/Windows (Skia)
@@ -38,7 +53,7 @@ Host daemon ── spawns each CLI (ACP mode, or a native stream-json adapter)
             ── ASP.NET Core + SignalR hub (TLS + per-device pairing tokens)
                      │  Agnes wire protocol
    Clients ── Agnes.Client connection pool (many hosts, dozens of agents)
-            ── Avalonia desktop app · Uno web (WASM) + Android heads
+            ── Avalonia desktop app · Avalonia Android app · Uno web (WASM) head
 ```
 
 Full design rationale: `docs/architecture.md`. Deployment/auth/config reference: `docs/deployment.md`. Operator hardening guide (shared-host `Agnes:Security:*` guardrails, residual risks): `docs/security.md`. Incus sandbox live-testing notes and known gotchas: `docs/sandbox-live-testing.md`.
@@ -64,7 +79,8 @@ Every `session/update` from an agent's ACP stream is normalized into a `SessionE
 | `Agnes.Sandbox` / `Agnes.Sandbox.Incus` | Optional per-session VM sandboxing: credential broker, Incus provider. See `docs/sandbox-live-testing.md`. |
 | `Agnes.Ui.Core` | Framework-agnostic view models + ACP-event render logic, shared by every UI head. |
 | `Agnes.App.Desktop` | Avalonia desktop client — primary, full-featured. |
-| `Agnes.App` | Uno Platform multi-head app: web (WASM), Android, and a desktop head, composed from `Agnes.Ui.Core`. Desktop vs. mobile are **two distinct shells in separate namespaces** chosen responsively by form factor, not one UI stretched to fit. |
+| `Agnes.App.Mobile` | Avalonia **Android** client. Shares `Agnes.Ui.Core` with the desktop head and **nothing else** — see below. |
+| `Agnes.App` | Uno Platform app: web (WASM) plus a desktop head, composed from `Agnes.Ui.Core`. |
 
 New agent CLIs are added as new `Agnes.Agents.*` packages implementing `IAgentAdapter`, not by changing core code.
 
@@ -92,6 +108,15 @@ How to add behaviour to Agnes. These are defaults, not absolutes — deviate whe
 ## Other notes
 
 - `.ideas/` is git-ignored planning scratch (feature backlog specs + a phased dependency-ordered build plan) — not shipped docs. A spec gets promoted into `docs/` and deleted from `.ideas/` once actually implemented; don't treat its contents as current behavior.
-- CI (`.github/workflows/ci.yml`) runs on PRs to `main`, daily (only if there were commits), and on demand — not on every push to main. It has two jobs: `build-test` (restores/builds/tests `Agnes.Core.slnf`, with a single automatic retry on test failure to absorb a known cold-start JIT flake in the desktop simulation tests) and `ui-build` (builds the Uno heads with `wasm-tools`+`android` workloads installed).
+- CI (`.github/workflows/ci.yml`) runs on PRs to `main`, daily (only if there were commits), and on demand — not on every push to main. Three jobs: `build-test` (restores/builds/tests `Agnes.Core.slnf`, with a single automatic retry on test failure to absorb a known cold-start JIT flake in the desktop simulation tests), `mobile-build` (packages the Android APK with the `android` workload), and `ui-build` (builds the Uno heads with `wasm-tools`).
 - All projects: nullable enabled, warnings as errors, `LangVersion=latest` (`Directory.Build.props`) — expect a strict build. Philips.CodeAnalysis analyzers run too; the curated rule set (and why each is on/off) lives in `.editorconfig`.
-- The Uno multi-head app (`Agnes.App`) is transitional: the web/mobile heads are slated to consolidate onto **Avalonia** eventually. Don't over-invest in Uno-specific shells, and don't treat Desktop↔Uno divergence as urgent — put genuinely shared logic in `Agnes.Ui.Core` and let the Desktop (Avalonia) head lead.
+- The Uno app (`Agnes.App`) is transitional: the **web** head is what's left of it, and it too is slated to consolidate onto Avalonia. Don't over-invest in Uno-specific shells — put genuinely shared logic in `Agnes.Ui.Core` and let the Avalonia heads lead.
+
+- **The Android client is not the desktop one reflowed.** `Agnes.App.Mobile` shares view models with the
+  desktop head only through `Agnes.Ui.Core` (`SessionViewModel` and friends); its shell, navigation,
+  screens and theme are its own. The desktop is a workbench — docked panels, a tab strip, a terminal. A
+  phone is a cockpit: four destinations (Sessions · Inbox · Search · More), one navigation stack, a
+  session screen that owns the whole display, and every secondary surface summoned as a bottom sheet.
+  Approvals are promoted out of the transcript and answerable from the Inbox without opening a session,
+  because unblocking a stuck agent is the thing a phone is genuinely better at. If you're tempted to
+  port a desktop panel over, add a sheet instead. See `docs/mobile.md`.

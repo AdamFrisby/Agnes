@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             x:Class="Agnes.App.Mobile.Controls.SheetHost">
+  <!--
+    The bottom-sheet layer: a scrim you can tap through to dismiss, and a panel that slides up from the
+    bottom edge and can be flung back down by its grabber.
+
+    Sheets rather than dialogs, because a sheet arrives where the thumb is and leaves the same way. The
+    grabber is the drag target rather than the whole panel — dragging anywhere would fight the
+    ScrollViewer inside most sheets, which is the classic way a sheet ends up feeling broken.
+  -->
+  <Grid>
+    <!-- scrim -->
+    <Border Name="Scrim"
+            Background="{DynamicResource Scrim}"
+            Opacity="0"
+            IsHitTestVisible="False">
+      <Border.Transitions>
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.22" Easing="CubicEaseOut" />
+        </Transitions>
+      </Border.Transitions>
+    </Border>
+
+    <!-- panel -->
+    <Border Name="Panel"
+            VerticalAlignment="Bottom"
+            Background="{DynamicResource Surface1}"
+            CornerRadius="{StaticResource RadiusXl}"
+            BorderBrush="{DynamicResource Border}"
+            BorderThickness="1,1,1,0"
+            IsVisible="False">
+      <Border.Transitions>
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.26" Easing="CubicEaseOut" />
+        </Transitions>
+      </Border.Transitions>
+
+      <Grid RowDefinitions="Auto,Auto,*,Auto">
+
+        <!-- grabber + title: the drag target -->
+        <StackPanel Name="Grabber" Grid.Row="0" Background="Transparent" Spacing="2">
+          <Border Width="40" Height="4" Margin="0,10,0,6"
+                  CornerRadius="{StaticResource RadiusPill}"
+                  Background="{DynamicResource BorderStrong}"
+                  HorizontalAlignment="Center" />
+          <Grid Margin="20,2,8,10" ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+              <TextBlock Name="SheetTitle" Classes="title" TextTrimming="CharacterEllipsis" />
+              <TextBlock Name="SheetSubtitle" Classes="muted" TextTrimming="CharacterEllipsis"
+                         IsVisible="False" />
+            </StackPanel>
+            <Button Grid.Column="1" Name="CloseButton" Theme="{StaticResource IconButton}">
+              <c:Icon Data="{StaticResource IconX}" Size="20" Stroke="{DynamicResource TextDim}" />
+            </Button>
+          </Grid>
+        </StackPanel>
+
+        <Border Grid.Row="1" Classes="divider" />
+
+        <ContentControl Grid.Row="2" Name="Body" Content="{Binding}" />
+        <c:SafeSpacer Grid.Row="3" Edge="Bottom" />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

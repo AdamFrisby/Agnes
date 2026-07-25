@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.AboutPageView"
+             x:DataType="vm:AboutPageViewModel"
+             Background="{DynamicResource Bg}">
+  <Grid RowDefinitions="Auto,*">
+    <c:PageHeader Grid.Row="0" Title="About" />
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="16,20,16,28" Spacing="16">
+
+        <StackPanel Spacing="10" HorizontalAlignment="Center">
+          <c:AgnesMark Width="96" Height="96" HorizontalAlignment="Center" />
+          <TextBlock Classes="display" Text="Agnes" HorizontalAlignment="Center" />
+          <TextBlock Classes="caption" HorizontalAlignment="Center"
+                     Text="{Binding Version, StringFormat='Version {0} · alpha'}" />
+        </StackPanel>
+
+        <TextBlock Classes="dim" TextAlignment="Center" LineHeight="23"
+                   Text="A remote interface to coding CLIs. One host runs the agents over ACP; every client — desktop, web, or this phone — replays the same event-sourced session, so nothing scrolls out of reach." />
+
+        <Border Classes="card" Padding="0">
+          <StackPanel>
+            <Button Theme="{StaticResource RowButton}" Command="{Binding RepoCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconGitBranch}" Size="19"
+                        Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+                <TextBlock Grid.Column="1" Text="Source on GitHub" />
+                <c:Icon Grid.Column="2" Data="{StaticResource IconExternalLink}" Size="16"
+                        Stroke="{DynamicResource TextMuted}" />
+              </Grid>
+            </Button>
+            <Border Classes="divider" Margin="52,0,0,0" />
+            <Button Theme="{StaticResource RowButton}" Command="{Binding DocsCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconFile}" Size="19"
+                        Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+                <TextBlock Grid.Column="1" Text="Architecture" />
+                <c:Icon Grid.Column="2" Data="{StaticResource IconExternalLink}" Size="16"
+                        Stroke="{DynamicResource TextMuted}" />
+              </Grid>
+            </Button>
+            <Border Classes="divider" Margin="52,0,0,0" />
+            <Button Theme="{StaticResource RowButton}" Command="{Binding SiteCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <c:Icon Grid.Column="0" Data="{StaticResource IconSparkles}" Size="19"
+                        Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="Multitudal" />
+                  <TextBlock Classes="caption" Text="Let AI do the work. You go grab lunch." />
+                </StackPanel>
+                <c:Icon Grid.Column="2" Data="{StaticResource IconExternalLink}" Size="16"
+                        Stroke="{DynamicResource TextMuted}" />
+              </Grid>
+            </Button>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

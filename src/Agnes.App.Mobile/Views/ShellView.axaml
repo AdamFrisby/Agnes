@@ -1,0 +1,157 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.ShellView"
+             Background="{DynamicResource Bg}">
+  <!--
+    The app frame: tab content, a pushed-page layer over it, the sheet layer over that, and a toast on
+    top of everything.
+
+    Layering rather than swapping keeps state alive — a session you pushed is still subscribed while a
+    sheet is over it, and popping back doesn't rebuild the transcript.
+  -->
+  <!-- The view-model → view map. Pages and sheets are pushed as view models; these templates are the
+       only place that decides what each one looks like. -->
+  <UserControl.DataTemplates>
+    <!-- Page → view -->
+    <DataTemplate DataType="vm:SessionPageViewModel"><v:SessionPageView /></DataTemplate>
+    <DataTemplate DataType="vm:NewSessionPageViewModel"><v:NewSessionPageView /></DataTemplate>
+    <DataTemplate DataType="vm:ConnectPageViewModel"><v:ConnectPageView /></DataTemplate>
+    <DataTemplate DataType="vm:AppearancePageViewModel"><v:AppearancePageView /></DataTemplate>
+    <DataTemplate DataType="vm:NotificationsPageViewModel"><v:NotificationsPageView /></DataTemplate>
+    <DataTemplate DataType="vm:PromptsPageViewModel"><v:PromptsPageView /></DataTemplate>
+    <DataTemplate DataType="vm:DevicesPageViewModel"><v:DevicesPageView /></DataTemplate>
+    <DataTemplate DataType="vm:AboutPageViewModel"><v:AboutPageView /></DataTemplate>
+
+    <!-- Sheet → view -->
+    <DataTemplate DataType="vm:DetailSheetViewModel"><v:DetailSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:ChangedFilesSheetViewModel"><v:ChangedFilesSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:ToolsSheetViewModel"><v:ToolsSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:PlanSheetViewModel"><v:PlanSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:AgentsSheetViewModel"><v:AgentsSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:QueueSheetViewModel"><v:QueueSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:GitSheetViewModel"><v:GitSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:SessionInfoSheetViewModel"><v:SessionInfoSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:SessionActionsSheetViewModel"><v:SessionActionsSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:HostsSheetViewModel"><v:HostsSheetView /></DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Panel>
+
+    <!-- ================= tabs ================= -->
+    <Grid RowDefinitions="*,Auto">
+      <!-- All four tabs stay alive and simply hide, so switching back doesn't rebuild a list or lose a
+           scroll position. IsVisible has to sit on the wrapper: on the view itself it would resolve
+           against that tab's own view model, not the shell. -->
+      <Panel Grid.Row="0">
+        <Panel IsVisible="{Binding IsSessionsTab}">
+          <v:SessionsView DataContext="{Binding Sessions}" />
+        </Panel>
+        <Panel IsVisible="{Binding IsInboxTab}">
+          <v:InboxView DataContext="{Binding Inbox}" />
+        </Panel>
+        <Panel IsVisible="{Binding IsSearchTab}">
+          <v:SearchView DataContext="{Binding Search}" />
+        </Panel>
+        <Panel IsVisible="{Binding IsMoreTab}">
+          <v:MoreView DataContext="{Binding More}" />
+        </Panel>
+      </Panel>
+
+      <!-- Bottom navigation. Four destinations, thumb height, labels always on: an icon-only bar saves
+           a few pixels and costs a guess on every launch. -->
+      <Border Grid.Row="1" Name="NavBar"
+              Background="{DynamicResource Surface1}"
+              BorderBrush="{DynamicResource Border}"
+              BorderThickness="0,1,0,0"
+              IsVisible="{Binding ShowTabs}">
+        <Grid ColumnDefinitions="*,*,*,*" Height="60">
+
+          <RadioButton Grid.Column="0" GroupName="tabs" Theme="{StaticResource NavButton}"
+                       IsChecked="{Binding IsSessionsTab, Mode=OneWay}"
+                       Command="{Binding SelectTabCommand}" CommandParameter="Sessions">
+            <StackPanel Spacing="3">
+              <c:Icon Data="{StaticResource IconMessageSquare}" Size="22"
+                      Stroke="{Binding $parent[RadioButton].Foreground}" HorizontalAlignment="Center" />
+              <TextBlock Text="Sessions" FontSize="11" LineHeight="13" HorizontalAlignment="Center"
+                         Foreground="{Binding $parent[RadioButton].Foreground}" />
+            </StackPanel>
+          </RadioButton>
+
+          <RadioButton Grid.Column="1" GroupName="tabs" Theme="{StaticResource NavButton}"
+                       IsChecked="{Binding IsInboxTab, Mode=OneWay}"
+                       Command="{Binding SelectTabCommand}" CommandParameter="Inbox">
+            <StackPanel Spacing="3">
+              <Panel HorizontalAlignment="Center">
+                <c:Icon Data="{StaticResource IconInbox}" Size="22"
+                        Stroke="{Binding $parent[RadioButton].Foreground}" />
+                <!-- The badge is the app's whole proposition in one dot: something is waiting on you. -->
+                <Border Background="{DynamicResource Danger}" CornerRadius="{StaticResource RadiusPill}"
+                        MinWidth="17" Height="17" Padding="5,0" Margin="12,-9,-12,0"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        IsVisible="{Binding Inbox.HasBlocked}">
+                  <TextBlock Text="{Binding Inbox.BlockedCount}" FontSize="10" FontWeight="Bold"
+                             LineHeight="17" Foreground="White" HorizontalAlignment="Center" />
+                </Border>
+              </Panel>
+              <TextBlock Text="Inbox" FontSize="11" LineHeight="13" HorizontalAlignment="Center"
+                         Foreground="{Binding $parent[RadioButton].Foreground}" />
+            </StackPanel>
+          </RadioButton>
+
+          <RadioButton Grid.Column="2" GroupName="tabs" Theme="{StaticResource NavButton}"
+                       IsChecked="{Binding IsSearchTab, Mode=OneWay}"
+                       Command="{Binding SelectTabCommand}" CommandParameter="Search">
+            <StackPanel Spacing="3">
+              <c:Icon Data="{StaticResource IconSearch}" Size="22"
+                      Stroke="{Binding $parent[RadioButton].Foreground}" HorizontalAlignment="Center" />
+              <TextBlock Text="Search" FontSize="11" LineHeight="13" HorizontalAlignment="Center"
+                         Foreground="{Binding $parent[RadioButton].Foreground}" />
+            </StackPanel>
+          </RadioButton>
+
+          <RadioButton Grid.Column="3" GroupName="tabs" Theme="{StaticResource NavButton}"
+                       IsChecked="{Binding IsMoreTab, Mode=OneWay}"
+                       Command="{Binding SelectTabCommand}" CommandParameter="More">
+            <StackPanel Spacing="3">
+              <c:Icon Data="{StaticResource IconSliders}" Size="22"
+                      Stroke="{Binding $parent[RadioButton].Foreground}" HorizontalAlignment="Center" />
+              <TextBlock Text="More" FontSize="11" LineHeight="13" HorizontalAlignment="Center"
+                         Foreground="{Binding $parent[RadioButton].Foreground}" />
+            </StackPanel>
+          </RadioButton>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- ================= pushed page ================= -->
+    <ContentControl Name="PageHost"
+                    Content="{Binding CurrentPage}"
+                    Background="{DynamicResource Bg}"
+                    IsVisible="{Binding CurrentPage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+    <!-- ================= sheet ================= -->
+    <c:SheetHost Name="Sheets" Sheet="{Binding CurrentSheet}" />
+
+    <!-- ================= toast ================= -->
+    <Border Name="Toast" Classes="toast"
+            Classes.success="{Binding ToastIsSuccess}"
+            Classes.warning="{Binding ToastIsWarning}"
+            Classes.danger="{Binding ToastIsDanger}"
+            VerticalAlignment="Top" HorizontalAlignment="Stretch"
+            Margin="12,0" Padding="14,11"
+            CornerRadius="{StaticResource RadiusMd}"
+            Background="{DynamicResource Surface3}"
+            BorderBrush="{DynamicResource BorderStrong}" BorderThickness="1"
+            IsVisible="{Binding HasToast}">
+      <Grid ColumnDefinitions="Auto,*">
+        <Border Name="ToastAccent" Grid.Column="0" Width="3" CornerRadius="{StaticResource RadiusPill}"
+                Margin="0,0,12,0" Background="{DynamicResource Accent}" />
+        <TextBlock Grid.Column="1" Text="{Binding ToastText}" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+  </Panel>
+</UserControl>
