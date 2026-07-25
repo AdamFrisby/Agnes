@@ -129,6 +129,16 @@ public static class Program
         Settle(400);
         Shot(window, "09-connect");
 
+        // 8b) The same screen pointed at an address with nothing behind it. Port 1 on loopback is
+        //     reliably refused, so this exercises the real probe rather than a mocked failure.
+        if (shell.CurrentPage is ConnectPageViewModel connect)
+        {
+            connect.Address = "http://127.0.0.1:1";
+            Pump(() => connect.IsUnreachable, 6000);
+            Settle(400);
+            Shot(window, "09b-connect-unreachable");
+        }
+
         // 9) Settings, and the light theme (the brand's default surface treatment).
         shell.PopToRoot();
         shell.SelectTab(ShellTab.More);

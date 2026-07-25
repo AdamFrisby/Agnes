@@ -31,10 +31,21 @@
         <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding Name, Mode=TwoWay}"
                  PlaceholderText="Name it (optional)" />
 
-        <TextBlock Classes="caption" Text="Checking what this host offers…" IsVisible="{Binding IsDiscovering}" />
+        <!-- Reachability, stated in its own right and before any credential is asked for. Typing a
+             pairing code into an address with nothing behind it can only fail confusingly. -->
+        <Border Classes="inset" IsVisible="{Binding HasReachNote}" Padding="12,10">
+          <Grid ColumnDefinitions="Auto,*">
+            <Border Grid.Column="0" Classes="dot" Margin="0,0,10,0" VerticalAlignment="Top"
+                    Classes.running="{Binding IsFound}"
+                    Classes.needs="{Binding IsAnswered}"
+                    Classes.error="{Binding IsUnreachable}" />
+            <TextBlock Grid.Column="1" Text="{Binding ReachText}" FontSize="{StaticResource TextSm}"
+                       Foreground="{DynamicResource TextDim}" />
+          </Grid>
+        </Border>
 
         <!-- ===== pairing code ===== -->
-        <StackPanel Spacing="10" IsVisible="{Binding SupportsPairing}">
+        <StackPanel Spacing="10" IsVisible="{Binding ShowPairing}">
           <TextBlock Classes="section" Text="PAIRING CODE" />
           <TextBlock Classes="muted"
                      Text="The host logs one at startup, like K7QX-M3RT. It's good once — pairing it rotates it." />
@@ -48,7 +59,7 @@
         </StackPanel>
 
         <!-- ===== GitHub device flow ===== -->
-        <StackPanel Spacing="10" IsVisible="{Binding SupportsGitHub}">
+        <StackPanel Spacing="10" IsVisible="{Binding ShowGitHub}">
           <TextBlock Classes="section" Text="OR SIGN IN" />
           <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
                   Command="{Binding GitHubCommand}" Content="Continue with GitHub" />
@@ -71,7 +82,7 @@
         </StackPanel>
 
         <!-- ===== device keypair ===== -->
-        <StackPanel Spacing="10" IsVisible="{Binding SupportsKeypair}">
+        <StackPanel Spacing="10" IsVisible="{Binding ShowKeypair}">
           <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
                   Command="{Binding KeyCommand}" Content="Use this device's key" />
 
