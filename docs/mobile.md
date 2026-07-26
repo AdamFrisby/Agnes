@@ -114,7 +114,7 @@ sheet and the tool timeline.
 
 ## Brand
 
-The app implements the **Multitudal** design system (`multitudal.dev`), of which Agnes is one product:
+The app implements the **Multitudal** design system (`multitudal.com`), of which Agnes is one product:
 
 - **Follows the device by default.** In dark mode that's the Agnes console palette (`#0F0A22` /
   `#16112E` / `#1C1740`, accent `#B06CF0`); in light mode it's the shared cool-violet neutrals on

@@ -256,7 +256,7 @@ public sealed partial class AboutPageViewModel : PageViewModel
         _shell = shell;
         RepoCommand = new RelayCommand(() => _shell.OpenUrl("https://github.com/AdamFrisby/Agnes"));
         DocsCommand = new RelayCommand(() => _shell.OpenUrl("https://github.com/AdamFrisby/Agnes/blob/main/docs/architecture.md"));
-        SiteCommand = new RelayCommand(() => _shell.OpenUrl("https://multitudal.dev"));
+        SiteCommand = new RelayCommand(() => _shell.OpenUrl("https://multitudal.com"));
     }
 
     public override string Title => "About";
