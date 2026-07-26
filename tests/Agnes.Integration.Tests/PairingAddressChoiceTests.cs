@@ -89,7 +89,7 @@ public sealed class PairingAddressChoiceTests
         using var http = factory.CreateClient();
 
         var vm = new ConnectQrViewModel(
-            () => ("http://localhost", Token), () => "sess-7", ImmediateDispatcher.Instance, http);
+            () => ("http://localhost", Token), () => "sess-7", ImmediateDispatcher.Instance, () => http);
 
         await vm.ShowCommand.ExecuteAsync(null);
 
@@ -115,7 +115,7 @@ public sealed class PairingAddressChoiceTests
         using var http = factory.CreateClient();
 
         var vm = new ConnectQrViewModel(
-            () => ("http://localhost", Token), () => null, ImmediateDispatcher.Instance, http);
+            () => ("http://localhost", Token), () => null, ImmediateDispatcher.Instance, () => http);
         await vm.ShowCommand.ExecuteAsync(null);
 
         vm.Address = "https://studio.tail1234.ts.net";
@@ -165,7 +165,7 @@ public sealed class PairingAddressChoiceTests
         using var http = factory.CreateClient();
 
         var vm = new ConnectQrViewModel(
-            () => ("http://localhost", Token), () => "sess-7", ImmediateDispatcher.Instance, http);
+            () => ("http://localhost", Token), () => "sess-7", ImmediateDispatcher.Instance, () => http);
         await vm.ShowCommand.ExecuteAsync(null);
         await vm.HideCommand.ExecuteAsync(null);
 

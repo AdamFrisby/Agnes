@@ -2066,6 +2066,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             {
                 doc.HostName = host.Name;
                 doc.HostToken = host.Token;
+                doc.HostFingerprint = host.Fingerprint;
                 doc.IsConnectingHost = true;
                 doc.StatusText = $"Connecting to {host.Name}…";
             });
@@ -2664,6 +2665,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             doc.Host = host;
             _ = NegotiateCapabilitiesAsync(host);
             doc.HostToken = descriptor.Token;
+            doc.HostFingerprint = FingerprintFor(descriptor.HostUrl);
             WireStatus(doc, host);
 
             var view = await host.SubscribeAsync(descriptor.SessionId);
@@ -2951,6 +2953,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             copy.Host = doc.Host;
             copy.HostToken = doc.HostToken;
+            copy.HostFingerprint = doc.HostFingerprint;
             WireStatus(copy, doc.Host);
 
             // Same session id → a second live client view of the same conversation.
@@ -2988,6 +2991,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             HostName = source.HostName,
             Host = source.Host,
             HostToken = source.HostToken,
+            HostFingerprint = source.HostFingerprint,
             WorkingDirectory = source.WorkingDirectory,
             SkipPermissions = source.SkipPermissions,
             GitCredentialMode = source.GitCredentialMode,
@@ -3138,6 +3142,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 AddDocument(fork);
                 fork.Host = doc.Host;
                 fork.HostToken = doc.HostToken;
+                fork.HostFingerprint = doc.HostFingerprint;
                 WireStatus(fork, doc.Host);
                 fork.AttachSession(CreateSession(doc.Host!, view, fork.Title!));
                 fork.Descriptor = descriptor with { SessionId = info.SessionId, Title = fork.Title! };

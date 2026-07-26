@@ -273,7 +273,10 @@ public sealed partial class SessionDocument : Document, ITraySession
     public ConnectQrViewModel ConnectQr => _connectQr ??= new ConnectQrViewModel(
         () => Host is { } host && !string.IsNullOrEmpty(HostToken) ? (host.HostUrl, HostToken) : null,
         () => Session?.SessionId,
-        _dispatcher);
+        _dispatcher,
+        // A self-signed host answers only over a certificate-pinned client. Resolved late (the pin isn't
+        // known until the tab connects) so the QR's REST calls don't fail the TLS handshake.
+        () => string.IsNullOrEmpty(HostFingerprint) ? null : PinnedTls.CreateClient(HostFingerprint));
 
     private ConnectQrViewModel? _connectQr;
 
@@ -458,6 +461,10 @@ public sealed partial class SessionDocument : Document, ITraySession
 
     /// <summary>Token used to connect the host (for persistence).</summary>
     public string HostToken { get; set; } = string.Empty;
+
+    /// <summary>The connected host's pinned certificate fingerprint, if it's a self-signed host (null for a
+    /// CA-validated one). Used to build a pinned HTTP client for the pairing-QR REST calls.</summary>
+    public string? HostFingerprint { get; set; }
 
     public SessionDescriptor? Descriptor { get; set; }
 

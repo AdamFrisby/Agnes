@@ -22,7 +22,7 @@ public sealed partial class ConnectQrViewModel : ObservableObject
     private readonly Func<(string HostUrl, string Token)?> _host;
     private readonly Func<string?> _sessionId;
     private readonly IUiDispatcher _dispatcher;
-    private readonly System.Net.Http.HttpClient? _httpClient;
+    private readonly Func<System.Net.Http.HttpClient?>? _httpClientFactory;
 
     /// <param name="host">Where to mint from, resolved late — a session's host isn't known at construction.</param>
     /// <param name="sessionId">
@@ -31,16 +31,18 @@ public sealed partial class ConnectQrViewModel : ObservableObject
     /// before the session it belongs to exists. Capturing the id then would capture null every time, and
     /// the QR would silently pair the phone to the host without opening anything.
     /// </param>
-    /// <param name="httpClient">Optional, and only supplied by tests so this can be driven against an
-    /// in-process host — the same seam every <see cref="PairingManagement"/> call already offers.</param>
+    /// <param name="httpClientFactory">Optional, resolved late (like <paramref name="host"/>): supplies the
+    /// HTTP client the pairing REST calls use. A self-signed host is reachable only over a certificate-pinned
+    /// client, and the pin isn't known until the tab connects — which is after this view model is built — so
+    /// this is a factory, not a captured client. Also the seam tests use to drive an in-process host.</param>
     public ConnectQrViewModel(
         Func<(string HostUrl, string Token)?> host, Func<string?> sessionId, IUiDispatcher dispatcher,
-        System.Net.Http.HttpClient? httpClient = null)
+        Func<System.Net.Http.HttpClient?>? httpClientFactory = null)
     {
         _host = host;
         _sessionId = sessionId;
         _dispatcher = dispatcher;
-        _httpClient = httpClient;
+        _httpClientFactory = httpClientFactory;
 
         // The choice appears and disappears with the list itself, rather than only where the list happens
         // to be filled — a property derived from a collection has to track the collection.
@@ -155,7 +157,7 @@ public sealed partial class ConnectQrViewModel : ObservableObject
             using var timeout = new CancellationTokenSource(MintTimeout);
             var sessionId = _sessionId();
             var grant = await PairingManagement
-                .MintGrantAsync(target.HostUrl, target.Token, sessionId, _httpClient, timeout.Token)
+                .MintGrantAsync(target.HostUrl, target.Token, sessionId, _httpClientFactory?.Invoke(), timeout.Token)
                 .ConfigureAwait(false);
 
             _dispatcher.Post(() =>
@@ -243,7 +245,7 @@ public sealed partial class ConnectQrViewModel : ObservableObject
 
         try
         {
-            await PairingManagement.RevokeGrantAsync(target.HostUrl, target.Token, secret, _httpClient)
+            await PairingManagement.RevokeGrantAsync(target.HostUrl, target.Token, secret, _httpClientFactory?.Invoke())
                 .ConfigureAwait(false);
         }
         catch
