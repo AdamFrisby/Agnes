@@ -23,18 +23,9 @@ public static class Program
 {
     private static string _outDir = "screenshots";
 
-    /// <summary>Theme id the canonical shots are pinned to (a light shot is captured separately).
-    /// Overridable so the ported flavours can be eyeballed without hand-driving the app.</summary>
-    private static string _theme = "Dark";
-
     public static void Main(string[] args)
     {
         _outDir = args.Length > 0 ? args[0] : Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
-        if (args.Length > 1)
-        {
-            _theme = args[1];
-        }
-
         Directory.CreateDirectory(_outDir);
 
         using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessApp));
@@ -56,7 +47,7 @@ public static class Program
             onboarding: SuppressedOnboarding());
         var window = new MainWindow { DataContext = vm };
         window.Show();
-        MainWindowViewModel.ApplyTheme(_theme); // pin one theme for the canonical shots (a light one is captured too)
+        MainWindowViewModel.ApplyTheme("Dark"); // pin dark for the canonical shots (every theme gets its own below)
         vm.Notifier = new AvaloniaNotifier(window); // in-app toasts for blockers/completions
         vm.WindowActive = false; // simulate a background window so completion toasts also show
         vm.Showcase.Dismiss(); // record this version so the first-run feature showcase doesn't auto-open

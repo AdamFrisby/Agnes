@@ -459,7 +459,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     }
 
 
-    /// <summary>Applies a theme string to the running application (no-op off the UI/host).</summary>
     /// <summary>Applies a theme by id. The catalogue and the swap live in <see cref="Themes.ThemeManager"/>,
     /// since a flavour has to move Fluent's palette as well as the variant.</summary>
     public static void ApplyTheme(string theme) => Desktop.Themes.ThemeManager.Apply(theme);

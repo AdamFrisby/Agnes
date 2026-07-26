@@ -113,6 +113,17 @@ How to add behaviour to Agnes. These are defaults, not absolutes — deviate whe
   and the tone styles in `Themes/AppStyles.axaml` do the colouring. Don't paint something a status hue
   because it looks good — a permanently-mint label is the same mistake as a monochrome one.
 
+- **Themes are colours, not stylesheets.** `Themes/Tokens.axaml` defines each variant as ~32 **colours**
+  (`AccentColor`, `PanelColor`, …); every brush the app binds — the roles, the status hues, Dock's
+  chrome, Fluent's leaf keys — is declared once over `{DynamicResource <role>Color}`. So a new theme is
+  one `<ResourceDictionary>` of colours keyed by its own `ThemeVariant` (which inherits Dark or Light,
+  so anything it omits falls through) plus a `ColorPaletteResources` block, and one line in
+  `Themes/ThemeCatalog.cs`. `Themes/Spacegray.axaml` is the worked example. Two Avalonia facts shape
+  this: `FluentTheme.Palettes` is the supported way to retint stock controls and *does* reach Fluent's
+  neutral ramp, but it throws on any variant that isn't Light or Dark — hence the leaf-key bridge for
+  ported themes, and `ThemeManager` swapping a flavour's palette into the inherited slot at runtime.
+  Never alias a themeable brush with `StaticResource`: it binds at load and no theme can move it.
+
 - **Adding a theme is a colour list, not code.** `Themes/Tokens.axaml` defines each variant as
   *colours* (`AccentColor`, `PanelColor`, …); every brush downstream — the roles views bind, the status
   hues, Dock's chrome, Fluent's leaf keys — is declared once over `{DynamicResource <role>Color}`, so a

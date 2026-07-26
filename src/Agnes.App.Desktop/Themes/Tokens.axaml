@@ -22,11 +22,15 @@
     So a theme overrides ~32 colours and every derived brush follows on its own. Were these aliases
     instead written as `StaticResource`, they'd bind to *this* file's brushes at load and a theme
     could never move them — which is the trap Fluent and Dock both fall into internally, and why the
-    "Fluent residue" section below exists at all.
+    bridges below exist at all.
 
-    Stock control chrome is NOT set here: `FluentTheme.Palettes` in App.axaml carries it, which is
-    Avalonia's supported hook (see the comment in Avalonia's own FluentTheme.xaml). It reaches
-    Fluent's neutral ramp properly, so only the few brand-tinted states below need restating.
+    Stock control chrome comes from two places, and it's worth knowing which:
+      · `FluentTheme.Palettes` in App.axaml is Avalonia's supported hook and the better one — it
+        reaches Fluent's neutral ramp, which app-level overrides can't, and covers controls nothing
+        here names (ToggleSwitch, Slider, the pickers). But it accepts ONLY Light and Dark, so it
+        cannot serve a ported theme.
+      · The Fluent bridge below therefore restates the leaf keys the app's own controls read, over
+        the role colours, so every theme gets them — including ones with their own variant.
 
     Colour roles, not colour names: a view asks for `PanelAlt` or `Danger`, never a hex literal. The
     Agnes gradient (violet → magenta → coral) is the one signature flourish, used at most once per

@@ -41,9 +41,6 @@ public static class ThemeManager
         var theme = ThemeCatalog.Resolve(themeId);
         ApplyPalette(app, theme);
         app.RequestedThemeVariant = theme.Variant ?? ThemeVariant.Default;
-        System.Console.WriteLine($"[theme] id={themeId} variant={theme.Variant?.Key} palette={theme.PaletteKey}");
-        app.Resources.TryGetResource("BgColor", theme.Variant, out var bg);
-        System.Console.WriteLine($"[theme] BgColor={bg}");
     }
 
     /// <summary>
