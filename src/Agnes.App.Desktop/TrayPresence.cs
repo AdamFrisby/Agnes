@@ -22,8 +22,11 @@ namespace Agnes.App.Desktop;
 /// </summary>
 internal sealed class TrayPresence
 {
-    private static readonly Color AttentionColor = Color.FromRgb(0xD9, 0x77, 0x57);
-    private static readonly Color IdleColor = Color.FromRgb(0x98, 0xA2, 0xB3);
+    // Brand accent (Themes/Tokens.axaml) and its dim text neutral. Literal rather than resolved from the
+    // theme: the tray dot is drawn once at startup, and it sits on the OS tray, not on our surfaces — it
+    // reads the same whichever variant the app is in.
+    private static readonly Color AttentionColor = Color.FromRgb(0xB0, 0x6C, 0xF0);
+    private static readonly Color IdleColor = Color.FromRgb(0x9C, 0x97, 0xC4);
 
     private readonly Application _app;
     private readonly IClassicDesktopStyleApplicationLifetime _desktop;

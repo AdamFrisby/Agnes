@@ -112,6 +112,15 @@ How to add behaviour to Agnes. These are defaults, not absolutes — deviate whe
 - All projects: nullable enabled, warnings as errors, `LangVersion=latest` (`Directory.Build.props`) — expect a strict build. Philips.CodeAnalysis analyzers run too; the curated rule set (and why each is on/off) lives in `.editorconfig`.
 - The Uno app (`Agnes.App`) is transitional: the **web** head is what's left of it, and it too is slated to consolidate onto Avalonia. Don't over-invest in Uno-specific shells — put genuinely shared logic in `Agnes.Ui.Core` and let the Avalonia heads lead.
 
+- **Both Avalonia heads wear the Multitudal brand.** The palette, type and geometry live in
+  `Themes/Tokens.axaml` in each head (desktop and mobile) as an Avalonia translation of the brand
+  bundle's `tokens/*.css`; the desktop's brand styles (type classes, surfaces, the button family) are
+  in `Themes/AppStyles.axaml`. Views ask for a role — `PanelAlt`, `Danger`, `Button.primary` — never a
+  hex literal, and the Agnes gradient (violet → magenta → coral) appears at most once per view. The
+  desktop token file also re-points Fluent's and Dock's own control resources at those roles, because
+  both libraries alias their neutral chrome internally with `StaticResource`: override the leaf key a
+  template actually reads, not the palette underneath it. `docs/mobile.md` § Brand states the rules.
+
 - **The Android client is not the desktop one reflowed.** `Agnes.App.Mobile` shares view models with the
   desktop head only through `Agnes.Ui.Core` (`SessionViewModel` and friends); its shell, navigation,
   screens and theme are its own. The desktop is a workbench — docked panels, a tab strip, a terminal. A

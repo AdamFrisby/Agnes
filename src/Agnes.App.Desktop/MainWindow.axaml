@@ -42,19 +42,24 @@
     </NativeMenu.Menu>
 
     <Window.Styles>
-        <!-- Segmented selector buttons (e.g. the theme picker) -->
+        <!-- Segmented selector buttons (e.g. the theme picker). The chrome comes from Button.chip;
+             the selected segment fills with the accent. -->
         <Style Selector="Button.seg">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="7" />
             <Setter Property="Padding" Value="14,4" />
             <Setter Property="FontSize" Value="12" />
         </Style>
         <Style Selector="Button.seg.on">
+            <Setter Property="Foreground" Value="{DynamicResource FgOnAccent}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.seg.on /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource Accent}" />
-            <Setter Property="Foreground" Value="#1A1200" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+        </Style>
+        <Style Selector="Button.seg.on:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource FgOnAccent}" />
         </Style>
     </Window.Styles>
 
@@ -79,9 +84,11 @@
                 BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="14,9">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" x:Name="LeftBar" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                        <Border Width="10" Height="10" CornerRadius="5" Background="{DynamicResource Accent}" VerticalAlignment="Center" />
-                        <TextBlock Text="Agnes" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
+                    <!-- Brand lockup: the Agnes gradient tile and the wordmark in the display face. This
+                         is the one place the gradient appears in the chrome. -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Border Width="20" Height="20" CornerRadius="6" Background="{StaticResource GradAgnes}" VerticalAlignment="Center" />
+                        <TextBlock Text="Agnes" Classes="display" FontSize="15" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
                     </StackPanel>
 
                     <!-- Search across all open sessions -->
@@ -138,22 +145,19 @@
 
                 <StackPanel Grid.Column="2" x:Name="RightBar" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <!-- Update available -->
-                    <Button Command="{Binding OpenUpdateCommand}" IsVisible="{Binding UpdateAvailable}"
-                            Background="{DynamicResource Accent}" Foreground="#1A1200"
-                            BorderThickness="0" CornerRadius="7" Padding="10,5" FontSize="12" FontWeight="SemiBold"
+                    <Button Classes="accent" Command="{Binding OpenUpdateCommand}" IsVisible="{Binding UpdateAvailable}" Padding="10,5" FontSize="12"
                             AutomationProperties.Name="Download update"
                             ToolTip.Tip="A newer version of Agnes is available">
                         <TextBlock Text="{Binding UpdateVersion, StringFormat='⬆ Update {0}'}" />
                     </Button>
                     <!-- Approvals: open permission requests across every session that need a human -->
-                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
-                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12"
+                    <Button Classes="chip" Padding="10,5" FontSize="12"
                             Command="{Binding Approvals.RefreshCommand}"
                             IsVisible="{Binding Approvals.HasApprovals}" AutomationProperties.Name="Approvals needing you">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="🔔 Approvals" VerticalAlignment="Center" />
                             <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding Approvals.Count}" Foreground="#1A1200" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                <TextBlock Text="{Binding Approvals.Count}" Foreground="{DynamicResource FgOnAccent}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
                         <Button.Flyout>
@@ -181,13 +185,12 @@
                     </Button>
 
                     <!-- Inbox: completed background runs -->
-                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
-                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12"
+                    <Button Classes="chip" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasInbox}" AutomationProperties.Name="Background run inbox">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="🗓 Inbox" VerticalAlignment="Center" />
                             <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding InboxCount}" Foreground="#1A1200" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                <TextBlock Text="{Binding InboxCount}" Foreground="{DynamicResource FgOnAccent}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
                         <Button.Flyout>
@@ -211,13 +214,12 @@
                         </Button.Flyout>
                     </Button>
                     <!-- Automations: scheduled tasks with pause/resume/run-now/delete -->
-                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
-                            BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,5" FontSize="12"
+                    <Button Classes="chip" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasScheduledTasks}" AutomationProperties.Name="Automations">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="⏱ Automations" VerticalAlignment="Center" />
                             <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding ScheduledTaskCount}" Foreground="#1A1200" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                <TextBlock Text="{Binding ScheduledTaskCount}" Foreground="{DynamicResource FgOnAccent}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
                         <Button.Flyout>
@@ -256,14 +258,12 @@
                     </Button>
 
                     <!-- Sessions switcher: state of every open session + attention -->
-                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
-                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Sessions">
+                    <Button Classes="chip" Padding="10,5" FontSize="12" AutomationProperties.Name="Sessions">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="Sessions" VerticalAlignment="Center" />
                             <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center"
                                     IsVisible="{Binding HasAttention}">
-                                <TextBlock Text="{Binding AttentionCount}" Foreground="#1A1200" FontSize="10"
+                                <TextBlock Text="{Binding AttentionCount}" Foreground="{DynamicResource FgOnAccent}" FontSize="10"
                                            FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
@@ -305,17 +305,11 @@
                     </Button>
 
                     <!-- Search: opens a first-class tab searching every recorded session's transcript -->
-                    <Button Content="🔍" Command="{Binding OpenSearchCommand}" Background="Transparent" Foreground="{DynamicResource FgDim}"
-                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Search history" />
+                    <Button Classes="chip" Content="🔍" Command="{Binding OpenSearchCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Search history" />
 
                     <!-- Settings: opens a first-class, searchable Settings tab -->
-                    <Button Content="⚙" Command="{Binding OpenSettingsCommand}" Background="Transparent" Foreground="{DynamicResource FgDim}"
-                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings" />
-                    <Button Background="Transparent" Foreground="{DynamicResource FgDim}"
-                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                            CornerRadius="7" Padding="10,5" FontSize="12"
+                    <Button Classes="chip" Content="⚙" Command="{Binding OpenSettingsCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings" />
+                    <Button Classes="chip" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasArchived}" AutomationProperties.Name="Reopen archived sessions">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="🗄" FontSize="12" />
@@ -343,10 +337,7 @@
                             </Flyout>
                         </Button.Flyout>
                     </Button>
-                    <Button Command="{Binding NewTabCommand}"
-                            Background="Transparent" Foreground="{DynamicResource FgDim}"
-                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                            CornerRadius="7" Padding="10,5" FontSize="12" AutomationProperties.Name="New tab">
+                    <Button Classes="chip" Command="{Binding NewTabCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="New tab">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="+" FontSize="14" />
                             <TextBlock Text="New tab" />
@@ -368,11 +359,8 @@
                     <TextBlock Text="Sandboxed agents need it to clone or push private repositories. You can also do this later in Settings › GitHub."
                                Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
-                <Button Grid.Column="2" Content="Link GitHub" Command="{Binding LinkGitHubNowCommand}" VerticalAlignment="Center"
-                        Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="12,5" FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0" />
-                <Button Grid.Column="3" Content="Later" Command="{Binding DismissGitHubLinkPromptCommand}" VerticalAlignment="Center"
-                        Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                        CornerRadius="7" Padding="12,5" FontSize="12" Margin="8,0,0,0" />
+                <Button Classes="accent" Grid.Column="2" Content="Link GitHub" Command="{Binding LinkGitHubNowCommand}" VerticalAlignment="Center" Padding="12,5" FontSize="12" Margin="8,0,0,0" />
+                <Button Classes="chip" Grid.Column="3" Content="Later" Command="{Binding DismissGitHubLinkPromptCommand}" VerticalAlignment="Center" Padding="12,5" FontSize="12" Margin="8,0,0,0" />
             </Grid>
         </Border>
 
@@ -380,10 +368,8 @@
 
         <!-- Command palette (Ctrl+K): jump to a session or run an action -->
         <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="100" IsVisible="{Binding IsPaletteOpen}"
-                Background="#88000000">
-            <Border Width="540" MaxHeight="460" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,90,0,0"
-                    Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                    CornerRadius="12" Padding="10" BoxShadow="0 20 60 -20 #000000">
+                Background="{DynamicResource Scrim}">
+            <Border Classes="sheet" Width="540" MaxHeight="460" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,90,0,0" Padding="10">
                 <StackPanel Spacing="8">
                     <TextBox x:Name="PaletteBox" Text="{Binding PaletteQuery, Mode=TwoWay}"
                              Watermark="Jump to a session or action…" FontSize="14"
@@ -431,14 +417,12 @@
 
         <!-- Fork session: choose a target folder (copy of the working folder) and whether to CoW-clone the sandbox -->
         <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="110" IsVisible="{Binding IsForkPromptOpen}"
-                Background="#88000000">
-            <Border Width="540" MaxHeight="460" VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                    CornerRadius="12" Padding="20" BoxShadow="0 20 60 -20 #000000"
+                Background="{DynamicResource Scrim}">
+            <Border Classes="sheet" Width="540" MaxHeight="460" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="20"
                     DataContext="{Binding ForkPrompt}">
                 <StackPanel Spacing="14">
                     <StackPanel Spacing="3">
-                        <TextBlock Text="Fork session" Foreground="{DynamicResource Fg}" FontSize="16" FontWeight="SemiBold" />
+                        <TextBlock Text="Fork session" Classes="display" Foreground="{DynamicResource Fg}" FontSize="16" />
                         <TextBlock Text="Copies the working folder to a new location and opens a fresh session there."
                                    Foreground="{DynamicResource FgDim}" FontSize="12" TextWrapping="Wrap" />
                     </StackPanel>
@@ -465,18 +449,15 @@
                         </StackPanel>
                     </CheckBox>
 
-                    <TextBlock Text="{Binding ErrorText}" IsVisible="{Binding HasError}" Foreground="#E5484D"
+                    <TextBlock Text="{Binding ErrorText}" IsVisible="{Binding HasError}" Foreground="{DynamicResource Danger}"
                                FontSize="12" TextWrapping="Wrap" />
 
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                         <TextBlock Grid.Column="0" Text="Working…" IsVisible="{Binding Busy}" Foreground="{DynamicResource FgDim}"
                                    FontSize="12" VerticalAlignment="Center" />
-                        <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelCommand}" IsEnabled="{Binding !Busy}"
-                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
-                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
-                        <Button Grid.Column="3" Content="Fork" Command="{Binding ConfirmCommand}" IsEnabled="{Binding !Busy}"
-                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="16,6"
-                                FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        <Button Classes="chip" Grid.Column="2" Content="Cancel" Command="{Binding CancelCommand}" IsEnabled="{Binding !Busy}" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
+                        <Button Classes="primary" Grid.Column="3" Content="Fork" Command="{Binding ConfirmCommand}" IsEnabled="{Binding !Busy}" Padding="16,6"
+                                FontSize="12" Margin="8,0,0,0" />
                     </Grid>
                 </StackPanel>
             </Border>
@@ -486,14 +467,12 @@
              auth methods the host advertises at GET /auth/methods. Layered on top of the existing add-host UI;
              it never appears once a host is paired, and cancelling keeps persisted progress for next launch. -->
         <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="120" IsVisible="{Binding IsSetupWizardOpen}"
-                Background="#88000000">
-            <Border x:Name="SetupWizardRoot" Width="560" MaxHeight="560" VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                    CornerRadius="12" Padding="24" BoxShadow="0 20 60 -20 #000000"
+                Background="{DynamicResource Scrim}">
+            <Border Classes="sheet" x:Name="SetupWizardRoot" Width="560" MaxHeight="560" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="24"
                     DataContext="{Binding SetupWizard}">
                 <StackPanel Spacing="16">
                     <StackPanel Spacing="3">
-                        <TextBlock Text="Connect your first host" Foreground="{DynamicResource Fg}" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="Connect your first host" Classes="display" Foreground="{DynamicResource Fg}" FontSize="18" />
                         <TextBlock Text="Point Agnes at a running host, then pick how to sign in. You can also do this manually anytime."
                                    Foreground="{DynamicResource FgDim}" FontSize="12" TextWrapping="Wrap" />
                     </StackPanel>
@@ -553,15 +532,10 @@
                                Foreground="{DynamicResource FgDim}" FontSize="12" TextWrapping="Wrap" />
 
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                        <Button Grid.Column="0" Content="Back" Command="{Binding BackCommand}" IsVisible="{Binding IsChoosingMethod}"
-                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
-                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" />
-                        <Button Grid.Column="2" Content="Skip" Command="{Binding CancelCommand}"
-                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
-                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
-                        <Button Grid.Column="3" Content="Continue" Command="{Binding DiscoverCommand}" IsVisible="{Binding IsEnteringHost}"
-                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="16,6"
-                                FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        <Button Classes="chip" Grid.Column="0" Content="Back" Command="{Binding BackCommand}" IsVisible="{Binding IsChoosingMethod}" Padding="14,6" FontSize="12" />
+                        <Button Classes="chip" Grid.Column="2" Content="Skip" Command="{Binding CancelCommand}" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
+                        <Button Classes="primary" Grid.Column="3" Content="Continue" Command="{Binding DiscoverCommand}" IsVisible="{Binding IsEnteringHost}" Padding="16,6"
+                                FontSize="12" Margin="8,0,0,0" />
                     </Grid>
                 </StackPanel>
             </Border>
@@ -570,10 +544,8 @@
         <!-- Onboarding showcase: a data-driven, next/prev/dismiss feature tour. Shown once per install and
              re-openable from the command palette ("Show onboarding tour"). -->
         <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="130" IsVisible="{Binding Showcase.IsOpen}"
-                Background="#88000000">
-            <Border Width="560" MaxHeight="560" VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                    CornerRadius="12" Padding="24" BoxShadow="0 20 60 -20 #000000"
+                Background="{DynamicResource Scrim}">
+            <Border Classes="sheet" Width="560" MaxHeight="560" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="24"
                     DataContext="{Binding Showcase}">
                 <StackPanel Spacing="16">
                     <Grid ColumnDefinitions="*,Auto">
@@ -582,19 +554,14 @@
                                 Foreground="{DynamicResource FgDim}" BorderThickness="0" Padding="6,2" FontSize="13" Cursor="Hand" />
                     </Grid>
                     <StackPanel Spacing="8" DataContext="{Binding Current}">
-                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Title}" Classes="display" Foreground="{DynamicResource Fg}" FontSize="20" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="13" TextWrapping="Wrap" />
                     </StackPanel>
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                        <Button Grid.Column="0" Content="Back" Command="{Binding PrevCommand}" IsVisible="{Binding HasPrev}"
-                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
-                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" />
-                        <Button Grid.Column="2" Content="Dismiss" Command="{Binding DismissCommand}"
-                                Background="Transparent" Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
-                                BorderThickness="1" CornerRadius="7" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
-                        <Button Grid.Column="3" Content="Next" Command="{Binding NextCommand}" IsVisible="{Binding HasNext}"
-                                Background="{DynamicResource Accent}" Foreground="#1A1200" CornerRadius="7" Padding="16,6"
-                                FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        <Button Classes="chip" Grid.Column="0" Content="Back" Command="{Binding PrevCommand}" IsVisible="{Binding HasPrev}" Padding="14,6" FontSize="12" />
+                        <Button Classes="chip" Grid.Column="2" Content="Dismiss" Command="{Binding DismissCommand}" Padding="14,6" FontSize="12" Margin="8,0,0,0" />
+                        <Button Classes="primary" Grid.Column="3" Content="Next" Command="{Binding NextCommand}" IsVisible="{Binding HasNext}" Padding="16,6"
+                                FontSize="12" Margin="8,0,0,0" />
                     </Grid>
                 </StackPanel>
             </Border>

@@ -1,0 +1,86 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctxt="using:ColorTextBlock.Avalonia">
+  <!--
+    Markdown.Avalonia's built-in "Standard" theme paints for a white page: Gray table rules, a
+    LightGray header band, White/#F5F5F5 zebra rows, #EEEEEE code blocks, DarkBlue inline code and
+    Blue hyperlinks. On the Agnes console palette that reads as a foreign document pasted into the
+    transcript, so every hard-coded colour is re-pointed at the theme's roles here.
+
+    This has to be included INTO each MarkdownScrollViewer's own `Styles` (see SessionTabView): the
+    built-in theme is attached as the control's own style collection, which outranks anything at
+    application level no matter how specific the selector. The selectors below therefore mirror the
+    built-in ones exactly, class prefix included.
+  -->
+
+  <!-- Tables: hairline rules, a panel-tinted header band, and a barely-there zebra. -->
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.Table">
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer Grid.Table &gt; Border">
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="Padding" Value="6,3" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.TableHeader">
+    <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.OddTableRow">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.EvenTableRow">
+    <Setter Property="Background" Value="{DynamicResource CodeBg}" />
+  </Style>
+
+  <!-- Fenced code: the sunken code surface, hairline, brand radius. -->
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.CodeBlock">
+    <Setter Property="Background" Value="{DynamicResource CodeBg}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="CornerRadius" Value="8" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer TextBlock.CodeBlock">
+    <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+    <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+  </Style>
+
+  <!-- Inline `code`: a mono chip on the panel tint. -->
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CCode">
+    <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+    <Setter Property="MonospaceFontFamily" Value="{DynamicResource MonoFont}" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentText}" />
+    <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Padding" Value="4,1" />
+  </Style>
+
+  <!-- Headings and body inherit the transcript's ink rather than pure black. -->
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock.Heading1">
+    <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock.Heading2">
+    <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock.Heading3">
+    <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock.Heading4">
+    <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+  </Style>
+
+  <!-- A quote gets the accent edge; the brand's one-accent-edge move, at hairline weight. -->
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.Blockquote">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentEdge}" />
+    <Setter Property="BorderThickness" Value="3,0,0,0" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.Note">
+    <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+  </Style>
+
+  <!-- Links: accent, magenta on hover (the brand's link/link-hover pair). -->
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CHyperlink">
+    <Setter Property="Foreground" Value="{DynamicResource AccentText}" />
+    <Setter Property="HoverForeground" Value="#C858C8" />
+  </Style>
+</Styles>

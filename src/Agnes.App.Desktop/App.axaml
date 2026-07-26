@@ -11,53 +11,16 @@
 
     <Application.Resources>
         <ResourceDictionary>
-            <!-- Theme-invariant resources -->
-            <FontFamily x:Key="UiFont">Segoe UI, SF Pro Text, Helvetica Neue, Noto Sans, DejaVu Sans, sans-serif</FontFamily>
-            <FontFamily x:Key="MonoFont">Cascadia Code, Cascadia Mono, JetBrains Mono, Consolas, Menlo, monospace</FontFamily>
+            <!-- The Multitudal palette, type and geometry (both theme variants), plus the Fluent
+                 control-resource overrides that put stock controls on the same palette. Consumers bind
+                 DynamicResource so a theme switch applies live. -->
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Tokens.axaml" />
+            </ResourceDictionary.MergedDictionaries>
 
             <!-- One shared dock content recycler (see the DockControl style below); the factory evicts a
                  document's cached view when its tab closes, so views don't accumulate. -->
             <app:PerItemControlRecycling x:Key="DockRecycler" />
-
-            <!-- Palette per theme; consumers bind DynamicResource so a theme switch applies live. -->
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="Bg" Color="#0C0E13" />
-                    <SolidColorBrush x:Key="Panel" Color="#141821" />
-                    <SolidColorBrush x:Key="PanelAlt" Color="#1A1F2A" />
-                    <SolidColorBrush x:Key="Line" Color="#262D3B" />
-                    <SolidColorBrush x:Key="Fg" Color="#E7E9EE" />
-                    <SolidColorBrush x:Key="FgDim" Color="#98A2B3" />
-                    <SolidColorBrush x:Key="FgFaint" Color="#5C6675" />
-                    <SolidColorBrush x:Key="Accent" Color="#D97757" />
-                    <SolidColorBrush x:Key="AccentSoft" Color="#33D97757" />
-                    <SolidColorBrush x:Key="Good" Color="#5FD6A0" />
-                    <SolidColorBrush x:Key="UserBubble" Color="#1B2431" />
-                    <SolidColorBrush x:Key="DiffAddBg" Color="#16351F" />
-                    <SolidColorBrush x:Key="DiffDelBg" Color="#3A1D1D" />
-                    <SolidColorBrush x:Key="HunkBg" Color="#162232" />
-                    <SolidColorBrush x:Key="HunkFg" Color="#7FA7D9" />
-                    <SolidColorBrush x:Key="Gutter" Color="#3B4453" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="Bg" Color="#F5F4F1" />
-                    <SolidColorBrush x:Key="Panel" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="PanelAlt" Color="#ECEAE5" />
-                    <SolidColorBrush x:Key="Line" Color="#DED9D0" />
-                    <SolidColorBrush x:Key="Fg" Color="#20242C" />
-                    <SolidColorBrush x:Key="FgDim" Color="#5B6472" />
-                    <SolidColorBrush x:Key="FgFaint" Color="#8A93A1" />
-                    <SolidColorBrush x:Key="Accent" Color="#C15A3A" />
-                    <SolidColorBrush x:Key="AccentSoft" Color="#26C15A3A" />
-                    <SolidColorBrush x:Key="Good" Color="#2E9E6E" />
-                    <SolidColorBrush x:Key="UserBubble" Color="#EAE7E0" />
-                    <SolidColorBrush x:Key="DiffAddBg" Color="#DBF0E1" />
-                    <SolidColorBrush x:Key="DiffDelBg" Color="#F6DBDB" />
-                    <SolidColorBrush x:Key="HunkBg" Color="#E4ECF5" />
-                    <SolidColorBrush x:Key="HunkFg" Color="#3B6CA8" />
-                    <SolidColorBrush x:Key="Gutter" Color="#B7BEC9" />
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 
@@ -81,24 +44,10 @@
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml" />
-        <!-- Keyboard focus is otherwise invisible on the app's many chromeless (BorderThickness=0,
-             transparent) buttons and list rows. A global focus adorner draws an accent outline in the
-             adorner layer on KEYBOARD focus only (Avalonia shows it for focus-visible, not pointer),
-             overriding nothing the control sets locally. -->
-        <Style Selector="Button">
-            <Setter Property="FocusAdorner">
-                <FocusAdornerTemplate>
-                    <Border BorderBrush="{DynamicResource Accent}" BorderThickness="2" CornerRadius="6" Margin="-2" />
-                </FocusAdornerTemplate>
-            </Setter>
-        </Style>
-        <Style Selector="ListBoxItem">
-            <Setter Property="FocusAdorner">
-                <FocusAdornerTemplate>
-                    <Border BorderBrush="{DynamicResource Accent}" BorderThickness="2" CornerRadius="6" Margin="-1" />
-                </FocusAdornerTemplate>
-            </Setter>
-        </Style>
+        <!-- Brand styles: type classes, surfaces, the button family (gradient primary, solid accent,
+             chip, ghost, danger), press feedback and the keyboard focus ring. Loaded after Fluent and
+             Dock so it wins over both. -->
+        <StyleInclude Source="avares://Agnes.App.Desktop/Themes/AppStyles.axaml" />
         <!-- Recycle document views per data item (by reference), so each document — and each document
              TYPE — gets its own view. Fixes Dock handing a newly-activated document of a different type
              the previously-built view (a SettingsTabView tab showed a SessionTabView). Applies to every
@@ -107,16 +56,16 @@
             <Setter Property="(cr:ControlRecyclingDataTemplate.ControlRecycling)" Value="{StaticResource DockRecycler}" />
         </Style>
         <!-- Markdown rendering (Markdown.Avalonia) defaults its monospace font to Consolas — absent on
-             Linux/macOS and fatal to glyph creation. Point both surfaces at the app's mono stack (which
-             ends in a generic 'monospace' fallback that resolves everywhere): inline `code` renders via
-             ColorTextBlock's CTextBlock, and fenced code highlighting via AvaloniaEdit's TextEditor. -->
+             Linux/macOS and fatal to glyph creation. Point both surfaces at the app's embedded mono face
+             (JetBrains Mono, see Themes/Tokens.axaml): inline `code` renders via ColorTextBlock's
+             CTextBlock, and fenced code highlighting via AvaloniaEdit's TextEditor. -->
         <Style Selector="ctb|CCode">
             <Setter Property="MonospaceFontFamily" Value="{StaticResource MonoFont}" />
         </Style>
-        <!-- Inline `code` chip styling (mono font + theme-matched chip) is applied per-MarkdownScrollViewer
-             in SessionTabView.axaml: the built-in Markdown theme styles CCode with a class-specificity
-             selector ('.Markdown_Avalonia_MarkdownViewer CCode') that an app-level rule can't outrank, so
-             it's overridden in the control's own style scope instead. -->
+        <!-- The rest of the Markdown surface (tables, code blocks, quotes, links, inline `code`) is
+             themed by Themes/MarkdownStyles.axaml, included into each MarkdownScrollViewer's own Styles:
+             the built-in Markdown theme is attached as the control's style collection, which an
+             app-level rule can't outrank however specific its selector. -->
         <!-- Markdown body renders via ColorTextBlock; pin it to the app UI font at normal weight so chat
              text matches the rest of the app and only **bold** spans (CBold, which keeps its own Bold)
              render heavy. The uniform-bold chat was really the bundled Inter font (see Program.cs) — this

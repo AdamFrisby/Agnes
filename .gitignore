@@ -503,6 +503,8 @@ scratch-shots/
 # Claude Code local worktrees, settings, and scratch
 .claude/
 
+# Local design-reference material (e.g. the Multitudal design-system handoff bundle and brand SVGs).
+# The theme derived from it is checked in; the bundle itself is not ours to ship.
 references/
 
 # Desktop client state, written when the app or the screenshot harness is run from the repo root.

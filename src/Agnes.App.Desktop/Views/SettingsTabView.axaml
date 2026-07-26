@@ -49,7 +49,7 @@
         <Border Grid.Row="0" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
                 BorderThickness="0,0,0,1" Padding="24,16">
             <StackPanel Spacing="10">
-                <TextBlock Text="Settings" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                <TextBlock Text="Settings" Classes="display" FontSize="20" Foreground="{DynamicResource Fg}" />
                 <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                         CornerRadius="8" Padding="10,2" Width="340" HorizontalAlignment="Left">
                     <Grid ColumnDefinitions="Auto,*">
@@ -178,8 +178,8 @@
                                                         <Run Text="Check it shows" /><Run Text=" " /><Run Text="{Binding VerificationCode}" FontFamily="{DynamicResource MonoFont}" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource Fg}" /><Run Text=" " /><Run Text="before approving" />
                                                     </TextBlock>
                                                 </StackPanel>
-                                                <Button Grid.Column="1" Content="Decline" FontSize="11" Padding="9,3" Background="Transparent" Foreground="#E5484D"
-                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                                <Button Classes="danger" Grid.Column="1" Content="Decline" FontSize="11" Padding="9,3"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
                                                         Command="{Binding $parent[ItemsControl].DataContext.DenyDeviceCommand}" CommandParameter="{Binding RequestId}" />
                                                 <Button Grid.Column="2" Content="Approve" FontSize="11" Padding="9,3" Classes="seg"
                                                         Command="{Binding $parent[ItemsControl].DataContext.ApproveDeviceCommand}" CommandParameter="{Binding RequestId}" />
@@ -198,8 +198,8 @@
                                             <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
                                             <TextBlock Text="{Binding PairedAt, StringFormat='paired {0:yyyy-MM-dd}'}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="Revoke" FontSize="11" Padding="9,3" Background="Transparent" Foreground="#E5484D"
-                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                        <Button Classes="danger" Grid.Column="1" Content="Revoke" FontSize="11" Padding="9,3"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
                                                 Command="{Binding $parent[ItemsControl].DataContext.RevokeDeviceCommand}" CommandParameter="{Binding Id}" />
                                     </Grid>
                                 </DataTemplate>
@@ -241,9 +241,9 @@
                                                 <Button Content="Resume" Command="{Binding $parent[ItemsControl].DataContext.ResumeSandboxRecordCommand}"
                                                         CommandParameter="{Binding}" Classes="seg" IsVisible="{Binding !Live}"
                                                         ToolTip.Tip="Cold-start the VM and reopen this session in a tab" />
-                                                <Button Content="Delete" Command="{Binding $parent[ItemsControl].DataContext.DeleteSandboxRecordCommand}"
-                                                        CommandParameter="{Binding}" Background="Transparent" Foreground="#E5484D"
-                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
+                                                <Button Classes="danger" Content="Delete" Command="{Binding $parent[ItemsControl].DataContext.DeleteSandboxRecordCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1" Padding="10,4" FontSize="12" />
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -257,9 +257,8 @@
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Content="Find orphaned VMs" Command="{Binding FindOrphansCommand}" Classes="seg"
                                     ToolTip.Tip="Scan the host for Agnes VMs no session tracks (e.g. left from a prior daemon run). Nothing is deleted until you confirm." />
-                            <Button Content="{Binding ReapOrphansLabel}" Command="{Binding ReapOrphansCommand}" IsVisible="{Binding HasOrphans}"
-                                    Background="Transparent" Foreground="#E5484D" BorderBrush="{DynamicResource Line}"
-                                    BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
+                            <Button Classes="danger" Content="{Binding ReapOrphansLabel}" Command="{Binding ReapOrphansCommand}" IsVisible="{Binding HasOrphans}" BorderBrush="{DynamicResource Line}"
+                                    BorderThickness="1" Padding="10,4" FontSize="12" />
                         </StackPanel>
                         <ItemsControl ItemsSource="{Binding OrphanVmNames}" IsVisible="{Binding HasOrphans}">
                             <ItemsControl.ItemTemplate>
@@ -319,8 +318,8 @@
                                         <TextBlock Grid.Column="1" Text="{Binding Enabled}" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
                                         <Button Grid.Column="2" Content="Toggle" Classes="seg"
                                                 Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}" CommandParameter="{Binding}" />
-                                        <Button Grid.Column="3" Content="Remove" FontSize="11" Padding="9,3" Background="Transparent" Foreground="#E5484D"
-                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                        <Button Classes="danger" Grid.Column="3" Content="Remove" FontSize="11" Padding="9,3"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
                                                 Command="{Binding $parent[ItemsControl].DataContext.RemoveMcpServerCommand}" CommandParameter="{Binding Id}" />
                                     </Grid>
                                 </DataTemplate>
@@ -453,8 +452,8 @@
                                                         <Run Text="{Binding Transport}" /><Run Text=" · run at " /><Run Text="{Binding RunAt}" />
                                                     </TextBlock>
                                                 </StackPanel>
-                                                <Button Grid.Column="1" Content="Remove" FontSize="11" Padding="9,3" Background="Transparent" Foreground="#E5484D"
-                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                                <Button Classes="danger" Grid.Column="1" Content="Remove" FontSize="11" Padding="9,3"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
                                                         Command="{Binding $parent[ItemsControl].DataContext.RemoveProjectMcpCommand}" CommandParameter="{Binding}" />
                                             </Grid>
                                         </DataTemplate>
@@ -558,9 +557,7 @@
                                     </ItemsControl>
                                     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
                                         <Button Content="Approve &amp; install" Command="{Binding ConfirmConsentCommand}" Classes="seg" />
-                                        <Button Content="Cancel" Command="{Binding CancelConsentCommand}" Background="Transparent"
-                                                Foreground="{DynamicResource FgDim}" BorderBrush="{DynamicResource Line}"
-                                                BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12" />
+                                        <Button Classes="chip" Content="Cancel" Command="{Binding CancelConsentCommand}" Padding="10,4" FontSize="12" />
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
@@ -624,8 +621,8 @@
                                                                 Command="{Binding $parent[ItemsControl].DataContext.ToggleEnabledCommand}" CommandParameter="{Binding}" />
                                                         <Button Content="Enable" Classes="seg" IsVisible="{Binding !Enabled}"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.ToggleEnabledCommand}" CommandParameter="{Binding}" />
-                                                        <Button Content="Uninstall" Background="Transparent" Foreground="#E5484D"
-                                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="7" Padding="10,4" FontSize="12"
+                                                        <Button Classes="danger" Content="Uninstall"
+                                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" Padding="10,4" FontSize="12"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.UninstallCommand}" CommandParameter="{Binding}" />
                                                     </StackPanel>
                                                 </Grid>
@@ -818,7 +815,7 @@
                                                 <TextBlock Grid.Column="1" Text="{Binding TargetLabel}" FontSize="12" VerticalAlignment="Center"
                                                            Foreground="{DynamicResource FgDim}" IsVisible="{Binding !IsBroken}" />
                                                 <TextBlock Grid.Column="1" Text="{Binding TargetLabel}" FontSize="12" VerticalAlignment="Center"
-                                                           Foreground="#E5484D" IsVisible="{Binding IsBroken}" />
+                                                           Foreground="{DynamicResource Danger}" IsVisible="{Binding IsBroken}" />
                                                 <TextBlock Grid.Column="2" Text="send" FontSize="10" Foreground="{DynamicResource Good}" Margin="0,0,8,0"
                                                            VerticalAlignment="Center" IsVisible="{Binding SendImmediately}" />
                                                 <Button Grid.Column="3" Content="Delete" Classes="seg"

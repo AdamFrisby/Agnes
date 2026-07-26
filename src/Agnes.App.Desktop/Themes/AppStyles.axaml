@@ -1,0 +1,208 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    App-wide styles for the desktop head, built on the Multitudal tokens in Tokens.axaml.
+
+    Brand rules encoded below:
+      · radii follow the brand scale (controls 8, cards/overlays 12–16, pills 999);
+      · press scales to 0.97, motion is 120ms on `cubic-bezier(.2,.7,.3,1)` (CubicEaseOut is the
+        closest built-in), and nothing flips colour on press;
+      · the Agnes gradient is the primary-CTA fill and is used at most once per view — everything
+        else functional is solid;
+      · keyboard focus draws an accent ring; the app is full of chromeless buttons and rows that are
+        otherwise invisible when focused.
+
+    Buttons are styled through `/template/ ContentPresenter#PART_ContentPresenter` rather than the
+    control's own Background: Fluent's button theme sets the presenter's fill directly for each
+    interaction state, and a plain `Background` setter would be dropped the moment the pointer
+    entered the control.
+  -->
+
+  <!-- ================= type ================= -->
+  <!-- Display type: Space Grotesk, tracked tight, per the brand. Reserved for the wordmark and for
+       the title of a full-screen/dialog moment — not for row or panel headings. -->
+  <Style Selector="TextBlock.display">
+    <Setter Property="FontFamily" Value="{DynamicResource DisplayFont}" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="LetterSpacing" Value="{DynamicResource TrackingTight}" />
+  </Style>
+  <!-- An eyebrow / section heading: uppercase, wide-tracked, per the brand's caps tracking. -->
+  <Style Selector="TextBlock.section">
+    <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+    <Setter Property="FontSize" Value="{DynamicResource Text2Xs}" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="LetterSpacing" Value="0.9" />
+  </Style>
+  <Style Selector="TextBlock.mono">
+    <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+  </Style>
+
+  <!-- ================= surfaces ================= -->
+  <!-- Card: panel fill, 1px hairline, 16px radius — the brand's standard surface. -->
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{DynamicResource Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusLg}" />
+  </Style>
+  <!-- Dialog/overlay surface: same hairline, deeper radius, cool violet elevation (never black). -->
+  <Style Selector="Border.sheet">
+    <Setter Property="Background" Value="{DynamicResource Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    <Setter Property="BoxShadow" Value="0 24 56 -16 #66120C2E" />
+  </Style>
+  <Style Selector="Border.divider">
+    <Setter Property="Height" Value="1" />
+    <Setter Property="Background" Value="{DynamicResource Line}" />
+  </Style>
+
+  <!-- A checkbox is a 20px box that takes its radius from the app-wide control radius; at 8 that
+       reads as a circle, so it gets the small radius instead. -->
+  <Style Selector="CheckBox">
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusXs}" />
+  </Style>
+
+  <!-- ================= buttons ================= -->
+  <!-- Press feedback is uniform across every button in the app. -->
+  <Style Selector="Button">
+    <Setter Property="RenderTransform" Value="none" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12" Easing="CubicEaseOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Button:pressed">
+    <Setter Property="RenderTransform" Value="scale(0.97)" />
+  </Style>
+
+  <!-- Primary = the Agnes gradient. One per view: the single action the view exists for. -->
+  <Style Selector="Button.primary">
+    <Setter Property="Foreground" Value="#FFFFFF" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.primary /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource GradAgnesH}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusSm}" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <!-- Hover lifts with the brand's magenta glow rather than changing the fill. -->
+  <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource GradAgnesH}" />
+    <Setter Property="BoxShadow" Value="0 10 30 -8 #80C026D3" />
+  </Style>
+  <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource GradAgnesH}" />
+  </Style>
+  <Style Selector="Button.primary:disabled">
+    <Setter Property="Opacity" Value="0.45" />
+  </Style>
+  <Style Selector="Button.primary:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource GradAgnesH}" />
+    <Setter Property="Foreground" Value="#FFFFFF" />
+  </Style>
+
+  <!-- Solid accent: a strong action that isn't the view's hero (inline confirms, badges' siblings). -->
+  <Style Selector="Button.accent">
+    <Setter Property="Foreground" Value="{DynamicResource FgOnAccent}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.accent /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Accent}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusSm}" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Accent}" />
+    <Setter Property="BoxShadow" Value="0 10 30 -8 #8C6366F1" />
+  </Style>
+  <Style Selector="Button.accent:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Accent}" />
+  </Style>
+  <Style Selector="Button.accent:disabled">
+    <Setter Property="Opacity" Value="0.45" />
+  </Style>
+  <Style Selector="Button.accent:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Accent}" />
+    <Setter Property="Foreground" Value="{DynamicResource FgOnAccent}" />
+  </Style>
+
+  <!-- Chip: the outlined toolbar/secondary control. Hairline border, tint on hover.
+       `seg` is the same chrome for a segmented selector; its selected half is filled by the view
+       that owns the segment group. -->
+  <Style Selector="Button.chip, Button.seg">
+    <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.chip /template/ ContentPresenter#PART_ContentPresenter, Button.seg /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusSm}" />
+  </Style>
+  <Style Selector="Button.chip:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.seg:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentEdge}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Fg}" />
+  </Style>
+  <Style Selector="Button.chip:pressed /template/ ContentPresenter#PART_ContentPresenter, Button.seg:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AccentEdge}" />
+  </Style>
+  <Style Selector="Button.chip:disabled, Button.seg:disabled">
+    <Setter Property="Opacity" Value="0.45" />
+  </Style>
+
+  <!-- Ghost: chromeless until hovered. Used for row actions and dismissals. -->
+  <Style Selector="Button.ghost">
+    <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.ghost /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusSm}" />
+  </Style>
+  <Style Selector="Button.ghost:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Fg}" />
+  </Style>
+
+  <!-- Danger: destructive, and never a filled button — the brand keeps red for text + a soft tint. -->
+  <Style Selector="Button.danger">
+    <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.danger /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusSm}" />
+  </Style>
+  <Style Selector="Button.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource DangerSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Danger}" />
+  </Style>
+
+  <!-- Keyboard focus is otherwise invisible on the app's many chromeless (BorderThickness=0,
+       transparent) buttons and list rows. A global focus adorner draws an accent outline in the
+       adorner layer on KEYBOARD focus only (Avalonia shows it for focus-visible, not pointer),
+       overriding nothing the control sets locally. -->
+  <Style Selector="Button">
+    <Setter Property="FocusAdorner">
+      <FocusAdornerTemplate>
+        <Border BorderBrush="{DynamicResource Accent}" BorderThickness="2" CornerRadius="8" Margin="-2" />
+      </FocusAdornerTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ListBoxItem">
+    <Setter Property="FocusAdorner">
+      <FocusAdornerTemplate>
+        <Border BorderBrush="{DynamicResource Accent}" BorderThickness="2" CornerRadius="8" Margin="-1" />
+      </FocusAdornerTemplate>
+    </Setter>
+  </Style>
+</Styles>
