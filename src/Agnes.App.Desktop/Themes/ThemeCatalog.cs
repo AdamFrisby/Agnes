@@ -29,6 +29,7 @@ public static class ThemeCatalog
     public static ThemeVariant SpacegrayLight { get; } = new("Spacegray Light", ThemeVariant.Light);
     public static ThemeVariant SpacegrayEighties { get; } = new("Spacegray Eighties", ThemeVariant.Dark);
     public static ThemeVariant SpacegrayMocha { get; } = new("Spacegray Mocha", ThemeVariant.Dark);
+    public static ThemeVariant SpacegrayOceanic { get; } = new("Spacegray Oceanic", ThemeVariant.Dark);
 
     /// <summary>Every theme on offer, in picker order: follow-the-OS first, then the two built-ins,
     /// then the ported flavours.</summary>
@@ -41,6 +42,7 @@ public static class ThemeCatalog
         new("SpacegrayLight", "Spacegray Light", SpacegrayLight, "SpacegrayLightPalette"),
         new("SpacegrayEighties", "Spacegray Eighties", SpacegrayEighties, "SpacegrayEightiesPalette"),
         new("SpacegrayMocha", "Spacegray Mocha", SpacegrayMocha, "SpacegrayMochaPalette"),
+        new("SpacegrayOceanic", "Spacegray Oceanic", SpacegrayOceanic, "SpacegrayOceanicPalette"),
     ];
 
     /// <summary>Resolves a persisted id, falling back to System for anything unrecognised — a settings

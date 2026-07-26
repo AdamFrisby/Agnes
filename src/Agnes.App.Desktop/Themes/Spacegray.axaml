@@ -3,7 +3,7 @@
                     xmlns:themes="using:Agnes.App.Desktop.Themes"
                     xmlns:fluent="using:Avalonia.Themes.Fluent">
   <!--
-    Spacegray — four flavours ported to the Agnes desktop theme system.
+    Spacegray — all five flavours ported to the Agnes desktop theme system.
 
     ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
     │ Spacegray is by Gadzhi Kharkharov (kkga) and the Sublime Text Packages maintainers, from     │
@@ -232,6 +232,52 @@
       <Color x:Key="ShadowColor">#661E1914</Color>
     </ResourceDictionary>
 
+    <!-- ===== Spacegray Oceanic — a variation on the Base16 Oceanic palette. Inherits Dark. ===== -->
+    <ResourceDictionary x:Key="{x:Static themes:ThemeCatalog.SpacegrayOceanic}">
+      <Color x:Key="BgColor">#1B2B34</Color>
+      <Color x:Key="PanelColor">#343D46</Color>
+      <Color x:Key="PanelAltColor">#4F5B66</Color>
+      <Color x:Key="CodeBgColor">#111C22</Color>
+      <Color x:Key="ScrimColor">#8C0E171C</Color>
+      <Color x:Key="LineColor">#4F5B66</Color>
+      <Color x:Key="LineStrongColor">#65737E</Color>
+
+      <Color x:Key="FgColor">#C0C5CE</Color>
+      <Color x:Key="FgDimColor">#A7ADBA</Color>
+      <Color x:Key="FgFaintColor">#65737E</Color>
+      <Color x:Key="FgOnAccentColor">#1B2B34</Color>
+
+      <Color x:Key="AccentColor">#C594C5</Color>
+      <Color x:Key="AccentTextColor">#D6B4D6</Color>
+      <Color x:Key="AccentSoftColor">#2EC594C5</Color>
+      <Color x:Key="AccentEdgeColor">#4DC594C5</Color>
+
+      <Color x:Key="GoodColor">#99C794</Color>
+      <Color x:Key="GoodSoftColor">#2E99C794</Color>
+      <Color x:Key="WarnColor">#FAC863</Color>
+      <Color x:Key="WarnSoftColor">#2EFAC863</Color>
+      <Color x:Key="DangerColor">#EC5F67</Color>
+      <Color x:Key="DangerSoftColor">#2EEC5F67</Color>
+      <Color x:Key="InfoColor">#6699CC</Color>
+      <Color x:Key="InfoSoftColor">#2E6699CC</Color>
+
+      <Color x:Key="UserBubbleColor">#4F5B66</Color>
+
+      <Color x:Key="DiffAddBgColor">#2E99C794</Color>
+      <Color x:Key="DiffAddFgColor">#99C794</Color>
+      <Color x:Key="DiffDelBgColor">#2EEC5F67</Color>
+      <Color x:Key="DiffDelFgColor">#EC5F67</Color>
+      <Color x:Key="HunkBgColor">#2E6699CC</Color>
+      <Color x:Key="HunkFgColor">#6699CC</Color>
+      <Color x:Key="GutterColor">#65737E</Color>
+
+      <!-- Fluent reads these two as Colors, not brushes, so they can't be aliased
+           dynamically — every theme states its own. -->
+      <Color x:Key="ScrollBarThumbBackgroundColor">#65737E</Color>
+      <Color x:Key="SystemAccentColor">#C594C5</Color>
+      <Color x:Key="ShadowColor">#660D151A</Color>
+    </ResourceDictionary>
+
   </ResourceDictionary.ThemeDictionaries>
 
   <!-- ================= Fluent's own chrome, per flavour =================
@@ -277,4 +323,13 @@
                           ChromeDisabledHigh="#645240" ChromeDisabledLow="#7E705A" ChromeGray="#B8AFAD" ChromeHigh="#7E705A"
                           ChromeLow="#26201A" ChromeMedium="#534636" ChromeMediumLow="#645240" ChromeWhite="#FFFFFF"
                           ListLow="#2EA89BB9" ListMedium="#4DA89BB9" ErrorText="#CB6077" />
+
+  <fluent:ColorPaletteResources x:Key="SpacegrayOceanicPalette"
+                          Accent="#C594C5" RegionColor="#1B2B34"
+                          AltHigh="#343D46" AltLow="#33343D46" AltMedium="#99343D46" AltMediumHigh="#CC343D46" AltMediumLow="#66343D46"
+                          BaseHigh="#C0C5CE" BaseLow="#4F5B66" BaseMedium="#A7ADBA" BaseMediumHigh="#C0C5CE" BaseMediumLow="#65737E"
+                          ChromeAltLow="#343D46" ChromeBlackHigh="#111C22" ChromeBlackLow="#33111C22" ChromeBlackMedium="#CC111C22" ChromeBlackMediumLow="#66111C22"
+                          ChromeDisabledHigh="#4F5B66" ChromeDisabledLow="#65737E" ChromeGray="#A7ADBA" ChromeHigh="#65737E"
+                          ChromeLow="#111C22" ChromeMedium="#343D46" ChromeMediumLow="#4F5B66" ChromeWhite="#FFFFFF"
+                          ListLow="#2EC594C5" ListMedium="#4DC594C5" ErrorText="#EC5F67" />
 </ResourceDictionary>
