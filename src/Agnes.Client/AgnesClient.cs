@@ -50,7 +50,8 @@ public sealed class AgnesClient : IAsyncDisposable
         string hostUrl,
         string token,
         Action<HttpConnectionOptions>? configureHttp = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? pinnedFingerprint = null)
     {
         var key = hostUrl.TrimEnd('/');
 
@@ -75,7 +76,7 @@ public sealed class AgnesClient : IAsyncDisposable
                 await existing.DisposeAsync().ConfigureAwait(false);
             }
 
-            var connection = new HostConnection(hostUrl, token, configureHttp);
+            var connection = new HostConnection(hostUrl, token, configureHttp, pinnedFingerprint);
             _hosts[key] = connection;
             await connection.ConnectAsync(cancellationToken).ConfigureAwait(false);
             return connection;

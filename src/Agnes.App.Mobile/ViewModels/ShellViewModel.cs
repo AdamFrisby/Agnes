@@ -338,11 +338,12 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     /// removes the address-and-code typing entirely.</summary>
     /// <param name="autoSubmit">True for a scanned grant: it wasn't typed, so there is nothing for the
     /// user to check before submitting, and making them tap a button adds a step and no safety.</param>
-    public void BeginPairing(string hostUrl, string? code, string? sessionId = null, bool autoSubmit = false)
+    public void BeginPairing(
+        string hostUrl, string? code, string? sessionId = null, bool autoSubmit = false, string? fingerprint = null)
     {
         PopToRoot();
         SelectTab(ShellTab.Sessions);
-        Push(new ConnectPageViewModel(this, Hosts, Sessions, hostUrl, code, sessionId, autoSubmit));
+        Push(new ConnectPageViewModel(this, Hosts, Sessions, hostUrl, code, sessionId, autoSubmit, fingerprint));
     }
 
     /// <summary>Opens a session by id if this device knows it (used by notification taps).</summary>

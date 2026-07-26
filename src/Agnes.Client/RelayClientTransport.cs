@@ -124,12 +124,9 @@ public static class RelayClientTransport
 
         string pin = relay.Fingerprint
             ?? throw new InvalidOperationException("Relay address has neither a CA host name nor a pinned fingerprint.");
-        return new SslClientAuthenticationOptions
-        {
-            // Synthetic name: the cert is self-signed and validated by fingerprint, not by name.
-            TargetHost = "agnes-host",
-            RemoteCertificateValidationCallback = (_, cert, _, _) => MatchesPin(cert, pin),
-        };
+
+        // Same trust decision the direct path makes, so it comes from the same place.
+        return PinnedTls.Options(pin);
     }
 
     private static async Task<Stream> OpenTunnelAsync(RelayClientAddress relay, CancellationToken ct)
@@ -157,20 +154,6 @@ public static class RelayClientTransport
             socket.Dispose();
             throw;
         }
-    }
-
-    private static bool MatchesPin(X509Certificate? certificate, string expectedFingerprint)
-    {
-        if (certificate is null)
-        {
-            return false;
-        }
-
-        using var cert = certificate as X509Certificate2 ?? X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
-        string actual = Convert.ToHexStringLower(cert.GetCertHash(HashAlgorithmName.SHA256));
-        return CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.ASCII.GetBytes(actual),
-            System.Text.Encoding.ASCII.GetBytes(expectedFingerprint));
     }
 
     /// <summary>Reads a single query-string value by key from a <c>?a=b&amp;c=d</c> query (leading '?' optional).</summary>

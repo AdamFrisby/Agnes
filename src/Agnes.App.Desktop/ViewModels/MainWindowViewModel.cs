@@ -2070,7 +2070,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 doc.StatusText = $"Connecting to {host.Name}…";
             });
 
-            var agnesHost = await _connector.ConnectAsync(host.Url, host.Token);
+            var agnesHost = await _connector.ConnectAsync(host.Url, host.Token, host.Fingerprint);
             doc.Host = agnesHost;
             _ = NegotiateCapabilitiesAsync(agnesHost);
             WireStatus(doc, agnesHost);
@@ -2168,6 +2168,22 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public async Task AddHostAsync(SessionDocument doc)
     {
         var url = doc.NewHostUrl.Trim();
+        var codeFromLink = (string?)null;
+        var fingerprint = (string?)null;
+
+        // An `agnes://pair?...` link pasted into the address field carries everything at once: where the
+        // host is, a one-time grant, and the fingerprint of the certificate it serves. That last part is
+        // what lets a self-signed host be trusted without a CA — and it only means anything because the
+        // link came off the host's own screen rather than off the network.
+        if (url.StartsWith("agnes://pair", StringComparison.OrdinalIgnoreCase))
+        {
+            codeFromLink = ReadLinkValue(url, "grant") ?? ReadLinkValue(url, "code");
+            fingerprint = Agnes.Protocol.PairingLink.FingerprintOf(url);
+            url = Agnes.Protocol.PairingLink.HostOf(url) ?? url;
+            var resolved = url;
+            _dispatcher.Post(() => doc.NewHostUrl = resolved);
+        }
+
         if (!IsValidHostUrl(url))
         {
             _dispatcher.Post(() => doc.StatusText = "Enter a host address like https://your-host:5099");
@@ -2178,8 +2194,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         // doesn't apply (e.g. a pre-issued bootstrap token was pasted), fall back to using it directly —
         // but remember the pairing failure so a mistyped/expired code produces a clear message rather than
         // silently saving a broken host.
-        var codeOrToken = doc.NewHostToken.Trim();
+        var codeOrToken = string.IsNullOrEmpty(codeFromLink) ? doc.NewHostToken.Trim() : codeFromLink;
         var token = codeOrToken;
+        using var pinnedHttp = fingerprint is { Length: > 0 }
+            ? Agnes.Client.PinnedTls.CreateClient(fingerprint)
+            : null;
         var pairingFailed = false;
         if (!string.IsNullOrEmpty(codeOrToken))
         {
@@ -2187,7 +2206,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             {
                 _dispatcher.Post(() => doc.StatusText = "Pairing…");
                 var deviceName = $"{Environment.MachineName} (desktop)";
-                var paired = await Agnes.Client.DevicePairing.PairAsync(url, codeOrToken, deviceName);
+                var paired = await Agnes.Client.DevicePairing.PairAsync(url, codeOrToken, deviceName, pinnedHttp);
                 token = paired.Token;
             }
             catch
@@ -2197,7 +2216,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
 
         // Persist ONLY after a successful connection, so a wrong URL / expired code never gets saved.
-        var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, token);
+        var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, token, fingerprint);
         var connected = await SelectHostAsync(doc, host);
         if (connected)
         {
@@ -2609,12 +2628,39 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         return doc;
     }
 
+    /// <summary>The pinned fingerprint recorded for a host, if it was added with one.</summary>
+    private string? FingerprintFor(string hostUrl)
+        => _knownHosts.FirstOrDefault(h => string.Equals(h.Url, hostUrl, StringComparison.OrdinalIgnoreCase))?.Fingerprint;
+
+    /// <summary>Reads one query value from an <c>agnes://</c> link.</summary>
+    private static string? ReadLinkValue(string link, string key)
+    {
+        if (!Uri.TryCreate(link, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var split = pair.Split('=', 2);
+            if (split.Length == 2 && split[0] == key)
+            {
+                return Uri.UnescapeDataString(split[1]);
+            }
+        }
+
+        return null;
+    }
+
     private async Task ReconnectAsync(SessionDocument doc, SessionDescriptor descriptor)
     {
         try
         {
             _dispatcher.Post(() => doc.StatusText = "Reconnecting…");
-            var host = await _connector.ConnectAsync(descriptor.HostUrl, descriptor.Token);
+            // Reconnect pins the same certificate the host was added with; a host that starts serving a
+            // different one fails rather than being trusted, the way a changed SSH host key does.
+            var host = await _connector.ConnectAsync(
+                descriptor.HostUrl, descriptor.Token, FingerprintFor(descriptor.HostUrl));
             doc.Host = host;
             _ = NegotiateCapabilitiesAsync(host);
             doc.HostToken = descriptor.Token;

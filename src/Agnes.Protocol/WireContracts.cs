@@ -34,7 +34,8 @@ public sealed record PairingGrant(
     string Secret,
     string DeepLink,
     DateTimeOffset ExpiresAt,
-    IReadOnlyList<string>? Addresses = null);
+    IReadOnlyList<string>? Addresses = null,
+    string? Fingerprint = null);
 
 /// <summary>
 /// Builds the <c>agnes://pair</c> deep link a QR encodes.
@@ -47,7 +48,14 @@ public sealed record PairingGrant(
 /// </summary>
 public static class PairingLink
 {
-    public static string Build(string hostAddress, string? grant = null, string? sessionId = null)
+    /// <param name="fingerprint">
+    /// Lower-case hex SHA-256 of the host's TLS certificate. This is what makes a self-signed host usable
+    /// with no CA and no installed certificate: the QR is displayed on the host's own screen, so the
+    /// fingerprint reaches the scanning device over a channel no network attacker sits on, and the very
+    /// first connection is verified rather than trusted on faith.
+    /// </param>
+    public static string Build(
+        string hostAddress, string? grant = null, string? sessionId = null, string? fingerprint = null)
     {
         var link = "agnes://pair?host=" + Uri.EscapeDataString(hostAddress.Trim());
         if (!string.IsNullOrWhiteSpace(grant))
@@ -60,11 +68,21 @@ public static class PairingLink
             link += "&session=" + Uri.EscapeDataString(sessionId);
         }
 
+        if (!string.IsNullOrWhiteSpace(fingerprint))
+        {
+            link += "&fp=" + Uri.EscapeDataString(fingerprint);
+        }
+
         return link;
     }
 
     /// <summary>The <c>host</c> an existing link carries, so a client can show it as the current choice.</summary>
-    public static string? HostOf(string deepLink)
+    public static string? HostOf(string deepLink) => ValueOf(deepLink, "host");
+
+    /// <summary>The pinned certificate fingerprint an existing link carries, if any.</summary>
+    public static string? FingerprintOf(string deepLink) => ValueOf(deepLink, "fp");
+
+    private static string? ValueOf(string deepLink, string key)
     {
         if (!Uri.TryCreate(deepLink, UriKind.Absolute, out var uri))
         {
@@ -74,7 +92,7 @@ public static class PairingLink
         foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
         {
             var split = pair.Split('=', 2);
-            if (split.Length == 2 && split[0] == "host")
+            if (split.Length == 2 && split[0] == key)
             {
                 return Uri.UnescapeDataString(split[1]);
             }
@@ -173,7 +191,7 @@ public sealed record AuthMethodDescriptor(string MethodId, string DisplayName, A
 /// <see cref="HostUrl"/> is the address a client on another network can actually resolve — the active
 /// transport's advertised endpoint, or the <c>Agnes:PublicUrl</c> override — never a bound LAN/loopback
 /// address. <see cref="DeepLink"/> is the ready-to-encode <c>agnes://pair</c> link over that address.</summary>
-public sealed record PairingInfo(string HostUrl, string DeepLink);
+public sealed record PairingInfo(string HostUrl, string DeepLink, string? Fingerprint = null);
 
 /// <summary>Exchange a GitHub user access token (obtained by the client via the device flow) for an Agnes
 /// device token. The host verifies the identity against its allowlist and discards the GitHub token.</summary>

@@ -39,6 +39,12 @@ public sealed partial class ConnectPageViewModel : PageViewModel
     private readonly SessionsViewModel _sessions;
     private CancellationTokenSource? _discovery;
 
+    /// <summary>The host certificate fingerprint a scanned QR carried, if any.</summary>
+    private readonly string? _fingerprint;
+
+    /// <summary>An HTTP client pinned to <see cref="_fingerprint"/>, or null when there's nothing to pin.</summary>
+    private readonly HttpClient? _http;
+
     public ConnectPageViewModel(
         IAppShell shell,
         HostBook hosts,
@@ -46,13 +52,20 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         string? prefillUrl = null,
         string? prefillCode = null,
         string? sessionId = null,
-        bool autoSubmit = false)
+        bool autoSubmit = false,
+        string? fingerprint = null)
     {
         _shell = shell;
         _hosts = hosts;
         _sessions = sessions;
         _sessionId = sessionId;
         _autoSubmit = autoSubmit;
+        _fingerprint = string.IsNullOrWhiteSpace(fingerprint) ? null : fingerprint.Trim().ToLowerInvariant();
+
+        // Every REST call in this flow — probing, pairing, asking for approval — goes to the same host the
+        // hub will, over the same self-signed HTTPS. Without the pin the very first request fails on trust,
+        // long before the token we're here to fetch could be used.
+        _http = _fingerprint is null ? null : PinnedTls.CreateClient(_fingerprint);
         _address = prefillUrl ?? "https://";
         _code = prefillCode ?? string.Empty;
 
@@ -189,7 +202,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         {
             // Debounce: a phone keyboard produces a burst of keystrokes, and each would otherwise be a probe.
             await Task.Delay(450, cts.Token).ConfigureAwait(false);
-            var probe = await AuthDiscovery.ProbeAsync(url, cancellationToken: cts.Token).ConfigureAwait(false);
+            var probe = await AuthDiscovery.ProbeAsync(url, _http, cts.Token).ConfigureAwait(false);
             _shell.Dispatcher.Post(() =>
             {
                 Reach = probe.Outcome switch
@@ -358,7 +371,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         {
             var publicKey = PairingApproval.LocalPublicKey();
             var pending = await PairingApproval
-                .RequestAsync(url, publicKey, _shell.DeviceName, cancellationToken: cts.Token)
+                .RequestAsync(url, publicKey, _shell.DeviceName, _http, cts.Token)
                 .ConfigureAwait(false);
 
             _shell.Dispatcher.Post(() =>
@@ -398,7 +411,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         {
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
 
-            var status = await PairingApproval.PollAsync(url, pending.RequestId, cancellationToken: cancellationToken)
+            var status = await PairingApproval.PollAsync(url, pending.RequestId, _http, cancellationToken)
                 .ConfigureAwait(false);
 
             switch (status.State)
@@ -454,7 +467,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         string token;
         try
         {
-            var paired = await DevicePairing.PairAsync(url, entry, _shell.DeviceName).ConfigureAwait(false);
+            var paired = await DevicePairing.PairAsync(url, entry, _shell.DeviceName, _http).ConfigureAwait(false);
             token = paired.Token;
         }
         catch (PairingRefusedException refused) when (refused.IsBadCode)
@@ -533,7 +546,8 @@ public sealed partial class ConnectPageViewModel : PageViewModel
             });
             _shell.OpenUrl(code.VerificationUri);
 
-            var paired = await GitHubDeviceLogin.CompleteAsync(url, _gitHubClientId, code, _shell.DeviceName).ConfigureAwait(false);
+            var paired = await GitHubDeviceLogin
+                .CompleteAsync(url, _gitHubClientId, code, _shell.DeviceName, _http).ConfigureAwait(false);
             await FinishAsync(url, paired.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsUnreachableFailure(ex))
@@ -566,7 +580,8 @@ public sealed partial class ConnectPageViewModel : PageViewModel
                 });
             }
 
-            var paired = await KeypairEnrollment.AuthenticateAsync(url, _shell.DeviceName).ConfigureAwait(false);
+            var paired = await KeypairEnrollment.AuthenticateAsync(url, _shell.DeviceName, httpClient: _http)
+                .ConfigureAwait(false);
             await FinishAsync(url, paired.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsUnreachableFailure(ex))
@@ -586,7 +601,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
     {
         Report("Connecting…", error: false, busy: true);
         var name = string.IsNullOrWhiteSpace(Name) ? new Uri(url).Host : Name.Trim();
-        var link = _hosts.Add(new SavedHost(name, url, token));
+        var link = _hosts.Add(new SavedHost(name, url, token, _fingerprint));
 
         var host = await link.ConnectAsync().ConfigureAwait(false);
         if (host is null)

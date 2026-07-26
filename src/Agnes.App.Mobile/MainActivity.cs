@@ -98,9 +98,15 @@ public sealed class MainActivity : AvaloniaMainActivity
             var grant = uri.GetQueryParameter("grant");
             var code = uri.GetQueryParameter("code");
             var session = uri.GetQueryParameter("session");
+            // `fp` is the host's certificate fingerprint. It arrives on a QR shown on the host's own
+            // screen, which is the whole point: no network attacker can substitute it, so the phone can
+            // trust a self-signed host on the very first connection without any CA.
+            var fingerprint = uri.GetQueryParameter("fp");
             if (!string.IsNullOrWhiteSpace(host))
             {
-                shell.Dispatcher.Post(() => shell.BeginPairing(host!, grant ?? code, session, autoSubmit: !string.IsNullOrWhiteSpace(grant)));
+                shell.Dispatcher.Post(() => shell.BeginPairing(
+                    host!, grant ?? code, session,
+                    autoSubmit: !string.IsNullOrWhiteSpace(grant), fingerprint: fingerprint));
             }
         }
     }

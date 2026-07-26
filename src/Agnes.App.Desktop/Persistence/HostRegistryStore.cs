@@ -3,7 +3,12 @@ using System.Text.Json;
 namespace Agnes.App.Desktop.Persistence;
 
 /// <summary>A host the user can connect a tab to.</summary>
-public sealed record KnownHost(string Name, string Url, string Token);
+/// <param name="Fingerprint">
+/// SHA-256 of the host's TLS certificate, learned when the host was added. Present for a self-signed host
+/// paired from an <c>agnes://pair</c> link; null for a host with a CA-issued certificate, which is
+/// validated by chain and name instead.
+/// </param>
+public sealed record KnownHost(string Name, string Url, string Token, string? Fingerprint = null);
 
 /// <summary>Persists the list of hosts the user has added (the simulated host is built-in).</summary>
 public sealed class HostRegistryStore

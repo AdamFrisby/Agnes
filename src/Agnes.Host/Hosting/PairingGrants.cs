@@ -39,7 +39,10 @@ public sealed class PairingGrants
     /// <param name="sessionId">Optional session to hand over alongside the host, so a scanned QR can land
     /// the new device directly in the session it was generated from.</param>
     public PairingGrant Mint(
-        string reachableAddress, string? sessionId = null, IReadOnlyList<string>? addresses = null)
+        string reachableAddress,
+        string? sessionId = null,
+        IReadOnlyList<string>? addresses = null,
+        string? fingerprint = null)
     {
         Sweep();
 
@@ -48,7 +51,11 @@ public sealed class PairingGrants
         _grants[secret] = new Entry(expires, sessionId);
 
         return new PairingGrant(
-            secret, PairingReachability.BuildDeepLink(reachableAddress, secret, sessionId), expires, addresses);
+            secret,
+            PairingReachability.BuildDeepLink(reachableAddress, secret, sessionId, fingerprint),
+            expires,
+            addresses,
+            fingerprint);
     }
 
     /// <summary>

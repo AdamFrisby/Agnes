@@ -172,6 +172,33 @@ In the desktop client this lives on a session's context menu, beside *Restart ag
 **Hide** revokes the grant server-side, so the code stops working the moment it leaves the screen
 rather than lingering for the rest of its five minutes.
 
+**Transport trust is bootstrapped from pairing.** A self-hosted host has no CA, which used to leave two
+bad options: cleartext HTTP — which Android forbids outright (`cleartextTrafficPermitted="false"`), so the
+phone simply cannot reach the host — or self-signed HTTPS, which fails trust until someone hand-installs a
+certificate. Neither is acceptable for a single developer on a LAN.
+
+So the host always serves its `IHostCertificateProvider` certificate on the HTTPS listener (previously
+relay-only), and the pairing material carries that certificate's SHA-256 as `fp=`. A client that paired
+from a QR pins it: the TLS handshake is validated against the pin instead of the OS trust store, in .NET's
+managed stack, which is also what puts it outside Android's `network_security_config`. Run the host, scan
+the QR, done — encrypted, with the host authenticated by the pinned certificate and the device
+authenticated by its per-device token, and nothing installed anywhere.
+
+The pin is stronger than plain trust-on-first-use: the QR is displayed on the host's own screen, so the
+fingerprint reaches the phone over a channel no network attacker sits on, and even the first connection is
+verified rather than assumed. A certificate that doesn't match the pin is a hard failure with no
+prompt-and-continue, the way a changed SSH host key is. Re-pair to accept a new one.
+
+The enterprise path is untouched: when a real-CA certificate is configured (`Agnes:Transport:Relay:Cert`
+-> ACME/DNS-01), that is what gets served, the host advertises **no** fingerprint, and clients validate the
+chain and host name normally with no pinning involved.
+
+> **Operator note.** Because the HTTPS listener now always serves this certificate, anything that reaches
+> the host *without* a pin — a browser, `curl`, a client that was added by typing an address rather than
+> scanning — sees an untrusted self-signed certificate, where it previously saw whatever Kestrel's default
+> was (locally, the ASP.NET dev certificate). For a host that browsers must trust, configure a real
+> certificate; the self-signed default is for the pair-and-pin path.
+
 **The address in a QR is a choice, not a fact.** A host advertises one address (`Agnes:PublicUrl`, else
 whatever the transport resolved), and for a QR that is frequently the wrong one: a host bound to
 loopback is reachable from the desktop client beside it and unreachable from the phone holding the

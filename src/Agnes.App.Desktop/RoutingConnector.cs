@@ -19,6 +19,13 @@ public sealed class RoutingConnector : IAgnesConnector
 
     public IReadOnlyCollection<IAgnesHost> Hosts => [.. _simulated.Hosts, .. _recorded.Hosts, .. _real.Hosts];
 
+    public Task<IAgnesHost> ConnectAsync(
+        string hostUrl, string token, string? pinnedFingerprint, CancellationToken cancellationToken = default)
+        => hostUrl.StartsWith("sim:", StringComparison.OrdinalIgnoreCase)
+           || hostUrl.StartsWith("rec:", StringComparison.OrdinalIgnoreCase)
+            ? ConnectAsync(hostUrl, token, cancellationToken)   // nothing to pin on an in-process host
+            : _real.ConnectAsync(hostUrl, token, pinnedFingerprint, cancellationToken);
+
     public Task<IAgnesHost> ConnectAsync(string hostUrl, string token, CancellationToken cancellationToken = default)
     {
         if (hostUrl.StartsWith("sim:", StringComparison.OrdinalIgnoreCase))

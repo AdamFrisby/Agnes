@@ -74,15 +74,17 @@ if (acmeHostCertConfigured)
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<HostCertificateRenewalService>()));
 }
 
-// On the relay path TLS must terminate at Kestrel with the cert clients trust, so present the host cert on the
-// HTTPS listener via a selector (so an ACME renewal swaps the served cert without a restart). Only when the relay
-// transport is selected — Direct keeps today's cert behavior (AC1).
-if (string.Equals(builder.Configuration["Agnes:Transport:Provider"], "agnes-relay", StringComparison.OrdinalIgnoreCase))
-{
-    builder.Services.AddOptions<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>()
-        .Configure<IHostCertificateProvider>((kestrel, cert) =>
-            kestrel.ConfigureHttpsDefaults(https => https.ServerCertificateSelector = (_, _) => cert.GetCertificate()));
-}
+// Present the host cert on the HTTPS listener via a selector (so an ACME renewal swaps the served cert without
+// a restart). This is not relay-specific: a direct listener has the same problem, and it is the one that had no
+// good answer. A self-hosted host has no CA, so a phone either talks cleartext — which Android forbids outright
+// — or fails trust until someone hand-installs a certificate. Serving this cert everywhere lets a client pin its
+// fingerprint from the pairing QR instead, so HTTPS works out of the box with nothing installed.
+//
+// The enterprise path is unaffected: when an ACME/real-CA cert is configured, that is what gets served here and
+// clients validate it by chain and name, with no pinning involved.
+builder.Services.AddOptions<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>()
+    .Configure<IHostCertificateProvider>((kestrel, cert) =>
+        kestrel.ConfigureHttpsDefaults(https => https.ServerCertificateSelector = (_, _) => cert.GetCertificate()));
 
 // CORS for a browser-hosted frontend (Uno WASM) reaching the hub cross-origin. The web client
 // served from this same origin needs no CORS; only configure origins when it's hosted elsewhere.
@@ -1150,7 +1152,7 @@ app.MapGet("/auth/methods", (IPluginRegistry<IAuthMethodProvider> methods) =>
 // TransportEndpoint (captured at startup) — or the Agnes:PublicUrl override — so a host reached only through
 // a relay or reverse proxy advertises an address a client on another network can resolve, not a bound LAN
 // one. The address is public (not the pairing secret), so this needs no auth.
-app.MapGet("/pair/qr", (HostReachability reach, IConfiguration cfg) =>
+app.MapGet("/pair/qr", (HostReachability reach, IConfiguration cfg, IHostCertificateProvider hostCert) =>
 {
     var reachable = PairingReachability.Resolve(cfg["Agnes:PublicUrl"], reach.Endpoint);
     if (string.IsNullOrWhiteSpace(reachable))
@@ -1160,8 +1162,16 @@ app.MapGet("/pair/qr", (HostReachability reach, IConfiguration cfg) =>
             statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
-    return Results.Ok(new PairingInfo(reachable, PairingReachability.BuildDeepLink(reachable)));
+    var fingerprint = PinnedFingerprint(hostCert);
+    return Results.Ok(new PairingInfo(
+        reachable, PairingReachability.BuildDeepLink(reachable, fingerprint: fingerprint), fingerprint));
 });
+
+// The fingerprint a client should pin, or null when this host serves a CA-issued certificate and the client
+// should validate the chain and name instead. Not a secret — it is a hash of a certificate the host hands to
+// anyone who connects — but it only means anything delivered out of band, which is what the QR is for.
+static string? PinnedFingerprint(IHostCertificateProvider provider)
+    => provider.CaValidatedHostName is { Length: > 0 } ? null : provider.Fingerprint;
 
 // Pair a new device with the current code; returns a durable per-device token (shown once).
 app.MapPost("/pair", async (PairRequest request, PairingGrants grants) =>
@@ -1424,7 +1434,8 @@ static string OidcCallbackPage(string title, string message, PairResponse? pairi
 
 // Mint a one-time 256-bit grant to put in a QR. Authenticated on purpose: holding a device token IS the
 // vouching, so only a device the host already trusts can invite another one.
-app.MapPost("/pair/grant", (HttpContext ctx, PairingGrants grants, HostReachability reach, IConfiguration cfg, string? session) =>
+app.MapPost("/pair/grant", (HttpContext ctx, PairingGrants grants, HostReachability reach, IConfiguration cfg,
+    IHostCertificateProvider hostCert, string? session) =>
 {
     if (!Authorized(ctx, tokens))
     {
@@ -1445,7 +1456,7 @@ app.MapPost("/pair/grant", (HttpContext ctx, PairingGrants grants, HostReachabil
         ? Results.Json(
             new { error = "This host has no externally-reachable address to advertise yet. Set Agnes:PublicUrl if it sits behind a reverse proxy." },
             statusCode: StatusCodes.Status503ServiceUnavailable)
-        : Results.Ok(grants.Mint(reachable, session, candidates));
+        : Results.Ok(grants.Mint(reachable, session, candidates, PinnedFingerprint(hostCert)));
 });
 
 // Drop a displayed grant early — what "hide the QR" calls, so a code that was on screen stops working

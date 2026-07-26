@@ -24,6 +24,12 @@ public sealed class MobileConnector : IAgnesConnector
             ? _demo.ConnectAsync(hostUrl, token, cancellationToken)
             : _real.ConnectAsync(hostUrl, token, cancellationToken);
 
+    public Task<IAgnesHost> ConnectAsync(
+        string hostUrl, string token, string? pinnedFingerprint, CancellationToken cancellationToken = default)
+        => DemoHost.IsDemo(hostUrl)
+            ? _demo.ConnectAsync(hostUrl, token, cancellationToken)
+            : _real.ConnectAsync(hostUrl, token, pinnedFingerprint, cancellationToken);
+
     public Task RemoveAsync(string hostUrl)
         => DemoHost.IsDemo(hostUrl) ? _demo.RemoveAsync(hostUrl) : _real.RemoveAsync(hostUrl);
 }

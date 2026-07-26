@@ -16,7 +16,17 @@ public sealed class HostConnection : IAgnesHost
     private readonly HubConnection _hub;
     private readonly ConcurrentDictionary<string, SessionView> _views = new();
 
-    public HostConnection(string hostUrl, string token, Action<HttpConnectionOptions>? configureHttp = null)
+    /// <param name="pinnedFingerprint">
+    /// Lower-case hex SHA-256 of the host's TLS certificate, learned at pairing. When present and the
+    /// address is a direct <c>https://</c> one, the host is authenticated against this pin instead of the
+    /// OS trust store — which is what makes a self-signed host on a LAN work with no CA and no installed
+    /// certificate. Null keeps the previous behaviour exactly, so every existing caller is unaffected.
+    /// </param>
+    public HostConnection(
+        string hostUrl,
+        string token,
+        Action<HttpConnectionOptions>? configureHttp = null,
+        string? pinnedFingerprint = null)
     {
         HostUrl = hostUrl.TrimEnd('/');
 
@@ -38,11 +48,29 @@ public sealed class HostConnection : IAgnesHost
             HostId = HostUrl;
         }
 
+        // Pin the host certificate on a direct HTTPS address. A relay address already pins inside its own
+        // transport, and there is nothing to pin on http:// or on the in-memory test transport.
+        Action<HttpConnectionOptions>? pinConfigure = null;
+        if (pinnedFingerprint is { Length: > 0 } pin
+            && relayConfigure is null
+            && baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            pinConfigure = options =>
+            {
+                options.HttpMessageHandlerFactory = _ => PinnedTls.CreateHandler(pin);
+                // The WebSockets transport dials its own socket and never touches the handler above, so
+                // pinning only the handler would leave the connection that carries every event unpinned.
+                options.WebSocketConfiguration = ws => PinnedTls.Apply(ws, pin);
+            };
+        }
+
         var url = $"{baseUrl}{WireProtocol.HubPath}?{WireProtocol.TokenParameter}={Uri.EscapeDataString(token)}";
         _hub = new HubConnectionBuilder()
             .WithUrl(url, options =>
             {
                 relayConfigure?.Invoke(options);
+                pinConfigure?.Invoke(options);
+                // Last, so a caller (notably the test server) can still override what we set.
                 configureHttp?.Invoke(options);
             })
             .WithAutomaticReconnect()

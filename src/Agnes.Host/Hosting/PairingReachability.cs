@@ -44,8 +44,9 @@ public static class PairingReachability
     /// secret minted by an already-paired device, and the QR showing it must be treated accordingly
     /// (which is why the clients that display one can hide it again).
     /// </summary>
-    public static string BuildDeepLink(string reachableAddress, string? grant = null, string? sessionId = null)
-        => PairingLink.Build(reachableAddress, grant, sessionId);
+    public static string BuildDeepLink(
+        string reachableAddress, string? grant = null, string? sessionId = null, string? fingerprint = null)
+        => PairingLink.Build(reachableAddress, grant, sessionId, fingerprint);
 }
 
 /// <summary>

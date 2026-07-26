@@ -20,7 +20,7 @@ public sealed record MobileSettings(
 
 /// <summary>A host this device has paired with. The token is the per-device bearer token issued at
 /// pairing — revocable host-side, and never shared between devices.</summary>
-public sealed record SavedHost(string Name, string Url, string Token);
+public sealed record SavedHost(string Name, string Url, string Token, string? Fingerprint = null);
 
 /// <summary>The device's paired hosts.</summary>
 public static class HostRegistry

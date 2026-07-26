@@ -12,5 +12,9 @@ public sealed class SignalRConnector : IAgnesConnector
     public async Task<IAgnesHost> ConnectAsync(string hostUrl, string token, CancellationToken cancellationToken = default)
         => await _client.AddHostAsync(hostUrl, token, null, cancellationToken).ConfigureAwait(false);
 
+    public async Task<IAgnesHost> ConnectAsync(
+        string hostUrl, string token, string? pinnedFingerprint, CancellationToken cancellationToken = default)
+        => await _client.AddHostAsync(hostUrl, token, null, cancellationToken, pinnedFingerprint).ConfigureAwait(false);
+
     public Task RemoveAsync(string hostUrl) => _client.RemoveHostAsync(hostUrl);
 }

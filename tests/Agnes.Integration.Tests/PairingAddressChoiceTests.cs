@@ -2,6 +2,7 @@ using Agnes.Host.Hosting;
 using Agnes.Protocol;
 using Agnes.Ui.Core;
 using Agnes.Ui.Core.ViewModels;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -121,6 +122,40 @@ public sealed class PairingAddressChoiceTests
 
         Assert.Equal("https://studio.tail1234.ts.net", PairingLink.HostOf(vm.DeepLink));
         Assert.DoesNotContain("session=", vm.DeepLink, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_grant_carries_the_certificate_to_pin()
+    {
+        using var factory = LoopbackBoundHost();
+        using var http = factory.CreateClient();
+
+        var grant = await Agnes.Client.PairingManagement.MintGrantAsync("http://localhost", Token, null, http);
+
+        // Without this the scanning device has no way to trust a self-signed host, and Android will not
+        // fall back to cleartext — so the fingerprint riding in the QR is what makes the flow work at all.
+        Assert.NotNull(grant!.Fingerprint);
+        Assert.Matches("^[0-9a-f]{64}$", grant.Fingerprint!);
+        Assert.Equal(grant.Fingerprint, PairingLink.FingerprintOf(grant.DeepLink));
+
+        // And it is the certificate this host actually serves.
+        var served = factory.Services.GetRequiredService<IHostCertificateProvider>();
+        Assert.Equal(served.Fingerprint, grant.Fingerprint);
+    }
+
+    [Fact]
+    public async Task The_unauthenticated_qr_endpoint_advertises_it_too()
+    {
+        using var factory = LoopbackBoundHost();
+        using var http = factory.CreateClient();
+
+        var info = await http.GetFromJsonAsync<PairingInfo>("/pair/qr");
+
+        // The fingerprint is a hash of a certificate the host hands to anyone who connects, so it is not
+        // a secret and needs no authentication — it only means something delivered out of band.
+        Assert.NotNull(info!.Fingerprint);
+        Assert.Equal(info.Fingerprint, PairingLink.FingerprintOf(info.DeepLink));
+        Assert.DoesNotContain("grant=", info.DeepLink, StringComparison.Ordinal);
     }
 
     [Fact]

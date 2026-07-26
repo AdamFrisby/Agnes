@@ -531,6 +531,15 @@ public interface IAgnesConnector
     /// <summary>Connects to a host (or returns an existing connection for the same URL).</summary>
     Task<IAgnesHost> ConnectAsync(string hostUrl, string token, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Connects, authenticating the host against a certificate fingerprint learned at pairing. Default
+    /// implementation ignores the pin, which is right for connectors with no TLS to pin — the simulated
+    /// host, the in-memory test transport — and lets a real one override.
+    /// </summary>
+    Task<IAgnesHost> ConnectAsync(
+        string hostUrl, string token, string? pinnedFingerprint, CancellationToken cancellationToken = default)
+        => ConnectAsync(hostUrl, token, cancellationToken);
+
     /// <summary>Currently known hosts.</summary>
     IReadOnlyCollection<IAgnesHost> Hosts { get; }
 
