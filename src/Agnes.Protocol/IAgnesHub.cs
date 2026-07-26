@@ -56,6 +56,14 @@ public interface IAgnesServer
 
     Task<SessionInfo> OpenSession(OpenSessionRequest request);
 
+    /// <summary>
+    /// The sessions already on this host that the caller may reach — live or dormant — so a freshly paired
+    /// client can rejoin work in progress instead of only being able to start something new. Filtered by the
+    /// same access decision <see cref="Subscribe"/> enforces, so it never advertises a session the caller
+    /// would then be refused. Pure aggregation: nothing is opened, resumed, or mutated by asking.
+    /// </summary>
+    Task<IReadOnlyList<SessionSummary>> ListSessions();
+
     // ---- launch profiles (see .ideas/providers/04-profiles.md) ----
     // Named, reusable bundles of new-session launch options, persisted host-side and driven over the wire so
     // any paired client can manage them. A profile carries no secret, so LaunchProfile crosses the wire whole.

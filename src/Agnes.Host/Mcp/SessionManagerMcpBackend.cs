@@ -26,9 +26,18 @@ public sealed class SessionManagerMcpBackend : IAgnesMcpBackend
     {
         var entries = await _sessions.ListSessionSummariesAsync(cancellationToken).ConfigureAwait(false);
         return entries
-            .Select(e => new McpSessionSummary(e.SessionId, e.AdapterId, e.Title, e.Status, e.HeadSequence))
+            .Select(e => new McpSessionSummary(e.SessionId, e.AdapterId, e.Title, StatusText(e.State), e.HeadSequence))
             .ToArray();
     }
+
+    /// <summary>The MCP tools' status vocabulary (<c>working</c>/<c>idle</c>/<c>dormant</c>), which is part of
+    /// their published contract and so is spelled out here rather than taken from the enum's name.</summary>
+    private static string StatusText(SessionRunState state) => state switch
+    {
+        SessionRunState.Working => "working",
+        SessionRunState.Idle => "idle",
+        _ => "dormant",
+    };
 
     public async Task<McpSessionStatus?> GetSessionStatusAsync(string sessionId, CancellationToken cancellationToken = default)
     {
@@ -39,15 +48,14 @@ public sealed class SessionManagerMcpBackend : IAgnesMcpBackend
             return null;
         }
 
-        // The session's current modes come from its live snapshot; open approvals are counted from the same
-        // cross-session aggregation a client's approvals inbox uses.
+        // The session's current modes come from its live snapshot; the waiting-on-a-human count comes from the
+        // summary, which already folds in the same cross-session approvals aggregation the inbox uses — asking
+        // for it a second time here would re-scan every live session's log for nothing.
         var snapshot = await _sessions.GetSnapshotAsync(sessionId, sinceSequence: long.MaxValue, cancellationToken).ConfigureAwait(false);
         var modes = snapshot.Session.Modes?.Select(m => m.Id).ToArray() ?? [];
-        var approvals = await _sessions.GetOpenApprovalsAsync(cancellationToken).ConfigureAwait(false);
-        var openForSession = approvals.Count(a => string.Equals(a.SessionId, sessionId, StringComparison.Ordinal));
 
         return new McpSessionStatus(
-            entry.SessionId, entry.AdapterId, entry.Status, entry.CurrentModeId, modes, entry.HeadSequence, openForSession);
+            entry.SessionId, entry.AdapterId, StatusText(entry.State), entry.CurrentModeId, modes, entry.HeadSequence, entry.OpenApprovals);
     }
 
     public Task SendPromptAsync(string sessionId, string text, CancellationToken cancellationToken = default)

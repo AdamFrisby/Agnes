@@ -77,6 +77,13 @@ public interface IAgnesHost : IAsyncDisposable
 
     Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
 
+    /// <summary>The sessions already on this host that this client may reach — live or dormant — so a device
+    /// that has just paired can rejoin work in progress rather than only start something new. The host filters
+    /// by the same access check <see cref="SubscribeAsync"/> enforces. Default empty for hosts/fixtures that
+    /// don't publish a catalogue.</summary>
+    Task<IReadOnlyList<SessionSummary>> ListSessionsAsync()
+        => Task.FromResult<IReadOnlyList<SessionSummary>>([]);
+
     // ---- launch profiles (see .ideas/providers/04-profiles.md) ----
     // Defaulted so hosts/fixtures that predate profiles reply empty (and reject writes) instead of failing.
 

@@ -79,7 +79,7 @@ Conventions: JSON keys camelCase; discriminators snake_case; all paths absolute;
 One thin plugin per CLI (`ClaudeCode` first). Mostly configuration atop `Agnes.Acp`: launch command / args / env, authentication handling, capability quirks, and a CLI-fallback command map. New agents are new packages, not core changes.
 
 ### `Agnes.Protocol`
-The **transport-agnostic wire contract** between host and clients: DTOs and a hub interface — subscribe/unsubscribe, send prompt, permission response, terminal I/O, and snapshot/tail cursors. The default binding is SignalR, but the contract does not assume it.
+The **transport-agnostic wire contract** between host and clients: DTOs and a hub interface — subscribe/unsubscribe, send prompt, permission response, terminal I/O, snapshot/tail cursors, and the **session catalogue** (`ListSessions`, which answers "what is this host already running that I may reach?"). The default binding is SignalR, but the contract does not assume it.
 
 ### `Agnes.Host`
 ASP.NET Core daemon:

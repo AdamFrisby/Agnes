@@ -91,7 +91,7 @@ public sealed class ApprovalsViewModel : ObservableObject
             try
             {
                 var approvals = await host.GetOpenApprovalsAsync().ConfigureAwait(false);
-                rows.AddRange(approvals.Select(a => new ApprovalRow(host, a)));
+                rows.AddRange(approvals.Select(a => new ApprovalRow(host, a, this)));
             }
             catch
             {
@@ -132,10 +132,14 @@ public sealed class ApprovalsViewModel : ObservableObject
 /// <see cref="Source"/> labels the caller, and <see cref="Options"/> are the answers to offer.</summary>
 public sealed class ApprovalRow
 {
-    public ApprovalRow(IAgnesHost host, OpenApproval approval)
+    /// <param name="owner">The list this row belongs to, so the row can offer the answers it accepts as
+    /// ready-to-bind commands. Optional: a row built without one is inert data (what tests and fixtures
+    /// want), and a session permission is answered in its session either way.</param>
+    public ApprovalRow(IAgnesHost host, OpenApproval approval, ApprovalsViewModel? owner = null)
     {
         Host = host;
         Approval = approval;
+        Choices = owner is null ? [] : BuildChoices(owner);
     }
 
     public IAgnesHost Host { get; }
@@ -160,4 +164,42 @@ public sealed class ApprovalRow
 
     /// <summary>The answer choices for an external attention request (empty for a session permission).</summary>
     public IReadOnlyList<string> Options => Approval.Options ?? [];
+
+    /// <summary>
+    /// The answers this row can be given right here, as bindable buttons: an external attention request offers
+    /// its options, a gated action offers approve/reject. Empty for a session permission, which is answered in
+    /// the session (its transcript carries the context the decision needs) — so a surface renders
+    /// <see cref="HasChoices"/> buttons or a jump, and never a request with no way to answer it.
+    /// </summary>
+    public IReadOnlyList<ApprovalChoice> Choices { get; }
+
+    public bool HasChoices => Choices.Count > 0;
+
+    private IReadOnlyList<ApprovalChoice> BuildChoices(ApprovalsViewModel owner)
+    {
+        if (IsExternal)
+        {
+            return Options.Count == 0
+                // An external asker that named no options still wants an acknowledgement, so offer the one
+                // answer that is always meaningful rather than showing a request nobody can clear.
+                ? [new ApprovalChoice("Acknowledge", new AsyncRelayCommand(() => owner.AnswerExternalAsync(this, "ok")), IsPrimary: true)]
+                : [.. Options.Select((option, i) => new ApprovalChoice(
+                    option, new AsyncRelayCommand(() => owner.AnswerExternalAsync(this, option)), IsPrimary: i == 0))];
+        }
+
+        if (IsGatedAction)
+        {
+            return
+            [
+                new ApprovalChoice("Approve", new AsyncRelayCommand(() => owner.ResolveGatedAsync(this, approve: true)), IsPrimary: true),
+                new ApprovalChoice("Reject", new AsyncRelayCommand(() => owner.ResolveGatedAsync(this, approve: false))),
+            ];
+        }
+
+        return [];
+    }
 }
+
+/// <summary>One answer a row offers, as a label plus the command that gives it. <paramref name="IsPrimary"/>
+/// marks the affirmative/first answer so a view can weight it — it carries no behaviour of its own.</summary>
+public sealed record ApprovalChoice(string Label, ICommand Command, bool IsPrimary = false);

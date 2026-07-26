@@ -1,4 +1,5 @@
 using Agnes.App.Mobile.Services;
+using Agnes.Ui.Core;
 using Agnes.Ui.Core.Transcript;
 using Agnes.Ui.Core.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -137,27 +138,7 @@ public sealed partial class SessionEntry : ObservableObject
     }
 
     /// <summary>When the session last did anything, as "now / 4m / 2h / 3d".</summary>
-    public string Age
-    {
-        get
-        {
-            var stamp = Session?.Items.LastOrDefault()?.Timestamp;
-            if (stamp is not { } when)
-            {
-                return string.Empty;
-            }
-
-            var span = DateTimeOffset.Now - when;
-            return span switch
-            {
-                { TotalSeconds: < 45 } => "now",
-                { TotalMinutes: < 60 } => $"{(int)span.TotalMinutes}m",
-                { TotalHours: < 24 } => $"{(int)span.TotalHours}h",
-                { TotalDays: < 7 } => $"{(int)span.TotalDays}d",
-                _ => when.ToString("d MMM"),
-            };
-        }
-    }
+    public string Age => RelativeTime.Format(Session?.Items.LastOrDefault()?.Timestamp);
 
     public int FileCount => Session?.ModifiedFiles.Count ?? 0;
 

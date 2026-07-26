@@ -161,6 +161,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         LoadCredentialStatusCommand = new AsyncRelayCommand(LoadCredentialStatusAsync);
         ConnectGitHubCommand = new AsyncRelayCommand(ConnectGitHubAsync);
         OpenSettingsCommand = new RelayCommand(OpenSettings);
+        OpenDashboardCommand = new RelayCommand(OpenDashboard);
         SetSettingsCategoryCommand = new RelayCommand<string>(v => { if (v is not null) { SettingsCategory = v; } });
         LinkGitHubNowCommand = new RelayCommand(LinkGitHubNow);
         DismissGitHubLinkPromptCommand = new RelayCommand(() => ShowGitHubLinkPrompt = false);
@@ -368,6 +369,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
 
         RaiseAttention();
+        // The dashboard mirrors the open tabs, so it re-reads them whenever the strip changes.
+        Dashboard?.Rebuild();
     }
 
     private void RaiseAttention()
@@ -1000,6 +1003,63 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         dock.ActiveDockable = existing;
         _factory.SetActiveDockable(existing);
         _factory.SetFocusedDockable(dock, existing);
+    }
+
+    /// <summary>
+    /// Opens (or focuses) the status dashboard tab. It's optional by design — a tab you summon, not a panel
+    /// that permanently competes with the session you're actually in — so nothing creates it until asked.
+    /// </summary>
+    private void OpenDashboard()
+    {
+        if (_factory.DocumentDock is not { } dock)
+        {
+            return;
+        }
+
+        var existing = dock.VisibleDockables?.OfType<DashboardDocument>().FirstOrDefault();
+        if (existing is null)
+        {
+            existing = new DashboardDocument(new DashboardViewModel(this, _dispatcher, SnapshotHosts));
+            _factory.AddDockable(dock, existing);
+        }
+
+        _ = existing.Dashboard.RefreshAsync();
+        dock.ActiveDockable = existing;
+        _factory.SetActiveDockable(existing);
+        _factory.SetFocusedDockable(dock, existing);
+    }
+
+    /// <summary>The open dashboard's state, or null when the tab isn't open. Looked up rather than cached:
+    /// closing the tab disposes its view model, and a cached reference to a disposed one is exactly the kind
+    /// of stale state that keeps polling in the background.</summary>
+    public DashboardViewModel? Dashboard
+        => _factory.DocumentDock?.VisibleDockables?.OfType<DashboardDocument>().FirstOrDefault()?.Dashboard;
+
+    /// <summary>Opens the status dashboard tab (Ctrl+Shift+D, the top bar, or the palette).</summary>
+    public IRelayCommand OpenDashboardCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Joins a session picked on the dashboard: it belongs in a tab of its own (the dashboard is an overview,
+    /// not a place to hold a conversation), so this opens a fresh tab on that session's host and attaches it
+    /// there. An already-open session is focused instead.
+    /// </summary>
+    public async Task JoinFromDashboardAsync(CatalogSessionRow row)
+    {
+        if (ActivateSessionById(row.SessionId))
+        {
+            return;
+        }
+
+        var doc = CreateTab();
+        doc.Host = row.Host;
+        doc.HostName = _knownHosts.FirstOrDefault(h => h.Url == row.Host.HostUrl)?.Name ?? row.Host.HostUrl;
+        doc.HostToken = _knownHosts.FirstOrDefault(h => h.Url == row.Host.HostUrl)?.Token ?? string.Empty;
+        doc.HostFingerprint = FingerprintFor(row.Host.HostUrl);
+        WireStatus(doc, row.Host);
+        AddDocument(doc);
+
+        await AttachCatalogSessionAsync(doc, row).ConfigureAwait(false);
+        _dispatcher.Post(() => Dashboard?.Rebuild());
     }
 
     private void OpenSearch()
@@ -1937,6 +1997,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var all = new List<PaletteItem>
         {
             new("New tab", "Ctrl+T", () => NewTabCommand.Execute(null)),
+            new("Open dashboard", "Ctrl+Shift+D", () => OpenDashboardCommand.Execute(null)),
             new("Show onboarding tour", "help", () => Showcase.Show()),
         };
         all.AddRange(AllDocuments().Select(t => new PaletteItem(
@@ -2088,6 +2149,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 doc.UseSandbox = hostInfo.SandboxAvailable; // default on when available (forced on when required)
                 doc.ShowAgents(agents);
             });
+            // What's already running here, alongside the agent picker. Best-effort and off the critical path:
+            // connecting must not wait on it, and a host too old to answer just shows no list.
+            _ = doc.HostSessions.LoadAsync();
             return true;
         }
         catch (Exception ex)
@@ -2516,6 +2580,59 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             });
         }
     }
+
+    /// <summary>
+    /// Joins a session that is already running on this tab's host: subscribe to it here, nothing is opened
+    /// host-side. If some other tab already holds that session, focus that tab instead — two views of one
+    /// conversation in the same window is never what the click meant.
+    /// </summary>
+    public async Task AttachCatalogSessionAsync(SessionDocument doc, CatalogSessionRow row)
+    {
+        if (doc.Host is null)
+        {
+            return;
+        }
+
+        if (ActivateSessionById(row.SessionId))
+        {
+            return;
+        }
+
+        _dispatcher.Post(() =>
+        {
+            doc.StatusText = $"Joining {row.Title}…";
+            doc.Stage = TabStage.Starting;
+        });
+
+        try
+        {
+            var view = await doc.Host.SubscribeAsync(row.SessionId);
+            var title = row.Summary.Title is { Length: > 0 } named ? named : ProjectTitle(row.WorkingDirectory, row.AdapterId);
+            _dispatcher.Post(() =>
+            {
+                doc.AgentName = row.AdapterId;
+                doc.WorkingDirectory = row.WorkingDirectory;
+                doc.Title = title;
+                doc.AttachSession(CreateSession(doc.Host!, view, title));
+                doc.Descriptor = new SessionDescriptor(
+                    doc.HostName, doc.Host!.HostUrl, doc.HostToken, row.SessionId, row.AdapterId, title);
+                doc.HostSessions.MarkOpen(row.SessionId);
+                SaveState();
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() =>
+            {
+                doc.StatusText = "Couldn't join that session: " + ex.Message;
+                doc.Stage = TabStage.PickAgent;
+            });
+        }
+    }
+
+    /// <summary>Whether some tab in this window already holds the given session.</summary>
+    public bool IsSessionOpen(string sessionId)
+        => AllDocuments().Any(d => d.Session?.SessionId == sessionId);
 
     public async Task LoadModelsAsync(SessionDocument doc, string adapterId)
     {

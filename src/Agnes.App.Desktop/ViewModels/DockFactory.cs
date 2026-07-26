@@ -71,6 +71,12 @@ public sealed class DockFactory : Factory
             _ = host.StopSessionAsync(sessionId);
         }
 
+        // A closed document that holds a live resource (the dashboard's refresh timer) gets to let go of it.
+        if (dockable is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+
         // Drop the closed document's cached view from the shared dock recycler so it doesn't leak.
         if (dockable is not null
             && Avalonia.Application.Current?.Resources.TryGetResource("DockRecycler", null, out var r) == true

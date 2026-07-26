@@ -619,16 +619,42 @@ public sealed partial class ConnectPageViewModel : PageViewModel
             return true;
         }
 
+        // Pairing is never the goal, it's the step before the goal — and the goal is usually work that
+        // already exists. Ask the host what it's running (best-effort: an older host, or one that shares
+        // nothing with this device, just answers empty) and offer those sessions; otherwise go straight to
+        // starting one, because an empty list is not worth a screen.
+        var running = await ListRunningAsync(host).ConfigureAwait(false);
+
         _shell.Dispatcher.Post(() =>
         {
             IsBusy = false;
             _shell.Haptics.Success();
             _shell.Toast($"Paired with {name}", ToastKind.Success);
             _shell.Pop();
-            // Straight into starting a session: pairing is never the goal, it's the step before the goal.
-            _sessions.StartNew();
+            if (running > 0)
+            {
+                _shell.Push(new HostSessionsPageViewModel(_shell, _hosts, _sessions, link));
+            }
+            else
+            {
+                _sessions.StartNew();
+            }
         });
         return true;
+    }
+
+    /// <summary>How many sessions this device may reach on the host it just paired with. Best-effort — any
+    /// failure is reported as none, so a host that can't answer costs a beat, not the pairing.</summary>
+    private static async Task<int> ListRunningAsync(IAgnesHost host)
+    {
+        try
+        {
+            return (await host.ListSessionsAsync().ConfigureAwait(false)).Count;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     /// <summary>Subscribes to the session a scanned QR pointed at and opens it. Falls back to the normal

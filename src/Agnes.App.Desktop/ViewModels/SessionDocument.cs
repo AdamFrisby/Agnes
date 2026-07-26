@@ -48,6 +48,14 @@ public sealed partial class SessionDocument : Document, ITraySession
         ApplyProfileCommand = new RelayCommand(() => { if (SelectedProfile is { } p) { ApplyLaunchProfile(p); } });
         ToggleSaveProfileCommand = new RelayCommand(() => { ShowSaveProfile = !ShowSaveProfile; if (ShowSaveProfile && string.IsNullOrWhiteSpace(NewProfileName)) { NewProfileName = SelectedAgent?.DisplayName ?? string.Empty; } });
         SaveProfileCommand = new AsyncRelayCommand(SaveProfileAsync, () => SelectedAgent is { Available: true } && !string.IsNullOrWhiteSpace(NewProfileName));
+        // What's already running on the chosen host: listed as soon as the host connects, so joining work in
+        // progress is a choice on the same screen as starting something new.
+        HostSessions = new SessionCatalogViewModel(
+            () => Host is { } host ? [host] : [],
+            dispatcher,
+            controller.IsSessionOpen);
+        HostSessions.AttachRequested += row => _ = _controller.AttachCatalogSessionAsync(this, row);
+
         // Direct/watch sessions (sessions/02): find sessions a CLI created outside Agnes, then watch one read-only.
         DiscoverExternalSessionsCommand = new AsyncRelayCommand(() => _controller.DiscoverExternalSessionsAsync(this));
         WatchExternalSessionCommand = new AsyncRelayCommand<Agnes.Abstractions.ExternalSessionInfo>(
@@ -74,6 +82,10 @@ public sealed partial class SessionDocument : Document, ITraySession
             StatusText = "Cancelled — choose an agent to try again.";
         });
     }
+
+    /// <summary>The sessions already running on this tab's host, offered on the new-session screen so a
+    /// freshly connected client can rejoin work instead of only starting more of it.</summary>
+    public SessionCatalogViewModel HostSessions { get; }
 
     /// <summary>The host directory a new session will run in (the project folder).</summary>
     [ObservableProperty]

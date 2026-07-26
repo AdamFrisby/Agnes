@@ -27,7 +27,11 @@ Agnes runs each CLI in its **[Agent Client Protocol](https://agentclientprotocol
 </tr>
 <tr>
 <td><img src="screenshots/01-host-picker.png" alt="Host picker"><br><sub><b>Connect to a host</b> — per-device pairing; the host is a per-tab choice, so one window can span several.</sub></td>
-<td><img src="screenshots/02-agent-picker.png" alt="Agent picker"><br><sub><b>Pick an agent</b> — agents not installed on the host are greyed out.</sub></td>
+<td><img src="screenshots/02-agent-picker.png" alt="Agent picker"><br><sub><b>Start new, or rejoin</b> — the host's running sessions are listed above the agent picker; join one to pick up its history.</sub></td>
+</tr>
+<tr>
+<td><img src="screenshots/07d-dashboard.png" alt="Status dashboard"><br><sub><b>Status dashboard</b> (Ctrl+Shift+D) — an optional tab: what every session is doing, and anything waiting on you, up top.</sub></td>
+<td><img src="screenshots/03t-light-theme.png" alt="Light theme"><br><sub><b>Light &amp; dark themes</b> — applied live, without restarting a session.</sub></td>
 </tr>
 <tr>
 <td><img src="screenshots/04s-sandbox-running.png" alt="Sandboxed session"><br><sub><b>Per-session sandboxing</b> — isolate an agent in an Incus VM; pause, resume, or delete it from the status bar.</sub></td>
@@ -35,7 +39,7 @@ Agnes runs each CLI in its **[Agent Client Protocol](https://agentclientprotocol
 </tr>
 <tr>
 <td><img src="screenshots/03a-autonomous-session.png" alt="Autonomous session"><br><sub><b>Autonomous mode</b> — opt-in per session; the ⚡ chip surfaces it and switches the agent's live mode.</sub></td>
-<td><img src="screenshots/03t-light-theme.png" alt="Light theme"><br><sub><b>Light &amp; dark themes</b> — applied live, without restarting a session.</sub></td>
+<td><img src="screenshots/04f-search.png" alt="Cross-session search"><br><sub><b>Search across sessions</b> — the host's full-text index over every recorded transcript.</sub></td>
 </tr>
 </table>
 

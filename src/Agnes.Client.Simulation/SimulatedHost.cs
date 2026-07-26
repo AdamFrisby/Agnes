@@ -141,6 +141,45 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id), skipPermissions));
     }
 
+    /// <summary>
+    /// Sessions that were already running on this host before the client connected — what a freshly paired
+    /// device is offered so it can rejoin work in progress. They are catalogue rows, not live objects: nothing
+    /// is materialised until something actually subscribes (see <see cref="CreateRestored"/>), which is exactly
+    /// how the real host behaves for a dormant session.
+    /// </summary>
+    private static readonly SessionSummary[] Catalogue =
+    [
+        new("sim-prior-1", "claude-code-native", "/home/you/projects/agnes", "Port the Oceanic theme",
+            SessionRunState.Working, HeadSequence: 184, OpenApprovals: 0,
+            StartedAt: null, LastActivityAt: null, CurrentModeId: "code", CurrentModelId: null,
+            ReadOnly: false, Sandboxed: true),
+        new("sim-prior-2", "opencode", "/home/you/projects/storefront", "Fix the checkout race",
+            SessionRunState.Idle, HeadSequence: 96, OpenApprovals: 1,
+            StartedAt: null, LastActivityAt: null, CurrentModeId: "ask", CurrentModelId: null,
+            ReadOnly: false, Sandboxed: true),
+        new("sim-prior-3", "codex", "/home/you/projects/notes", "Weekly dependency sweep",
+            SessionRunState.Dormant, HeadSequence: 41, OpenApprovals: 0,
+            StartedAt: null, LastActivityAt: null, CurrentModeId: null, CurrentModelId: null,
+            ReadOnly: false, Sandboxed: false),
+    ];
+
+    public Task<IReadOnlyList<SessionSummary>> ListSessionsAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+        // Ages are stamped at call time rather than baked into the constants, so the list reads as "4m ago"
+        // however long the demo has been open.
+        var prior = Catalogue
+            .Where(c => !_sessions.ContainsKey(c.SessionId))
+            .Select((c, i) => c with
+            {
+                StartedAt = now.AddHours(-2 - i),
+                LastActivityAt = now.AddMinutes(-4 - (i * 17)),
+            });
+
+        return Task.FromResult<IReadOnlyList<SessionSummary>>(
+            _sessions.Values.Select(s => s.Summarize()).Concat(prior).ToArray());
+    }
+
     public Task<ForkPlan?> ProposeForkAsync(string sessionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var session))
@@ -656,7 +695,15 @@ public sealed class SimulatedHost : IAgnesHost
 
     private SimSession CreateRestored(string id)
     {
-        var session = new SimSession(id, "opencode", "/tmp/agnes");
+        // A session listed in the catalogue is restored as that session (same agent, folder and name), so
+        // "attach to what's already running" lands where the list said it would.
+        var listed = Catalogue.FirstOrDefault(c => c.SessionId == id);
+        var session = new SimSession(id, listed?.AdapterId ?? "opencode", listed?.WorkingDirectory ?? "/tmp/agnes");
+        if (listed?.Title is { Length: > 0 } title)
+        {
+            session.EmitTitleOnce(title);
+        }
+
         session.Emit(new MessageChunkEvent(MessageRole.User, new TextContent("(restored) summarize what we did last time")));
         session.Emit(new MessageChunkEvent(MessageRole.Assistant,
             new TextContent("Earlier we scaffolded the project and ran a couple of prompts. This tab was restored on relaunch.")));
@@ -700,6 +747,12 @@ public sealed class SimulatedHost : IAgnesHost
         public SessionView View { get; }
         public long Head { get { lock (_gate) { return _seq; } } }
 
+        /// <summary>Whether a turn is currently in flight — set when one starts, cleared by the
+        /// <see cref="TurnEndedEvent"/> that ends it (cancellation included, which emits one too).</summary>
+        public bool IsTurnActive { get { lock (_gate) { return _turnActive; } } }
+
+        private bool _turnActive;
+
         /// <summary>Starts a new turn, cancelling any previous one, and returns its token.</summary>
         public CancellationToken NewTurn()
         {
@@ -707,6 +760,7 @@ public sealed class SimulatedHost : IAgnesHost
             {
                 _turn?.Cancel();
                 _turn = new CancellationTokenSource();
+                _turnActive = true;
                 return _turn.Token;
             }
         }
@@ -732,6 +786,11 @@ public sealed class SimulatedHost : IAgnesHost
             {
                 var stamped = @event with { Sequence = ++_seq, Timestamp = DateTimeOffset.UtcNow };
                 _log.Add(stamped);
+                if (stamped is TurnEndedEvent)
+                {
+                    _turnActive = false;
+                }
+
                 View.Apply(stamped);
             }
         }
@@ -782,6 +841,27 @@ public sealed class SimulatedHost : IAgnesHost
                 return new SessionSnapshot(
                     new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId, new SandboxStatus("incus", $"agnes-{Id}", "Running"), SkipPermissions),
                     _log.ToArray(), _seq);
+            }
+        }
+
+        /// <summary>This session as a catalogue row, derived from the log the same way the real host derives
+        /// it: a turn in flight means working, and an unanswered permission request means it wants a human.</summary>
+        public SessionSummary Summarize()
+        {
+            lock (_gate)
+            {
+                var resolved = _log.OfType<PermissionResolvedEvent>().Select(r => r.RequestId).ToHashSet(StringComparer.Ordinal);
+                var open = _log.OfType<PermissionRequestedEvent>().Count(p => !resolved.Contains(p.RequestId));
+                var title = _log.OfType<SessionTitleEvent>().LastOrDefault()?.Title;
+                return new SessionSummary(
+                    Id, AdapterId, Cwd, title,
+                    _turnActive ? SessionRunState.Working : SessionRunState.Idle,
+                    _seq,
+                    OpenApprovals: open,
+                    StartedAt: _log.Count > 0 ? _log[0].Timestamp : null,
+                    LastActivityAt: _log.Count > 0 ? _log[^1].Timestamp : null,
+                    CurrentModeId: CurrentModeId,
+                    Sandboxed: true);
             }
         }
     }

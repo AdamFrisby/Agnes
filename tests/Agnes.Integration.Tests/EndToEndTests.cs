@@ -84,6 +84,30 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
     }
 
     [Fact]
+    public async Task ListSessions_offers_a_second_client_the_sessions_already_running()
+    {
+        // The point of the surface: a client that didn't open the session can still find it and join it,
+        // which is what makes pairing a second device useful rather than a fresh start.
+        await using var opener = new AgnesClient();
+        var host = await opener.AddHostAsync("http://localhost", Token, UseTestServer());
+        var session = await host.OpenSessionAsync("scripted", ".");
+
+        await using var joiner = new AgnesClient();
+        var host2 = await joiner.AddHostAsync("http://localhost", Token, UseTestServer());
+
+        var listed = await host2.ListSessionsAsync();
+
+        var found = Assert.Single(listed, s => s.SessionId == session.SessionId);
+        Assert.Equal("scripted", found.AdapterId);
+        Assert.Equal(Agnes.Protocol.SessionRunState.Idle, found.State);
+        Assert.False(found.IsBlocked);
+
+        // And what the list advertises, subscribing actually delivers.
+        var view = await host2.SubscribeAsync(found.SessionId);
+        Assert.Equal(session.SessionId, view.SessionId);
+    }
+
+    [Fact]
     public async Task GetCapabilities_flows_over_the_wire_and_reports_no_sandbox_provider()
     {
         await using var client = new AgnesClient();

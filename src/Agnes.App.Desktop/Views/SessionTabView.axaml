@@ -593,6 +593,60 @@
                                    Foreground="{DynamicResource FgDim}" FontSize="12" HorizontalAlignment="Center" />
                     </StackPanel>
 
+                    <!-- Already running on this host: the sessions this device may reach, listed as soon as the
+                         host connects. Rejoining work in progress is the first question after pairing, so it sits
+                         above the new-session controls rather than behind them. -->
+                    <StackPanel Spacing="6" IsVisible="{Binding HostSessions.HasSessions}">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Grid.Column="0" Text="ALREADY RUNNING ON THIS HOST" Foreground="{DynamicResource FgDim}"
+                                       FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="{Binding HostSessions.Status}" Foreground="{DynamicResource FgFaint}"
+                                       FontSize="10" VerticalAlignment="Center" Margin="10,0,0,0" TextTrimming="CharacterEllipsis" />
+                            <Button Classes="chip" Grid.Column="2" Content="Refresh" Command="{Binding HostSessions.RefreshCommand}"
+                                    Padding="8,3" FontSize="11" AutomationProperties.Name="Refresh the session list" />
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding HostSessions.Sessions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,2" CornerRadius="8" Padding="12,8" Background="{DynamicResource Panel}"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                                            <Border Grid.Column="0" Classes="statusdot" VerticalAlignment="Center"
+                                                    Classes.working="{Binding IsWorking}"
+                                                    Classes.attention="{Binding IsBlocked}" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                                <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}">
+                                                    <Run Text="{Binding AdapterId}" /><Run Text=" · " /><Run Text="{Binding WorkingDirectory}" />
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                <TextBlock Text="{Binding StateText}" FontSize="11" Classes="tone"
+                                                           Classes.working="{Binding IsWorking}"
+                                                           Classes.attention="{Binding IsBlocked}" />
+                                                <TextBlock Text="{Binding Age}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                           HorizontalAlignment="Right" />
+                                            </StackPanel>
+                                            <Button Grid.Column="3" VerticalAlignment="Center" Padding="12,4" FontSize="11"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.HostSessions.AttachCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6"
+                                                    ToolTip.Tip="Join this session in this tab"
+                                                    AutomationProperties.Name="Join this session">
+                                                <Panel>
+                                                    <TextBlock Text="Join" IsVisible="{Binding !IsAlreadyOpen}" />
+                                                    <TextBlock Text="Go to it" IsVisible="{Binding IsAlreadyOpen}" />
+                                                </Panel>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
                     <!-- Working directory (the project the agent works on, on the host) -->
                     <StackPanel Spacing="4">
                         <StackPanel Orientation="Horizontal" Spacing="6">

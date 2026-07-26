@@ -376,6 +376,48 @@ public sealed record SessionInfo(
     bool ReadOnly = false,
     string? CurrentModelId = null);
 
+/// <summary>How busy a catalogued session is right now, as the host sees it. Deliberately coarse — it is
+/// derived from live state (is a turn running?) rather than stored, so it needs no new bookkeeping. "Needs a
+/// human" is NOT a state here: it is <see cref="SessionSummary.OpenApprovals"/> being non-zero, so the two
+/// facts stay independent (a session can be both working and blocked on an earlier request).</summary>
+public enum SessionRunState
+{
+    /// <summary>Catalogued but not currently loaded — resuming it re-launches the agent.</summary>
+    Dormant,
+
+    /// <summary>Live, with no turn in flight.</summary>
+    Idle,
+
+    /// <summary>Live, with a turn currently running.</summary>
+    Working,
+}
+
+/// <summary>
+/// One row of the host's session catalogue, as offered to a client that asks "what is already running here?"
+/// (<see cref="IAgnesServer.ListSessions"/>). It is a pure aggregation over state the host already holds — it
+/// creates nothing and resumes nothing; attaching is still an explicit <see cref="IAgnesServer.Subscribe"/>.
+/// Only sessions the caller may subscribe to are ever listed, so this carries no more information than the
+/// caller could already reach.
+/// </summary>
+public sealed record SessionSummary(
+    string SessionId,
+    string AdapterId,
+    string WorkingDirectory,
+    string? Title,
+    SessionRunState State,
+    long HeadSequence,
+    int OpenApprovals = 0,
+    DateTimeOffset? StartedAt = null,
+    DateTimeOffset? LastActivityAt = null,
+    string? CurrentModeId = null,
+    string? CurrentModelId = null,
+    bool ReadOnly = false,
+    bool Sandboxed = false)
+{
+    /// <summary>Whether this session is waiting on a human (one or more unanswered permission requests).</summary>
+    public bool IsBlocked => OpenApprovals > 0;
+}
+
 /// <summary>The per-session defaults a project suggests.</summary>
 public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask");
 

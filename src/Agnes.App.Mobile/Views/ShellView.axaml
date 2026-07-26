@@ -19,6 +19,7 @@
     <DataTemplate DataType="vm:SessionPageViewModel"><v:SessionPageView /></DataTemplate>
     <DataTemplate DataType="vm:NewSessionPageViewModel"><v:NewSessionPageView /></DataTemplate>
     <DataTemplate DataType="vm:ConnectPageViewModel"><v:ConnectPageView /></DataTemplate>
+    <DataTemplate DataType="vm:HostSessionsPageViewModel"><v:HostSessionsPageView /></DataTemplate>
     <DataTemplate DataType="vm:AppearancePageViewModel"><v:AppearancePageView /></DataTemplate>
     <DataTemplate DataType="vm:NotificationsPageViewModel"><v:NotificationsPageView /></DataTemplate>
     <DataTemplate DataType="vm:PromptsPageViewModel"><v:PromptsPageView /></DataTemplate>

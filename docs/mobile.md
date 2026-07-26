@@ -88,6 +88,13 @@ with a "Latest" pill offering the way back.
 hover to lean on), and haptics fire only when something actually changed in the world: a prompt left the
 device, a turn ended, something needs you.
 
+**Pairing lands on the work, not on an empty form.** After a host is paired, the phone asks it what it's
+already running and offers those sessions ("On this host"), because the work usually predates the pairing:
+an agent mid-turn on the desktop you walked away from, or one blocked on a permission an hour ago. Joining
+one picks up its whole history — nothing is started. A host with nothing running skips the screen and goes
+straight to starting a session, since an empty list isn't worth a tap. The same list is reachable later per
+host from the Hosts sheet, which is how you find a session this device forgot but the host still holds.
+
 **It ships with a demo.** On a first launch with nothing paired, the app seeds a session on the built-in
 offline simulated host and primes it with a prompt. A remote-agent client is inert until you have a
 host, and "install it, then go stand up a server before you can see anything" is a bad first minute. The

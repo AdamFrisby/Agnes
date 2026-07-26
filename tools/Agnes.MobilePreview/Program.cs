@@ -155,6 +155,18 @@ public static class Program
             connect.CancelApprovalCommand.Execute(null);
         }
 
+        // 8d) What's already running on a host — the screen a freshly paired device lands on, and the one
+        //     that turns "I paired a phone" into "I picked up the run I left on the desktop".
+        shell.PopToRoot();
+        if (shell.Hosts.Links.FirstOrDefault() is { } link)
+        {
+            var browse = new HostSessionsPageViewModel(shell, shell.Hosts, shell.Sessions, link);
+            shell.Push(browse);
+            Pump(() => browse.Catalog.HasSessions, 3000);
+            Settle(400);
+            Shot(window, "09d-host-sessions");
+        }
+
         // 9) Settings, and the light theme (the brand's default surface treatment).
         shell.PopToRoot();
         shell.SelectTab(ShellTab.More);

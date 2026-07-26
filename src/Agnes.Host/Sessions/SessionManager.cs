@@ -13,15 +13,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Agnes.Host.Sessions;
 
-/// <summary>A lightweight per-session summary (see <see cref="SessionManager.ListSessionSummariesAsync"/>).</summary>
-public sealed record SessionListEntry(
-    string SessionId,
-    string AdapterId,
-    string? Title,
-    string Status,
-    long HeadSequence,
-    string? CurrentModeId);
-
 /// <summary>Orchestrates agent adapters and live sessions, backed by the event store.</summary>
 public sealed class SessionManager : IAsyncDisposable
 {
@@ -2501,13 +2492,15 @@ public sealed class SessionManager : IAsyncDisposable
     }
 
     /// <summary>
-    /// A lightweight listing of every known session (live or dormant-but-catalogued): its adapter, current
-    /// auto-title, coarse status (<c>working</c> while a turn is running, <c>idle</c> when live-but-quiet,
-    /// <c>dormant</c> when catalogued but not currently loaded), head sequence and current mode. Used by the
-    /// MCP server's <c>list_sessions</c>/<c>get_session_status</c> tools; a pure aggregation over existing
-    /// state that creates nothing.
+    /// A lightweight listing of every known session (live or dormant-but-catalogued): its adapter, working
+    /// folder, current auto-title, coarse <see cref="SessionRunState"/> (<c>Working</c> while a turn is
+    /// running, <c>Idle</c> when live-but-quiet, <c>Dormant</c> when catalogued but not currently loaded),
+    /// head sequence, how many approvals it has waiting on a human, and when it last did anything. Used by
+    /// the MCP server's <c>list_sessions</c>/<c>get_session_status</c> tools and by a client asking what is
+    /// already running on the host it just paired with; a pure aggregation over existing state that creates
+    /// nothing and resumes nothing.
     /// </summary>
-    public async Task<IReadOnlyList<SessionListEntry>> ListSessionSummariesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SessionSummary>> ListSessionSummariesAsync(CancellationToken cancellationToken = default)
     {
         var ids = new HashSet<string>(_catalog.Keys, StringComparer.Ordinal);
         foreach (var liveId in _sessions.Keys)
@@ -2515,18 +2508,53 @@ public sealed class SessionManager : IAsyncDisposable
             ids.Add(liveId);
         }
 
-        var result = new List<SessionListEntry>(ids.Count);
+        // One aggregation for every session's waiting-on-a-human count, rather than a scan per row.
+        var approvals = await GetOpenApprovalsAsync(cancellationToken).ConfigureAwait(false);
+        var blocked = approvals
+            .Where(a => a.SessionId is { Length: > 0 })
+            .GroupBy(a => a.SessionId!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
+        var result = new List<SessionSummary>(ids.Count);
         foreach (var id in ids)
         {
             var live = _sessions.TryGetValue(id, out var s) ? s : null;
-            var adapterId = live?.AdapterId
-                ?? (_catalog.TryGetValue(id, out var rec) ? rec.AdapterId : "unknown");
-            var status = live is null ? "dormant" : live.IsTurnActive ? "working" : "idle";
+            var record = _catalog.TryGetValue(id, out var rec) ? rec : null;
+            var adapterId = live?.AdapterId ?? record?.AdapterId ?? "unknown";
+            var state = live is null ? SessionRunState.Dormant
+                : live.IsTurnActive ? SessionRunState.Working
+                : SessionRunState.Idle;
             var head = await _store.GetHeadAsync(id, cancellationToken).ConfigureAwait(false);
-            result.Add(new SessionListEntry(id, adapterId, StateOrNull(id)?.Title, status, head, live?.CurrentModeId));
+            result.Add(new SessionSummary(
+                id,
+                adapterId,
+                live?.WorkingDirectory ?? record?.WorkingDirectory ?? string.Empty,
+                StateOrNull(id)?.Title,
+                state,
+                head,
+                OpenApprovals: blocked.TryGetValue(id, out var count) ? count : 0,
+                StartedAt: record?.CreatedAt,
+                LastActivityAt: await LastActivityAtAsync(id, head, cancellationToken).ConfigureAwait(false),
+                CurrentModeId: live?.CurrentModeId,
+                CurrentModelId: record?.ModelId,
+                ReadOnly: IsReadOnly(id),
+                Sandboxed: record?.Sandboxed ?? false));
         }
 
         return result;
+    }
+
+    /// <summary>When the session last appended anything, read as the single event at its head (so the cost is
+    /// one indexed row, not a log scan). Null for a session that has never recorded an event.</summary>
+    private async Task<DateTimeOffset?> LastActivityAtAsync(string sessionId, long head, CancellationToken cancellationToken)
+    {
+        if (head <= 0)
+        {
+            return null;
+        }
+
+        var tail = await _store.ReadSinceAsync(sessionId, head - 1, cancellationToken).ConfigureAwait(false);
+        return tail.Count > 0 ? tail[^1].Timestamp : null;
     }
 
     /// <summary>

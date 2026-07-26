@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             xmlns:core="using:Agnes.Ui.Core.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.HostSessionsPageView"
+             x:DataType="vm:HostSessionsPageViewModel"
+             Background="{DynamicResource Bg}">
+  <!--
+    What the host you just paired with is already running. One tap joins a session — the phone's best
+    trick is unblocking an agent you started somewhere else, and this is the screen that makes that
+    possible in the first minute rather than after you've hunted for the session id.
+  -->
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <c:PageHeader Grid.Row="0" Title="On this host" Subtitle="{Binding Subtitle}">
+      <c:PageHeader.Action>
+        <Button Theme="{StaticResource IconButton}" Command="{Binding RefreshCommand}">
+          <c:Icon Data="{StaticResource IconRefresh}" Size="20" Stroke="{DynamicResource TextDim}" />
+        </Button>
+      </c:PageHeader.Action>
+    </c:PageHeader>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="12,10,12,16" Spacing="8">
+
+        <TextBlock Classes="dim" Margin="4,0,4,4" TextWrapping="Wrap"
+                   Text="Sessions already running here. Joining one picks up its whole history — nothing new is started." />
+
+        <TextBlock Classes="muted" Text="Asking the host…" IsVisible="{Binding Catalog.IsLoading}" Margin="4,0" />
+        <TextBlock Classes="caption" Text="{Binding Status}" IsVisible="{Binding HasStatus}" Margin="4,0" />
+
+        <ItemsControl ItemsSource="{Binding Catalog.Sessions}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="core:CatalogSessionRow">
+              <Button Theme="{StaticResource CardButton}" Margin="0,0,0,8"
+                      Command="{Binding $parent[UserControl].DataContext.OpenCommand}"
+                      CommandParameter="{Binding}">
+                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+
+                  <Border Grid.Row="0" Grid.Column="0" Classes="dot" Margin="0,0,10,0"
+                          Classes.running="{Binding IsWorking}"
+                          Classes.needs="{Binding IsBlocked}" />
+
+                  <TextBlock Grid.Row="0" Grid.Column="1" Classes="title" Text="{Binding Title}"
+                             TextTrimming="CharacterEllipsis" MaxLines="1" />
+
+                  <TextBlock Grid.Row="0" Grid.Column="2" Classes="caption" Text="{Binding Age}"
+                             Margin="10,0,0,0" VerticalAlignment="Center" />
+
+                  <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="mono"
+                             Margin="0,3,0,0" TextTrimming="CharacterEllipsis" MaxLines="1"
+                             Foreground="{DynamicResource TextMuted}" Text="{Binding WorkingDirectory}" />
+
+                  <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal"
+                              Margin="0,10,0,0" Spacing="10">
+                    <Border Classes="pill"
+                            Classes.needs="{Binding IsBlocked}"
+                            Classes.running="{Binding IsWorking}">
+                      <TextBlock Text="{Binding StateText}" />
+                    </Border>
+                    <TextBlock Classes="caption" Text="{Binding AdapterId}" VerticalAlignment="Center" />
+                    <TextBlock Classes="caption" Text="Already open here" VerticalAlignment="Center"
+                               IsVisible="{Binding IsAlreadyOpen}" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Empty: the host has nothing to join, so the only honest next step is to start something. -->
+        <StackPanel IsVisible="{Binding Catalog.IsEmpty}" Margin="16,24,16,0" Spacing="10">
+          <TextBlock Classes="headline" Text="Nothing running here yet" HorizontalAlignment="Center"
+                     TextAlignment="Center" />
+          <TextBlock Classes="dim" TextAlignment="Center" LineHeight="22"
+                     Text="{Binding Catalog.Status}" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Padding="16,8,16,22">
+      <Button Theme="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
+              Command="{Binding NewSessionCommand}">
+        <StackPanel Orientation="Horizontal" Spacing="9">
+          <c:Icon Data="{StaticResource IconPlus}" Size="19" Stroke="White" StrokeThickness="2.1" />
+          <TextBlock Text="Start a new session" Foreground="White" FontWeight="SemiBold" />
+        </StackPanel>
+      </Button>
+    </Border>
+  </Grid>
+</UserControl>

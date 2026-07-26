@@ -46,6 +46,15 @@ public interface ITabController
     /// <summary>Opens a live, read-only watch of a discovered external session in this tab.</summary>
     Task WatchExternalSessionAsync(SessionDocument doc, ExternalSessionInfo external);
 
+    /// <summary>Joins a session that is already running on the tab's host (from its session catalogue) —
+    /// subscribing to it in this tab rather than opening anything new. If the session is already open in
+    /// another tab, that tab is focused instead of subscribing twice.</summary>
+    Task AttachCatalogSessionAsync(SessionDocument doc, Agnes.Ui.Core.ViewModels.CatalogSessionRow row);
+
+    /// <summary>Whether a session id is already open in some tab of this window (so the catalogue can offer
+    /// "Go to it" rather than a second view of the same conversation).</summary>
+    bool IsSessionOpen(string sessionId);
+
     /// <summary>Loads the models offered for an agent (live or static) and reconciles them against the user's
     /// favorites, populating the tab's model picker. No-op when the host reports no models.</summary>
     Task LoadModelsAsync(SessionDocument doc, string adapterId);

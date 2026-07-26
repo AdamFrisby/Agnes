@@ -68,6 +68,15 @@ public sealed class RecordedHost : IAgnesHost
         return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, 0));
     }
 
+    /// <summary>The playback sessions opened so far on this fixture — a recording that has never been opened
+    /// isn't a session yet, so it belongs in the agent list, not here.</summary>
+    public Task<IReadOnlyList<SessionSummary>> ListSessionsAsync()
+        => Task.FromResult<IReadOnlyList<SessionSummary>>(
+            _sessions.Values
+                .Select(s => new SessionSummary(
+                    s.Id, "recorded", string.Empty, s.Name, SessionRunState.Idle, s.Head, ReadOnly: true))
+                .ToArray());
+
     public Task<SessionView> SubscribeAsync(string sessionId, long since = 0)
     {
         if (_sessions.TryGetValue(sessionId, out var session))
@@ -133,6 +142,13 @@ public sealed class RecordedHost : IAgnesHost
         }
 
         public SessionView View { get; }
+
+        public string Id => View.SessionId;
+
+        /// <summary>The recording's name, used as the session's title in the catalogue.</summary>
+        public string Name => _recording.Name;
+
+        public long Head { get { lock (_gate) { return _seq; } } }
 
         public void StartReplay(double speed)
         {

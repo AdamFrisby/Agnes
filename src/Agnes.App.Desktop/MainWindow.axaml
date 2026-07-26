@@ -25,6 +25,7 @@
         <KeyBinding Gesture="Ctrl+D8" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="8" />
         <KeyBinding Gesture="Ctrl+D9" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="9" />
         <KeyBinding Gesture="Ctrl+K" Command="{Binding TogglePaletteCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+D" Command="{Binding OpenDashboardCommand}" />
     </Window.KeyBindings>
 
     <!-- Native menu — shown in the macOS menu bar (inert on Windows/Linux, where the top bar serves). -->
@@ -166,16 +167,47 @@
                                 <ItemsControl ItemsSource="{Binding Approvals.Approvals}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Button Command="{Binding $parent[ItemsControl].DataContext.Approvals.JumpCommand}"
-                                                    CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                                    HorizontalContentAlignment="Left" Background="{DynamicResource PanelAlt}"
-                                                    BorderThickness="0" Padding="8,6" Margin="0,2" CornerRadius="6" Cursor="Hand">
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Text="Tap to jump to the session" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                                </StackPanel>
-                                            </Button>
+                                            <!-- A session permission jumps (it's answered against its transcript);
+                                                 anything else — an external question, a gated action — carries its
+                                                 own answers, so no row here is a dead end. -->
+                                            <Panel Margin="0,2">
+                                                <Button Command="{Binding $parent[ItemsControl].DataContext.Approvals.JumpCommand}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left" Background="{DynamicResource PanelAlt}"
+                                                        BorderThickness="0" Padding="8,6" CornerRadius="6" Cursor="Hand"
+                                                        IsVisible="{Binding !HasChoices}">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="Tap to jump to the session" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Border Background="{DynamicResource PanelAlt}" Padding="8,6" CornerRadius="6"
+                                                        IsVisible="{Binding HasChoices}">
+                                                    <StackPanel Spacing="6">
+                                                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
+                                                                   TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding Source, StringFormat='asked by {0}'}"
+                                                                   Foreground="{DynamicResource FgDim}" FontSize="11"
+                                                                   IsVisible="{Binding Source, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        <ItemsControl ItemsSource="{Binding Choices}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <StackPanel Orientation="Horizontal" Spacing="6" />
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Button Content="{Binding Label}" Command="{Binding Command}"
+                                                                            FontSize="11" Padding="10,3"
+                                                                            Classes.primary="{Binding IsPrimary}"
+                                                                            Classes.chip="{Binding !IsPrimary}" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Panel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
@@ -303,6 +335,11 @@
                             </Flyout>
                         </Button.Flyout>
                     </Button>
+
+                    <!-- Dashboard: the optional status-of-everything tab (Ctrl+Shift+D) -->
+                    <Button Classes="chip" Content="▦" Command="{Binding OpenDashboardCommand}" Padding="10,5" FontSize="12"
+                            AutomationProperties.Name="Status dashboard"
+                            ToolTip.Tip="Status of every session, and anything waiting on you (Ctrl+Shift+D)" />
 
                     <!-- Search: opens a first-class tab searching every recorded session's transcript -->
                     <Button Classes="chip" Content="🔍" Command="{Binding OpenSearchCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Search history" />

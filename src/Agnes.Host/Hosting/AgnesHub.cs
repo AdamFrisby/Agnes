@@ -134,6 +134,33 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
         => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox, request.ModelId, owner: CallerOwnerId());
 
+    /// <summary>
+    /// What is already running on this host, filtered to what the caller may actually subscribe to. The gate is
+    /// the very same <see cref="AccessKind.Subscribe"/> decision <see cref="Subscribe"/> enforces, asked per
+    /// session — so the list can never advertise a session the caller would then be refused, and a public-link
+    /// viewer (scoped to exactly one session, never a catalogue) gets nothing here at all.
+    /// </summary>
+    public async Task<IReadOnlyList<SessionSummary>> ListSessions()
+    {
+        if (_publicViewers.IsPublicViewer(Context.ConnectionId))
+        {
+            return [];
+        }
+
+        var caller = CallerContext();
+        var summaries = await _sessions.ListSessionSummariesAsync().ConfigureAwait(false);
+        var visible = new List<SessionSummary>(summaries.Count);
+        foreach (var summary in summaries)
+        {
+            if (await DecideAsync(summary.SessionId, AccessKind.Subscribe, caller).ConfigureAwait(false))
+            {
+                visible.Add(summary);
+            }
+        }
+
+        return visible;
+    }
+
     public Task<IReadOnlyList<LaunchProfile>> GetLaunchProfiles()
         => Task.FromResult(_launchProfiles.List());
 

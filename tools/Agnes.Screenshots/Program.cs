@@ -59,9 +59,11 @@ public static class Program
         Pump(() => first.Hosts is { Count: > 0 });
         Capture(window, "01-host-picker.png");
 
-        // 2) Agent picker on the chosen host — default permission mode is "ask before each tool"
+        // 2) Agent picker on the chosen host — default permission mode is "ask before each tool", with the
+        //    host's already-running sessions offered above it (join one instead of starting another).
         first.Hosts!.First().Select.Execute(null);
         Pump(() => first.Agents is { Count: > 0 });
+        Pump(() => first.HostSessions.HasSessions);
         Capture(window, "02-agent-picker.png");
 
         // 2b) Autonomous permission mode (opt-in): the user flips the toggle before opening a session
@@ -297,6 +299,15 @@ public static class Program
 
         // 7) The browser-style tab strip (several tabs now open)
         Capture(window, "07-tabs.png");
+
+        // 7d) The status dashboard: what every session is doing, with anything waiting on a human on top.
+        vm.OpenDashboardCommand.Execute(null);
+        Pump(() => vm.Dashboard is { HasLive: true });
+        Pump(() => vm.Dashboard!.HasElsewhere, 5000);
+        // The demo's earlier turns leave in-app toasts stacked over the right-hand column; they expire on
+        // their own after ~5s, so wait them out rather than photographing the dashboard behind them.
+        Settle(6000);
+        Capture(window, "07d-dashboard.png");
 
         // 7w) Multi-window: detach a tab into its own floating window.
         try

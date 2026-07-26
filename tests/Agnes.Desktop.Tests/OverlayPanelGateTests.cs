@@ -64,6 +64,8 @@ public class OverlayPanelGateTests
         public Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null) => Task.CompletedTask;
         public Task DiscoverExternalSessionsAsync(SessionDocument doc) => Task.CompletedTask;
         public Task WatchExternalSessionAsync(SessionDocument doc, ExternalSessionInfo external) => Task.CompletedTask;
+        public Task AttachCatalogSessionAsync(SessionDocument doc, Agnes.Ui.Core.ViewModels.CatalogSessionRow row) => Task.CompletedTask;
+        public bool IsSessionOpen(string sessionId) => false;
         public Task LoadModelsAsync(SessionDocument doc, string adapterId) => Task.CompletedTask;
         public void ToggleModelFavorite(SessionDocument doc, ModelChoice model) { }
         public Task<ProviderAuthStatus?> CheckAgentAuthAsync(SessionDocument doc, string adapterId) => Task.FromResult<ProviderAuthStatus?>(null);

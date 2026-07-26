@@ -427,6 +427,19 @@ public sealed partial class HostsSheetViewModel : SheetViewModel
             Hosts.Remove(link);
             _shell.Toast($"Forgot {link.Name}");
         });
+        // The post-pairing list, reachable again later: sessions started elsewhere (or forgotten on this
+        // device) keep running on the host, and this is how you find them.
+        BrowseCommand = new AsyncRelayCommand<HostLink>(async link =>
+        {
+            if (link is null)
+            {
+                return;
+            }
+
+            await link.ConnectAsync().ConfigureAwait(true);
+            Close();
+            _shell.Push(new HostSessionsPageViewModel(_shell, hosts, _sessions, link));
+        });
     }
 
     public ObservableCollection<HostLink> Hosts { get; }
@@ -440,4 +453,7 @@ public sealed partial class HostsSheetViewModel : SheetViewModel
     public IRelayCommand AddHostCommand { get; }
     public IAsyncRelayCommand<HostLink> ReconnectCommand { get; }
     public IRelayCommand<HostLink> ForgetCommand { get; }
+
+    /// <summary>Opens the host's session catalogue — what it's running that this device could join.</summary>
+    public IAsyncRelayCommand<HostLink> BrowseCommand { get; }
 }
