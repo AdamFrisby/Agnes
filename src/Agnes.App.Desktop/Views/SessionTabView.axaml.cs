@@ -5,6 +5,7 @@ using Agnes.Ui.Core.Transcript;
 using Agnes.Ui.Core.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Markup.Xaml;
@@ -24,12 +25,19 @@ public partial class SessionTabView : UserControl
     private ScrollViewer? _transcriptScroll;
     private bool _stickToBottom = true;
     private bool _userScrolling; // a pointer drag (scrollbar/content) is in progress — suppress auto-follow
+    private ScrollBar? _indexBar;
+    private bool _indexActive;    // the transcript is past the threshold: the bar's unit is a message index
+    private bool _indexDragging;  // the index thumb is being dragged — freeze the bar's range under it
+    private int _wantedRow = -1;  // latest row a drag asked for; a seek in flight picks it up when it lands
+    private bool _seeking;        // a seek chain is running — new targets coalesce into it
+    private double _lastSeekOffset = double.NaN; // offset at the previous seek pass, to notice a stalled one
 
     public SessionTabView()
     {
         InitializeComponent();
         _workspace = this.FindControl<Grid>("Workspace");
         _transcript = this.FindControl<ListBox>("Transcript");
+        _indexBar = this.FindControl<ScrollBar>("IndexScroll");
         if (_workspace is not null)
         {
             _workspace.DataContextChanged += (_, _) => HookSession();
@@ -149,7 +157,7 @@ public partial class SessionTabView : UserControl
     private void RequestScrollToBottom()
     {
         _stickToBottom = true;
-        Dispatcher.UIThread.Post(() => { EnsureScrollHooked(); ScrollToEndNow(); }, DispatcherPriority.Background);
+        Dispatcher.UIThread.Post(() => { EnsureScrollHooked(); ScrollToEndNow(); UpdateOverlays(); }, DispatcherPriority.Background);
     }
 
     private void ScrollToEndNow()
@@ -189,7 +197,7 @@ public partial class SessionTabView : UserControl
         if (_transcriptScroll is { } sv)
         {
             _stickToBottom = sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height) < 24;
-            UpdateScrollHint();
+            UpdateOverlays();
         }
     }
 
@@ -234,13 +242,65 @@ public partial class SessionTabView : UserControl
             ScrollToEndNow();
         }
 
-        UpdateStickyHeader();
-        UpdateScrollHint();
+        UpdateOverlays();
+    }
+
+    /// <summary>What the viewport is showing right now — one pass over the realized rows, shared by
+    /// everything that tracks the scroll position (sticky header, hint, index bar).</summary>
+    private readonly record struct VisibleRows(int FirstIndex, int Count, TranscriptItem? Top, bool HasMessage);
+
+    private VisibleRows ScanVisibleRows()
+    {
+        if (_transcript is null || _transcriptScroll is null)
+        {
+            return new VisibleRows(int.MaxValue, 0, null, false);
+        }
+
+        var viewportHeight = _transcriptScroll.Viewport.Height;
+        var firstIndex = int.MaxValue;
+        var count = 0;
+        var hasMessage = false;
+        TranscriptItem? top = null;
+        var topY = double.MaxValue;
+
+        foreach (var container in _transcript.GetRealizedContainers())
+        {
+            if (container.TranslatePoint(default, _transcriptScroll) is not { } p
+                || p.Y + container.Bounds.Height <= 0 || p.Y >= viewportHeight) // doesn't intersect
+            {
+                continue;
+            }
+
+            count++;
+            hasMessage |= container.DataContext is MessageBubbleItem;
+
+            var index = _transcript.IndexFromContainer(container);
+            if (index >= 0)
+            {
+                firstIndex = System.Math.Min(firstIndex, index);
+            }
+
+            if (p.Y < topY && container.DataContext is TranscriptItem item)
+            {
+                topY = p.Y;
+                top = item;
+            }
+        }
+
+        return new VisibleRows(firstIndex, count, top, hasMessage);
+    }
+
+    private void UpdateOverlays()
+    {
+        var rows = ScanVisibleRows();
+        UpdateStickyHeader(rows);
+        UpdateScrollHint(rows);
+        SyncIndexScroll(rows);
     }
 
     // A floating "you are here" timestamp shown while the user has scrolled up from the bottom, so long
     // conversations aren't disorienting. Hidden when pinned to the bottom (the live tail).
-    private void UpdateScrollHint()
+    private void UpdateScrollHint(VisibleRows rows)
     {
         var hint = this.FindControl<Border>("ScrollHint");
         if (hint is null)
@@ -248,32 +308,8 @@ public partial class SessionTabView : UserControl
             return;
         }
 
-        if (_stickToBottom || _transcript is null || _transcriptScroll is null)
-        {
-            hint.IsVisible = false;
-            return;
-        }
-
-        // The topmost item intersecting the viewport = what you're currently looking at.
-        var viewportHeight = _transcriptScroll.Viewport.Height;
-        TranscriptItem? top = null;
-        var topY = double.MaxValue;
-        foreach (var container in _transcript.GetRealizedContainers())
-        {
-            if (container.TranslatePoint(default, _transcriptScroll) is not { } p
-                || container.DataContext is not TranscriptItem item)
-            {
-                continue;
-            }
-
-            if (p.Y + container.Bounds.Height > 0 && p.Y < viewportHeight && p.Y < topY)
-            {
-                topY = p.Y;
-                top = item;
-            }
-        }
-
-        if (top is null || top.Timestamp == default)
+        if (_stickToBottom || _transcript is null || _transcriptScroll is null
+            || rows.Top is not { } top || top.Timestamp == default)
         {
             hint.IsVisible = false;
             return;
@@ -282,9 +318,13 @@ public partial class SessionTabView : UserControl
         if (this.FindControl<TextBlock>("ScrollHintText") is { } label)
         {
             var local = top.Timestamp.ToLocalTime();
-            label.Text = local.Date == System.DateTimeOffset.Now.Date
+            var when = local.Date == System.DateTimeOffset.Now.Date
                 ? local.ToString("HH:mm")
                 : local.ToString("MMM d, HH:mm");
+            // Dragging by index deserves index feedback: which row of how many you've landed on.
+            label.Text = _indexActive && rows.FirstIndex is not int.MaxValue
+                ? $"{when}  ·  {rows.FirstIndex + 1} / {_transcript.ItemCount}"
+                : when;
         }
 
         hint.IsVisible = true;
@@ -298,11 +338,11 @@ public partial class SessionTabView : UserControl
             Dispatcher.UIThread.Post(ScrollToEndNow, DispatcherPriority.Background);
         }
 
-        Dispatcher.UIThread.Post(UpdateStickyHeader, DispatcherPriority.Background);
+        Dispatcher.UIThread.Post(UpdateOverlays, DispatcherPriority.Background);
     }
 
     // Pin the last message above the viewport when a run of tool calls has pushed every message off-screen.
-    private void UpdateStickyHeader()
+    private void UpdateStickyHeader(VisibleRows rows)
     {
         var header = this.FindControl<Border>("StickyHeader");
         if (header is null || _session is null || _transcript is null || _transcriptScroll is null)
@@ -310,25 +350,8 @@ public partial class SessionTabView : UserControl
             return;
         }
 
-        var viewportHeight = _transcriptScroll.Viewport.Height;
-        var firstVisibleIndex = int.MaxValue;
-        var messageVisible = false;
-        foreach (var container in _transcript.GetRealizedContainers())
-        {
-            var index = _transcript.IndexFromContainer(container);
-            if (index < 0 || container.TranslatePoint(default, _transcriptScroll) is not { } p)
-            {
-                continue;
-            }
-
-            if (p.Y + container.Bounds.Height > 0 && p.Y < viewportHeight) // intersects the viewport
-            {
-                firstVisibleIndex = System.Math.Min(firstVisibleIndex, index);
-                messageVisible |= container.DataContext is MessageBubbleItem;
-            }
-        }
-
-        if (messageVisible || firstVisibleIndex is int.MaxValue or 0)
+        var firstVisibleIndex = rows.FirstIndex;
+        if (rows.HasMessage || firstVisibleIndex is int.MaxValue or 0)
         {
             header.IsVisible = false;
             return;
@@ -355,6 +378,162 @@ public partial class SessionTabView : UserControl
         if (this.FindControl<TextBlock>("StickySpeaker") is { } speaker) { speaker.Text = last.Speaker; }
         if (this.FindControl<TextBlock>("StickyText") is { } text) { text.Text = FirstLine(last.Text); }
         header.IsVisible = true;
+    }
+
+    // ---- index scrolling ------------------------------------------------------------------------
+    // See TranscriptIndexScroll for why a large transcript stops being scrolled in pixels. Here it is
+    // just two moves: keep the bar's range in transcript rows, and turn a drag on it into "put row N at
+    // the top of the viewport". The wheel is untouched — it still scrolls pixels, and only feeds the
+    // bar's value back.
+
+    /// <summary>Put the bar where the viewport is, switching modes if the transcript crossed the
+    /// threshold. A no-op while the thumb is held: the range must not move under a drag.</summary>
+    private void SyncIndexScroll(VisibleRows rows)
+    {
+        if (_indexBar is null || _transcript is null || _transcriptScroll is null || _indexDragging)
+        {
+            return;
+        }
+
+        var count = _transcript.ItemCount;
+        var active = TranscriptIndexScroll.IsActive(count);
+        if (active != _indexActive)
+        {
+            _indexActive = active;
+            _indexBar.Visibility = active ? ScrollBarVisibility.Visible : ScrollBarVisibility.Hidden;
+            // Only one bar at a time: the ListBox's own is hidden (not disabled — the wheel still works).
+            ScrollViewer.SetVerticalScrollBarVisibility(
+                _transcript, active ? ScrollBarVisibility.Hidden : ScrollBarVisibility.Auto);
+        }
+
+        if (!active)
+        {
+            return;
+        }
+
+        var first = rows.FirstIndex is int.MaxValue ? 0 : rows.FirstIndex;
+        var range = TranscriptIndexScroll.Range(count, rows.Count, first);
+        _indexBar.Maximum = range.Maximum;
+        _indexBar.ViewportSize = range.ViewportSize;
+        _indexBar.LargeChange = System.Math.Max(1, range.ViewportSize - 1);
+        // While pinned the value is the end by definition, even before the last rows have been realized.
+        _indexBar.Value = _stickToBottom ? range.Maximum : range.Value;
+    }
+
+    private void OnIndexScroll(object? sender, ScrollEventArgs e)
+    {
+        // Only a thumb drag freezes the range; a track click or arrow is a single settled move. Holding
+        // _userScrolling for the duration keeps streaming content from yanking the view out of the drag.
+        // Cleared before the mode check, so a drag that outlives index mode still releases both flags.
+        _indexDragging = _indexActive && e.ScrollEventType == ScrollEventType.ThumbTrack;
+        _userScrolling = _indexDragging;
+
+        if (_indexBar is null || !_indexActive)
+        {
+            return;
+        }
+
+        var maximum = _indexBar.Maximum;
+        var value = System.Math.Clamp(e.NewValue, 0, maximum);
+        _stickToBottom = TranscriptIndexScroll.IsAtEnd(value, maximum); // dragged to the end → live tail again
+
+        if (_stickToBottom)
+        {
+            ScrollToEndNow();
+        }
+        else
+        {
+            ScrollIndexToTop((int)System.Math.Round(value));
+        }
+
+        if (!_indexDragging)
+        {
+            Dispatcher.UIThread.Post(UpdateOverlays, DispatcherPriority.Background);
+        }
+    }
+
+    /// <summary>
+    /// Scroll so the given row sits at the top of the viewport. Seeking is <i>coalesced</i>: a drag
+    /// emits far more events than the list can seek, and firing one seek per event leaves the panel
+    /// half-way through several at once — realized rows arranged for one offset while the scroll viewer
+    /// holds another, which is the desync that makes a big list feel like it's fighting the cursor. So
+    /// only the newest target is remembered, and it's applied when the seek in flight lands.
+    /// </summary>
+    private void ScrollIndexToTop(int index)
+    {
+        _wantedRow = index;
+        if (!_seeking)
+        {
+            _seeking = true;
+            SeekPass(0);
+        }
+    }
+
+    // One seek is iterative because the only thing anyone can say about an unrealized row is where the
+    // extent *estimates* it — and in a transcript that estimate is poor (a status line and a 2000px diff
+    // are both one row). So: jump to the estimate, look at where the row actually landed, correct, repeat.
+    // Each pass realizes rows nearer the target and re-estimates from better data, so a handful converge;
+    // the cap stops a pathological list looping.
+    private const int MaxSeekPasses = 12;
+
+    private void SeekPass(int attempt)
+    {
+        if (_transcript is null || _transcriptScroll is null || _transcript.ItemCount == 0)
+        {
+            _seeking = false;
+            return;
+        }
+
+        var sv = _transcriptScroll;
+        var index = System.Math.Clamp(_wantedRow, 0, _transcript.ItemCount - 1);
+        var maxOffset = System.Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
+        var here = sv.Offset.Y;
+        var offBy = _transcript.ContainerFromIndex(index)?.TranslatePoint(default, sv)?.Y;
+
+        if (offBy is { } landedAt && System.Math.Abs(landedAt) <= 1 && _wantedRow == index)
+        {
+            _seeking = false; // the row is at the top of the viewport
+            return;
+        }
+
+        // Three ways to move: correct by measurement when the row is on screen, let the panel realize its
+        // way there when it isn't, and — when neither budged the viewport — jump to the estimate.
+        var corrected = offBy is { } d ? System.Math.Clamp(here + d, 0, maxOffset) : double.NaN;
+        if (attempt > 0 && System.Math.Abs(here - _lastSeekOffset) < 1)
+        {
+            // The last pass left the viewport exactly where it was. Either the row we measured was a
+            // recycled container still parked at an old position, or the extent re-estimated and the
+            // panel's scroll anchoring put the offset straight back. Jump to where the estimate says the
+            // row is — a place we've not been — and measure again from there.
+            sv.Offset = new Vector(sv.Offset.X,
+                System.Math.Clamp(sv.Extent.Height * index / _transcript.ItemCount, 0, maxOffset));
+        }
+        else if (!double.IsNaN(corrected) && System.Math.Abs(corrected - here) >= 1)
+        {
+            sv.Offset = new Vector(sv.Offset.X, corrected); // the row is on screen: we know the exact gap
+        }
+        else
+        {
+            _transcript.ScrollIntoView(index); // unrealized: let the panel realize its way there
+        }
+
+        _lastSeekOffset = here;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_wantedRow != index)
+            {
+                SeekPass(0); // the drag moved on while this pass ran — chase the new row from scratch
+            }
+            else if (attempt + 1 < MaxSeekPasses)
+            {
+                SeekPass(attempt + 1);
+            }
+            else
+            {
+                _seeking = false;
+            }
+        }, DispatcherPriority.Background);
     }
 
     private static string FirstLine(string s)
