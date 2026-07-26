@@ -7,6 +7,8 @@
              xmlns:app="using:Agnes.App.Desktop"
              xmlns:ae="using:AvaloniaEdit"
              xmlns:ctb="using:ColorTextBlock.Avalonia"
+             xmlns:sty="using:Avalonia.Styling"
+             xmlns:themes="using:Agnes.App.Desktop.Themes"
              x:Class="Agnes.App.Desktop.App">
 
     <Application.Resources>
@@ -16,6 +18,8 @@
                  DynamicResource so a theme switch applies live. -->
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Tokens.axaml" />
+                <!-- The ported Spacegray flavours: colour sets keyed by their own theme variants. -->
+                <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Spacegray.axaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- One shared dock content recycler (see the DockControl style below); the factory evicts a
@@ -42,7 +46,43 @@
     </Application.DataTemplates>
 
     <Application.Styles>
-        <FluentTheme />
+        <!-- Fluent's own chrome for the two built-in variants. This is Avalonia's supported hook:
+             FluentTheme merges this palette collection ahead of its own base colours ("an only place
+             for user to redefine palette in a good way", says the comment in FluentTheme.xaml), so it
+             reaches the control-level keys TextBox, ComboBox, menus and scrollbars actually read —
+             including stock controls Tokens.axaml never names.
+
+             It accepts Light and Dark only; handing it a custom variant throws outright. Themes beyond
+             the built-in two are served by the leaf-key bridge in Tokens.axaml, which works for every
+             variant; these two blocks are the broader baseline underneath it. -->
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Dark"
+                                       Accent="#B06CF0" RegionColor="#0F0A22"
+                                       AltHigh="#16112E" AltLow="#3316112E" AltMedium="#9916112E"
+                                       AltMediumHigh="#CC16112E" AltMediumLow="#6616112E"
+                                       BaseHigh="#E6E3F7" BaseLow="#1C1740" BaseMedium="#9C97C4"
+                                       BaseMediumHigh="#C9C4E4" BaseMediumLow="#6B6796"
+                                       ChromeAltLow="#16112E" ChromeBlackHigh="#120C2E" ChromeBlackLow="#33120C2E"
+                                       ChromeBlackMedium="#CC120C2E" ChromeBlackMediumLow="#66120C2E"
+                                       ChromeDisabledHigh="#241E4E" ChromeDisabledLow="#6B6796"
+                                       ChromeGray="#9C97C4" ChromeHigh="#4A4470" ChromeLow="#120C2E"
+                                       ChromeMedium="#16112E" ChromeMediumLow="#1C1740" ChromeWhite="#FFFFFF"
+                                       ListLow="#2EB06CF0" ListMedium="#4DB06CF0" ErrorText="#FF7BA5" />
+                <ColorPaletteResources x:Key="Light"
+                                       Accent="#4F46E5" RegionColor="#F5F5FA"
+                                       AltHigh="#FFFFFF" AltLow="#33FFFFFF" AltMedium="#99FFFFFF"
+                                       AltMediumHigh="#CCFFFFFF" AltMediumLow="#66FFFFFF"
+                                       BaseHigh="#1D1546" BaseLow="#ECECF4" BaseMedium="#4E4E68"
+                                       BaseMediumHigh="#363650" BaseMediumLow="#7C7C9C"
+                                       ChromeAltLow="#ECECF4" ChromeBlackHigh="#1D1546" ChromeBlackLow="#331D1546"
+                                       ChromeBlackMedium="#CC1D1546" ChromeBlackMediumLow="#661D1546"
+                                       ChromeDisabledHigh="#ECECF4" ChromeDisabledLow="#7C7C9C"
+                                       ChromeGray="#6E6E8C" ChromeHigh="#C6C6DA" ChromeLow="#F5F5FA"
+                                       ChromeMedium="#ECECF4" ChromeMediumLow="#F5F5FA" ChromeWhite="#FFFFFF"
+                                       ListLow="#EFEFFE" ListMedium="#C4C4FB" ErrorText="#F0356F" />
+            </FluentTheme.Palettes>
+        </FluentTheme>
         <StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml" />
         <!-- Brand styles: type classes, surfaces, the button family (gradient primary, solid accent,
              chip, ghost, danger), press feedback and the keyboard focus ring. Loaded after Fluent and

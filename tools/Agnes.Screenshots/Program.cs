@@ -1,5 +1,6 @@
 using Agnes.App.Desktop;
 using Agnes.App.Desktop.Persistence;
+using Agnes.App.Desktop.Themes;
 using Agnes.App.Desktop.ViewModels;
 using Agnes.Client;
 using Agnes.Client.Simulation;
@@ -22,9 +23,18 @@ public static class Program
 {
     private static string _outDir = "screenshots";
 
+    /// <summary>Theme id the canonical shots are pinned to (a light shot is captured separately).
+    /// Overridable so the ported flavours can be eyeballed without hand-driving the app.</summary>
+    private static string _theme = "Dark";
+
     public static void Main(string[] args)
     {
         _outDir = args.Length > 0 ? args[0] : Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
+        if (args.Length > 1)
+        {
+            _theme = args[1];
+        }
+
         Directory.CreateDirectory(_outDir);
 
         using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessApp));
@@ -46,7 +56,7 @@ public static class Program
             onboarding: SuppressedOnboarding());
         var window = new MainWindow { DataContext = vm };
         window.Show();
-        MainWindowViewModel.ApplyTheme("Dark"); // pin dark for the canonical shots (a light one is captured too)
+        MainWindowViewModel.ApplyTheme(_theme); // pin one theme for the canonical shots (a light one is captured too)
         vm.Notifier = new AvaloniaNotifier(window); // in-app toasts for blockers/completions
         vm.WindowActive = false; // simulate a background window so completion toasts also show
         vm.Showcase.Dismiss(); // record this version so the first-run feature showcase doesn't auto-open
@@ -108,6 +118,18 @@ public static class Program
         vm.Theme = "Light";
         Settle(200);
         Capture(window, "03t-light-theme.png");
+        vm.Theme = "Dark";
+        Settle(150);
+
+        // 3x) One shot per theme in the catalogue, on the same conversation — the cheap way to see
+        // that a theme covers the whole surface and not just the parts a screenshot happens to show.
+        foreach (var theme in ThemeCatalog.All.Where(t => t.Variant is not null))
+        {
+            vm.Theme = theme.Id;
+            Settle(200);
+            Capture(window, $"09-theme-{theme.Id.ToLowerInvariant()}.png");
+        }
+
         vm.Theme = "Dark";
         Settle(150);
 

@@ -302,3 +302,25 @@ public sealed partial class AgentChoice : ObservableObject
         }
     }
 }
+
+/// <summary>
+/// One row in the theme picker. Holds only what the row needs — its id, its label, and whether it's
+/// the current selection — so the picker can be an ItemsControl over <see cref="ThemeCatalog"/>
+/// rather than a hand-written button per theme.
+/// </summary>
+public sealed class ThemeOption(string id, string name) : ObservableObject
+{
+    private bool _isSelected;
+
+    public string Id { get; } = id;
+    public string Name { get; } = name;
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        private set => SetProperty(ref _isSelected, value);
+    }
+
+    /// <summary>Re-evaluates selection against the theme that is now current.</summary>
+    public void Refresh(string currentThemeId) => IsSelected = string.Equals(Id, currentThemeId, StringComparison.Ordinal);
+}

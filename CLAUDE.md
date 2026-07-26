@@ -130,6 +130,17 @@ How to add behaviour to Agnes. These are defaults, not absolutes — deviate whe
   and the tone styles in `Themes/AppStyles.axaml` do the colouring. Don't paint something a status hue
   because it looks good — a permanently-mint label is the same mistake as a monochrome one.
 
+- **Adding a theme is a colour list, not code.** `Themes/Tokens.axaml` defines each variant as
+  *colours* (`AccentColor`, `PanelColor`, …); every brush downstream — the roles views bind, the status
+  hues, Dock's chrome, Fluent's leaf keys — is declared once over `{DynamicResource <role>Color}`, so a
+  theme states ~34 colours and everything follows. A theme is a `ThemeVariant` in `Themes/ThemeCatalog.cs`
+  that *inherits* Dark or Light (anything it omits falls through), a colour set keyed by that variant, and
+  a `ColorPaletteResources` beside it; `Themes/Spacegray.axaml` is the worked example. Two Avalonia
+  constraints shape this: `FluentTheme.Palettes` is the only hook that reaches Fluent's neutral ramp
+  (it aliases that ramp internally with `StaticResource`), but it throws on any variant other than Light
+  or Dark — hence the leaf-key bridge for custom themes, and `ThemeManager` swapping a flavour's palette
+  into the slot it inherits.
+
 - **The Android client is not the desktop one reflowed.** `Agnes.App.Mobile` shares view models with the
   desktop head only through `Agnes.Ui.Core` (`SessionViewModel` and friends); its shell, navigation,
   screens and theme are its own. The desktop is a workbench — docked panels, a tab strip, a terminal. A

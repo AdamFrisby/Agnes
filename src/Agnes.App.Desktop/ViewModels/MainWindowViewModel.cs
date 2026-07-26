@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Agnes.Abstractions.Events;
 using Agnes.App.Desktop.Persistence;
 using Agnes.App.Desktop.Plugins;
+using Agnes.App.Desktop.Themes;
 using Agnes.Client;
 using Agnes.Protocol;
 using Agnes.Ui.Core;
@@ -140,6 +141,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         CloseActiveTabCommand = new AsyncRelayCommand(CloseActiveTabAsync);
         ToggleReducedMotionCommand = new RelayCommand(() => ReducedMotion = !ReducedMotion);
         SetThemeCommand = new RelayCommand<string>(t => { if (t is not null) { Theme = t; } });
+        // Mark the persisted theme as selected, so the picker opens showing what's actually applied.
+        foreach (var option in Themes)
+        {
+            option.Refresh(_settings.Theme);
+        }
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
         RevokeDeviceCommand = new AsyncRelayCommand<string>(RevokeDeviceAsync);
         ApproveDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: true));
@@ -391,7 +397,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// <summary>The persisted UI settings (window geometry, theme, density) for the shell to apply.</summary>
     public AppSettings Settings => _settings;
 
-    /// <summary>Theme: "System" (follow OS), "Light" or "Dark". Applies immediately and persists.</summary>
+    /// <summary>The selected theme's id (see <see cref="ThemeCatalog"/>). Applies immediately and
+    /// persists; an unrecognised id resolves to System rather than leaving the app themeless.</summary>
     public string Theme
     {
         get => _settings.Theme;
@@ -403,16 +410,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 _settingsStore.Save(_settings);
                 ApplyTheme(value);
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(IsSystemTheme));
-                OnPropertyChanged(nameof(IsLightTheme));
-                OnPropertyChanged(nameof(IsDarkTheme));
+                foreach (var option in Themes)
+                {
+                    option.Refresh(value);
+                }
             }
         }
     }
 
-    public bool IsSystemTheme => Theme is not "Light" and not "Dark";
-    public bool IsLightTheme => Theme == "Light";
-    public bool IsDarkTheme => Theme == "Dark";
+    /// <summary>Every theme on offer, as picker rows. Built once; each row tracks its own selection.</summary>
+    public IReadOnlyList<ThemeOption> Themes { get; }
+        = [.. ThemeCatalog.All.Select(t => new ThemeOption(t.Id, t.Name))];
 
     public IRelayCommand<string> SetThemeCommand { get; }
 
@@ -452,18 +460,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
 
     /// <summary>Applies a theme string to the running application (no-op off the UI/host).</summary>
-    public static void ApplyTheme(string theme)
-    {
-        if (Avalonia.Application.Current is { } app)
-        {
-            app.RequestedThemeVariant = theme switch
-            {
-                "Light" => Avalonia.Styling.ThemeVariant.Light,
-                "Dark" => Avalonia.Styling.ThemeVariant.Dark,
-                _ => Avalonia.Styling.ThemeVariant.Default,
-            };
-        }
-    }
+    /// <summary>Applies a theme by id. The catalogue and the swap live in <see cref="Themes.ThemeManager"/>,
+    /// since a flavour has to move Fluent's palette as well as the variant.</summary>
+    public static void ApplyTheme(string theme) => Desktop.Themes.ThemeManager.Apply(theme);
 
     // ---- device management (for the active session's host) ----
 

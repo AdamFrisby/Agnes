@@ -1,0 +1,280 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:themes="using:Agnes.App.Desktop.Themes"
+                    xmlns:fluent="using:Avalonia.Themes.Fluent">
+  <!--
+    Spacegray — four flavours ported to the Agnes desktop theme system.
+
+    ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+    │ Spacegray is by Gadzhi Kharkharov (kkga) and the Sublime Text Packages maintainers, from     │
+    │ https://github.com/SublimeText/Spacegray, used here under the MIT licence:                   │
+    │                                                                                              │
+    │   The MIT License (MIT)                                                                      │
+    │   Copyright (c) 2024 Sublime Text Packages                                                   │
+    │                                                                                              │
+    │   Permission is hereby granted, free of charge, to any person obtaining a copy of this        │
+    │   software and associated documentation files (the "Software"), to deal in the Software       │
+    │   without restriction, including without limitation the rights to use, copy, modify, merge,   │
+    │   publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons  │
+    │   to whom the Software is furnished to do so, subject to the following conditions:            │
+    │                                                                                              │
+    │   The above copyright notice and this permission notice shall be included in all copies or    │
+    │   substantial portions of the Software.                                                      │
+    │                                                                                              │
+    │   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,         │
+    │   INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR    │
+    │   PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE   │
+    │   FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR        │
+    │   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER      │
+    │   DEALINGS IN THE SOFTWARE.                                                                  │
+    │                                                                                              │
+    │ The colours below are Spacegray's accompanying Base16 schemes; Base16 itself is by Chris      │
+    │ Kempson (https://github.com/chriskempson/base16), also MIT. Agnes vendors no Spacegray code   │
+    │ — only these palette values, transcribed from its .sublime-color-scheme files.                │
+    └─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+    Each flavour is a `ThemeVariant` that inherits Dark (or Light), so anything it doesn't name falls
+    back to the built-in theme rather than coming out unset — see `ThemeCatalog`. A flavour supplies
+    colours only: the role brushes, the Dock bridge and the geometry in `Tokens.axaml` are declared
+    once and follow whichever variant is active.
+
+    How base16 maps onto Agnes's roles: base00–03 are the surfaces (background, panel, raised, lines),
+    base03–05 the text ramp, and the accents carry the status hues — green = done, yellow = blocked on
+    you, red = failed, blue = in motion, purple = selection and brand, which is the same assignment the
+    built-in theme makes. Two deliberate deviations from a literal transcription, both for legibility
+    rather than taste: `FgOnAccent` is the flavour's own background rather than white, because base16's
+    purples are light; and the light flavour's `Warn` is a darkened base0A, since base16 light schemes
+    keep the dark scheme's yellow and it is unreadable as text on a near-white surface.
+  -->
+  <ResourceDictionary.ThemeDictionaries>
+
+    <!-- ===== Spacegray — Default flavour, on the Base16 Ocean Dark palette. Inherits Dark. ===== -->
+    <ResourceDictionary x:Key="{x:Static themes:ThemeCatalog.Spacegray}">
+      <Color x:Key="BgColor">#2B303B</Color>
+      <Color x:Key="PanelColor">#343D46</Color>
+      <Color x:Key="PanelAltColor">#4F5B66</Color>
+      <Color x:Key="CodeBgColor">#1C1F26</Color>
+      <Color x:Key="ScrimColor">#8C181A20</Color>
+      <Color x:Key="LineColor">#4F5B66</Color>
+      <Color x:Key="LineStrongColor">#65737E</Color>
+
+      <Color x:Key="FgColor">#C0C5CE</Color>
+      <Color x:Key="FgDimColor">#A7ADBA</Color>
+      <Color x:Key="FgFaintColor">#65737E</Color>
+      <Color x:Key="FgOnAccentColor">#2B303B</Color>
+
+      <Color x:Key="AccentColor">#B48EAD</Color>
+      <Color x:Key="AccentTextColor">#CAB0C6</Color>
+      <Color x:Key="AccentSoftColor">#2EB48EAD</Color>
+      <Color x:Key="AccentEdgeColor">#4DB48EAD</Color>
+
+      <Color x:Key="GoodColor">#A3BE8C</Color>
+      <Color x:Key="GoodSoftColor">#2EA3BE8C</Color>
+      <Color x:Key="WarnColor">#EBCB8B</Color>
+      <Color x:Key="WarnSoftColor">#2EEBCB8B</Color>
+      <Color x:Key="DangerColor">#BF616A</Color>
+      <Color x:Key="DangerSoftColor">#2EBF616A</Color>
+      <Color x:Key="InfoColor">#8FA1B3</Color>
+      <Color x:Key="InfoSoftColor">#2E8FA1B3</Color>
+
+      <Color x:Key="UserBubbleColor">#4F5B66</Color>
+
+      <Color x:Key="DiffAddBgColor">#2EA3BE8C</Color>
+      <Color x:Key="DiffAddFgColor">#A3BE8C</Color>
+      <Color x:Key="DiffDelBgColor">#2EBF616A</Color>
+      <Color x:Key="DiffDelFgColor">#BF616A</Color>
+      <Color x:Key="HunkBgColor">#2E8FA1B3</Color>
+      <Color x:Key="HunkFgColor">#8FA1B3</Color>
+      <Color x:Key="GutterColor">#65737E</Color>
+
+      <!-- Fluent reads these two as Colors, not brushes, so they can't be aliased
+           dynamically — every theme states its own. -->
+      <Color x:Key="ScrollBarThumbBackgroundColor">#65737E</Color>
+      <Color x:Key="SystemAccentColor">#B48EAD</Color>
+      <Color x:Key="ShadowColor">#6616181E</Color>
+    </ResourceDictionary>
+
+    <!-- ===== Spacegray Light — Light variation, on the Base16 Ocean Light palette. Inherits Light. ===== -->
+    <ResourceDictionary x:Key="{x:Static themes:ThemeCatalog.SpacegrayLight}">
+      <Color x:Key="BgColor">#EFF1F5</Color>
+      <Color x:Key="PanelColor">#FFFFFF</Color>
+      <Color x:Key="PanelAltColor">#DFE1E8</Color>
+      <Color x:Key="CodeBgColor">#EFF1F5</Color>
+      <Color x:Key="ScrimColor">#8C838587</Color>
+      <Color x:Key="LineColor">#C0C5CE</Color>
+      <Color x:Key="LineStrongColor">#A7ADBA</Color>
+
+      <Color x:Key="FgColor">#4F5B66</Color>
+      <Color x:Key="FgDimColor">#65737E</Color>
+      <Color x:Key="FgFaintColor">#A7ADBA</Color>
+      <Color x:Key="FgOnAccentColor">#FFFFFF</Color>
+
+      <Color x:Key="AccentColor">#8B5B82</Color>
+      <Color x:Key="AccentTextColor">#724B6B</Color>
+      <Color x:Key="AccentSoftColor">#EFE8EE</Color>
+      <Color x:Key="AccentEdgeColor">#D3C1D0</Color>
+
+      <Color x:Key="GoodColor">#6F984C</Color>
+      <Color x:Key="GoodSoftColor">#EBF1E6</Color>
+      <Color x:Key="WarnColor">#7A6A48</Color>
+      <Color x:Key="WarnSoftColor">#FCF8EF</Color>
+      <Color x:Key="DangerColor">#C85863</Color>
+      <Color x:Key="DangerSoftColor">#F7E8E9</Color>
+      <Color x:Key="InfoColor">#5986B6</Color>
+      <Color x:Key="InfoSoftColor">#E8EEF5</Color>
+
+      <Color x:Key="UserBubbleColor">#DFE1E8</Color>
+
+      <Color x:Key="DiffAddBgColor">#EBF1E6</Color>
+      <Color x:Key="DiffAddFgColor">#5E8141</Color>
+      <Color x:Key="DiffDelBgColor">#F7E8E9</Color>
+      <Color x:Key="DiffDelFgColor">#AA4B54</Color>
+      <Color x:Key="HunkBgColor">#E8EEF5</Color>
+      <Color x:Key="HunkFgColor">#4C729B</Color>
+      <Color x:Key="GutterColor">#A7ADBA</Color>
+
+      <!-- Fluent reads these two as Colors, not brushes, so they can't be aliased
+           dynamically — every theme states its own. -->
+      <Color x:Key="ScrollBarThumbBackgroundColor">#A7ADBA</Color>
+      <Color x:Key="SystemAccentColor">#8B5B82</Color>
+      <Color x:Key="ShadowColor">#2478787A</Color>
+    </ResourceDictionary>
+
+    <!-- ===== Spacegray Eighties — Warmer dark variation, on the Base16 Eighties palette. Inherits Dark. ===== -->
+    <ResourceDictionary x:Key="{x:Static themes:ThemeCatalog.SpacegrayEighties}">
+      <Color x:Key="BgColor">#2D2D2D</Color>
+      <Color x:Key="PanelColor">#393939</Color>
+      <Color x:Key="PanelAltColor">#515151</Color>
+      <Color x:Key="CodeBgColor">#1D1D1D</Color>
+      <Color x:Key="ScrimColor">#8C191919</Color>
+      <Color x:Key="LineColor">#515151</Color>
+      <Color x:Key="LineStrongColor">#747369</Color>
+
+      <Color x:Key="FgColor">#D3D0C8</Color>
+      <Color x:Key="FgDimColor">#A09F93</Color>
+      <Color x:Key="FgFaintColor">#747369</Color>
+      <Color x:Key="FgOnAccentColor">#2D2D2D</Color>
+
+      <Color x:Key="AccentColor">#CC99CC</Color>
+      <Color x:Key="AccentTextColor">#DBB8DB</Color>
+      <Color x:Key="AccentSoftColor">#2ECC99CC</Color>
+      <Color x:Key="AccentEdgeColor">#4DCC99CC</Color>
+
+      <Color x:Key="GoodColor">#99CC99</Color>
+      <Color x:Key="GoodSoftColor">#2E99CC99</Color>
+      <Color x:Key="WarnColor">#FFCC66</Color>
+      <Color x:Key="WarnSoftColor">#2EFFCC66</Color>
+      <Color x:Key="DangerColor">#F2777A</Color>
+      <Color x:Key="DangerSoftColor">#2EF2777A</Color>
+      <Color x:Key="InfoColor">#6699CC</Color>
+      <Color x:Key="InfoSoftColor">#2E6699CC</Color>
+
+      <Color x:Key="UserBubbleColor">#515151</Color>
+
+      <Color x:Key="DiffAddBgColor">#2E99CC99</Color>
+      <Color x:Key="DiffAddFgColor">#99CC99</Color>
+      <Color x:Key="DiffDelBgColor">#2EF2777A</Color>
+      <Color x:Key="DiffDelFgColor">#F2777A</Color>
+      <Color x:Key="HunkBgColor">#2E6699CC</Color>
+      <Color x:Key="HunkFgColor">#6699CC</Color>
+      <Color x:Key="GutterColor">#747369</Color>
+
+      <!-- Fluent reads these two as Colors, not brushes, so they can't be aliased
+           dynamically — every theme states its own. -->
+      <Color x:Key="ScrollBarThumbBackgroundColor">#747369</Color>
+      <Color x:Key="SystemAccentColor">#CC99CC</Color>
+      <Color x:Key="ShadowColor">#66161616</Color>
+    </ResourceDictionary>
+
+    <!-- ===== Spacegray Mocha — Brown-toned dark variation, on the Base16 Mocha palette. Inherits Dark. ===== -->
+    <ResourceDictionary x:Key="{x:Static themes:ThemeCatalog.SpacegrayMocha}">
+      <Color x:Key="BgColor">#3B3228</Color>
+      <Color x:Key="PanelColor">#534636</Color>
+      <Color x:Key="PanelAltColor">#645240</Color>
+      <Color x:Key="CodeBgColor">#26201A</Color>
+      <Color x:Key="ScrimColor">#8C201C16</Color>
+      <Color x:Key="LineColor">#645240</Color>
+      <Color x:Key="LineStrongColor">#7E705A</Color>
+
+      <Color x:Key="FgColor">#D0C8C6</Color>
+      <Color x:Key="FgDimColor">#B8AFAD</Color>
+      <Color x:Key="FgFaintColor">#7E705A</Color>
+      <Color x:Key="FgOnAccentColor">#3B3228</Color>
+
+      <Color x:Key="AccentColor">#A89BB9</Color>
+      <Color x:Key="AccentTextColor">#C2B9CE</Color>
+      <Color x:Key="AccentSoftColor">#2EA89BB9</Color>
+      <Color x:Key="AccentEdgeColor">#4DA89BB9</Color>
+
+      <Color x:Key="GoodColor">#BEB55B</Color>
+      <Color x:Key="GoodSoftColor">#2EBEB55B</Color>
+      <Color x:Key="WarnColor">#F4BC87</Color>
+      <Color x:Key="WarnSoftColor">#2EF4BC87</Color>
+      <Color x:Key="DangerColor">#CB6077</Color>
+      <Color x:Key="DangerSoftColor">#2ECB6077</Color>
+      <Color x:Key="InfoColor">#8AB3B5</Color>
+      <Color x:Key="InfoSoftColor">#2E8AB3B5</Color>
+
+      <Color x:Key="UserBubbleColor">#645240</Color>
+
+      <Color x:Key="DiffAddBgColor">#2EBEB55B</Color>
+      <Color x:Key="DiffAddFgColor">#BEB55B</Color>
+      <Color x:Key="DiffDelBgColor">#2ECB6077</Color>
+      <Color x:Key="DiffDelFgColor">#CB6077</Color>
+      <Color x:Key="HunkBgColor">#2E8AB3B5</Color>
+      <Color x:Key="HunkFgColor">#8AB3B5</Color>
+      <Color x:Key="GutterColor">#7E705A</Color>
+
+      <!-- Fluent reads these two as Colors, not brushes, so they can't be aliased
+           dynamically — every theme states its own. -->
+      <Color x:Key="ScrollBarThumbBackgroundColor">#7E705A</Color>
+      <Color x:Key="SystemAccentColor">#A89BB9</Color>
+      <Color x:Key="ShadowColor">#661E1914</Color>
+    </ResourceDictionary>
+
+  </ResourceDictionary.ThemeDictionaries>
+
+  <!-- ================= Fluent's own chrome, per flavour =================
+       `FluentTheme.Palettes` is Avalonia's supported hook for retinting stock controls, but it rejects
+       any key that isn't Light or Dark — a flavour can't register its own. So each palette is declared
+       here as an ordinary resource and ThemeManager assigns it into the slot the flavour inherits when
+       the theme is applied, restoring the built-in palette on the way out. Values are derived from the
+       colours above by the same mapping the built-in palettes use: surfaces to the Alt/Chrome ramp,
+       the text ramp to Base, and the accent tints to the list-hover slots. -->
+
+  <fluent:ColorPaletteResources x:Key="SpacegrayPalette"
+                          Accent="#B48EAD" RegionColor="#2B303B"
+                          AltHigh="#343D46" AltLow="#33343D46" AltMedium="#99343D46" AltMediumHigh="#CC343D46" AltMediumLow="#66343D46"
+                          BaseHigh="#C0C5CE" BaseLow="#4F5B66" BaseMedium="#A7ADBA" BaseMediumHigh="#C0C5CE" BaseMediumLow="#65737E"
+                          ChromeAltLow="#343D46" ChromeBlackHigh="#1C1F26" ChromeBlackLow="#331C1F26" ChromeBlackMedium="#CC1C1F26" ChromeBlackMediumLow="#661C1F26"
+                          ChromeDisabledHigh="#4F5B66" ChromeDisabledLow="#65737E" ChromeGray="#A7ADBA" ChromeHigh="#65737E"
+                          ChromeLow="#1C1F26" ChromeMedium="#343D46" ChromeMediumLow="#4F5B66" ChromeWhite="#FFFFFF"
+                          ListLow="#2EB48EAD" ListMedium="#4DB48EAD" ErrorText="#BF616A" />
+
+  <fluent:ColorPaletteResources x:Key="SpacegrayLightPalette"
+                          Accent="#8B5B82" RegionColor="#EFF1F5"
+                          AltHigh="#FFFFFF" AltLow="#33FFFFFF" AltMedium="#99FFFFFF" AltMediumHigh="#CCFFFFFF" AltMediumLow="#66FFFFFF"
+                          BaseHigh="#4F5B66" BaseLow="#DFE1E8" BaseMedium="#65737E" BaseMediumHigh="#4F5B66" BaseMediumLow="#A7ADBA"
+                          ChromeAltLow="#FFFFFF" ChromeBlackHigh="#EFF1F5" ChromeBlackLow="#33EFF1F5" ChromeBlackMedium="#CCEFF1F5" ChromeBlackMediumLow="#66EFF1F5"
+                          ChromeDisabledHigh="#DFE1E8" ChromeDisabledLow="#A7ADBA" ChromeGray="#65737E" ChromeHigh="#A7ADBA"
+                          ChromeLow="#EFF1F5" ChromeMedium="#FFFFFF" ChromeMediumLow="#DFE1E8" ChromeWhite="#FFFFFF"
+                          ListLow="#EFE8EE" ListMedium="#D3C1D0" ErrorText="#C85863" />
+
+  <fluent:ColorPaletteResources x:Key="SpacegrayEightiesPalette"
+                          Accent="#CC99CC" RegionColor="#2D2D2D"
+                          AltHigh="#393939" AltLow="#33393939" AltMedium="#99393939" AltMediumHigh="#CC393939" AltMediumLow="#66393939"
+                          BaseHigh="#D3D0C8" BaseLow="#515151" BaseMedium="#A09F93" BaseMediumHigh="#D3D0C8" BaseMediumLow="#747369"
+                          ChromeAltLow="#393939" ChromeBlackHigh="#1D1D1D" ChromeBlackLow="#331D1D1D" ChromeBlackMedium="#CC1D1D1D" ChromeBlackMediumLow="#661D1D1D"
+                          ChromeDisabledHigh="#515151" ChromeDisabledLow="#747369" ChromeGray="#A09F93" ChromeHigh="#747369"
+                          ChromeLow="#1D1D1D" ChromeMedium="#393939" ChromeMediumLow="#515151" ChromeWhite="#FFFFFF"
+                          ListLow="#2ECC99CC" ListMedium="#4DCC99CC" ErrorText="#F2777A" />
+
+  <fluent:ColorPaletteResources x:Key="SpacegrayMochaPalette"
+                          Accent="#A89BB9" RegionColor="#3B3228"
+                          AltHigh="#534636" AltLow="#33534636" AltMedium="#99534636" AltMediumHigh="#CC534636" AltMediumLow="#66534636"
+                          BaseHigh="#D0C8C6" BaseLow="#645240" BaseMedium="#B8AFAD" BaseMediumHigh="#D0C8C6" BaseMediumLow="#7E705A"
+                          ChromeAltLow="#534636" ChromeBlackHigh="#26201A" ChromeBlackLow="#3326201A" ChromeBlackMedium="#CC26201A" ChromeBlackMediumLow="#6626201A"
+                          ChromeDisabledHigh="#645240" ChromeDisabledLow="#7E705A" ChromeGray="#B8AFAD" ChromeHigh="#7E705A"
+                          ChromeLow="#26201A" ChromeMedium="#534636" ChromeMediumLow="#645240" ChromeWhite="#FFFFFF"
+                          ListLow="#2EA89BB9" ListMedium="#4DA89BB9" ErrorText="#CB6077" />
+</ResourceDictionary>

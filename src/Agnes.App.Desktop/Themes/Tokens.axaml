@@ -7,508 +7,385 @@
     Source of truth is the brand bundle's `tokens/*.css`; this file is its Avalonia translation, and is
     the twin of `Agnes.App.Mobile/Themes/Tokens.axaml` — same palette, same gradient, different key
     names (the desktop head's existing vocabulary: Panel/Fg/Line rather than Surface/Text/Border).
-    Two variants:
+    Two built-in variants:
       · Dark  — the Agnes console palette from `ui_kits/agnes` (#0F0A22 / #16112E / #1C1740, accent
                 #B06CF0). The kit itself is authored dark and it's where the app is used most.
       · Light — the shared Multitudal neutrals (cool, faintly violet; never neutral grey, never warm)
                 on near-white surfaces, ink #1D1546, accent indigo-600.
 
-    Colour roles, not colour names: a view asks for `PanelAlt` or `Danger`, never a hex literal.
-    The Agnes gradient (violet → magenta → coral) is the one signature flourish and is used at most
-    once per view — the brand mark, a hero CTA, an active accent edge.
+    THE SHAPE OF THIS FILE MATTERS, because it is what makes a theme cheap to write:
 
-    Section 2 of each variant re-points Fluent's own control resources at these roles, so stock
-    controls (TextBox, ComboBox, menus, scrollbars) are brand-coloured too rather than sitting there
-    in default grey-and-blue. Fluent aliases its neutral chrome with `StaticResource` internally, so
-    overriding its base palette wouldn't reach the controls — the control-level keys are what they
-    read at runtime, and what we override here.
+      1. Each variant defines COLOURS only (`AccentColor`, `PanelColor`, …) — nothing else.
+      2. Everything downstream is a brush over `{DynamicResource <role>Color}`: the roles views bind
+         to, the status hues, Dock's chrome, and the handful of Fluent keys a palette can't express.
+
+    So a theme overrides ~32 colours and every derived brush follows on its own. Were these aliases
+    instead written as `StaticResource`, they'd bind to *this* file's brushes at load and a theme
+    could never move them — which is the trap Fluent and Dock both fall into internally, and why the
+    "Fluent residue" section below exists at all.
+
+    Stock control chrome is NOT set here: `FluentTheme.Palettes` in App.axaml carries it, which is
+    Avalonia's supported hook (see the comment in Avalonia's own FluentTheme.xaml). It reaches
+    Fluent's neutral ramp properly, so only the few brand-tinted states below need restating.
+
+    Colour roles, not colour names: a view asks for `PanelAlt` or `Danger`, never a hex literal. The
+    Agnes gradient (violet → magenta → coral) is the one signature flourish, used at most once per
+    view. See `Themes/ThemeCatalog.cs` for how a whole theme is swapped at runtime.
   -->
   <ResourceDictionary.ThemeDictionaries>
 
-    <!-- ============================ DARK (Agnes console) ============================ -->
+    <!-- ================= DARK (Agnes console) ================= -->
     <ResourceDictionary x:Key="Dark">
-
-      <!-- 1. roles -->
-      <SolidColorBrush x:Key="Bg" Color="#0F0A22" />
-      <SolidColorBrush x:Key="Panel" Color="#16112E" />
-      <SolidColorBrush x:Key="PanelAlt" Color="#1C1740" />
-      <SolidColorBrush x:Key="CodeBg" Color="#120C2E" />
-      <SolidColorBrush x:Key="Scrim" Color="#8C120C2E" />
-      <SolidColorBrush x:Key="Line" Color="#1FFFFFFF" />
-      <SolidColorBrush x:Key="LineStrong" Color="#33FFFFFF" />
-
-      <SolidColorBrush x:Key="Fg" Color="#E6E3F7" />
-      <SolidColorBrush x:Key="FgDim" Color="#9C97C4" />
-      <SolidColorBrush x:Key="FgFaint" Color="#6B6796" />
-      <SolidColorBrush x:Key="FgOnAccent" Color="#FFFFFF" />
-
-      <SolidColorBrush x:Key="Accent" Color="#B06CF0" />
-      <SolidColorBrush x:Key="AccentText" Color="#D9B8FF" />
-      <SolidColorBrush x:Key="AccentSoft" Color="#2EB06CF0" />
-      <SolidColorBrush x:Key="AccentEdge" Color="#4DB06CF0" />
-
-      <SolidColorBrush x:Key="Good" Color="#3ADBB4" />
-      <SolidColorBrush x:Key="GoodSoft" Color="#243ADBB4" />
-      <SolidColorBrush x:Key="Warn" Color="#FFC53D" />
-      <SolidColorBrush x:Key="WarnSoft" Color="#26FFC53D" />
-      <SolidColorBrush x:Key="Danger" Color="#FF7BA5" />
-      <SolidColorBrush x:Key="DangerSoft" Color="#26F0356F" />
-      <SolidColorBrush x:Key="Info" Color="#38BDF8" />
-      <SolidColorBrush x:Key="InfoSoft" Color="#2438BDF8" />
-
-      <!-- Status roles. One meaning per hue, so a colour reads the same everywhere in the app:
-           sky = in motion · amber = blocked on you · mint = done/healthy · pink = failed/destructive.
-           Violet stays reserved for selection and brand, which is why it isn't in this list. The
-           Agnes kit paints a running tool amber; here "blocked on you" gets sole claim on amber
-           instead, because on a many-session client that's the one state worth interrupting for. -->
-      <StaticResource x:Key="StatusWorking" ResourceKey="Info" />
-      <StaticResource x:Key="StatusWorkingSoft" ResourceKey="InfoSoft" />
-      <StaticResource x:Key="StatusAttention" ResourceKey="Warn" />
-      <StaticResource x:Key="StatusAttentionSoft" ResourceKey="WarnSoft" />
-      <StaticResource x:Key="StatusDone" ResourceKey="Good" />
-      <StaticResource x:Key="StatusDoneSoft" ResourceKey="GoodSoft" />
-      <StaticResource x:Key="StatusError" ResourceKey="Danger" />
-      <StaticResource x:Key="StatusErrorSoft" ResourceKey="DangerSoft" />
-      <StaticResource x:Key="StatusIdle" ResourceKey="FgFaint" />
-
+      <!-- app canvas -->
+      <Color x:Key="BgColor">#0F0A22</Color>
+      <!-- raised surface -->
+      <Color x:Key="PanelColor">#16112E</Color>
+      <!-- sunken/secondary surface -->
+      <Color x:Key="PanelAltColor">#1C1740</Color>
+      <!-- code + logs -->
+      <Color x:Key="CodeBgColor">#120C2E</Color>
+      <!-- dialog scrim -->
+      <Color x:Key="ScrimColor">#8C120C2E</Color>
+      <!-- hairline -->
+      <Color x:Key="LineColor">#1FFFFFFF</Color>
+      <!-- stronger hairline -->
+      <Color x:Key="LineStrongColor">#33FFFFFF</Color>
+      <!-- primary ink -->
+      <Color x:Key="FgColor">#E6E3F7</Color>
+      <!-- secondary ink -->
+      <Color x:Key="FgDimColor">#9C97C4</Color>
+      <!-- tertiary ink -->
+      <Color x:Key="FgFaintColor">#6B6796</Color>
+      <!-- ink on an accent fill -->
+      <Color x:Key="FgOnAccentColor">#FFFFFF</Color>
+      <!-- selection + brand -->
+      <Color x:Key="AccentColor">#B06CF0</Color>
+      <!-- accent, legible as text -->
+      <Color x:Key="AccentTextColor">#D9B8FF</Color>
+      <!-- accent tint (hover) -->
+      <Color x:Key="AccentSoftColor">#2EB06CF0</Color>
+      <!-- accent tint (pressed/selected) -->
+      <Color x:Key="AccentEdgeColor">#4DB06CF0</Color>
+      <!-- mint -->
+      <Color x:Key="GoodColor">#3ADBB4</Color>
+      <Color x:Key="GoodSoftColor">#243ADBB4</Color>
+      <!-- amber -->
+      <Color x:Key="WarnColor">#FFC53D</Color>
+      <Color x:Key="WarnSoftColor">#26FFC53D</Color>
+      <!-- pink -->
+      <Color x:Key="DangerColor">#FF7BA5</Color>
+      <Color x:Key="DangerSoftColor">#26F0356F</Color>
+      <!-- sky -->
+      <Color x:Key="InfoColor">#38BDF8</Color>
+      <Color x:Key="InfoSoftColor">#2438BDF8</Color>
       <!-- chat -->
-      <SolidColorBrush x:Key="UserBubble" Color="#241E4E" />
-
-      <!-- diff / code -->
-      <SolidColorBrush x:Key="DiffAddBg" Color="#1A3ADBB4" />
-      <SolidColorBrush x:Key="DiffAddFg" Color="#6FEBC5" />
-      <SolidColorBrush x:Key="DiffDelBg" Color="#1FF0356F" />
-      <SolidColorBrush x:Key="DiffDelFg" Color="#FF9BBB" />
-      <SolidColorBrush x:Key="HunkBg" Color="#2038BDF8" />
-      <SolidColorBrush x:Key="HunkFg" Color="#86D3F7" />
-      <SolidColorBrush x:Key="Gutter" Color="#4A4470" />
-
-      <!-- Elevation: cool violet, never black. -->
-      <Color x:Key="ShadowColor">#66120C2E</Color>
-
-      <!-- 2. Fluent’s stock chrome, re-pointed at the roles above -->
-      <!-- Accent-derived controls (selection, checkmarks, progress, focus) read these colours
-           dynamically, so the whole accent family follows from the seven below. -->
-      <Color x:Key="SystemAccentColor">#B06CF0</Color>
-      <Color x:Key="SystemAccentColorLight1">#BE85F3</Color>
-      <Color x:Key="SystemAccentColorLight2">#CC9DF6</Color>
-      <Color x:Key="SystemAccentColorLight3">#DAB6F9</Color>
-      <Color x:Key="SystemAccentColorDark1">#9C55DB</Color>
-      <Color x:Key="SystemAccentColorDark2">#8442C2</Color>
-      <Color x:Key="SystemAccentColorDark3">#6B32A3</Color>
-
-      <!-- List rows (ListBox/ComboBox items) read these two for their neutral hover/press fills. -->
-      <StaticResource x:Key="SystemControlHighlightListLowBrush" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="SystemControlHighlightListMediumBrush" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="SystemControlHighlightAltBaseHighBrush" ResourceKey="Fg" />
-
-      <StaticResource x:Key="ButtonBackground" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ButtonBackgroundDisabled" ResourceKey="Line" />
-      <StaticResource x:Key="ButtonForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="AccentText" />
-      <StaticResource x:Key="ButtonForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ButtonBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="LineStrong" />
-      <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ButtonBorderBrushDisabled" ResourceKey="Line" />
-
-      <StaticResource x:Key="TextControlBackground" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="Panel" />
-      <StaticResource x:Key="TextControlBackgroundDisabled" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="TextControlBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="LineStrong" />
-      <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="Accent" />
-      <StaticResource x:Key="TextControlBorderBrushDisabled" ResourceKey="Line" />
-      <StaticResource x:Key="TextControlForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="TextControlForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="TextControlForegroundFocused" ResourceKey="Fg" />
-      <StaticResource x:Key="TextControlForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlPlaceholderForeground" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlPlaceholderForegroundPointerOver" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlPlaceholderForegroundFocused" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlPlaceholderForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlSelectionHighlightColor" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="TextControlButtonForeground" ResourceKey="FgDim" />
-      <StaticResource x:Key="TextControlButtonForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="TextControlButtonBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="TextControlButtonBackgroundPressed" ResourceKey="AccentEdge" />
-
-      <StaticResource x:Key="ComboBoxBackground" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ComboBoxBackgroundUnfocused" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ComboBoxBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ComboBoxBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ComboBoxBackgroundDisabled" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ComboBoxBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ComboBoxBorderBrushPointerOver" ResourceKey="LineStrong" />
-      <StaticResource x:Key="ComboBoxBorderBrushPressed" ResourceKey="Accent" />
-      <StaticResource x:Key="ComboBoxBorderBrushDisabled" ResourceKey="Line" />
-      <StaticResource x:Key="ComboBoxForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxForegroundFocused" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxForegroundFocusedPressed" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ComboBoxPlaceHolderForeground" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ComboBoxDropDownBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="ComboBoxDropDownBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ComboBoxDropDownGlyphForeground" ResourceKey="FgDim" />
-      <StaticResource x:Key="ComboBoxDropDownGlyphForegroundFocused" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxDropDownGlyphForegroundFocusedPressed" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxDropDownGlyphForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ComboBoxItemForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxItemForegroundSelected" ResourceKey="AccentText" />
-      <StaticResource x:Key="ComboBoxItemForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ComboBoxItemBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ComboBoxItemBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ComboBoxItemBackgroundSelected" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ComboBoxItemBackgroundSelectedPointerOver" ResourceKey="AccentEdge" />
-
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillUnchecked" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillUncheckedPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundStrokeUnchecked" ResourceKey="LineStrong" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" ResourceKey="Accent" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillChecked" ResourceKey="Accent" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" ResourceKey="Accent" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPressed" ResourceKey="Accent" />
-      <StaticResource x:Key="CheckBoxCheckGlyphForegroundChecked" ResourceKey="FgOnAccent" />
-      <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" ResourceKey="FgOnAccent" />
-      <StaticResource x:Key="CheckBoxForegroundUnchecked" ResourceKey="Fg" />
-      <StaticResource x:Key="CheckBoxForegroundUncheckedPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="CheckBoxForegroundChecked" ResourceKey="Fg" />
-      <StaticResource x:Key="CheckBoxForegroundCheckedPointerOver" ResourceKey="Fg" />
-
-      <StaticResource x:Key="FlyoutPresenterBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="FlyoutBorderThemeBrush" ResourceKey="Line" />
-      <StaticResource x:Key="MenuFlyoutPresenterBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="MenuFlyoutPresenterBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="MenuFlyoutItemBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="MenuFlyoutItemBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="MenuFlyoutItemForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="MenuFlyoutItemForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="MenuFlyoutItemForegroundPressed" ResourceKey="Fg" />
-      <StaticResource x:Key="MenuFlyoutItemForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="MenuFlyoutItemKeyboardAcceleratorTextForeground" ResourceKey="FgFaint" />
-
-      <StaticResource x:Key="ToolTipBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="ToolTipBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ToolTipForeground" ResourceKey="Fg" />
-
+      <Color x:Key="UserBubbleColor">#241E4E</Color>
+      <!-- diff -->
+      <Color x:Key="DiffAddBgColor">#1A3ADBB4</Color>
+      <Color x:Key="DiffAddFgColor">#6FEBC5</Color>
+      <Color x:Key="DiffDelBgColor">#1FF0356F</Color>
+      <Color x:Key="DiffDelFgColor">#FF9BBB</Color>
+      <Color x:Key="HunkBgColor">#2038BDF8</Color>
+      <Color x:Key="HunkFgColor">#86D3F7</Color>
+      <!-- diff gutter + scrollbar thumb -->
+      <Color x:Key="GutterColor">#4A4470</Color>
+      <!-- Fluent reads these two as Colors, not brushes, so they can't be aliased
+           dynamically — every theme states its own. -->
       <Color x:Key="ScrollBarThumbBackgroundColor">#4A4470</Color>
-      <StaticResource x:Key="ScrollBarThumbFillPointerOver" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ScrollBarThumbFillPressed" ResourceKey="FgDim" />
-      <StaticResource x:Key="ScrollBarThumbFillDisabled" ResourceKey="Line" />
-      <StaticResource x:Key="ScrollBarBackgroundPointerOver" ResourceKey="Panel" />
-      <StaticResource x:Key="ScrollBarTrackFillPointerOver" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ScrollBarTrackStrokePointerOver" ResourceKey="Line" />
-      <StaticResource x:Key="ScrollBarButtonBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ScrollBarButtonBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ScrollBarButtonArrowForeground" ResourceKey="FgDim" />
-      <StaticResource x:Key="ScrollBarButtonArrowForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="ScrollBarButtonArrowForegroundPressed" ResourceKey="Fg" />
-      <StaticResource x:Key="ScrollBarButtonArrowForegroundDisabled" ResourceKey="FgFaint" />
-
-      <StaticResource x:Key="TreeViewItemBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="TreeViewItemBackgroundSelected" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="TreeViewItemBackgroundSelectedPointerOver" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="TreeViewItemForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="TreeViewItemForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="TreeViewItemForegroundSelected" ResourceKey="Fg" />
-      <StaticResource x:Key="TreeViewItemForegroundSelectedPointerOver" ResourceKey="Fg" />
-
-      <StaticResource x:Key="TabItemHeaderBackgroundSelected" ResourceKey="Panel" />
-      <StaticResource x:Key="TabItemHeaderBackgroundUnselectedPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="TabItemHeaderForegroundSelected" ResourceKey="Fg" />
-      <StaticResource x:Key="TabItemHeaderForegroundUnselected" ResourceKey="FgDim" />
-      <StaticResource x:Key="TabItemHeaderForegroundUnselectedPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="TabItemHeaderForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TabItemHeaderSelectedPipeFill" ResourceKey="Accent" />
-
-      <StaticResource x:Key="ExpanderHeaderBackground" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ExpanderHeaderBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ExpanderHeaderForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="ExpanderHeaderBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ExpanderContentBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="ExpanderContentBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ExpanderChevronForeground" ResourceKey="FgDim" />
-      <StaticResource x:Key="ExpanderChevronBorderBrush" ResourceKey="Line" />
-
-      <!-- Dock's tab strip is the app's most prominent chrome (it carries the toolbar too), and it
-           ships Visual Studio blue. Same rule as Fluent: its templates read the leaf keys below
-           dynamically, so those are what we re-point rather than its accent trio. -->
-      <StaticResource x:Key="DockDocumentTabStripBackgroundBrush" ResourceKey="Panel" />
-      <StaticResource x:Key="DockTabActiveBackgroundBrush" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="DockTabActiveForegroundBrush" ResourceKey="AccentText" />
-      <StaticResource x:Key="DockTabHoverBackgroundBrush" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="DockTabActiveIndicatorBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockTabForegroundBrush" ResourceKey="FgDim" />
-      <StaticResource x:Key="DockTabSelectedForegroundBrush" ResourceKey="AccentText" />
-      <StaticResource x:Key="DockSurfaceHeaderBrush" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="DockSurfaceHeaderActiveBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockDocumentTabSelectedForegroundBrush" ResourceKey="AccentText" />
-      <StaticResource x:Key="DockDocumentTabPointerOverForegroundBrush" ResourceKey="Fg" />
-      <StaticResource x:Key="DockDocumentTabCloseSelectedForegroundBrush" ResourceKey="FgDim" />
-      <StaticResource x:Key="DockDocumentTabClosePointerOverForegroundBrush" ResourceKey="Danger" />
-      <StaticResource x:Key="DockTabCloseHoverBackgroundBrush" ResourceKey="DangerSoft" />
-      <StaticResource x:Key="DockThemeBackgroundBrush" ResourceKey="Panel" />
-      <StaticResource x:Key="DockThemeControlBackgroundBrush" ResourceKey="Bg" />
-      <StaticResource x:Key="DockThemeForegroundBrush" ResourceKey="Fg" />
-      <StaticResource x:Key="DockThemeBorderLowBrush" ResourceKey="Line" />
-      <StaticResource x:Key="DockThemeAccentBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockBorderSubtleBrush" ResourceKey="Line" />
-      <StaticResource x:Key="DockBorderStrongBrush" ResourceKey="LineStrong" />
-      <StaticResource x:Key="DockSeparatorBrush" ResourceKey="Line" />
-      <StaticResource x:Key="DockSplitterIdleBrush" ResourceKey="Line" />
-      <StaticResource x:Key="DockSplitterHoverBrush" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="DockSplitterDragBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockTargetIndicatorBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockChromeButtonForegroundBrush" ResourceKey="FgDim" />
-      <StaticResource x:Key="DockChromeButtonHoverBackgroundBrush" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="DockChromeButtonPressedBackgroundBrush" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="DockChromeButtonDangerHoverBrush" ResourceKey="DangerSoft" />
-      <StaticResource x:Key="DockChromeGripBrush" ResourceKey="FgFaint" />
+      <Color x:Key="SystemAccentColor">#B06CF0</Color>
+      <Color x:Key="ShadowColor">#66120C2E</Color>
     </ResourceDictionary>
 
-    <!-- ============================ LIGHT (Multitudal neutrals) ============================ -->
+    <!-- ================= LIGHT (Multitudal neutrals) ================= -->
     <ResourceDictionary x:Key="Light">
-
-      <!-- 1. roles -->
-      <SolidColorBrush x:Key="Bg" Color="#F5F5FA" />
-      <SolidColorBrush x:Key="Panel" Color="#FFFFFF" />
-      <SolidColorBrush x:Key="PanelAlt" Color="#ECECF4" />
-      <SolidColorBrush x:Key="CodeBg" Color="#F5F5FA" />
-      <SolidColorBrush x:Key="Scrim" Color="#8C120C2E" />
-      <SolidColorBrush x:Key="Line" Color="#DEDEEB" />
-      <SolidColorBrush x:Key="LineStrong" Color="#C6C6DA" />
-
-      <SolidColorBrush x:Key="Fg" Color="#1D1546" />
-      <SolidColorBrush x:Key="FgDim" Color="#4E4E68" />
-      <SolidColorBrush x:Key="FgFaint" Color="#7C7C9C" />
-      <SolidColorBrush x:Key="FgOnAccent" Color="#FFFFFF" />
-
-      <SolidColorBrush x:Key="Accent" Color="#4F46E5" />
-      <SolidColorBrush x:Key="AccentText" Color="#4338CA" />
-      <SolidColorBrush x:Key="AccentSoft" Color="#EFEFFE" />
-      <SolidColorBrush x:Key="AccentEdge" Color="#C4C4FB" />
-
-      <SolidColorBrush x:Key="Good" Color="#12B886" />
-      <SolidColorBrush x:Key="GoodSoft" Color="#DCFBEF" />
-      <SolidColorBrush x:Key="Warn" Color="#B37209" />
-      <SolidColorBrush x:Key="WarnSoft" Color="#FEF3D6" />
-      <SolidColorBrush x:Key="Danger" Color="#F0356F" />
-      <SolidColorBrush x:Key="DangerSoft" Color="#FEE0EA" />
-      <SolidColorBrush x:Key="Info" Color="#0EA5E9" />
-      <SolidColorBrush x:Key="InfoSoft" Color="#DFF4FE" />
-
-      <!-- Status roles: one meaning per hue — see the dark variant. -->
-      <StaticResource x:Key="StatusWorking" ResourceKey="Info" />
-      <StaticResource x:Key="StatusWorkingSoft" ResourceKey="InfoSoft" />
-      <StaticResource x:Key="StatusAttention" ResourceKey="Warn" />
-      <StaticResource x:Key="StatusAttentionSoft" ResourceKey="WarnSoft" />
-      <StaticResource x:Key="StatusDone" ResourceKey="Good" />
-      <StaticResource x:Key="StatusDoneSoft" ResourceKey="GoodSoft" />
-      <StaticResource x:Key="StatusError" ResourceKey="Danger" />
-      <StaticResource x:Key="StatusErrorSoft" ResourceKey="DangerSoft" />
-      <StaticResource x:Key="StatusIdle" ResourceKey="FgFaint" />
-
-      <SolidColorBrush x:Key="UserBubble" Color="#EFEFFE" />
-
-      <SolidColorBrush x:Key="DiffAddBg" Color="#DCFBEF" />
-      <SolidColorBrush x:Key="DiffAddFg" Color="#0B7A5A" />
-      <SolidColorBrush x:Key="DiffDelBg" Color="#FEE0EA" />
-      <SolidColorBrush x:Key="DiffDelFg" Color="#B01B4C" />
-      <SolidColorBrush x:Key="HunkBg" Color="#DFF4FE" />
-      <SolidColorBrush x:Key="HunkFg" Color="#0B6E96" />
-      <SolidColorBrush x:Key="Gutter" Color="#A9A9C6" />
-
-      <Color x:Key="ShadowColor">#1F1D1546</Color>
-
-      <!-- 2. Fluent’s stock chrome, re-pointed at the roles above -->
-      <Color x:Key="SystemAccentColor">#4F46E5</Color>
-      <Color x:Key="SystemAccentColorLight1">#6E67EA</Color>
-      <Color x:Key="SystemAccentColorLight2">#8D87EF</Color>
-      <Color x:Key="SystemAccentColorLight3">#ACA8F4</Color>
-      <Color x:Key="SystemAccentColorDark1">#4338CA</Color>
-      <Color x:Key="SystemAccentColorDark2">#3730A3</Color>
-      <Color x:Key="SystemAccentColorDark3">#2E2A73</Color>
-
-      <StaticResource x:Key="SystemControlHighlightListLowBrush" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="SystemControlHighlightListMediumBrush" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="SystemControlHighlightAltBaseHighBrush" ResourceKey="Fg" />
-
-      <StaticResource x:Key="ButtonBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ButtonBackgroundDisabled" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ButtonForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="AccentText" />
-      <StaticResource x:Key="ButtonForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ButtonBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="LineStrong" />
-      <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ButtonBorderBrushDisabled" ResourceKey="Line" />
-
-      <StaticResource x:Key="TextControlBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="Panel" />
-      <StaticResource x:Key="TextControlBackgroundFocused" ResourceKey="Panel" />
-      <StaticResource x:Key="TextControlBackgroundDisabled" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="TextControlBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="TextControlBorderBrushPointerOver" ResourceKey="LineStrong" />
-      <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="Accent" />
-      <StaticResource x:Key="TextControlBorderBrushDisabled" ResourceKey="Line" />
-      <StaticResource x:Key="TextControlForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="TextControlForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="TextControlForegroundFocused" ResourceKey="Fg" />
-      <StaticResource x:Key="TextControlForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlPlaceholderForeground" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlPlaceholderForegroundPointerOver" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlPlaceholderForegroundFocused" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlPlaceholderForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TextControlSelectionHighlightColor" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="TextControlButtonForeground" ResourceKey="FgDim" />
-      <StaticResource x:Key="TextControlButtonForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="TextControlButtonBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="TextControlButtonBackgroundPressed" ResourceKey="AccentEdge" />
-
-      <StaticResource x:Key="ComboBoxBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="ComboBoxBackgroundUnfocused" ResourceKey="Panel" />
-      <StaticResource x:Key="ComboBoxBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ComboBoxBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ComboBoxBackgroundDisabled" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ComboBoxBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ComboBoxBorderBrushPointerOver" ResourceKey="LineStrong" />
-      <StaticResource x:Key="ComboBoxBorderBrushPressed" ResourceKey="Accent" />
-      <StaticResource x:Key="ComboBoxBorderBrushDisabled" ResourceKey="Line" />
-      <StaticResource x:Key="ComboBoxForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxForegroundFocused" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxForegroundFocusedPressed" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ComboBoxPlaceHolderForeground" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ComboBoxDropDownBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="ComboBoxDropDownBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ComboBoxDropDownGlyphForeground" ResourceKey="FgDim" />
-      <StaticResource x:Key="ComboBoxDropDownGlyphForegroundFocused" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxDropDownGlyphForegroundFocusedPressed" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxDropDownGlyphForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ComboBoxItemForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="ComboBoxItemForegroundSelected" ResourceKey="AccentText" />
-      <StaticResource x:Key="ComboBoxItemForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ComboBoxItemBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ComboBoxItemBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ComboBoxItemBackgroundSelected" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ComboBoxItemBackgroundSelectedPointerOver" ResourceKey="AccentEdge" />
-
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillUnchecked" ResourceKey="Panel" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillUncheckedPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundStrokeUnchecked" ResourceKey="LineStrong" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" ResourceKey="Accent" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillChecked" ResourceKey="Accent" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" ResourceKey="Accent" />
-      <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPressed" ResourceKey="Accent" />
-      <StaticResource x:Key="CheckBoxCheckGlyphForegroundChecked" ResourceKey="FgOnAccent" />
-      <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" ResourceKey="FgOnAccent" />
-      <StaticResource x:Key="CheckBoxForegroundUnchecked" ResourceKey="Fg" />
-      <StaticResource x:Key="CheckBoxForegroundUncheckedPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="CheckBoxForegroundChecked" ResourceKey="Fg" />
-      <StaticResource x:Key="CheckBoxForegroundCheckedPointerOver" ResourceKey="Fg" />
-
-      <StaticResource x:Key="FlyoutPresenterBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="FlyoutBorderThemeBrush" ResourceKey="Line" />
-      <StaticResource x:Key="MenuFlyoutPresenterBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="MenuFlyoutPresenterBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="MenuFlyoutItemBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="MenuFlyoutItemBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="MenuFlyoutItemForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="MenuFlyoutItemForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="MenuFlyoutItemForegroundPressed" ResourceKey="Fg" />
-      <StaticResource x:Key="MenuFlyoutItemForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="MenuFlyoutItemKeyboardAcceleratorTextForeground" ResourceKey="FgFaint" />
-
-      <StaticResource x:Key="ToolTipBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="ToolTipBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ToolTipForeground" ResourceKey="Fg" />
-
+      <!-- app canvas -->
+      <Color x:Key="BgColor">#F5F5FA</Color>
+      <!-- raised surface -->
+      <Color x:Key="PanelColor">#FFFFFF</Color>
+      <!-- sunken/secondary surface -->
+      <Color x:Key="PanelAltColor">#ECECF4</Color>
+      <!-- code + logs -->
+      <Color x:Key="CodeBgColor">#F5F5FA</Color>
+      <!-- dialog scrim -->
+      <Color x:Key="ScrimColor">#8C120C2E</Color>
+      <!-- hairline -->
+      <Color x:Key="LineColor">#DEDEEB</Color>
+      <!-- stronger hairline -->
+      <Color x:Key="LineStrongColor">#C6C6DA</Color>
+      <!-- primary ink -->
+      <Color x:Key="FgColor">#1D1546</Color>
+      <!-- secondary ink -->
+      <Color x:Key="FgDimColor">#4E4E68</Color>
+      <!-- tertiary ink -->
+      <Color x:Key="FgFaintColor">#7C7C9C</Color>
+      <!-- ink on an accent fill -->
+      <Color x:Key="FgOnAccentColor">#FFFFFF</Color>
+      <!-- selection + brand -->
+      <Color x:Key="AccentColor">#4F46E5</Color>
+      <!-- accent, legible as text -->
+      <Color x:Key="AccentTextColor">#4338CA</Color>
+      <!-- accent tint (hover) -->
+      <Color x:Key="AccentSoftColor">#EFEFFE</Color>
+      <!-- accent tint (pressed/selected) -->
+      <Color x:Key="AccentEdgeColor">#C4C4FB</Color>
+      <!-- mint -->
+      <Color x:Key="GoodColor">#12B886</Color>
+      <Color x:Key="GoodSoftColor">#DCFBEF</Color>
+      <!-- amber -->
+      <Color x:Key="WarnColor">#B37209</Color>
+      <Color x:Key="WarnSoftColor">#FEF3D6</Color>
+      <!-- pink -->
+      <Color x:Key="DangerColor">#F0356F</Color>
+      <Color x:Key="DangerSoftColor">#FEE0EA</Color>
+      <!-- sky -->
+      <Color x:Key="InfoColor">#0EA5E9</Color>
+      <Color x:Key="InfoSoftColor">#DFF4FE</Color>
+      <!-- chat -->
+      <Color x:Key="UserBubbleColor">#EFEFFE</Color>
+      <!-- diff -->
+      <Color x:Key="DiffAddBgColor">#DCFBEF</Color>
+      <Color x:Key="DiffAddFgColor">#0B7A5A</Color>
+      <Color x:Key="DiffDelBgColor">#FEE0EA</Color>
+      <Color x:Key="DiffDelFgColor">#B01B4C</Color>
+      <Color x:Key="HunkBgColor">#DFF4FE</Color>
+      <Color x:Key="HunkFgColor">#0B6E96</Color>
+      <!-- diff gutter + scrollbar thumb -->
+      <Color x:Key="GutterColor">#A9A9C6</Color>
+      <!-- Fluent reads these two as Colors, not brushes, so they can't be aliased
+           dynamically — every theme states its own. -->
       <Color x:Key="ScrollBarThumbBackgroundColor">#C6C6DA</Color>
-      <StaticResource x:Key="ScrollBarThumbFillPointerOver" ResourceKey="FgFaint" />
-      <StaticResource x:Key="ScrollBarThumbFillPressed" ResourceKey="FgDim" />
-      <StaticResource x:Key="ScrollBarThumbFillDisabled" ResourceKey="Line" />
-      <StaticResource x:Key="ScrollBarBackgroundPointerOver" ResourceKey="Panel" />
-      <StaticResource x:Key="ScrollBarTrackFillPointerOver" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ScrollBarTrackStrokePointerOver" ResourceKey="Line" />
-      <StaticResource x:Key="ScrollBarButtonBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ScrollBarButtonBackgroundPressed" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="ScrollBarButtonArrowForeground" ResourceKey="FgDim" />
-      <StaticResource x:Key="ScrollBarButtonArrowForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="ScrollBarButtonArrowForegroundPressed" ResourceKey="Fg" />
-      <StaticResource x:Key="ScrollBarButtonArrowForegroundDisabled" ResourceKey="FgFaint" />
-
-      <StaticResource x:Key="TreeViewItemBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="TreeViewItemBackgroundSelected" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="TreeViewItemBackgroundSelectedPointerOver" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="TreeViewItemForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="TreeViewItemForegroundPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="TreeViewItemForegroundSelected" ResourceKey="Fg" />
-      <StaticResource x:Key="TreeViewItemForegroundSelectedPointerOver" ResourceKey="Fg" />
-
-      <StaticResource x:Key="TabItemHeaderBackgroundSelected" ResourceKey="Panel" />
-      <StaticResource x:Key="TabItemHeaderBackgroundUnselectedPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="TabItemHeaderForegroundSelected" ResourceKey="Fg" />
-      <StaticResource x:Key="TabItemHeaderForegroundUnselected" ResourceKey="FgDim" />
-      <StaticResource x:Key="TabItemHeaderForegroundUnselectedPointerOver" ResourceKey="Fg" />
-      <StaticResource x:Key="TabItemHeaderForegroundDisabled" ResourceKey="FgFaint" />
-      <StaticResource x:Key="TabItemHeaderSelectedPipeFill" ResourceKey="Accent" />
-
-      <StaticResource x:Key="ExpanderHeaderBackground" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="ExpanderHeaderBackgroundPointerOver" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="ExpanderHeaderForeground" ResourceKey="Fg" />
-      <StaticResource x:Key="ExpanderHeaderBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ExpanderContentBackground" ResourceKey="Panel" />
-      <StaticResource x:Key="ExpanderContentBorderBrush" ResourceKey="Line" />
-      <StaticResource x:Key="ExpanderChevronForeground" ResourceKey="FgDim" />
-      <StaticResource x:Key="ExpanderChevronBorderBrush" ResourceKey="Line" />
-
-      <!-- Dock's tab strip: see the note in the dark variant. -->
-      <StaticResource x:Key="DockDocumentTabStripBackgroundBrush" ResourceKey="Panel" />
-      <StaticResource x:Key="DockTabActiveBackgroundBrush" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="DockTabActiveForegroundBrush" ResourceKey="AccentText" />
-      <StaticResource x:Key="DockTabHoverBackgroundBrush" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="DockTabActiveIndicatorBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockTabForegroundBrush" ResourceKey="FgDim" />
-      <StaticResource x:Key="DockTabSelectedForegroundBrush" ResourceKey="AccentText" />
-      <StaticResource x:Key="DockSurfaceHeaderBrush" ResourceKey="PanelAlt" />
-      <StaticResource x:Key="DockSurfaceHeaderActiveBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockDocumentTabSelectedForegroundBrush" ResourceKey="AccentText" />
-      <StaticResource x:Key="DockDocumentTabPointerOverForegroundBrush" ResourceKey="Fg" />
-      <StaticResource x:Key="DockDocumentTabCloseSelectedForegroundBrush" ResourceKey="FgDim" />
-      <StaticResource x:Key="DockDocumentTabClosePointerOverForegroundBrush" ResourceKey="Danger" />
-      <StaticResource x:Key="DockTabCloseHoverBackgroundBrush" ResourceKey="DangerSoft" />
-      <StaticResource x:Key="DockThemeBackgroundBrush" ResourceKey="Panel" />
-      <StaticResource x:Key="DockThemeControlBackgroundBrush" ResourceKey="Bg" />
-      <StaticResource x:Key="DockThemeForegroundBrush" ResourceKey="Fg" />
-      <StaticResource x:Key="DockThemeBorderLowBrush" ResourceKey="Line" />
-      <StaticResource x:Key="DockThemeAccentBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockBorderSubtleBrush" ResourceKey="Line" />
-      <StaticResource x:Key="DockBorderStrongBrush" ResourceKey="LineStrong" />
-      <StaticResource x:Key="DockSeparatorBrush" ResourceKey="Line" />
-      <StaticResource x:Key="DockSplitterIdleBrush" ResourceKey="Line" />
-      <StaticResource x:Key="DockSplitterHoverBrush" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="DockSplitterDragBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockTargetIndicatorBrush" ResourceKey="Accent" />
-      <StaticResource x:Key="DockChromeButtonForegroundBrush" ResourceKey="FgDim" />
-      <StaticResource x:Key="DockChromeButtonHoverBackgroundBrush" ResourceKey="AccentSoft" />
-      <StaticResource x:Key="DockChromeButtonPressedBackgroundBrush" ResourceKey="AccentEdge" />
-      <StaticResource x:Key="DockChromeButtonDangerHoverBrush" ResourceKey="DangerSoft" />
-      <StaticResource x:Key="DockChromeGripBrush" ResourceKey="FgFaint" />
+      <Color x:Key="SystemAccentColor">#4F46E5</Color>
+      <Color x:Key="ShadowColor">#1F1D1546</Color>
     </ResourceDictionary>
 
   </ResourceDictionary.ThemeDictionaries>
 
+  <!-- ================= roles: the names views actually bind =================
+       One brush per role, tracking its colour dynamically so a theme swap repaints live. -->
+  <SolidColorBrush x:Key="Bg" Color="{DynamicResource BgColor}" />
+  <SolidColorBrush x:Key="Panel" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="PanelAlt" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="CodeBg" Color="{DynamicResource CodeBgColor}" />
+  <SolidColorBrush x:Key="Scrim" Color="{DynamicResource ScrimColor}" />
+  <SolidColorBrush x:Key="Line" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="LineStrong" Color="{DynamicResource LineStrongColor}" />
+  <SolidColorBrush x:Key="Fg" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="FgDim" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="FgFaint" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="FgOnAccent" Color="{DynamicResource FgOnAccentColor}" />
+  <SolidColorBrush x:Key="Accent" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="AccentText" Color="{DynamicResource AccentTextColor}" />
+  <SolidColorBrush x:Key="AccentSoft" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="AccentEdge" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="Good" Color="{DynamicResource GoodColor}" />
+  <SolidColorBrush x:Key="GoodSoft" Color="{DynamicResource GoodSoftColor}" />
+  <SolidColorBrush x:Key="Warn" Color="{DynamicResource WarnColor}" />
+  <SolidColorBrush x:Key="WarnSoft" Color="{DynamicResource WarnSoftColor}" />
+  <SolidColorBrush x:Key="Danger" Color="{DynamicResource DangerColor}" />
+  <SolidColorBrush x:Key="DangerSoft" Color="{DynamicResource DangerSoftColor}" />
+  <SolidColorBrush x:Key="Info" Color="{DynamicResource InfoColor}" />
+  <SolidColorBrush x:Key="InfoSoft" Color="{DynamicResource InfoSoftColor}" />
+  <SolidColorBrush x:Key="UserBubble" Color="{DynamicResource UserBubbleColor}" />
+  <SolidColorBrush x:Key="DiffAddBg" Color="{DynamicResource DiffAddBgColor}" />
+  <SolidColorBrush x:Key="DiffAddFg" Color="{DynamicResource DiffAddFgColor}" />
+  <SolidColorBrush x:Key="DiffDelBg" Color="{DynamicResource DiffDelBgColor}" />
+  <SolidColorBrush x:Key="DiffDelFg" Color="{DynamicResource DiffDelFgColor}" />
+  <SolidColorBrush x:Key="HunkBg" Color="{DynamicResource HunkBgColor}" />
+  <SolidColorBrush x:Key="HunkFg" Color="{DynamicResource HunkFgColor}" />
+  <SolidColorBrush x:Key="Gutter" Color="{DynamicResource GutterColor}" />
+
+  <!-- ================= status hues =================
+       One meaning per hue, so a colour reads the same everywhere in the app:
+       sky = in motion · amber = blocked on you · mint = done/healthy · pink = failed/destructive.
+       Violet stays reserved for selection and brand, which is why it isn't in this list. The Agnes
+       kit paints a running tool amber; here "blocked on you" gets sole claim on amber instead,
+       because on a many-session client that's the one state worth interrupting for. -->
+  <SolidColorBrush x:Key="StatusWorking" Color="{DynamicResource InfoColor}" />
+  <SolidColorBrush x:Key="StatusWorkingSoft" Color="{DynamicResource InfoSoftColor}" />
+  <SolidColorBrush x:Key="StatusAttention" Color="{DynamicResource WarnColor}" />
+  <SolidColorBrush x:Key="StatusAttentionSoft" Color="{DynamicResource WarnSoftColor}" />
+  <SolidColorBrush x:Key="StatusDone" Color="{DynamicResource GoodColor}" />
+  <SolidColorBrush x:Key="StatusDoneSoft" Color="{DynamicResource GoodSoftColor}" />
+  <SolidColorBrush x:Key="StatusError" Color="{DynamicResource DangerColor}" />
+  <SolidColorBrush x:Key="StatusErrorSoft" Color="{DynamicResource DangerSoftColor}" />
+  <SolidColorBrush x:Key="StatusIdle" Color="{DynamicResource FgFaintColor}" />
+
+  <!-- ================= Dock's chrome =================
+       Dock ships Visual Studio blue and aliases its own leaf keys with `StaticResource`, so these are
+       the keys its templates actually read at runtime. Dock has a preset mechanism of its own
+       (DockFluentThemeManager) — this is effectively our preset, expressed in our roles. -->
+  <SolidColorBrush x:Key="DockDocumentTabStripBackgroundBrush" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="DockTabActiveBackgroundBrush" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="DockTabActiveForegroundBrush" Color="{DynamicResource AccentTextColor}" />
+  <SolidColorBrush x:Key="DockTabHoverBackgroundBrush" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="DockTabActiveIndicatorBrush" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="DockTabForegroundBrush" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="DockTabSelectedForegroundBrush" Color="{DynamicResource AccentTextColor}" />
+  <SolidColorBrush x:Key="DockSurfaceHeaderBrush" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="DockSurfaceHeaderActiveBrush" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="DockDocumentTabSelectedForegroundBrush" Color="{DynamicResource AccentTextColor}" />
+  <SolidColorBrush x:Key="DockDocumentTabPointerOverForegroundBrush" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="DockDocumentTabCloseSelectedForegroundBrush" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="DockDocumentTabClosePointerOverForegroundBrush" Color="{DynamicResource DangerColor}" />
+  <SolidColorBrush x:Key="DockTabCloseHoverBackgroundBrush" Color="{DynamicResource DangerSoftColor}" />
+  <SolidColorBrush x:Key="DockThemeBackgroundBrush" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="DockThemeControlBackgroundBrush" Color="{DynamicResource BgColor}" />
+  <SolidColorBrush x:Key="DockThemeForegroundBrush" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="DockThemeBorderLowBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="DockThemeAccentBrush" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="DockBorderSubtleBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="DockBorderStrongBrush" Color="{DynamicResource LineStrongColor}" />
+  <SolidColorBrush x:Key="DockSeparatorBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="DockSplitterIdleBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="DockSplitterHoverBrush" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="DockSplitterDragBrush" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="DockTargetIndicatorBrush" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="DockChromeButtonForegroundBrush" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="DockChromeButtonHoverBackgroundBrush" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="DockChromeButtonPressedBackgroundBrush" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="DockChromeButtonDangerHoverBrush" Color="{DynamicResource DangerSoftColor}" />
+  <SolidColorBrush x:Key="DockChromeGripBrush" Color="{DynamicResource FgFaintColor}" />
+
+  <!-- ================= Fluent's chrome =================
+       Fluent aliases its own control colours with `StaticResource` internally, so these leaf keys —
+       the ones its templates actually read — are what a theme has to move. Declared ONCE here over
+       the role colours, so every theme gets them, including the ported ones.
+
+       `FluentTheme.Palettes` in App.axaml is the tidier hook and does reach these same controls, but
+       it throws on anything that isn't Light or Dark ("FluentTheme.Palettes only supports Light and
+       Dark variants"), so it cannot serve a custom theme. It stays for the two built-ins, where it
+       also covers stock controls this list never names (ToggleSwitch, Slider, the date pickers); this
+       bridge covers the controls the app actually uses, under every theme. -->
+  <SolidColorBrush x:Key="SystemControlHighlightListLowBrush" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="SystemControlHighlightListMediumBrush" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="SystemControlHighlightAltBaseHighBrush" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ButtonBackground" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ButtonForeground" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ButtonForegroundPressed" Color="{DynamicResource AccentTextColor}" />
+  <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="ButtonBorderBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="{DynamicResource LineStrongColor}" />
+  <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="TextControlBackground" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="TextControlBorderBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{DynamicResource LineStrongColor}" />
+  <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="TextControlForeground" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TextControlForegroundFocused" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TextControlForegroundDisabled" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForegroundDisabled" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="TextControlButtonForeground" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="TextControlButtonForegroundPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TextControlButtonBackgroundPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="TextControlButtonBackgroundPressed" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="ComboBoxBackground" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="ComboBoxBackgroundUnfocused" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="ComboBoxBackgroundDisabled" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="{DynamicResource LineStrongColor}" />
+  <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ComboBoxForeground" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ComboBoxForegroundFocused" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ComboBoxForegroundFocusedPressed" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ComboBoxForegroundDisabled" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="ComboBoxPlaceHolderForeground" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ComboBoxDropDownGlyphForeground" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundFocused" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundFocusedPressed" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundDisabled" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="ComboBoxItemForeground" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ComboBoxItemForegroundSelected" Color="{DynamicResource AccentTextColor}" />
+  <SolidColorBrush x:Key="ComboBoxItemForegroundDisabled" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundPressed" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUnchecked" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUncheckedPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUnchecked" Color="{DynamicResource LineStrongColor}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="{DynamicResource FgOnAccentColor}" />
+  <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" Color="{DynamicResource FgOnAccentColor}" />
+  <SolidColorBrush x:Key="CheckBoxForegroundUnchecked" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="CheckBoxForegroundUncheckedPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="CheckBoxForegroundChecked" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="CheckBoxForegroundCheckedPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="FlyoutPresenterBackground" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="FlyoutBorderThemeBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="MenuFlyoutPresenterBackground" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="MenuFlyoutPresenterBorderBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemForeground" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemForegroundPressed" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemForegroundDisabled" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemKeyboardAcceleratorTextForeground" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="ToolTipBackground" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="ToolTipBorderBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ToolTipForeground" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="ScrollBarThumbFillDisabled" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ScrollBarBackgroundPointerOver" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="ScrollBarTrackStrokePointerOver" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ScrollBarButtonBackgroundPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="ScrollBarButtonBackgroundPressed" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="ScrollBarButtonArrowForeground" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="ScrollBarButtonArrowForegroundPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ScrollBarButtonArrowForegroundPressed" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ScrollBarButtonArrowForegroundDisabled" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="TreeViewItemBackgroundPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="TreeViewItemBackgroundSelected" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="TreeViewItemBackgroundSelectedPointerOver" Color="{DynamicResource AccentEdgeColor}" />
+  <SolidColorBrush x:Key="TreeViewItemForeground" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TreeViewItemForegroundPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TreeViewItemForegroundSelected" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TreeViewItemForegroundSelectedPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundSelected" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselectedPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="TabItemHeaderForegroundSelected" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TabItemHeaderForegroundUnselected" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="TabItemHeaderForegroundUnselectedPointerOver" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="TabItemHeaderForegroundDisabled" Color="{DynamicResource FgFaintColor}" />
+  <SolidColorBrush x:Key="TabItemHeaderSelectedPipeFill" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="{DynamicResource PanelAltColor}" />
+  <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="{DynamicResource AccentSoftColor}" />
+  <SolidColorBrush x:Key="ExpanderHeaderForeground" Color="{DynamicResource FgColor}" />
+  <SolidColorBrush x:Key="ExpanderHeaderBorderBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ExpanderContentBackground" Color="{DynamicResource PanelColor}" />
+  <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="ExpanderChevronForeground" Color="{DynamicResource FgDimColor}" />
+  <SolidColorBrush x:Key="ExpanderChevronBorderBrush" Color="{DynamicResource LineColor}" />
+
   <!-- ================= the Agnes signature gradient =================
        violet → magenta → coral. The brand interpolates in OKLCH to keep mid-tones vivid; Avalonia
        interpolates in sRGB, so the midpoints are placed explicitly at the OKLCH-correct colours
-       rather than letting a two-stop ramp mix through a muddy centre. -->
+       rather than letting a two-stop ramp mix through a muddy centre. This is brand, not palette: it
+       stays the Agnes gradient whichever theme is active. -->
   <LinearGradientBrush x:Key="GradAgnes" StartPoint="0%,0%" EndPoint="100%,100%">
     <GradientStop Color="#5940D6" Offset="0.0" />
     <GradientStop Color="#8A55EE" Offset="0.28" />

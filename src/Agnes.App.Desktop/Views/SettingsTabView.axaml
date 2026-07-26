@@ -95,13 +95,22 @@
                         <StackPanel Spacing="6">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <TextBlock Classes="fieldLabel" Text="Theme" VerticalAlignment="Center" />
-                                <ctl:InfoHint Description="The app's colour scheme. System follows your OS light/dark setting; Light and Dark pin it." />
+                                <ctl:InfoHint Description="The app's colour scheme. System follows your OS light/dark setting; everything else pins it. The Spacegray flavours are ports of the Sublime Text theme (MIT) — see Themes/Spacegray.axaml for the credit." />
                             </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Button Content="System" Command="{Binding SetThemeCommand}" CommandParameter="System" Classes.on="{Binding IsSystemTheme}" Classes="seg" />
-                                <Button Content="Light" Command="{Binding SetThemeCommand}" CommandParameter="Light" Classes.on="{Binding IsLightTheme}" Classes="seg" />
-                                <Button Content="Dark" Command="{Binding SetThemeCommand}" CommandParameter="Dark" Classes.on="{Binding IsDarkTheme}" Classes="seg" />
-                            </StackPanel>
+                            <!-- One row per theme in ThemeCatalog, so adding a theme never touches this view. -->
+                            <ItemsControl ItemsSource="{Binding Themes}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding Name}" Classes="seg" Margin="0,0,6,6"
+                                                Classes.on="{Binding IsSelected}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.SetThemeCommand}"
+                                                CommandParameter="{Binding Id}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
 
                         <StackPanel Spacing="6">
