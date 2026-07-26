@@ -187,6 +187,103 @@
     <Setter Property="BorderBrush" Value="{DynamicResource Danger}" />
   </Style>
 
+  <!-- ================= status tones ================= -->
+  <!--
+    One meaning per hue, applied wherever a state is shown (see Tokens.axaml § status roles):
+      working   sky    · the agent is doing something; ambient, not urgent
+      attention amber  · blocked on you — the only state worth interrupting for
+      review    mint   · finished and healthy, there's something to look at
+      error     pink   · failed or broken
+      (nothing) faint  · idle
+    A view sets `Classes.working="{Binding IsWorking}"` and friends; the colour lives here.
+  -->
+  <Style Selector="Border.statusdot">
+    <Setter Property="Width" Value="8" />
+    <Setter Property="Height" Value="8" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource StatusIdle}" />
+  </Style>
+  <Style Selector="Border.statusdot.working">
+    <Setter Property="Background" Value="{DynamicResource StatusWorking}" />
+  </Style>
+  <Style Selector="Border.statusdot.review">
+    <Setter Property="Background" Value="{DynamicResource StatusDone}" />
+  </Style>
+  <Style Selector="Border.statusdot.attention">
+    <Setter Property="Background" Value="{DynamicResource StatusAttention}" />
+  </Style>
+  <Style Selector="Border.statusdot.error">
+    <Setter Property="Background" Value="{DynamicResource StatusError}" />
+  </Style>
+
+  <!-- The same five states as a chip: soft tinted fill, matching edge and label. -->
+  <Style Selector="Border.status">
+    <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusPill}" />
+  </Style>
+  <Style Selector="Border.status TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+  </Style>
+  <Style Selector="Border.status.working">
+    <Setter Property="Background" Value="{DynamicResource StatusWorkingSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StatusWorking}" />
+  </Style>
+  <Style Selector="Border.status.working TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource StatusWorking}" />
+  </Style>
+  <Style Selector="Border.status.review">
+    <Setter Property="Background" Value="{DynamicResource StatusDoneSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StatusDone}" />
+  </Style>
+  <Style Selector="Border.status.review TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource StatusDone}" />
+  </Style>
+  <Style Selector="Border.status.attention">
+    <Setter Property="Background" Value="{DynamicResource StatusAttentionSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StatusAttention}" />
+  </Style>
+  <Style Selector="Border.status.attention TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+  </Style>
+  <Style Selector="Border.status.error">
+    <Setter Property="Background" Value="{DynamicResource StatusErrorSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource StatusError}" />
+  </Style>
+  <Style Selector="Border.status.error TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+  </Style>
+
+  <!-- Text that carries a state on its own (a tool's status word, a plan entry, a file's verb). -->
+  <Style Selector="TextBlock.tone">
+    <Setter Property="Foreground" Value="{DynamicResource StatusIdle}" />
+  </Style>
+  <Style Selector="TextBlock.tone.working">
+    <Setter Property="Foreground" Value="{DynamicResource StatusWorking}" />
+  </Style>
+  <Style Selector="TextBlock.tone.done">
+    <Setter Property="Foreground" Value="{DynamicResource StatusDone}" />
+  </Style>
+  <Style Selector="TextBlock.tone.attention">
+    <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+  </Style>
+  <Style Selector="TextBlock.tone.error">
+    <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+  </Style>
+
+  <!-- The context meter ramps as the window fills: healthy → getting tight → nearly out. -->
+  <Style Selector="ProgressBar.ctx">
+    <Setter Property="Foreground" Value="{DynamicResource StatusDone}" />
+  </Style>
+  <Style Selector="ProgressBar.ctx.tight">
+    <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+  </Style>
+  <Style Selector="ProgressBar.ctx.critical">
+    <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+  </Style>
+
   <!-- Keyboard focus is otherwise invisible on the app's many chromeless (BorderThickness=0,
        transparent) buttons and list rows. A global focus adorner draws an accent outline in the
        adorner layer on KEYBOARD focus only (Avalonia shows it for focus-visible, not pointer),

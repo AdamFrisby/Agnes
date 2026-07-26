@@ -103,3 +103,12 @@ How to add behaviour to Agnes. These are defaults, not absolutes — deviate whe
   desktop token file also re-points Fluent's and Dock's own control resources at those roles, because
   both libraries alias their neutral chrome internally with `StaticResource`: override the leaf key a
   template actually reads, not the palette underneath it. `docs/mobile.md` § Brand states the rules.
+
+- **One meaning per hue.** State is shown in colour, and each colour means exactly one thing across the
+  whole desktop app: **sky** = in motion (a turn running, a tool in flight), **amber** = blocked on you
+  (permission cards, the answer bar, the state banner, the approvals count), **mint** = done/healthy
+  (completed tools, plan entries, added diff lines, `main`), **pink** = failed or destructive, and
+  **violet** stays reserved for selection and brand so it never competes. The hues are the
+  `Status*` roles in `Themes/Tokens.axaml`; views bind `Classes.working`/`.attention`/`.review`/`.error`
+  and the tone styles in `Themes/AppStyles.axaml` do the colouring. Don't paint something a status hue
+  because it looks good — a permanently-mint label is the same mistake as a monochrome one.

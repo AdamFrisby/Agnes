@@ -806,6 +806,13 @@ public sealed class SessionViewModel : ObservableObject
     /// <summary>Whether the session is waiting on the user (permission or error).</summary>
     public bool NeedsAttention => Activity is SessionActivity.NeedsInput or SessionActivity.Error;
 
+    // The same state as four flags, so a view can hang a distinct tone off each one rather than
+    // collapsing the lot into "needs attention or not".
+    public bool IsWorking => Activity is SessionActivity.Running;
+    public bool IsAwaitingInput => Activity is SessionActivity.NeedsInput;
+    public bool IsReadyForReview => Activity is SessionActivity.ReadyForReview;
+    public bool IsFaulted => Activity is SessionActivity.Error;
+
     public string ActivityText => Activity switch
     {
         SessionActivity.Running => "Running",
@@ -820,6 +827,10 @@ public sealed class SessionViewModel : ObservableObject
         OnPropertyChanged(nameof(Activity));
         OnPropertyChanged(nameof(NeedsAttention));
         OnPropertyChanged(nameof(ActivityText));
+        OnPropertyChanged(nameof(IsWorking));
+        OnPropertyChanged(nameof(IsAwaitingInput));
+        OnPropertyChanged(nameof(IsReadyForReview));
+        OnPropertyChanged(nameof(IsFaulted));
     }
 
     /// <summary>
@@ -1918,7 +1929,7 @@ public sealed class SessionViewModel : ObservableObject
             case ToolCallEvent tc:
                 var isFile = IsFileTool(tc.Kind);
                 // Modified files open as a DIFF, not the raw edit request — build one from the tool input.
-                var entry = new ToolEntry(tc.ToolCallId, tc.Title, tc.Kind.ToString(), tc.Status.ToString(),
+                var entry = new ToolEntry(tc.ToolCallId, tc.Title, tc.Kind, tc.Status,
                     isFile ? FileDiff(tc) : TextOf(tc.Content));
                 _tools[tc.ToolCallId] = entry;
                 (isFile ? ModifiedFiles : ToolActivity).Add(entry);
@@ -1928,11 +1939,11 @@ public sealed class SessionViewModel : ObservableObject
             case ToolCallUpdateEvent u when _tools.TryGetValue(u.ToolCallId, out var tracked):
                 if (u.Status is { } status)
                 {
-                    tracked.StatusText = status.ToString();
+                    tracked.Status = status;
                 }
 
                 // For an edit, keep the diff we built on start; the tool result is just a confirmation.
-                if (!IsFileToolKind(tracked.Kind) && u.Content is { } content && TextOf(content) is { Length: > 0 } text)
+                if (!IsFileTool(tracked.Kind) && u.Content is { } content && TextOf(content) is { Length: > 0 } text)
                 {
                     tracked.Detail = text;
                 }
@@ -2050,9 +2061,6 @@ public sealed class SessionViewModel : ObservableObject
 
     private static bool IsFileTool(ToolKind kind)
         => kind is ToolKind.Edit or ToolKind.Delete or ToolKind.Move;
-
-    private static bool IsFileToolKind(string kind)
-        => kind is nameof(ToolKind.Edit) or nameof(ToolKind.Delete) or nameof(ToolKind.Move);
 
     /// <summary>
     /// Renders a file-edit tool call as a unified diff for the preview pane. If the content is already a

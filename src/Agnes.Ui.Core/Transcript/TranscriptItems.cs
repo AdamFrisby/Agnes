@@ -112,10 +112,25 @@ public sealed class ToolCallItem : TranscriptItem
     public ToolCallStatus Status
     {
         get => _status;
-        set { if (SetProperty(ref _status, value)) { OnPropertyChanged(nameof(StatusText)); OnPropertyChanged(nameof(ShowStatus)); } }
+        set
+        {
+            if (SetProperty(ref _status, value))
+            {
+                OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(ShowStatus));
+                OnPropertyChanged(nameof(IsRunning));
+                OnPropertyChanged(nameof(IsDone));
+                OnPropertyChanged(nameof(IsFailed));
+            }
+        }
     }
 
     public string StatusText => Status.ToString();
+
+    /// <summary>Status as three flags a view can hang a tone off: in motion, finished, broken.</summary>
+    public bool IsRunning => Status is ToolCallStatus.Pending or ToolCallStatus.InProgress;
+    public bool IsDone => Status is ToolCallStatus.Completed;
+    public bool IsFailed => Status is ToolCallStatus.Failed;
 
     /// <summary>Only surface a status word when it's not the (common, unremarkable) completed case.</summary>
     public bool ShowStatus => Status != ToolCallStatus.Completed;

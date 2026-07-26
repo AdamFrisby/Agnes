@@ -720,6 +720,7 @@ public sealed partial class SessionDocument : Document, ITraySession
                 OnPropertyChanged(nameof(Activity));
                 OnPropertyChanged(nameof(ActivityText));
                 OnPropertyChanged(nameof(NeedsAttention));
+                RaiseActivityFlags();
             }
             else if (e.PropertyName is nameof(SessionViewModel.IsUnread))
             {
@@ -749,6 +750,7 @@ public sealed partial class SessionDocument : Document, ITraySession
         OnPropertyChanged(nameof(Activity));
         OnPropertyChanged(nameof(ActivityText));
         OnPropertyChanged(nameof(NeedsAttention));
+        RaiseActivityFlags();
         Usage = session.Usage;
         UsageSummary = session.UsageSummary;
         if (session.HasAgentTitle)
@@ -764,6 +766,22 @@ public sealed partial class SessionDocument : Document, ITraySession
     public SessionActivity Activity => Session?.Activity ?? SessionActivity.Idle;
     public string ActivityText => Session?.ActivityText ?? string.Empty;
     public bool NeedsAttention => Session?.NeedsAttention ?? false;
+
+    // The status hue in the tab strip and the session list keys off these rather than the enum:
+    // Avalonia's `Classes.x` binding takes a bool, and one flag per state keeps the colour choice
+    // in the theme instead of in a converter.
+    public bool IsWorking => Session?.IsWorking ?? false;
+    public bool IsAwaitingInput => Session?.IsAwaitingInput ?? false;
+    public bool IsReadyForReview => Session?.IsReadyForReview ?? false;
+    public bool IsFaulted => Session?.IsFaulted ?? false;
+
+    private void RaiseActivityFlags()
+    {
+        OnPropertyChanged(nameof(IsWorking));
+        OnPropertyChanged(nameof(IsAwaitingInput));
+        OnPropertyChanged(nameof(IsReadyForReview));
+        OnPropertyChanged(nameof(IsFaulted));
+    }
 
     /// <summary>The live session's id, or empty until one is attached (ITraySession — feeds the tray's
     /// jump-to-session menu).</summary>

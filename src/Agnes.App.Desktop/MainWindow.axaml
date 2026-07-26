@@ -156,8 +156,8 @@
                             IsVisible="{Binding Approvals.HasApprovals}" AutomationProperties.Name="Approvals needing you">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="🔔 Approvals" VerticalAlignment="Center" />
-                            <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding Approvals.Count}" Foreground="{DynamicResource FgOnAccent}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            <Border Classes="status attention" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Approvals.Count}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
                         <Button.Flyout>
@@ -189,8 +189,8 @@
                             IsVisible="{Binding HasInbox}" AutomationProperties.Name="Background run inbox">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="🗓 Inbox" VerticalAlignment="Center" />
-                            <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding InboxCount}" Foreground="{DynamicResource FgOnAccent}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            <Border Classes="status working" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding InboxCount}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
                         <Button.Flyout>
@@ -218,8 +218,8 @@
                             IsVisible="{Binding HasScheduledTasks}" AutomationProperties.Name="Automations">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="⏱ Automations" VerticalAlignment="Center" />
-                            <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding ScheduledTaskCount}" Foreground="{DynamicResource FgOnAccent}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            <Border Classes="status" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding ScheduledTaskCount}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
                         <Button.Flyout>
@@ -261,9 +261,9 @@
                     <Button Classes="chip" Padding="10,5" FontSize="12" AutomationProperties.Name="Sessions">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="Sessions" VerticalAlignment="Center" />
-                            <Border Background="{DynamicResource Accent}" CornerRadius="8" Padding="5,1" MinWidth="16" VerticalAlignment="Center"
+                            <Border Classes="status attention" Padding="6,1" MinWidth="18" VerticalAlignment="Center"
                                     IsVisible="{Binding HasAttention}">
-                                <TextBlock Text="{Binding AttentionCount}" Foreground="{DynamicResource FgOnAccent}" FontSize="10"
+                                <TextBlock Text="{Binding AttentionCount}" FontSize="10"
                                            FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
                         </StackPanel>
@@ -278,10 +278,10 @@
                                                     HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                                                     Padding="8,6" CornerRadius="6" Cursor="Hand">
                                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                                                    <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                                                            Background="{DynamicResource Accent}" IsVisible="{Binding NeedsAttention}" />
-                                                    <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                                                            Background="{DynamicResource FgFaint}" IsVisible="{Binding !NeedsAttention}" />
+                                                    <Border Grid.Column="0" Classes="statusdot"
+                                                            Classes.working="{Binding IsWorking}" Classes.attention="{Binding IsAwaitingInput}"
+                                                            Classes.review="{Binding IsReadyForReview}" Classes.error="{Binding IsFaulted}"
+                                                            ToolTip.Tip="{Binding ActivityText}" />
                                                     <StackPanel Grid.Column="1">
                                                         <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
                                                         <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource FgFaint}" FontSize="10" />

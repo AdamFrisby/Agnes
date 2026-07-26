@@ -17,6 +17,17 @@
         <appconv:IndentConverter x:Key="AgentIndent" Step="16" />
         <appconv:SendPolicyLabelConverter x:Key="SendPolicyLabel" />
         <appconv:BoolToOpacityConverter x:Key="ActiveOpacity" TrueOpacity="1.0" FalseOpacity="0.5" />
+        <!-- Plan entries arrive from ACP as free-form status strings, so the tone match is by name. -->
+        <appconv:StringEqualsConverter x:Key="PlanDone" Match="completed" />
+        <appconv:StringEqualsConverter x:Key="PlanRunning" Match="in_progress" />
+        <!-- Where the context meter changes tone: comfortable → getting tight → nearly out. -->
+        <appconv:AtLeastConverter x:Key="CtxTight" Threshold="70" />
+        <appconv:AtLeastConverter x:Key="CtxCritical" Threshold="90" />
+        <!-- Event-log kinds grouped by what they mean, so the log scans by colour like the rest of the app. -->
+        <appconv:StringEqualsConverter x:Key="EventInMotion" Match="ToolCall,ToolCallUpdate,McpToolCall,TerminalOutput" />
+        <appconv:StringEqualsConverter x:Key="EventBlocked" Match="PermissionRequested,QuestionAsked" />
+        <appconv:StringEqualsConverter x:Key="EventSettled" Match="TurnEnded,PermissionResolved,QuestionAnswered" />
+        <appconv:StringEqualsConverter x:Key="EventBroken" Match="AgentError" />
     </UserControl.Resources>
 
     <UserControl.KeyBindings>
@@ -140,8 +151,10 @@
                         <TextBlock Text="{Binding AgentName}" Foreground="{DynamicResource FgDim}" FontSize="12" IsVisible="{Binding IsLive}"
                                    VerticalAlignment="Center" MaxWidth="200" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding ConnectionText}" Foreground="{DynamicResource FgFaint}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
-                        <Border Classes="chip" Classes.attention="{Binding NeedsAttention}" IsVisible="{Binding IsLive}"
-                                BorderThickness="1" CornerRadius="9" Padding="8,2" VerticalAlignment="Center" Margin="2,0,0,0">
+                        <Border Classes="status" IsVisible="{Binding IsLive}"
+                                Classes.working="{Binding IsWorking}" Classes.attention="{Binding IsAwaitingInput}"
+                                Classes.review="{Binding IsReadyForReview}" Classes.error="{Binding IsFaulted}"
+                                Padding="8,2" VerticalAlignment="Center" Margin="2,0,0,0">
                             <TextBlock Text="{Binding ActivityText}" FontSize="10" FontWeight="SemiBold" />
                         </Border>
                         <!-- tag chips -->
@@ -186,10 +199,12 @@
                                     IsVisible="{Binding Usage.HasAnyContext, FallbackValue=false}"
                                     ToolTip.Tip="Context tokens used (reported by the agent)">
                             <TextBlock Text="ctx" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
-                            <ProgressBar Minimum="0" Maximum="100" Value="{Binding Usage.ContextPercent, FallbackValue=0}"
+                            <ProgressBar Classes="ctx" Minimum="0" Maximum="100" Value="{Binding Usage.ContextPercent, FallbackValue=0}"
+                                         Classes.tight="{Binding Usage.ContextPercent, Converter={StaticResource CtxTight}, FallbackValue=False}"
+                                         Classes.critical="{Binding Usage.ContextPercent, Converter={StaticResource CtxCritical}, FallbackValue=False}"
                                          Width="70" Height="6" VerticalAlignment="Center"
                                          IsVisible="{Binding Usage.HasContext, FallbackValue=false}"
-                                         Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                                         Background="{DynamicResource PanelAlt}" />
                             <TextBlock Text="{Binding Usage.ContextText}" Foreground="{DynamicResource FgDim}" FontSize="10"
                                        VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}" />
                         </StackPanel>
@@ -869,13 +884,13 @@
             <!-- Stage 3: live conversation — resizable multi-column workspace -->
             <Grid IsVisible="{Binding IsLive}" RowDefinitions="Auto,*">
 
-                <!-- Clear connection / session state banner -->
+                <!-- Clear connection / session state banner. It always says something is wrong or needs a
+                     decision from you, so it wears the attention amber rather than the selection violet. -->
                 <Border Grid.Row="0" DataContext="{Binding Session}" IsVisible="{Binding ShowBanner}"
-                        Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}"
+                        Background="{DynamicResource StatusAttentionSoft}" BorderBrush="{DynamicResource StatusAttention}"
                         BorderThickness="0,0,0,1" Padding="16,8">
                     <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                        <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                                Background="{DynamicResource Accent}" Margin="0,0,10,0" />
+                        <Border Grid.Column="0" Classes="statusdot attention" Margin="0,0,10,0" />
                         <TextBlock Grid.Column="1" Text="{Binding BannerText}" Foreground="{DynamicResource Fg}"
                                    VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap"
                                    AutomationProperties.LiveSetting="Assertive" />
@@ -956,7 +971,9 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
-                                                    <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="10" Width="70" />
+                                                    <TextBlock Text="{Binding Status}" Classes="tone" FontSize="10" Width="70"
+                                                               Classes.done="{Binding Status, Converter={StaticResource PlanDone}}"
+                                                               Classes.working="{Binding Status, Converter={StaticResource PlanRunning}}" />
                                                     <TextBlock Text="{Binding Content}" Foreground="{DynamicResource Fg}" FontSize="12" TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </DataTemplate>
@@ -985,7 +1002,9 @@
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                    FontFamily="{StaticResource MonoFont}" />
-                                                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                                        <TextBlock Text="{Binding StatusText}" Classes="tone" FontSize="10"
+                                                                   Classes.working="{Binding IsRunning}" Classes.done="{Binding IsDone}"
+                                                                   Classes.error="{Binding IsFailed}" />
                                                     </StackPanel>
                                                 </Button>
                                             </DataTemplate>
@@ -1063,7 +1082,7 @@
                                                             HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                                                             Padding="6,5" CornerRadius="6" Cursor="Hand">
                                                         <StackPanel Orientation="Horizontal" Spacing="8">
-                                                            <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
+                                                            <TextBlock Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}" FontSize="10"
                                                                        FontFamily="{StaticResource MonoFont}" Width="52" />
                                                             <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                        FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
@@ -1140,7 +1159,9 @@
                                                                    FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
                                                         <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                    FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                        <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding StatusText}" Classes="tone" FontSize="10" VerticalAlignment="Center"
+                                                                   Classes.working="{Binding IsRunning}" Classes.done="{Binding IsDone}"
+                                                                   Classes.error="{Binding IsFailed}" />
                                                     </StackPanel>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -1195,7 +1216,7 @@
                                                     HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
                                                     Padding="6,3" CornerRadius="5" Cursor="Hand">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                                    <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
+                                                    <TextBlock Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}" FontSize="10"
                                                                Width="56" FontFamily="{StaticResource MonoFont}" />
                                                     <TextBlock Text="{Binding Snippet}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                                                TextTrimming="CharacterEllipsis" />
@@ -1312,14 +1333,17 @@
                                                 ToolTip.Tip="Open the full tool output">
                                             <StackPanel Spacing="1">
                                                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
-                                                    <TextBlock Grid.Column="0" Text="▸" Foreground="{DynamicResource Good}"
+                                                    <TextBlock Grid.Column="0" Text="▸" Classes="tone"
+                                                               Classes.working="{Binding IsRunning}" Classes.done="{Binding IsDone}"
+                                                               Classes.error="{Binding IsFailed}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="1" Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Fg}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center"
                                                                TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Grid.Column="3" Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}"
+                                                    <TextBlock Grid.Column="3" Text="{Binding StatusText}" Classes="tone"
+                                                               Classes.working="{Binding IsRunning}" Classes.error="{Binding IsFailed}"
                                                                FontSize="11" VerticalAlignment="Center" IsVisible="{Binding ShowStatus}" />
                                                     <TextBlock Grid.Column="4" Text="{Binding DurationText}" Foreground="{DynamicResource FgFaint}"
                                                                FontSize="11" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center"
@@ -1342,8 +1366,9 @@
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
                                                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
-                                                                <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}"
-                                                                           FontSize="11" Width="90" />
+                                                                <TextBlock Text="{Binding Status}" Classes="tone" FontSize="11" Width="90"
+                                                                           Classes.done="{Binding Status, Converter={StaticResource PlanDone}}"
+                                                                           Classes.working="{Binding Status, Converter={StaticResource PlanRunning}}" />
                                                                 <TextBlock Text="{Binding Content}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" />
                                                             </StackPanel>
                                                         </DataTemplate>
@@ -1356,9 +1381,9 @@
                                     <!-- Structured "ask the user" card (AskUserQuestion / requestUserInput). -->
                                     <DataTemplate DataType="tr:QuestionItem">
                                         <Border Margin="0,6" Padding="14,12" CornerRadius="10"
-                                                Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Accent}" BorderThickness="1">
+                                                Background="{DynamicResource StatusAttentionSoft}" BorderBrush="{DynamicResource StatusAttention}" BorderThickness="1">
                                             <StackPanel Spacing="12">
-                                                <TextBlock Text="The agent needs your input" Foreground="{DynamicResource Accent}"
+                                                <TextBlock Text="The agent needs your input" Foreground="{DynamicResource StatusAttention}"
                                                            FontWeight="SemiBold" FontSize="12" />
                                                 <ItemsControl ItemsSource="{Binding Questions}">
                                                     <ItemsControl.ItemTemplate>
@@ -1414,9 +1439,9 @@
 
                                     <DataTemplate DataType="tr:PermissionItem">
                                         <Border Margin="0,6" Padding="12,9" CornerRadius="8"
-                                                Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Accent}" BorderThickness="1">
+                                                Background="{DynamicResource StatusAttentionSoft}" BorderBrush="{DynamicResource StatusAttention}" BorderThickness="1">
                                             <StackPanel Spacing="5">
-                                                <TextBlock Text="Permission requested" Foreground="{DynamicResource Accent}"
+                                                <TextBlock Text="Permission requested" Foreground="{DynamicResource StatusAttention}"
                                                            FontWeight="SemiBold" FontSize="12" />
                                                 <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
                                                 <!-- the five facts -->
@@ -1431,7 +1456,7 @@
                                                     <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Rationale}" Foreground="{DynamicResource FgDim}"
                                                                FontSize="11" TextWrapping="Wrap" />
                                                 </Grid>
-                                                <TextBlock Text="{Binding NarrowestOptionHint}" Foreground="{DynamicResource Accent}" FontSize="11"
+                                                <TextBlock Text="{Binding NarrowestOptionHint}" Foreground="{DynamicResource StatusAttention}" FontSize="11"
                                                            IsVisible="{Binding HasNarrowestHint}" TextWrapping="Wrap" />
                                                 <TextBlock Text="{Binding ResolutionText}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                                            IsVisible="{Binding ResolutionText, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
@@ -1533,7 +1558,11 @@
                                                            FontFamily="{StaticResource MonoFont}" FontSize="11" TextAlignment="Right" Padding="0,0,8,0" />
                                                 <TextBlock Grid.Column="1" Text="{Binding Time}" Foreground="{DynamicResource FgFaint}"
                                                            FontFamily="{StaticResource MonoFont}" FontSize="11" />
-                                                <TextBlock Grid.Column="2" Text="{Binding Kind}" Foreground="{DynamicResource Good}"
+                                                <TextBlock Grid.Column="2" Text="{Binding Kind}" Classes="tone"
+                                                           Classes.working="{Binding Kind, Converter={StaticResource EventInMotion}}"
+                                                           Classes.attention="{Binding Kind, Converter={StaticResource EventBlocked}}"
+                                                           Classes.done="{Binding Kind, Converter={StaticResource EventSettled}}"
+                                                           Classes.error="{Binding Kind, Converter={StaticResource EventBroken}}"
                                                            FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Grid.Column="3" Text="{Binding Summary}" Foreground="{DynamicResource FgDim}"
                                                            FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
@@ -1544,8 +1573,10 @@
                             </Grid>
                         </Border>
 
+                        <!-- The pinned "answer me" bar is the same state as the card above it, so it wears
+                             the same amber rather than the selection violet. -->
                         <Border Grid.Row="2" Margin="24,4" Padding="14,10" CornerRadius="10"
-                                Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
+                                Background="{DynamicResource StatusAttentionSoft}" BorderBrush="{DynamicResource StatusAttention}" BorderThickness="1"
                                 IsVisible="{Binding PendingPermission, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                             <Grid ColumnDefinitions="*,Auto,Auto" MaxWidth="768" HorizontalAlignment="Center">
                                 <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
@@ -1556,7 +1587,7 @@
                                         <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" FontSize="11" />
                                         <TextBlock Text="{Binding PendingPermission.ReversibleText}" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                     </StackPanel>
-                                    <TextBlock Text="{Binding PendingPermission.NarrowestOptionHint}" Foreground="{DynamicResource Accent}" FontSize="11"
+                                    <TextBlock Text="{Binding PendingPermission.NarrowestOptionHint}" Foreground="{DynamicResource StatusAttention}" FontSize="11"
                                                IsVisible="{Binding PendingPermission.HasNarrowestHint}" />
                                 </StackPanel>
                                 <ItemsControl Grid.Column="1" Grid.ColumnSpan="2" ItemsSource="{Binding PendingPermission.Options}"
@@ -1570,7 +1601,7 @@
                                                     Command="{Binding $parent[ItemsControl].DataContext.RespondWithCommand}"
                                                     CommandParameter="{Binding}"
                                                     Background="Transparent" Foreground="{DynamicResource Fg}"
-                                                    BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="7" Padding="12,6" />
+                                                    BorderBrush="{DynamicResource StatusAttention}" BorderThickness="1" CornerRadius="8" Padding="12,6" />
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

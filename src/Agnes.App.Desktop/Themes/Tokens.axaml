@@ -56,6 +56,21 @@
       <SolidColorBrush x:Key="Info" Color="#38BDF8" />
       <SolidColorBrush x:Key="InfoSoft" Color="#2438BDF8" />
 
+      <!-- Status roles. One meaning per hue, so a colour reads the same everywhere in the app:
+           sky = in motion · amber = blocked on you · mint = done/healthy · pink = failed/destructive.
+           Violet stays reserved for selection and brand, which is why it isn't in this list. The
+           Agnes kit paints a running tool amber; here "blocked on you" gets sole claim on amber
+           instead, because on a many-session client that's the one state worth interrupting for. -->
+      <StaticResource x:Key="StatusWorking" ResourceKey="Info" />
+      <StaticResource x:Key="StatusWorkingSoft" ResourceKey="InfoSoft" />
+      <StaticResource x:Key="StatusAttention" ResourceKey="Warn" />
+      <StaticResource x:Key="StatusAttentionSoft" ResourceKey="WarnSoft" />
+      <StaticResource x:Key="StatusDone" ResourceKey="Good" />
+      <StaticResource x:Key="StatusDoneSoft" ResourceKey="GoodSoft" />
+      <StaticResource x:Key="StatusError" ResourceKey="Danger" />
+      <StaticResource x:Key="StatusErrorSoft" ResourceKey="DangerSoft" />
+      <StaticResource x:Key="StatusIdle" ResourceKey="FgFaint" />
+
       <!-- chat -->
       <SolidColorBrush x:Key="UserBubble" Color="#241E4E" />
 
@@ -285,6 +300,17 @@
       <SolidColorBrush x:Key="DangerSoft" Color="#FEE0EA" />
       <SolidColorBrush x:Key="Info" Color="#0EA5E9" />
       <SolidColorBrush x:Key="InfoSoft" Color="#DFF4FE" />
+
+      <!-- Status roles: one meaning per hue — see the dark variant. -->
+      <StaticResource x:Key="StatusWorking" ResourceKey="Info" />
+      <StaticResource x:Key="StatusWorkingSoft" ResourceKey="InfoSoft" />
+      <StaticResource x:Key="StatusAttention" ResourceKey="Warn" />
+      <StaticResource x:Key="StatusAttentionSoft" ResourceKey="WarnSoft" />
+      <StaticResource x:Key="StatusDone" ResourceKey="Good" />
+      <StaticResource x:Key="StatusDoneSoft" ResourceKey="GoodSoft" />
+      <StaticResource x:Key="StatusError" ResourceKey="Danger" />
+      <StaticResource x:Key="StatusErrorSoft" ResourceKey="DangerSoft" />
+      <StaticResource x:Key="StatusIdle" ResourceKey="FgFaint" />
 
       <SolidColorBrush x:Key="UserBubble" Color="#EFEFFE" />
 
