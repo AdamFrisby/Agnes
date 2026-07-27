@@ -17,6 +17,11 @@
     <!-- QR encoding for pairing/session codes. Pure managed, MIT, no native or System.Drawing
          dependency — it only ever produces a module matrix here, which each head draws itself. -->
     <PackageReference Include="QRCoder" Version="1.6.0" />
+    <!-- The `Symbol` enum only — netstandard2.0 with zero dependencies and no UI framework, so a shared
+         view model can name an icon type-safely and each head renders it with its own control (Avalonia's
+         SymbolIcon on desktop/mobile, the WinUI one on the Uno web head). Icons that never vary are left
+         to the views; this is for the cases where *which* icon to show is view-model state. -->
+    <PackageReference Include="FluentIcons.Common" Version="2.1.333" />
   </ItemGroup>
 
   <ItemGroup>

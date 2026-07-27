@@ -506,7 +506,9 @@ public sealed class RegistrySkillRow
 
             if (Entry.Stars is > 0 and var stars)
             {
-                parts.Add($"★ {stars:N0}");
+                // Spelled out rather than starred: this is one run of a composed metadata line, and an
+                // icon can't live inside a string. "1,204 stars" reads the same and survives any font.
+                parts.Add($"{stars:N0} stars");
             }
 
             if (Entry.Downloads is > 0 and var downloads)
@@ -546,6 +548,7 @@ public sealed class PromptTemplateRow
     /// <summary>True when the referenced prompt is missing — the template is broken and must show as such.</summary>
     public bool IsBroken => PromptTitle is null;
 
-    /// <summary>What the row shows for the target: the prompt title, or a broken marker.</summary>
-    public string TargetLabel => PromptTitle ?? "⚠ missing prompt";
+    /// <summary>What the row shows for the target: the prompt title, or a broken marker. Text only — the
+    /// warning icon beside it is the view's, keyed off <see cref="IsBroken"/>.</summary>
+    public string TargetLabel => PromptTitle ?? "missing prompt";
 }

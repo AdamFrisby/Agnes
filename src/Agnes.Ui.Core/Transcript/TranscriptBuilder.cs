@@ -187,7 +187,7 @@ public sealed class TranscriptBuilder
 
             case ForkedFromEvent:
                 CloseBubble();
-                Items.Add(new NoticeItem("⑂ Forked from a prior session — the branch continues below.") { AgentId = agentId });
+                Items.Add(new NoticeItem("Forked from a prior session — the branch continues below.") { AgentId = agentId });
                 break;
 
             case TurnEndedEvent:

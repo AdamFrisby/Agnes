@@ -1354,7 +1354,9 @@ public sealed class SessionViewModel : ObservableObject
 
     public bool HasSandbox => _sandbox is not null;
     public bool SandboxPaused => string.Equals(_sandbox?.State, "Paused", StringComparison.OrdinalIgnoreCase);
-    public string SandboxSummary => _sandbox is null ? string.Empty : $"🛡 sandbox · {_sandbox.State.ToLowerInvariant()}";
+    /// <summary>Text only — the shield beside it is the head's own, because each head draws icons in its
+    /// own set (desktop from FluentIcons, mobile from the Lucide geometry that matches the web kit).</summary>
+    public string SandboxSummary => _sandbox is null ? string.Empty : $"sandbox · {_sandbox.State.ToLowerInvariant()}";
 
     private async Task PauseSandboxAsync()
     {
@@ -1695,7 +1697,8 @@ public sealed class SessionViewModel : ObservableObject
                 var prompt = _libraryPrompts.FirstOrDefault(p => p.Id == template.PromptId);
                 if (prompt is null)
                 {
-                    SlashSuggestions.Add(new SlashCommand(token, "⚠ broken template — referenced prompt was deleted", string.Empty, IsBroken: true));
+                    // No glyph in the text: IsBroken already says this, and each head draws its own warning icon.
+                    SlashSuggestions.Add(new SlashCommand(token, "broken template — referenced prompt was deleted", string.Empty, IsBroken: true));
                 }
                 else
                 {

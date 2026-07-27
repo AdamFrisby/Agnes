@@ -341,7 +341,8 @@ public sealed class PluginSearchRow(PluginSearchResultDto dto)
     /// <summary>The newest version, installed by default.</summary>
     public string? SelectedVersion => Versions.Count > 0 ? Versions[0] : null;
 
-    public string ReviewedLabel => IsReviewed ? "✓ reviewed" : string.Empty;
+    /// <summary>Text only; the tick beside it is the view's, keyed off <see cref="IsReviewed"/>.</summary>
+    public string ReviewedLabel => IsReviewed ? "reviewed" : string.Empty;
 }
 
 /// <summary>A pending capability-consent request the user must approve before an install/update proceeds.</summary>
