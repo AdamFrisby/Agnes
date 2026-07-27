@@ -204,7 +204,7 @@ public sealed partial class DevicesPageViewModel : PageViewModel
         _shell.Dispatcher.Post(() => { IsBusy = true; Status = "Loading…"; });
         try
         {
-            var list = await DeviceManagement.ListAsync(link.Url, link.Saved.Token).ConfigureAwait(false);
+            var list = await DeviceManagement.ListAsync(link.Url, link.Saved.Token, link.Http).ConfigureAwait(false);
             _shell.Dispatcher.Post(() =>
             {
                 Devices.Clear();
@@ -235,7 +235,7 @@ public sealed partial class DevicesPageViewModel : PageViewModel
 
         try
         {
-            await DeviceManagement.RevokeAsync(link.Url, link.Saved.Token, device.Id).ConfigureAwait(false);
+            await DeviceManagement.RevokeAsync(link.Url, link.Saved.Token, device.Id, link.Http).ConfigureAwait(false);
             _shell.Toast("Revoked", ToastKind.Success);
             await LoadAsync().ConfigureAwait(false);
         }

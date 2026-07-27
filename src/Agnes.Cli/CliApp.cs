@@ -7,7 +7,8 @@ namespace Agnes.Cli;
 
 /// <summary>Pairs a machine with a host and returns the durable device token. Injected so tests don't hit
 /// the network; the default binding is <see cref="DevicePairing.PairAsync"/>.</summary>
-public delegate Task<PairResponse> PairFunc(string hostUrl, string code, string deviceName, CancellationToken cancellationToken);
+public delegate Task<PairResponse> PairFunc(
+    string hostUrl, string code, string deviceName, string? pinnedFingerprint, CancellationToken cancellationToken);
 
 /// <summary>
 /// The testable core of <c>agnes-agent</c>: dispatches a parsed command line to a thin wrapper over
@@ -40,7 +41,8 @@ internal sealed class CliApp
         _hosts = hosts;
         _sessions = sessions;
         _time = time;
-        _pair = pair ?? ((url, code, name, ct) => DevicePairing.PairAsync(url, code, name, cancellationToken: ct));
+        _pair = pair ?? ((url, code, name, pin, ct) =>
+            DevicePairing.PairAsync(url, code, name, AgnesHttp.For(pin), ct));
     }
 
     public async Task<int> RunAsync(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
@@ -105,14 +107,21 @@ internal sealed class CliApp
 
     private async Task<int> AuthLoginAsync(CommandLine cmd, CancellationToken cancellationToken)
     {
-        var url = cmd.Option("host");
-        if (string.IsNullOrWhiteSpace(url))
+        var entry = cmd.Option("host");
+        if (string.IsNullOrWhiteSpace(entry))
         {
             _console.Error("auth login: --host <url> is required.");
             return ExitCodes.Failure;
         }
 
-        var code = cmd.Option("code");
+        // --host takes either a plain URL or the whole `agnes://pair?...` link the host prints. The link also
+        // carries the fingerprint of the certificate it serves, which is the only way to reach a self-signed
+        // host: without it the pairing request fails the handshake before the code is ever read. --fingerprint
+        // supplies the same thing for a scripted setup that only has the URL.
+        var url = Agnes.Protocol.PairingLink.HostOf(entry) ?? entry;
+        var fingerprint = cmd.Option("fingerprint") ?? Agnes.Protocol.PairingLink.FingerprintOf(entry);
+
+        var code = cmd.Option("code") ?? Agnes.Protocol.PairingLink.SecretOf(entry);
         if (string.IsNullOrWhiteSpace(code))
         {
             _console.Error("Enter the pairing code shown on the host:");
@@ -126,10 +135,10 @@ internal sealed class CliApp
         }
 
         var deviceName = cmd.Option("name") ?? $"agnes-agent@{Environment.MachineName}";
-        var response = await _pair(url, code, deviceName, cancellationToken).ConfigureAwait(false);
+        var response = await _pair(url, code, deviceName, fingerprint, cancellationToken).ConfigureAwait(false);
 
         // The device token is sealed at rest by the registry — never written in the clear (see SecureTokenProtector).
-        _hosts.Upsert(new HostEntry(deviceName, url, response.Token));
+        _hosts.Upsert(new HostEntry(deviceName, url, response.Token, fingerprint));
         _console.Error($"Paired '{deviceName}' with {url} (device {response.DeviceId}). Revoke it any time from the host's device list.");
         _console.Out(deviceName);
         return ExitCodes.Success;
@@ -171,7 +180,7 @@ internal sealed class CliApp
     {
         try
         {
-            var host = await _connector.ConnectAsync(entry.Url, entry.Token, cancellationToken).ConfigureAwait(false);
+            var host = await _connector.ConnectAsync(entry.Url, entry.Token, entry.Fingerprint, cancellationToken).ConfigureAwait(false);
             var info = await host.GetHostInfoAsync().ConfigureAwait(false);
             return new MachineJson(entry.Name, entry.Url, Reachable: true, info.DisplayName, info.Version);
         }
@@ -204,7 +213,7 @@ internal sealed class CliApp
             Directory.CreateDirectory(path);
         }
 
-        var connection = await _connector.ConnectAsync(host.Url, host.Token, cancellationToken).ConfigureAwait(false);
+        var connection = await _connector.ConnectAsync(host.Url, host.Token, host.Fingerprint, cancellationToken).ConfigureAwait(false);
         var session = await connection.OpenSessionAsync(agent, path).ConfigureAwait(false);
         _sessions.Add(new SessionEntry(session.SessionId, host.Url, agent));
 
@@ -238,7 +247,7 @@ internal sealed class CliApp
 
         var (session, host) = resolved.Value;
         var prompt = cmd.Positionals[1];
-        var connection = await _connector.ConnectAsync(host.Url, host.Token, cancellationToken).ConfigureAwait(false);
+        var connection = await _connector.ConnectAsync(host.Url, host.Token, host.Fingerprint, cancellationToken).ConfigureAwait(false);
 
         var view = await connection.SubscribeAsync(session.SessionId).ConfigureAwait(false);
         var baseline = view.LastSequence;
@@ -331,7 +340,7 @@ internal sealed class CliApp
         }
 
         var (session, host) = resolved.Value;
-        var connection = await _connector.ConnectAsync(host.Url, host.Token, cancellationToken).ConfigureAwait(false);
+        var connection = await _connector.ConnectAsync(host.Url, host.Token, host.Fingerprint, cancellationToken).ConfigureAwait(false);
         var view = await connection.SubscribeAsync(session.SessionId).ConfigureAwait(false);
         var state = StateName(SessionActivity.Evaluate(view.Events));
         var info = view.Info;
@@ -371,7 +380,7 @@ internal sealed class CliApp
         }
 
         var (session, host) = resolved.Value;
-        var connection = await _connector.ConnectAsync(host.Url, host.Token, cancellationToken).ConfigureAwait(false);
+        var connection = await _connector.ConnectAsync(host.Url, host.Token, host.Fingerprint, cancellationToken).ConfigureAwait(false);
         var view = await connection.SubscribeAsync(session.SessionId).ConfigureAwait(false);
 
         var timeout = ParseTimeout(cmd.Option("timeout"));
@@ -405,7 +414,7 @@ internal sealed class CliApp
         }
 
         var (session, host) = resolved.Value;
-        var connection = await _connector.ConnectAsync(host.Url, host.Token, cancellationToken).ConfigureAwait(false);
+        var connection = await _connector.ConnectAsync(host.Url, host.Token, host.Fingerprint, cancellationToken).ConfigureAwait(false);
         await connection.CancelAsync(session.SessionId).ConfigureAwait(false);
         _console.Error($"Cancelled the current turn on {session.SessionId}.");
         return ExitCodes.Success;

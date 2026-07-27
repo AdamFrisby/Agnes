@@ -5,7 +5,13 @@ namespace Agnes.Cli;
 /// <summary>A host the CLI can talk to: a friendly <see cref="Name"/> (the id used for prefix matching),
 /// its <see cref="Url"/>, and the device <see cref="Token"/> (held in memory only — never persisted in the
 /// clear; see <see cref="SecureTokenProtector"/>).</summary>
-public sealed record HostEntry(string Name, string Url, string Token);
+/// <param name="Fingerprint">
+/// SHA-256 of the certificate this host serves, learned from the pairing link. An Agnes host is commonly
+/// self-signed, and without this the CLI can't complete a TLS handshake with one at all — not to pair, and not
+/// to connect afterwards. Null for a host with a normally-trusted certificate, which is also what a host
+/// paired before this field existed deserializes to.
+/// </param>
+public sealed record HostEntry(string Name, string Url, string Token, string? Fingerprint = null);
 
 /// <summary>The set of paired hosts, addressable by name prefix. Injected so commands can run against an
 /// in-memory registry in tests.</summary>
@@ -88,7 +94,7 @@ public sealed class FileHostRegistry : IHostRegistry
             // Skip any entry we can't unseal (e.g. copied from another machine) rather than crashing.
             if (TryUnseal(s, out var token))
             {
-                _hosts.Add(new HostEntry(s.Name, s.Url, token));
+                _hosts.Add(new HostEntry(s.Name, s.Url, token, s.Fingerprint));
             }
         }
     }
@@ -115,11 +121,11 @@ public sealed class FileHostRegistry : IHostRegistry
             Directory.CreateDirectory(dir);
         }
 
-        var stored = _hosts.Select(h => new StoredHost(h.Name, h.Url, _protector.Protect(h.Token))).ToList();
+        var stored = _hosts.Select(h => new StoredHost(h.Name, h.Url, _protector.Protect(h.Token), h.Fingerprint)).ToList();
         var tmp = _path + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(stored, Options));
         File.Move(tmp, _path, overwrite: true);
     }
 
-    private sealed record StoredHost(string Name, string Url, string SealedToken);
+    private sealed record StoredHost(string Name, string Url, string SealedToken, string? Fingerprint = null);
 }

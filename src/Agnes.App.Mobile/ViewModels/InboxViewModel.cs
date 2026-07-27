@@ -232,12 +232,12 @@ public sealed partial class InboxViewModel : ObservableObject
         {
             if (approve)
             {
-                await PairingManagement.ApproveAsync(row.Host.Url, row.Host.Saved.Token, row.Pending.RequestId)
+                await PairingManagement.ApproveAsync(row.Host.Url, row.Host.Saved.Token, row.Pending.RequestId, row.Host.Http)
                     .ConfigureAwait(false);
             }
             else
             {
-                await PairingManagement.DenyAsync(row.Host.Url, row.Host.Saved.Token, row.Pending.RequestId)
+                await PairingManagement.DenyAsync(row.Host.Url, row.Host.Saved.Token, row.Pending.RequestId, row.Host.Http)
                     .ConfigureAwait(false);
             }
 

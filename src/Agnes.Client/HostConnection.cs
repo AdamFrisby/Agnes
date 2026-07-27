@@ -29,6 +29,7 @@ public sealed class HostConnection : IAgnesHost
         string? pinnedFingerprint = null)
     {
         HostUrl = hostUrl.TrimEnd('/');
+        PinnedFingerprint = string.IsNullOrWhiteSpace(pinnedFingerprint) ? null : pinnedFingerprint;
 
         // A relay address (agnes-relay://relay/hostId?fp=...) tunnels the same SignalR wire + bearer token
         // through the blind relay to the host, pinning the host's advertised cert fingerprint (AC2/AC4/AC5).
@@ -117,6 +118,9 @@ public sealed class HostConnection : IAgnesHost
     }
 
     public string HostUrl { get; }
+
+    /// <inheritdoc />
+    public string? PinnedFingerprint { get; }
 
     /// <summary>Stable identity of this host: the routed host-id for a relay connection, else the URL.</summary>
     public string HostId { get; }
@@ -456,8 +460,11 @@ public sealed class HostConnection : IAgnesHost
     public Task DeleteSkillAsync(string id)
         => _hub.InvokeAsync(nameof(IAgnesServer.DeleteSkill), id);
 
-    public Task<IReadOnlyList<string>> GetSkillRegistriesAsync()
-        => _hub.InvokeAsync<IReadOnlyList<string>>(nameof(IAgnesServer.GetSkillRegistries));
+    public Task<IReadOnlyList<Abstractions.CatalogSource>> GetSkillRegistriesAsync()
+        => _hub.InvokeAsync<IReadOnlyList<Abstractions.CatalogSource>>(nameof(IAgnesServer.GetSkillRegistries));
+
+    public Task<Abstractions.CatalogResults<Abstractions.RegistrySkillEntry>> SearchSkillsAsync(string query)
+        => _hub.InvokeAsync<Abstractions.CatalogResults<Abstractions.RegistrySkillEntry>>(nameof(IAgnesServer.SearchSkills), query);
 
     public Task<IReadOnlyList<Abstractions.RegistrySkillEntry>> GetRegistrySkillsAsync(string registryId)
         => _hub.InvokeAsync<IReadOnlyList<Abstractions.RegistrySkillEntry>>(nameof(IAgnesServer.GetRegistrySkills), registryId);

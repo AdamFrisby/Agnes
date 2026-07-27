@@ -103,8 +103,12 @@ public static class AuthDiscovery
                         _ => socket.Message,
                     };
 
+                // Most Agnes hosts are self-signed and authenticated by a pinned fingerprint, so "install the
+                // host's CA" was advice for the rarer case and no help at all for the common one: either this
+                // client has no pin for the host, or the host's certificate has changed since it was paired.
                 case System.Security.Authentication.AuthenticationException:
-                    return "The TLS certificate wasn't trusted. Install the host's CA on this device.";
+                    return "The host's TLS certificate wasn't accepted — pair again to pick up its current "
+                           + "certificate, or install its CA if it uses one.";
 
                 case TimeoutException:
                     return "Timed out — the host may be asleep or firewalled.";
@@ -112,5 +116,23 @@ public static class AuthDiscovery
         }
 
         return ex.Message;
+    }
+
+    /// <summary>
+    /// Whether a failure was the TLS handshake rather than the network — the signature of a host whose
+    /// certificate this client has no pin for, or whose certificate has changed since pairing. Worth telling
+    /// apart from "unreachable", because the fix is completely different.
+    /// </summary>
+    public static bool IsCertificateFailure(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is System.Security.Authentication.AuthenticationException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

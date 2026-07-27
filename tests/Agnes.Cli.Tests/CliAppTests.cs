@@ -147,4 +147,54 @@ public sealed class CliAppTests
         Assert.Equal(1, code);
         Assert.Contains(console.ErrorLines, l => l.Contains("ambiguous", StringComparison.OrdinalIgnoreCase));
     }
+
+    // ---- pairing with a self-signed host ----
+
+    [Fact]
+    public async Task Auth_login_takes_a_pairing_link_and_keeps_its_certificate_fingerprint()
+    {
+        // The whole `agnes://pair?...` link is a valid --host. Its fingerprint is the only way the CLI can
+        // complete a TLS handshake with a self-signed host, so it must reach the pairing call AND be stored:
+        // if it were dropped after pairing, every later connect would fail the handshake instead.
+        const string pin = "aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233";
+        var link = Agnes.Protocol.PairingLink.Build("https://box:5099", grant: "GRANT-1", fingerprint: pin);
+        var hosts = new InMemoryHostRegistry();
+        (string Url, string Code, string? Pin) seen = default;
+        var app = new CliApp(
+            new SimulatedConnector(), new TestConsole(), hosts, new InMemorySessionRegistry(), TimeProvider.System,
+            pair: (url, code, name, fingerprint, _) =>
+            {
+                seen = (url, code, fingerprint);
+                return Task.FromResult(new Agnes.Protocol.PairResponse("device-1", name, "issued-token"));
+            });
+
+        var exit = await app.RunAsync(["auth", "login", "--host", link, "--name", "cli"]);
+
+        Assert.Equal(0, exit);
+        Assert.Equal(("https://box:5099", "GRANT-1", pin), seen);
+        var stored = Assert.Single(hosts.Hosts);
+        Assert.Equal(pin, stored.Fingerprint);
+        Assert.Equal("https://box:5099", stored.Url);
+    }
+
+    [Fact]
+    public async Task A_plain_url_pairs_with_no_pin_and_an_explicit_one_can_still_be_given()
+    {
+        const string pin = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        var hosts = new InMemoryHostRegistry();
+        string? seenPin = "unset";
+        CliApp Build() => new(
+            new SimulatedConnector(), new TestConsole(), hosts, new InMemorySessionRegistry(), TimeProvider.System,
+            pair: (_, _, name, fingerprint, _) =>
+            {
+                seenPin = fingerprint;
+                return Task.FromResult(new Agnes.Protocol.PairResponse("device-1", name, "issued-token"));
+            });
+
+        await Build().RunAsync(["auth", "login", "--host", "https://box:5099", "--code", "C", "--name", "a"]);
+        Assert.Null(seenPin);
+
+        await Build().RunAsync(["auth", "login", "--host", "https://box:5099", "--code", "C", "--name", "b", "--fingerprint", pin]);
+        Assert.Equal(pin, seenPin);
+    }
 }

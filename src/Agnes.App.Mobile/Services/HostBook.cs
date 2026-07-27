@@ -27,6 +27,13 @@ public sealed partial class HostLink : ObservableObject
     public string Name => Saved.Name;
     public string Url => Saved.Url;
 
+    /// <summary>
+    /// An HTTP client that trusts this host the way its hub connection does. A saved host is usually
+    /// self-signed and pinned by fingerprint, so a REST management call made with a default client fails the
+    /// handshake even though the session it sits beside is connected — every such call goes through here.
+    /// </summary>
+    public HttpClient Http => Agnes.Client.AgnesHttp.For(Saved.Fingerprint);
+
     /// <summary>The connected host, or null until <see cref="ConnectAsync"/> succeeds.</summary>
     public IAgnesHost? Host { get; private set; }
 

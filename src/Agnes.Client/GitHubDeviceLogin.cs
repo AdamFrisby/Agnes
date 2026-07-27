@@ -43,16 +43,29 @@ public static class GitHubDeviceLogin
         }
     }
 
-    /// <summary>Polls GitHub until the user authorizes (or it expires), then exchanges for an Agnes token.</summary>
+    /// <summary>
+    /// Polls GitHub until the user authorizes (or it expires), then exchanges the result for an Agnes token.
+    ///
+    /// This call reaches two different services with two different trust rules, so it uses two clients.
+    /// github.com is validated normally, against the OS trust store. The Agnes host may be self-signed and
+    /// authenticated by a pinned fingerprint instead — that's what <paramref name="hostClient"/> is for. One
+    /// client genuinely cannot serve both: a pinned client rejects github.com's real certificate just as
+    /// firmly as a default one rejects a self-signed host.
+    /// </summary>
+    /// <param name="hostClient">
+    /// The client for the exchange call to the Agnes host — pinned, for a self-signed host (see
+    /// <c>AgnesHttp.For</c>). Null uses ordinary validation, which is right for a host with a real certificate.
+    /// </param>
     public static async Task<PairResponse> CompleteAsync(
         string hostUrl, string clientId, GitHubDeviceCode code, string deviceName,
-        HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+        HttpClient? hostClient = null, CancellationToken cancellationToken = default)
     {
-        var client = httpClient ?? NewJsonClient();
+        using var gitHub = NewJsonClient();
+        var accessToken = await PollForTokenAsync(gitHub, clientId, code, cancellationToken).ConfigureAwait(false);
+
+        var client = hostClient ?? NewJsonClient();
         try
         {
-            var accessToken = await PollForTokenAsync(client, clientId, code, cancellationToken).ConfigureAwait(false);
-
             using var exchange = await client.PostAsJsonAsync(
                 hostUrl.TrimEnd('/') + "/auth/github/exchange",
                 new GitHubExchangeRequest(accessToken, deviceName), cancellationToken).ConfigureAwait(false);
@@ -67,7 +80,7 @@ public static class GitHubDeviceLogin
         }
         finally
         {
-            if (httpClient is null) { client.Dispose(); }
+            if (hostClient is null) { client.Dispose(); }
         }
     }
 
