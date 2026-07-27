@@ -185,6 +185,67 @@ public class TranscriptBuilderTests
     }
 
     [Fact]
+    public void A_finished_plan_folds_its_completed_run_but_keeps_the_last_one()
+    {
+        var t = new TranscriptBuilder();
+        t.Apply(new PlanEvent(
+        [
+            new PlanEntry("Read the code", "completed"),
+            new PlanEntry("Write the fix", "completed"),
+            new PlanEntry("Add a test", "completed"),
+            new PlanEntry("Run the suite", "in_progress"),
+            new PlanEntry("Push", "pending"),
+        ]));
+
+        var plan = t.Plan!;
+        // A plan only ever grows, so by the end of a session the panel is a wall of ticks unless the
+        // superseded ones fold away. What's left is "last thing done, then everything still to do".
+        Assert.Equal(2, plan.HiddenCount);
+        Assert.True(plan.HasHidden);
+        Assert.Equal(["Add a test", "Run the suite", "Push"], plan.VisibleEntries.Select(e => e.Content));
+        Assert.Equal("Show 2 completed", plan.MoreLabel);
+
+        plan.ShowAll = true;
+        Assert.Equal(5, plan.VisibleEntries.Count);
+        Assert.Equal("Show less", plan.MoreLabel);
+    }
+
+    [Fact]
+    public void A_plan_folds_nothing_until_folding_pays()
+    {
+        // One completed entry: a "show 1 more" control costs the reader more than the line it hides.
+        var one = new PlanItemView { Entries = [new PlanEntry("a", "completed"), new PlanEntry("b", "pending")] };
+        Assert.False(one.HasHidden);
+        Assert.Equal(2, one.VisibleEntries.Count);
+
+        // Nothing done yet: everything is outstanding, so everything shows.
+        var fresh = new PlanItemView { Entries = [new PlanEntry("a", "in_progress"), new PlanEntry("b", "pending")] };
+        Assert.False(fresh.HasHidden);
+
+        // Completed work that comes *after* something unfinished is out-of-order progress, not history.
+        var jumbled = new PlanItemView
+        {
+            Entries = [new PlanEntry("a", "pending"), new PlanEntry("b", "completed"), new PlanEntry("c", "completed")],
+        };
+        Assert.False(jumbled.HasHidden);
+    }
+
+    [Fact]
+    public void Folding_follows_the_plan_as_it_is_ticked_off()
+    {
+        var plan = new PlanItemView { Entries = [new PlanEntry("a", "in_progress"), new PlanEntry("b", "pending"), new PlanEntry("c", "pending")] };
+        var raised = new List<string>();
+        plan.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
+
+        plan.Entries = [new PlanEntry("a", "completed"), new PlanEntry("b", "completed"), new PlanEntry("c", "in_progress")];
+
+        Assert.Equal(1, plan.HiddenCount);
+        Assert.Equal(["b", "c"], plan.VisibleEntries.Select(e => e.Content));
+        Assert.Contains(nameof(PlanItemView.VisibleEntries), raised);
+        Assert.Contains(nameof(PlanItemView.HasHidden), raised);
+    }
+
+    [Fact]
     public void A_plan_event_and_the_task_tools_land_on_one_plan()
     {
         var t = new TranscriptBuilder();

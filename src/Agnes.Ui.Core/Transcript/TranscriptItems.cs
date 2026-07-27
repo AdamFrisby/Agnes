@@ -238,11 +238,77 @@ public sealed class ToolCallItem : TranscriptItem
 public sealed class PlanItemView : TranscriptItem
 {
     private IReadOnlyList<PlanEntry> _entries = [];
+    private bool _showAll;
 
     public IReadOnlyList<PlanEntry> Entries
     {
         get => _entries;
-        set => SetProperty(ref _entries, value);
+        set
+        {
+            if (SetProperty(ref _entries, value))
+            {
+                RaiseVisible();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The plan as a panel should show it by default: everything still to do, plus the one thing most
+    /// recently finished. A plan grows monotonically — an agent ticks entries off and adds more, and
+    /// nothing ever removes them — so a panel bound to <see cref="Entries"/> only ever gets longer and
+    /// ends the session as a wall of "completed". Superseded work is still *there*, one click away under
+    /// <see cref="MoreLabel"/>; it just stops competing with what's happening now.
+    ///
+    /// <para>The last completed entry stays because it's the anchor: "finished X, now doing Y" is the
+    /// sentence you want, and hiding X leaves Y without a place in the sequence.</para>
+    /// </summary>
+    public IReadOnlyList<PlanEntry> VisibleEntries => _showAll ? Entries : Entries.Skip(HiddenCount).ToList();
+
+    /// <summary>How many finished entries are folded away. Zero when there's at most one of them, since
+    /// a "show 1 more" control costs the reader more than the line it hides.</summary>
+    public int HiddenCount
+    {
+        get
+        {
+            // Completed entries at the head of the list are the superseded ones; a completed entry that
+            // comes after unfinished work is out-of-order progress and stays put.
+            var leading = 0;
+            while (leading < Entries.Count && IsDone(Entries[leading]))
+            {
+                leading++;
+            }
+
+            // Keep the most recent of them as the anchor, so folding starts to pay from the third.
+            return leading > 1 ? leading - 1 : 0;
+        }
+    }
+
+    public bool HasHidden => HiddenCount > 0;
+
+    public string MoreLabel => _showAll ? "Show less" : $"Show {HiddenCount} completed";
+
+    /// <summary>Whether the folded entries are currently revealed. Set by the panel's toggle.</summary>
+    public bool ShowAll
+    {
+        get => _showAll;
+        set
+        {
+            if (SetProperty(ref _showAll, value))
+            {
+                RaiseVisible();
+            }
+        }
+    }
+
+    private static bool IsDone(PlanEntry entry)
+        => string.Equals(entry.Status, "completed", StringComparison.OrdinalIgnoreCase);
+
+    private void RaiseVisible()
+    {
+        OnPropertyChanged(nameof(VisibleEntries));
+        OnPropertyChanged(nameof(HiddenCount));
+        OnPropertyChanged(nameof(HasHidden));
+        OnPropertyChanged(nameof(MoreLabel));
     }
 }
 

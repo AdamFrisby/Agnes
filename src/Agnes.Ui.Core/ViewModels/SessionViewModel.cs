@@ -102,6 +102,8 @@ public sealed class SessionViewModel : ObservableObject
         RespondWithCommand = new RelayCommand<PermissionOption>(o => { if (o is not null) { _ = RespondWithAsync(o); } });
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; OnPropertyChanged(nameof(ShowLeftPanel)); });
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
+        TogglePlanCommand = new RelayCommand(() => PlanExpanded = !PlanExpanded);
+        ShowAllPlanCommand = new RelayCommand(() => { if (Plan is { } plan) { plan.ShowAll = !plan.ShowAll; } });
         ToggleFilesCommand = new RelayCommand(() => FilesExpanded = !FilesExpanded);
         ToggleToolsListCommand = new RelayCommand(() => ToolsListExpanded = !ToolsListExpanded);
         ShowAllToolsCommand = new RelayCommand(() => ShowAllTools = true);
@@ -656,12 +658,17 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasMoreTools => !ShowAllTools && ToolActivity.Count > ToolDisplayLimit;
     public string MoreToolsLabel => $"Show all {ToolActivity.Count}";
 
+    private bool _planExpanded = true;
+    public bool PlanExpanded { get => _planExpanded; set => SetProperty(ref _planExpanded, value); }
+
     private bool _filesExpanded = true;
     public bool FilesExpanded { get => _filesExpanded; set => SetProperty(ref _filesExpanded, value); }
 
     private bool _toolsListExpanded = true;
     public bool ToolsListExpanded { get => _toolsListExpanded; set => SetProperty(ref _toolsListExpanded, value); }
 
+    public System.Windows.Input.ICommand TogglePlanCommand { get; }
+    public System.Windows.Input.ICommand ShowAllPlanCommand { get; }
     public System.Windows.Input.ICommand ToggleFilesCommand { get; }
     public System.Windows.Input.ICommand ToggleToolsListCommand { get; }
     public System.Windows.Input.ICommand ShowAllToolsCommand { get; }
