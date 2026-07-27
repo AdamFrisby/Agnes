@@ -52,15 +52,15 @@
     <ResourceDictionary x:Key="{x:Static themes:ThemeCatalog.Spacegray}">
       <Color x:Key="BgColor">#2B303B</Color>
       <Color x:Key="PanelColor">#343D46</Color>
-      <Color x:Key="PanelAltColor">#4F5B66</Color>
+      <Color x:Key="PanelAltColor">#303741</Color>
       <Color x:Key="CodeBgColor">#1C1F26</Color>
       <Color x:Key="ScrimColor">#8C181A20</Color>
       <Color x:Key="LineColor">#4F5B66</Color>
       <Color x:Key="LineStrongColor">#65737E</Color>
 
-      <Color x:Key="FgColor">#C0C5CE</Color>
-      <Color x:Key="FgDimColor">#A7ADBA</Color>
-      <Color x:Key="FgFaintColor">#65737E</Color>
+      <Color x:Key="FgColor">#CCD0D7</Color>
+      <Color x:Key="FgDimColor">#BBC1CB</Color>
+      <Color x:Key="FgFaintColor">#A1AAB1</Color>
       <Color x:Key="FgOnAccentColor">#2B303B</Color>
 
       <Color x:Key="AccentColor">#B48EAD</Color>
@@ -104,9 +104,9 @@
       <Color x:Key="LineColor">#C0C5CE</Color>
       <Color x:Key="LineStrongColor">#A7ADBA</Color>
 
-      <Color x:Key="FgColor">#4F5B66</Color>
-      <Color x:Key="FgDimColor">#65737E</Color>
-      <Color x:Key="FgFaintColor">#A7ADBA</Color>
+      <Color x:Key="FgColor">#3E4850</Color>
+      <Color x:Key="FgDimColor">#485159</Color>
+      <Color x:Key="FgFaintColor">#5F626A</Color>
       <Color x:Key="FgOnAccentColor">#FFFFFF</Color>
 
       <Color x:Key="AccentColor">#8B5B82</Color>
@@ -144,15 +144,15 @@
     <ResourceDictionary x:Key="{x:Static themes:ThemeCatalog.SpacegrayEighties}">
       <Color x:Key="BgColor">#2D2D2D</Color>
       <Color x:Key="PanelColor">#393939</Color>
-      <Color x:Key="PanelAltColor">#515151</Color>
+      <Color x:Key="PanelAltColor">#343434</Color>
       <Color x:Key="CodeBgColor">#1D1D1D</Color>
       <Color x:Key="ScrimColor">#8C191919</Color>
       <Color x:Key="LineColor">#515151</Color>
       <Color x:Key="LineStrongColor">#747369</Color>
 
       <Color x:Key="FgColor">#D3D0C8</Color>
-      <Color x:Key="FgDimColor">#A09F93</Color>
-      <Color x:Key="FgFaintColor">#747369</Color>
+      <Color x:Key="FgDimColor">#BDBDB5</Color>
+      <Color x:Key="FgFaintColor">#A5A59E</Color>
       <Color x:Key="FgOnAccentColor">#2D2D2D</Color>
 
       <Color x:Key="AccentColor">#CC99CC</Color>
@@ -190,15 +190,15 @@
     <ResourceDictionary x:Key="{x:Static themes:ThemeCatalog.SpacegrayMocha}">
       <Color x:Key="BgColor">#3B3228</Color>
       <Color x:Key="PanelColor">#534636</Color>
-      <Color x:Key="PanelAltColor">#645240</Color>
+      <Color x:Key="PanelAltColor">#483D30</Color>
       <Color x:Key="CodeBgColor">#26201A</Color>
       <Color x:Key="ScrimColor">#8C201C16</Color>
       <Color x:Key="LineColor">#645240</Color>
       <Color x:Key="LineStrongColor">#7E705A</Color>
 
-      <Color x:Key="FgColor">#D0C8C6</Color>
-      <Color x:Key="FgDimColor">#B8AFAD</Color>
-      <Color x:Key="FgFaintColor">#7E705A</Color>
+      <Color x:Key="FgColor">#E7E3E1</Color>
+      <Color x:Key="FgDimColor">#D7D2D1</Color>
+      <Color x:Key="FgFaintColor">#C0B9AE</Color>
       <Color x:Key="FgOnAccentColor">#3B3228</Color>
 
       <Color x:Key="AccentColor">#A89BB9</Color>
@@ -236,15 +236,15 @@
     <ResourceDictionary x:Key="{x:Static themes:ThemeCatalog.SpacegrayOceanic}">
       <Color x:Key="BgColor">#1B2B34</Color>
       <Color x:Key="PanelColor">#343D46</Color>
-      <Color x:Key="PanelAltColor">#4F5B66</Color>
+      <Color x:Key="PanelAltColor">#29353E</Color>
       <Color x:Key="CodeBgColor">#111C22</Color>
       <Color x:Key="ScrimColor">#8C0E171C</Color>
       <Color x:Key="LineColor">#4F5B66</Color>
       <Color x:Key="LineStrongColor">#65737E</Color>
 
-      <Color x:Key="FgColor">#C0C5CE</Color>
-      <Color x:Key="FgDimColor">#A7ADBA</Color>
-      <Color x:Key="FgFaintColor">#65737E</Color>
+      <Color x:Key="FgColor">#CDD0D8</Color>
+      <Color x:Key="FgDimColor">#BCC1CB</Color>
+      <Color x:Key="FgFaintColor">#A1AAB1</Color>
       <Color x:Key="FgOnAccentColor">#1B2B34</Color>
 
       <Color x:Key="AccentColor">#C594C5</Color>

@@ -59,7 +59,7 @@
       <!-- secondary ink -->
       <Color x:Key="FgDimColor">#9C97C4</Color>
       <!-- tertiary ink -->
-      <Color x:Key="FgFaintColor">#6B6796</Color>
+      <Color x:Key="FgFaintColor">#8683AA</Color>
       <!-- ink on an accent fill -->
       <Color x:Key="FgOnAccentColor">#FFFFFF</Color>
       <!-- selection + brand -->
@@ -121,7 +121,7 @@
       <!-- secondary ink -->
       <Color x:Key="FgDimColor">#4E4E68</Color>
       <!-- tertiary ink -->
-      <Color x:Key="FgFaintColor">#7C7C9C</Color>
+      <Color x:Key="FgFaintColor">#676782</Color>
       <!-- ink on an accent fill -->
       <Color x:Key="FgOnAccentColor">#FFFFFF</Color>
       <!-- selection + brand -->
