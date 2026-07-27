@@ -968,7 +968,12 @@
                     <!-- LEFT: plan, files modified, tools run -->
                     <Border Grid.Column="0" IsVisible="{Binding ShowLeftPanel}"
                             Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0">
-                        <ScrollViewer Padding="14,16" VerticalScrollBarVisibility="Auto">
+                        <!-- The right padding clears the overlay scrollbar. Fluent draws it *over* the
+                             content rather than taking width from it, so text laid out to the full
+                             viewport loses its last couple of characters underneath — which reads as
+                             wrapping that doesn't quite work rather than as a scrollbar. -->
+                        <ScrollViewer Padding="14,16,22,16" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Spacing="18">
                                 <!-- Session name: the agent's auto-generated title when it has one, else the folder -->
                                 <StackPanel Spacing="2">
@@ -979,23 +984,41 @@
 
                                 <!-- PLAN sits directly under the session name: what the agent is doing now
                                      is the first thing you look for, and it ticks along in place as entries
-                                     are completed or added. -->
-                                <StackPanel Spacing="6" IsVisible="{Binding Plan, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
-                                    <TextBlock Text="PLAN" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <ItemsControl ItemsSource="{Binding Plan.Entries}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Grid ColumnDefinitions="70,*" ColumnSpacing="8" Margin="0,3">
-                                                    <TextBlock Grid.Column="0" Text="{Binding Status}" Classes="tone" FontSize="10"
-                                                               VerticalAlignment="Top"
-                                                               Classes.done="{Binding Status, Converter={StaticResource PlanDone}}"
-                                                               Classes.working="{Binding Status, Converter={StaticResource PlanRunning}}" />
-                                                    <TextBlock Grid.Column="1" Text="{Binding Content}" Foreground="{DynamicResource Fg}"
-                                                               FontSize="12" TextWrapping="Wrap" />
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                     are completed or added. Foldable like every other section, and it shows
+                                     the outstanding work plus the last thing finished — the rest of the
+                                     completed run is under "Show n completed", because a plan only ever
+                                     grows and would otherwise end the session as a wall of ticks. -->
+                                <StackPanel Spacing="4" IsVisible="{Binding Plan, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                                    <Button Command="{Binding TogglePlanCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding PlanExpanded}" />
+                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                                       IsVisible="{Binding !PlanExpanded}" />
+                                            <TextBlock Text="PLAN" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <StackPanel Spacing="4" IsVisible="{Binding PlanExpanded}">
+                                        <Button Content="{Binding Plan.MoreLabel}" Command="{Binding ShowAllPlanCommand}"
+                                                IsVisible="{Binding Plan.HasHidden}" HorizontalAlignment="Left" Cursor="Hand"
+                                                Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
+                                                Padding="6,3" FontSize="11" />
+                                        <ItemsControl ItemsSource="{Binding Plan.VisibleEntries}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid ColumnDefinitions="70,*" ColumnSpacing="8" Margin="0,3">
+                                                        <TextBlock Grid.Column="0" Text="{Binding Status}" Classes="tone" FontSize="10"
+                                                                   VerticalAlignment="Top" TextWrapping="Wrap"
+                                                                   Classes.done="{Binding Status, Converter={StaticResource PlanDone}}"
+                                                                   Classes.working="{Binding Status, Converter={StaticResource PlanRunning}}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Content}" Foreground="{DynamicResource Fg}"
+                                                                   FontSize="12" TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <!-- Agent roster: flattened so the root and its direct subagents share one
@@ -1100,7 +1123,8 @@
                                                                             </Border>
                                                                         </StackPanel>
                                                                         <TextBlock Text="{Binding Text}" Foreground="{DynamicResource Fg}" FontSize="12" TextWrapping="Wrap" />
-                                                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                                                        <!-- Wraps: three actions don't fit a narrowed sidebar side by side. -->
+                                                                        <WrapPanel ItemSpacing="10" LineSpacing="4">
                                                                             <Button Content="Jump" Command="{Binding #Workspace.DataContext.ReviewComments.JumpCommand}"
                                                                                     CommandParameter="{Binding}" Background="Transparent" BorderThickness="0"
                                                                                     Padding="0" Foreground="{DynamicResource Accent}" FontSize="11" Cursor="Hand" />
@@ -1112,7 +1136,7 @@
                                                                                     Command="{Binding #Workspace.DataContext.ReviewComments.RemoveCommand}"
                                                                                     CommandParameter="{Binding}" Background="Transparent" BorderThickness="0"
                                                                                     Padding="0" Foreground="{DynamicResource FgDim}" FontSize="11" Cursor="Hand" />
-                                                                        </StackPanel>
+                                                                        </WrapPanel>
                                                                     </StackPanel>
                                                                 </Border>
                                                             </DataTemplate>
