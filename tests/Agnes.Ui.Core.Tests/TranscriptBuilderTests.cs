@@ -184,4 +184,113 @@ public class TranscriptBuilderTests
         Assert.Null(t.PendingQuestion);
         Assert.Equal(2, changes); // raised on ask + on answer
     }
+
+    private static string EditInput(string path, string oldText, string newText)
+        => $$"""{"file_path":"{{path}}","old_string":{{Json(oldText)}},"new_string":{{Json(newText)}}}""";
+
+    private static string Json(string s) => System.Text.Json.JsonSerializer.Serialize(s);
+
+    [Fact]
+    public void An_edit_keeps_its_diff_even_though_the_result_is_only_a_confirmation()
+    {
+        var t = new TranscriptBuilder();
+        t.Apply(new ToolCallEvent("tc1", "src/a.cs", ToolKind.Edit, ToolCallStatus.InProgress,
+            [new TextContent(EditInput("src/a.cs", "var x = 1;", "var x = 2;"))]));
+        // What Claude actually sends back when an edit lands — a receipt, with no trace of the change.
+        t.Apply(new ToolCallUpdateEvent("tc1", ToolCallStatus.Completed,
+            [new TextContent("The file src/a.cs has been updated successfully.")]));
+
+        var tool = Assert.Single(t.Items.OfType<ToolCallItem>());
+        Assert.True(tool.HasDiff);
+        Assert.Contains("-var x = 1;", tool.PreviewBody, StringComparison.Ordinal);
+        Assert.Contains("+var x = 2;", tool.PreviewBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("updated successfully", tool.PreviewBody, StringComparison.Ordinal);
+        Assert.Equal("+1  −1", tool.DiffSummary);
+    }
+
+    [Fact]
+    public void A_structured_diff_from_an_acp_agent_is_used_as_is()
+    {
+        var t = new TranscriptBuilder();
+        t.Apply(new ToolCallEvent("tc1", "src/a.cs", ToolKind.Edit, ToolCallStatus.Completed,
+            [new DiffContent("src/a.cs", "one\n", "two\n")]));
+
+        var tool = Assert.Single(t.Items.OfType<ToolCallItem>());
+        Assert.True(tool.HasDiff);
+        Assert.Contains("+two", tool.PreviewBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_non_edit_tool_has_no_diff_and_previews_its_output()
+    {
+        var t = new TranscriptBuilder();
+        t.Apply(new ToolCallEvent("tc1", "ls -la", ToolKind.Execute, ToolCallStatus.InProgress, []));
+        t.Apply(new ToolCallUpdateEvent("tc1", ToolCallStatus.Completed, [new TextContent("total 8\na\nb")]));
+
+        var tool = Assert.Single(t.Items.OfType<ToolCallItem>());
+        Assert.False(tool.HasDiff);
+        Assert.Equal("total 8\na\nb", tool.PreviewBody);
+    }
+
+    [Fact]
+    public void A_small_edit_shows_inline_and_a_large_one_does_not()
+    {
+        var small = Tool(EditInput("a.cs", "one", "two"));
+        Assert.True(small.HasInlineDiff);
+        Assert.False(small.HasCollapsedDiff);
+        // Headers are dropped inline: an Edit's hunk header always claims line 1 whatever it touched.
+        Assert.DoesNotContain(small.InlineDiffLines, l => l.IsHunk);
+
+        var manyChanges = Tool(EditInput("a.cs", "x", string.Join('\n', Enumerable.Range(0, 40).Select(i => $"line {i}"))));
+        Assert.False(manyChanges.HasInlineDiff);
+        Assert.True(manyChanges.HasCollapsedDiff);
+
+        // A two-line change buried in a wall of unchanged context is small by change count but not on screen.
+        var context = string.Join('\n', Enumerable.Range(0, 60).Select(i => $"line {i}"));
+        var wideContext = Tool(EditInput("a.cs", context + "\nold", context + "\nnew"));
+        Assert.False(wideContext.HasInlineDiff);
+    }
+
+    private static ToolCallItem Tool(string input)
+    {
+        var t = new TranscriptBuilder();
+        t.Apply(new ToolCallEvent("tc", "a.cs", ToolKind.Edit, ToolCallStatus.Completed, [new TextContent(input)]));
+        return t.Items.OfType<ToolCallItem>().Single();
+    }
+
+    [Fact]
+    public void A_permission_carries_the_full_command_it_is_asking_about()
+    {
+        var command = "rm -rf " + new string('x', 400);
+        var t = new TranscriptBuilder();
+        t.Apply(new PermissionRequestedEvent("r1", "tc1", "Allow Bash?",
+            [new PermissionOption("allow", "Allow", PermissionOptionKind.AllowOnce)], command));
+
+        var item = Assert.Single(t.Items.OfType<PermissionItem>());
+        Assert.True(item.HasDetail);
+        Assert.Equal(command, item.Detail); // whole, not a prefix — the tail is the dangerous part
+    }
+
+    [Fact]
+    public void A_permission_without_its_own_detail_falls_back_to_the_linked_tool()
+    {
+        var t = new TranscriptBuilder();
+        t.Apply(new ToolCallEvent("tc1", "git push --force", ToolKind.Execute, ToolCallStatus.Pending, []));
+        t.Apply(new PermissionRequestedEvent("r1", "tc1", "Allow Bash?",
+            [new PermissionOption("allow", "Allow", PermissionOptionKind.AllowOnce)]));
+
+        var item = Assert.Single(t.Items.OfType<PermissionItem>());
+        Assert.Equal("git push --force", item.Detail);
+    }
+
+    [Fact]
+    public void A_tool_summary_is_not_truncated_by_the_view_model()
+    {
+        var line = new string('a', 500);
+        var t = new TranscriptBuilder();
+        t.Apply(new ToolCallEvent("tc1", "grep", ToolKind.Search, ToolCallStatus.Completed, [new TextContent(line + "\nsecond")]));
+
+        var tool = Assert.Single(t.Items.OfType<ToolCallItem>());
+        Assert.Equal(line, tool.Summary); // one line, but all of it — the view ellipsizes to fit its row
+    }
 }

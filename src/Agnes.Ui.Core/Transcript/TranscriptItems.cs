@@ -1,4 +1,5 @@
 using Agnes.Abstractions;
+using Agnes.Ui.Core.Diff;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -75,17 +76,77 @@ public sealed class ToolCallItem : TranscriptItem
     private string _detail = string.Empty;
     private DateTimeOffset? _completedAt;
 
-    public ToolCallItem(string toolCallId, string title, ToolKind kind, ToolCallStatus status)
+    public ToolCallItem(string toolCallId, string title, ToolKind kind, ToolCallStatus status, string? diff = null)
     {
         ToolCallId = toolCallId;
         Title = title;
         Kind = kind;
         _status = status;
+        Diff = diff;
+        DiffLines = diff is null ? [] : DiffParser.Parse(diff);
+        InlineDiffLines = DiffLines.Where(l => !l.IsHunk).ToList();
     }
 
     public string ToolCallId { get; }
+
+    /// <summary>What the call acts on, verbatim and never abbreviated: the shell command, the path, the
+    /// pattern. Views may trim it to fit a row, but the whole of it is always available here.</summary>
     public string Title { get; }
+
     public ToolKind Kind { get; }
+
+    /// <summary>
+    /// The change this call makes, as a unified diff, when it edits a file. Built from the call's input at
+    /// the moment it starts — the result that arrives later is only a confirmation, so a UI that showed the
+    /// result showed "… has been updated successfully" where the diff belongs.
+    /// </summary>
+    public string? Diff { get; }
+
+    /// <summary>The parsed <see cref="Diff"/>, ready to render; empty when this call isn't a file edit.</summary>
+    public IReadOnlyList<DiffLine> DiffLines { get; }
+
+    public bool HasDiff => Diff is not null;
+
+    /// <summary>
+    /// The diff as it reads inline: content lines only. The file header repeats the title, and the hunk
+    /// header of an Edit is <c>@@ -1,n +1,m @@</c> whatever part of the file it actually touched — the
+    /// diff is built from the replaced fragment, so those line numbers would name lines that don't exist.
+    /// The preview shows the whole thing, headers and all.
+    /// </summary>
+    public IReadOnlyList<DiffLine> InlineDiffLines { get; }
+
+    /// <summary>Changed lines only — the size of the edit, not of the file it landed in.</summary>
+    private int ChangedLines => DiffLines.Count(l => l.IsAdded || l.IsRemoved);
+
+    /// <summary>
+    /// A small edit renders in the conversation itself: at this size the diff is quicker to read in place
+    /// than to open, and seeing changes go by is the point of watching an agent work. Anything larger would
+    /// bury the conversation, so it stays one click away.
+    ///
+    /// Both limits matter. A big edit is obviously too big; so is a two-line change delivered inside a
+    /// hundred lines of surrounding context, which counts as small by the first measure but takes just as
+    /// much of the screen.
+    /// </summary>
+    public bool HasInlineDiff => HasDiff
+        && ChangedLines is > 0 and <= InlineChangedLimit
+        && InlineDiffLines.Count <= InlineTotalLimit;
+
+    /// <summary>A diff too big to sit in the conversation — the row shows its size instead.</summary>
+    public bool HasCollapsedDiff => HasDiff && !HasInlineDiff;
+
+    /// <summary>The most changed lines an edit may render inline before it belongs in the preview.</summary>
+    public const int InlineChangedLimit = 24;
+
+    /// <summary>The most lines an inline diff may occupy in total, context included.</summary>
+    public const int InlineTotalLimit = 40;
+
+    /// <summary>"+12 −3" — the shape of a change, legible before reading it.</summary>
+    public string DiffSummary => HasDiff
+        ? $"+{DiffLines.Count(l => l.IsAdded)}  −{DiffLines.Count(l => l.IsRemoved)}"
+        : string.Empty;
+
+    /// <summary>What opening this call should show: the diff for an edit, else the tool's own output.</summary>
+    public string PreviewBody => Diff ?? Detail;
 
     /// <summary>When the tool call started (first event's timestamp).</summary>
     public DateTimeOffset StartedAt { get; init; }
@@ -154,23 +215,23 @@ public sealed class ToolCallItem : TranscriptItem
             if (SetProperty(ref _detail, value))
             {
                 OnPropertyChanged(nameof(Summary));
+                OnPropertyChanged(nameof(ShowSummary));
                 OnPropertyChanged(nameof(HasDetail));
+                OnPropertyChanged(nameof(PreviewBody));
             }
         }
     }
 
-    /// <summary>A one-line condensed view for the chat; the full <see cref="Detail"/> opens in the preview.</summary>
-    public string Summary
-    {
-        get
-        {
-            var line = Detail.Split('\n', 2)[0].Trim();
-            return line.Length > 80 ? line[..80] + "…" : line;
-        }
-    }
+    /// <summary>The first line of the output, whole. Views ellipsize it to fit their row — a trim that a
+    /// wider window undoes, unlike cutting the string here, which no view could recover from.</summary>
+    public string Summary => Detail.Split('\n', 2)[0].Trim();
 
-    /// <summary>Whether there's enough detail (multi-line) to warrant a full preview.</summary>
-    public bool HasDetail => Detail.Contains('\n') || Detail.Length > 80;
+    /// <summary>Whether the one-line summary adds anything: next to an inline diff it would just repeat
+    /// the diff's own first line.</summary>
+    public bool ShowSummary => !HasInlineDiff && Summary.Length > 0;
+
+    /// <summary>Whether opening this call would show more than its row already does.</summary>
+    public bool HasDetail => HasDiff || Detail.Contains('\n') || Detail.Length > 80;
 }
 
 /// <summary>The agent's current plan.</summary>
@@ -200,13 +261,15 @@ public sealed class PermissionItem : TranscriptItem
         string title,
         IReadOnlyList<PermissionOption> options,
         ToolKind? toolKind = null,
-        string? toolTarget = null)
+        string? toolTarget = null,
+        string? detail = null)
     {
         RequestId = requestId;
         Title = title;
         Options = options;
         ToolKind = toolKind;
         ToolTarget = toolTarget;
+        Detail = detail;
     }
 
     public string RequestId { get; }
@@ -214,6 +277,15 @@ public sealed class PermissionItem : TranscriptItem
     public IReadOnlyList<PermissionOption> Options { get; }
     public ToolKind? ToolKind { get; }
     public string? ToolTarget { get; }
+
+    /// <summary>
+    /// Exactly what is being approved — the command line, the path, the tool input — in full. A title like
+    /// "Allow Bash?" is not something anyone can consent to, and a command trimmed to fit a card is worse
+    /// than none: the dangerous part of a long command line is usually its tail.
+    /// </summary>
+    public string? Detail { get; }
+
+    public bool HasDetail => !string.IsNullOrWhiteSpace(Detail);
 
     /// <summary>What resources this touches, e.g. "Delete · build/".</summary>
     public string ResourceText => ToolKind is { } k

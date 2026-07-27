@@ -78,7 +78,9 @@ public sealed class TranscriptBuilder
                 }
 
                 CloseBubble();
-                var tool = new ToolCallItem(tc.ToolCallId, tc.Title, tc.Kind, tc.Status)
+                // The diff comes from the call's INPUT, captured here at the start: the update that
+                // completes the call carries only a confirmation, so this is the sole chance to keep it.
+                var tool = new ToolCallItem(tc.ToolCallId, tc.Title, tc.Kind, tc.Status, ToolDiff.For(tc.Kind, tc.Content))
                 {
                     StartedAt = tc.Timestamp,
                     Detail = string.Concat(tc.Content.Select(TextOf)),
@@ -126,7 +128,11 @@ public sealed class TranscriptBuilder
             case PermissionRequestedEvent pr:
                 CloseBubble();
                 _tools.TryGetValue(pr.ToolCallId, out var linkedTool);
-                var permission = new PermissionItem(pr.RequestId, pr.Title, pr.Options, linkedTool?.Kind, linkedTool?.Title) { AgentId = agentId };
+                // Fall back to the linked tool's own target when the agent sent no detail of its own, so
+                // the card still says what is about to run rather than only that something is.
+                var permission = new PermissionItem(
+                    pr.RequestId, pr.Title, pr.Options, linkedTool?.Kind, linkedTool?.Title,
+                    pr.Detail ?? linkedTool?.Title) { AgentId = agentId };
                 _permissions[pr.RequestId] = permission;
                 Items.Add(permission);
                 PendingPermission = permission;

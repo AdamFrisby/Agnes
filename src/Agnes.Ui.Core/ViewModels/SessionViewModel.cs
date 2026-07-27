@@ -175,7 +175,7 @@ public sealed class SessionViewModel : ObservableObject
         NextChangeCommand = new RelayCommand(() => NavigateKind(IsChange, +1, ref _changeCursor));
         PrevChangeCommand = new RelayCommand(() => NavigateKind(IsChange, -1, ref _changeCursor));
         ClosePreviewCommand = new RelayCommand(() => SelectedPreview = null);
-        ShowToolPreviewCommand = new RelayCommand<ToolCallItem>(t => { if (t is not null) { Preview(t.Header, t.Detail, command: t.Title); } });
+        ShowToolPreviewCommand = new RelayCommand<ToolCallItem>(t => { if (t is not null) { Preview(t.Header, t.PreviewBody, command: t.Title); } });
         ShowFilePreviewCommand = new RelayCommand<ToolEntry>(f => { if (f is not null) { Preview(f.Name, f.Detail, command: f.Name); } });
         ShowMessagePreviewCommand = new RelayCommand<MessageBubbleItem>(m =>
         {
@@ -1971,7 +1971,7 @@ public sealed class SessionViewModel : ObservableObject
                 var isFile = IsFileTool(tc.Kind);
                 // Modified files open as a DIFF, not the raw edit request — build one from the tool input.
                 var entry = new ToolEntry(tc.ToolCallId, tc.Title, tc.Kind, tc.Status,
-                    isFile ? FileDiff(tc) : TextOf(tc.Content));
+                    Diff.ToolDiff.For(tc.Kind, tc.Content) ?? TextOf(tc.Content));
                 _tools[tc.ToolCallId] = entry;
                 (isFile ? ModifiedFiles : ToolActivity).Add(entry);
                 RaisePanels();
@@ -2100,56 +2100,9 @@ public sealed class SessionViewModel : ObservableObject
         RaiseActivity();
     }
 
-    private static bool IsFileTool(ToolKind kind)
-        => kind is ToolKind.Edit or ToolKind.Delete or ToolKind.Move;
+    private static bool IsFileTool(ToolKind kind) => Diff.ToolDiff.IsFileTool(kind);
 
-    /// <summary>
-    /// Renders a file-edit tool call as a unified diff for the preview pane. If the content is already a
-    /// diff (ACP agents, or a native adapter that emits DiffContent) it's used as-is; otherwise the edit
-    /// request (Claude's Edit/Write input JSON — file_path + old_string/new_string, or content) is turned
-    /// into one. This works for stored sessions too, since the full input JSON is persisted.
-    /// </summary>
-    private static string FileDiff(ToolCallEvent tc)
-    {
-        var text = TextOf(tc.Content);
-        if (Diff.DiffParser.LooksLikeDiff(text))
-        {
-            return text;
-        }
-
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(text);
-            var root = doc.RootElement;
-            if (root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("file_path", out var fp))
-            {
-                var path = fp.GetString() ?? string.Empty;
-                if (root.TryGetProperty("old_string", out var oldS) && root.TryGetProperty("new_string", out var newS))
-                {
-                    return Diff.UnifiedDiff.Format(path, oldS.GetString() ?? string.Empty, newS.GetString() ?? string.Empty);
-                }
-
-                if (root.TryGetProperty("content", out var content)) // Write = a whole new file
-                {
-                    return Diff.UnifiedDiff.Format(path, string.Empty, content.GetString() ?? string.Empty);
-                }
-            }
-        }
-        catch
-        {
-            // Not a JSON edit request — fall back to showing the raw detail.
-        }
-
-        return text;
-    }
-
-    private static string TextOf(IReadOnlyList<ContentBlock> content)
-        => string.Concat(content.Select(b => b switch
-        {
-            TextContent t => t.Text,
-            DiffContent d => Diff.UnifiedDiff.Format(d.Path, d.OldText, d.NewText),
-            _ => string.Empty,
-        }));
+    private static string TextOf(IReadOnlyList<ContentBlock> content) => Diff.ToolDiff.TextOf(content);
 
     // Enter / Send: while a turn is running this QUEUES; when idle it sends immediately.
     private async Task SendAsync()
