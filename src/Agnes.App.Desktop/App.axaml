@@ -91,6 +91,9 @@
              chip, ghost, danger), press feedback and the keyboard focus ring. Loaded after Fluent and
              Dock so it wins over both. -->
         <StyleInclude Source="avares://Agnes.App.Desktop/Themes/AppStyles.axaml" />
+        <!-- Replaces Dock's tab-strip context menu (which is about docking) with one about the tab.
+             After Dock's theme so it wins. -->
+        <StyleInclude Source="avares://Agnes.App.Desktop/Themes/TabMenu.axaml" />
         <!-- Recycle document views per data item (by reference), so each document — and each document
              TYPE — gets its own view. Fixes Dock handing a newly-activated document of a different type
              the previously-built view (a SettingsTabView tab showed a SessionTabView). Applies to every

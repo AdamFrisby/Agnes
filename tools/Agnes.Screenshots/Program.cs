@@ -9,6 +9,8 @@ using Agnes.Ui.Core.Transcript;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
+using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 
 namespace Agnes.Screenshots;
@@ -299,6 +301,19 @@ public static class Program
 
         // 7) The browser-style tab strip (several tabs now open)
         Capture(window, "07-tabs.png");
+
+        // 7m) A tab's own right-click menu: session actions first, Dock's layout items demoted into a
+        // submenu. Opening it here is also the only check that the flyout actually builds — a bad
+        // binding in it would otherwise surface for the first time on a user's right-click.
+        if (window.GetVisualDescendants().OfType<DocumentTabStripItem>()
+                .FirstOrDefault(i => i.DataContext is SessionDocument) is { ContextFlyout: { } tabMenu } tab)
+        {
+            tabMenu.ShowAt(tab);
+            Settle(200);
+            Capture(window, "07m-tab-menu.png");
+            tabMenu.Hide();
+            Settle(120);
+        }
 
         // 7d) The status dashboard: what every session is doing, with anything waiting on a human on top.
         vm.OpenDashboardCommand.Execute(null);

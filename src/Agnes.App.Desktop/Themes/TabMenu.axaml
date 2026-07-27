@@ -1,0 +1,82 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dc="using:Dock.Avalonia.Controls"
+        xmlns:appconv="using:Agnes.App.Desktop.Converters"
+        xmlns:ctl="using:Agnes.App.Desktop.Controls">
+  <!--
+    The tab strip's right-click menu.
+
+    Dock's default is a menu about Dock: "New Vertical Document Dock", "Place Tabs on the Left",
+    "Layout Mode ▸ Tabbed/Mdi", "Close all tabs below". Those describe the docking framework, not the
+    thing you right-clicked, and they crowded out everything a person actually wants from a tab. So this
+    replaces it with the session actions from the tab's own "⋯" menu, and demotes — rather than drops —
+    Dock's own items into "Tab layout". Nothing is lost; it just stops being the first thing offered.
+
+    The session actions live on SessionDocument, so they bind against the tab's own DataContext and are
+    hidden on the utility tabs (Settings, Dashboard, Search, a plugin screen) rather than shown greyed —
+    a Settings tab offering "Fork" would be noise. The layout actions come from DockCommands, which
+    every tab can take because they need only the IDockable itself.
+  -->
+  <Styles.Resources>
+    <appconv:IsSessionTabConverter x:Key="IsSessionTab" />
+  </Styles.Resources>
+
+  <Style Selector="dc|DocumentTabStripItem">
+    <!-- One shared MenuFlyout, not a template per item: a flyout is not a Control, so it can be a
+         Setter value, and its DataContext follows whichever tab it was opened on. -->
+    <Setter Property="ContextFlyout">
+      <MenuFlyout>
+
+        <!-- What the tab is -->
+        <MenuItem Header="Rename / tag…" Command="{Binding BeginRenameCommand}"
+                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+        <MenuItem Header="Pin tab" Command="{Binding TogglePinCommand}"
+                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+        <Separator IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+
+        <!-- Where it goes, and what to start from it -->
+        <MenuItem Header="Open in new window" Command="{Binding MoveToWindowCommand}"
+                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+        <MenuItem Header="Duplicate (same session)" Command="{Binding DuplicateCommand}"
+                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+        <MenuItem Header="New session (same setup)" Command="{Binding SameSetupCommand}"
+                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+        <MenuItem Header="Fork (copy working folder)…" Command="{Binding ForkCommand}"
+                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+        <Separator IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+
+        <!-- Recovering a stuck agent is a tab-level act: you reach for it when the tab looks wrong. -->
+        <MenuItem Header="Restart agent" Command="{Binding Session.RestartAgentCommand}"
+                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}"
+                  ToolTip.Tip="Relaunch the agent process and resume the conversation — recovers a crashed or hung agent." />
+        <Separator IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+
+        <!-- Ending it. Archive keeps the session on the host; Close just drops the tab. -->
+        <MenuItem Header="Archive" Command="{Binding ArchiveCommand}"
+                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+        <MenuItem Header="Close" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.Close}" />
+        <MenuItem Header="Close other tabs" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseOthers}" />
+
+        <Separator />
+        <MenuItem Header="Tab layout">
+          <MenuItem Header="Float" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.Float}" />
+          <MenuItem Header="Float all" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.FloatAll}" />
+          <Separator />
+          <MenuItem Header="Close all tabs" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseAll}" />
+          <MenuItem Header="Close tabs to the left" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseLeft}" />
+          <MenuItem Header="Close tabs to the right" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseRight}" />
+          <Separator />
+          <MenuItem Header="New horizontal document dock" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.NewHorizontalDock}" />
+          <MenuItem Header="New vertical document dock" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.NewVerticalDock}" />
+          <Separator />
+          <MenuItem Header="Place tabs on the left" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.TabsLeft}" />
+          <MenuItem Header="Place tabs on the top" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.TabsTop}" />
+          <MenuItem Header="Place tabs on the right" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.TabsRight}" />
+          <Separator />
+          <MenuItem Header="Tabbed" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.LayoutTabbed}" />
+          <MenuItem Header="Floating windows (MDI)" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.LayoutMdi}" />
+        </MenuItem>
+      </MenuFlyout>
+    </Setter>
+  </Style>
+</Styles>
