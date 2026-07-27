@@ -79,14 +79,56 @@ publish_host() { # rid outdir
   find "$dir" -name '*.pdb' -delete 2>/dev/null || true
 }
 
+# macOS needs a real .app bundle, not a bare executable. Two things depend on it: Launch Services only
+# reads CFBundleURLTypes from a bundle on disk, so `agnes://` links are unclickable without one (a process
+# cannot register a scheme for itself the way it can on Linux and Windows); and a bare Mach-O binary gets no
+# Dock icon or app name. The bundle wraps the executable that was just published — same binary, moved.
+bundle_macos() { # dir arch
+  local dir="$1" arch="$2" app="$1/Agnes.app"
+  echo "==> mac bundle    · $arch → ${app#$ROOT/}"
+  rm -rf "$app"
+  mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+
+  # Everything the publish produced belongs inside the bundle; the app host must sit in Contents/MacOS.
+  find "$dir" -maxdepth 1 -mindepth 1 ! -name 'Agnes.app' ! -name 'host' -exec mv -f {} "$app/Contents/MacOS/" \;
+
+  cat > "$app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Agnes</string>
+  <key>CFBundleDisplayName</key><string>Agnes</string>
+  <key>CFBundleIdentifier</key><string>com.multitudal.agnes</string>
+  <key>CFBundleExecutable</key><string>Agnes</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>0.1.0</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <!-- What makes agnes:// links clickable on macOS. Launch Services reads this from the bundle; the app
+       receives the URL as an Apple Event, which Avalonia surfaces as a protocol activation. -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>Agnes pairing link</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>CFBundleURLSchemes</key><array><string>agnes</string></array>
+    </dict>
+  </array>
+</dict>
+</plist>
+PLIST
+}
+
 desktop_target() { publish_desktop "$1" "$2"; publish_host "$1" "$2"; }
 
 # ---- desktop OSes ----
 if want windows; then desktop_target win-x64   "$OUT/windows"; fi
 if want linux;   then desktop_target linux-x64 "$OUT/linux";   fi
 if want mac; then
-  desktop_target osx-arm64 "$OUT/mac/arm64"
-  desktop_target osx-x64   "$OUT/mac/x64"
+  desktop_target osx-arm64 "$OUT/mac/arm64"; bundle_macos "$OUT/mac/arm64" arm64
+  desktop_target osx-x64   "$OUT/mac/x64";   bundle_macos "$OUT/mac/x64"   x64
 fi
 
 # ---- android apk ----

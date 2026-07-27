@@ -56,11 +56,71 @@ public partial class App : Application
             // Fully guarded — a desktop environment without tray support just gets no tray, no crash.
             _tray = TrayPresence.TryInstall(this, desktop, window, viewModel);
 
+            WireLinkActivation(viewModel, window);
+
             _ = viewModel.RestoreAsync();
             _ = viewModel.CheckForUpdatesAsync();
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Connects every way an <c>agnes://</c> link can reach a running app to the one place that acts on it.
+    ///
+    /// There are three, because the platforms disagree about how a click is delivered. Linux and Windows start
+    /// the registered executable with the URL as an argument — which is this process on a cold start, and a
+    /// throwaway second process that forwards it (see <see cref="SingleInstance"/>) when Agnes is already up.
+    /// macOS delivers neither: Launch Services sends the bundle an Apple Event, which Avalonia surfaces as a
+    /// <see cref="ProtocolActivatedEventArgs"/> — so on that platform the argv paths never fire and this one
+    /// does all the work.
+    /// </summary>
+    private void WireLinkActivation(MainWindowViewModel viewModel, MainWindow window)
+    {
+        void Handle(string message)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                // Any activation brings the window forward: being handed a link and left behind another
+                // window would look like nothing happened.
+                window.Show();
+                if (window.WindowState == Avalonia.Controls.WindowState.Minimized)
+                {
+                    window.WindowState = Avalonia.Controls.WindowState.Normal;
+                }
+
+                window.Activate();
+
+                if (UriScheme.IsSchemeArgument(message))
+                {
+                    viewModel.HandleLink(message);
+                }
+            });
+        }
+
+        // Started by a click while nothing was running.
+        if (Program.LaunchLink is { Length: > 0 } launched)
+        {
+            Handle(launched);
+        }
+
+        // A later click, forwarded by the second launch that the instance gate turned away.
+        if (Program.Instance is { } instance)
+        {
+            instance.MessageReceived += Handle;
+        }
+
+        // macOS, and any platform where Avalonia gets there first.
+        if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
+        {
+            activatable.Activated += (_, e) =>
+            {
+                if (e is ProtocolActivatedEventArgs { Kind: ActivationKind.OpenUri } protocolActivated)
+                {
+                    Handle(protocolActivated.Uri.ToString());
+                }
+            };
+        }
     }
 
     private static void RestoreWindowGeometry(MainWindow window, Persistence.AppSettings settings)

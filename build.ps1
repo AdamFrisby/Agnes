@@ -70,6 +70,46 @@ function Publish-Host([string] $rid, [string] $dir) {
     Get-ChildItem -Recurse -Path $hd -Filter *.pdb -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 
+# macOS needs a real .app bundle, not a bare executable. Launch Services only reads CFBundleURLTypes from a
+# bundle on disk, so `agnes://` links are unclickable without one (unlike Linux and Windows, a process cannot
+# register a scheme for itself on macOS); a bare Mach-O binary also gets no Dock icon or app name.
+function Bundle-MacOS([string] $dir, [string] $arch) {
+    $app = Join-Path $dir 'Agnes.app'
+    Write-Host "==> mac bundle    · $arch -> $app"
+    if (Test-Path $app) { Remove-Item -Recurse -Force $app }
+    New-Item -ItemType Directory -Force -Path (Join-Path $app 'Contents/MacOS') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $app 'Contents/Resources') | Out-Null
+
+    Get-ChildItem -Path $dir -Exclude 'Agnes.app', 'host' |
+        Move-Item -Destination (Join-Path $app 'Contents/MacOS') -Force
+
+    @'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Agnes</string>
+  <key>CFBundleDisplayName</key><string>Agnes</string>
+  <key>CFBundleIdentifier</key><string>com.multitudal.agnes</string>
+  <key>CFBundleExecutable</key><string>Agnes</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>0.1.0</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>Agnes pairing link</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>CFBundleURLSchemes</key><array><string>agnes</string></array>
+    </dict>
+  </array>
+</dict>
+</plist>
+'@ | Set-Content -Path (Join-Path $app 'Contents/Info.plist') -Encoding UTF8
+}
+
 function Desktop-Target([string] $rid, [string] $dir) {
     Publish-Desktop $rid $dir
     Publish-Host $rid $dir
@@ -79,8 +119,8 @@ function Desktop-Target([string] $rid, [string] $dir) {
 if (Want 'windows') { Desktop-Target 'win-x64'   (Join-Path $Out 'windows') }
 if (Want 'linux')   { Desktop-Target 'linux-x64' (Join-Path $Out 'linux') }
 if (Want 'mac') {
-    Desktop-Target 'osx-arm64' (Join-Path $Out 'mac/arm64')
-    Desktop-Target 'osx-x64'   (Join-Path $Out 'mac/x64')
+    Desktop-Target 'osx-arm64' (Join-Path $Out 'mac/arm64'); Bundle-MacOS (Join-Path $Out 'mac/arm64') 'arm64'
+    Desktop-Target 'osx-x64'   (Join-Path $Out 'mac/x64');   Bundle-MacOS (Join-Path $Out 'mac/x64')   'x64'
 }
 
 # ---- android apk ----
