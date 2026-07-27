@@ -29,7 +29,8 @@
                         <TextBlock Text="{Binding Header}" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding StatusText}" Opacity="0.6" />
                     </StackPanel>
-                    <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Opacity="0.8"
+                    <!-- The diff for an edit, not the "… has been updated successfully" receipt. -->
+                    <TextBlock Text="{Binding PreviewBody}" TextWrapping="Wrap" Opacity="0.8"
                                Margin="0,4,0,0" FontFamily="Consolas" FontSize="12" />
                 </StackPanel>
             </Border>
@@ -60,6 +61,10 @@
                 <StackPanel>
                     <TextBlock Text="Permission requested" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding Title}" TextWrapping="Wrap" Margin="0,2,0,0" />
+                    <!-- What is actually being approved, in full — never a clipped command. -->
+                    <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Margin="0,4,0,0"
+                               FontFamily="Consolas" FontSize="12"
+                               Visibility="{Binding Detail, Converter={StaticResource ObjectToVisibility}}" />
                     <TextBlock Text="{Binding ResolutionText}" Opacity="0.7" Margin="0,4,0,0"
                                Visibility="{Binding ResolutionText, Converter={StaticResource ObjectToVisibility}}" />
                 </StackPanel>

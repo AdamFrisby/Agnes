@@ -74,7 +74,9 @@ public sealed partial class SessionPageViewModel : PageViewModel
         {
             if (item is { HasDetail: true })
             {
-                _shell.ShowSheet(new DetailSheetViewModel(_shell, item.Header, item.Detail));
+                // The diff for an edit, not the "… has been updated successfully" receipt behind it —
+                // and the command itself, which the one-line row above could only show the start of.
+                _shell.ShowSheet(new DetailSheetViewModel(_shell, item.KindLabel, item.PreviewBody, command: item.Title));
             }
         });
         OpenMessageCommand = new RelayCommand<MessageBubbleItem>(item =>

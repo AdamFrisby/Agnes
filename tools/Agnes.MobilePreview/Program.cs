@@ -91,7 +91,7 @@ public static class Program
             // 4) A diff, rendered line by line.
             if (entry.Session?.ModifiedFiles.FirstOrDefault() is { } file)
             {
-                shell.ShowSheet(new DetailSheetViewModel(shell, file.Name, file.Detail));
+                shell.ShowSheet(new DetailSheetViewModel(shell, file.KindLabel, file.Detail, command: file.Name));
                 Settle(500);
                 Shot(window, "05-diff");
             }

@@ -313,9 +313,20 @@
               <TextBlock Text="Needs your approval" Classes="caption" FontWeight="Bold"
                          Foreground="{DynamicResource Warning}" VerticalAlignment="Center" />
             </StackPanel>
-            <TextBlock Text="{Binding Permission.Title}" Classes="strong" Margin="0,3,0,0" />
+            <TextBlock Text="{Binding Permission.Title}" Classes="strong" Margin="0,3,0,0" TextWrapping="Wrap" />
+
+            <!-- Approving from a phone is still approving: the command is shown in full, wrapped, and
+                 scrolls within its own box rather than being clipped to fit the card. -->
+            <Border IsVisible="{Binding Permission.HasDetail}" MaxHeight="150" Margin="0,4"
+                    CornerRadius="{StaticResource RadiusMd}" Background="{DynamicResource Surface2}"
+                    BorderBrush="{DynamicResource Border}" BorderThickness="1" Padding="9,7">
+              <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <SelectableTextBlock Text="{Binding Permission.Detail}" Classes="mono" TextWrapping="Wrap" />
+              </ScrollViewer>
+            </Border>
+
             <!-- The two facts that decide the answer: what it touches, and whether it can be undone. -->
-            <TextBlock Text="{Binding Permission.ResourceText}" Classes="mono"
+            <TextBlock Text="{Binding Permission.ResourceText}" Classes="mono" TextWrapping="Wrap"
                        Foreground="{DynamicResource TextDim}" Margin="0,2,0,0" />
             <TextBlock Text="{Binding Permission.ReversibleText}" Classes="caption"
                        Foreground="{DynamicResource Danger}" IsVisible="{Binding !Permission.Reversible}" />

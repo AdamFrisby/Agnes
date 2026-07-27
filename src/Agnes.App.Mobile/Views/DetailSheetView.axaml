@@ -8,9 +8,20 @@
     A tool's output, a file's diff, or a long message. Three renderings because agent output really does
     arrive in three shapes, and a diff shown as plain text is unreadable on a narrow screen.
   -->
-  <Grid RowDefinitions="*,Auto">
+  <Grid RowDefinitions="Auto,*,Auto">
 
-    <ScrollViewer Grid.Row="0" Padding="0,8,0,8">
+    <!-- The command this output came from, in full and wrapped. The sheet's title bar is a single
+         ellipsized line, so without this a long shell command is unreadable on a phone. -->
+    <Border Grid.Row="0" IsVisible="{Binding HasCommand}" Margin="20,8,20,4" MaxHeight="140"
+            CornerRadius="{StaticResource RadiusMd}" Background="{DynamicResource Surface2}"
+            BorderBrush="{DynamicResource Border}" BorderThickness="1" Padding="10,8">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <SelectableTextBlock Text="{Binding Command}" Classes="mono" TextWrapping="Wrap"
+                             Foreground="{DynamicResource TextDim}" />
+      </ScrollViewer>
+    </Border>
+
+    <ScrollViewer Grid.Row="1" Padding="0,8,0,8">
       <Panel>
         <!-- diff: horizontally scrollable, because wrapping a diff destroys it -->
         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
@@ -42,7 +53,7 @@
       </Panel>
     </ScrollViewer>
 
-    <Border Grid.Row="1" Padding="16,10,16,20">
+    <Border Grid.Row="2" Padding="16,10,16,20">
       <Button Theme="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
               Command="{Binding CopyCommand}">
         <StackPanel Orientation="Horizontal" Spacing="9">

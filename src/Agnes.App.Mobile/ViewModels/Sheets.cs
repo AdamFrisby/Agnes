@@ -19,11 +19,12 @@ public sealed partial class DetailSheetViewModel : SheetViewModel
 {
     private readonly IAppShell _shell;
 
-    public DetailSheetViewModel(IAppShell shell, string title, string body, bool markdown = false)
+    public DetailSheetViewModel(IAppShell shell, string title, string body, bool markdown = false, string? command = null)
     {
         _shell = shell;
         Title = title;
         Body = body;
+        Command = command;
         IsMarkdown = markdown && !DiffParser.LooksLikeDiff(body);
         if (!IsMarkdown && DiffParser.LooksLikeDiff(body))
         {
@@ -39,6 +40,12 @@ public sealed partial class DetailSheetViewModel : SheetViewModel
     public override double HeightFraction => 0.88;
 
     public string Body { get; }
+
+    /// <summary>The command or path this output came from, shown in full above it — the sheet's title bar
+    /// is one ellipsized line, so a long command is otherwise unreadable on a phone.</summary>
+    public string? Command { get; }
+
+    public bool HasCommand => !string.IsNullOrWhiteSpace(Command);
 
     public bool IsDiff { get; }
 
@@ -83,7 +90,7 @@ public sealed partial class ChangedFilesSheetViewModel : SheetViewModel
         {
             if (entry is not null)
             {
-                _shell.ShowSheet(new DetailSheetViewModel(_shell, entry.Name, entry.Detail));
+                _shell.ShowSheet(new DetailSheetViewModel(_shell, entry.KindLabel, entry.Detail, command: entry.Name));
             }
         });
     }
@@ -112,7 +119,7 @@ public sealed partial class ToolsSheetViewModel : SheetViewModel
         {
             if (entry is not null)
             {
-                _shell.ShowSheet(new DetailSheetViewModel(_shell, entry.Name, entry.Detail));
+                _shell.ShowSheet(new DetailSheetViewModel(_shell, entry.KindLabel, entry.Detail, command: entry.Name));
             }
         });
     }
