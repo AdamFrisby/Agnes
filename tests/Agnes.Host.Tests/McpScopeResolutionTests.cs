@@ -58,23 +58,22 @@ public class McpScopeResolutionTests : IDisposable
     }
 
     [Fact]
-    public void Installing_a_preset_persists_a_matching_server()
+    public async Task Installing_a_catalog_entry_persists_a_matching_server()
     {
-        // A preset template (as the curated provider ships them) -> the normal add-server request path.
-        var template = new CuratedMcpPresetProvider().Presets.First(p => p.Id == "playwright");
+        // A curated catalog entry (as the built-in provider ships them) -> the normal add-server request path.
+        var entry = (await new CuratedMcpCatalogProvider().ListAsync()).First(e => e.Id == "playwright");
 
         var reg = New();
         var installed = reg.Add(new McpServerRequest(
-            template.Name, template.RunAt, template.Enabled, template.Transport,
-            template.Command, template.Args, template.Env, template.Url, template.BearerTokenEnv));
+            entry.Name, "host", Enabled: true, "stdio", Command: entry.Command, Args: entry.LaunchArgs));
 
         Assert.False(string.IsNullOrWhiteSpace(installed.Id));
-        Assert.Equal(template.Name, installed.Name);
-        Assert.Equal(template.Command, installed.Command);
-        Assert.Equal(template.Args, installed.Args);
+        Assert.Equal(entry.Name, installed.Name);
+        Assert.Equal(entry.Command, installed.Command);
+        Assert.Equal(entry.LaunchArgs, installed.Args);
 
         // Persisted: a fresh registry over the same file sees it.
-        Assert.Contains(New().List(), s => s.Name == template.Name && s.Command == template.Command);
+        Assert.Contains(New().List(), s => s.Name == entry.Name && s.Command == entry.Command);
     }
 
     [Fact]
