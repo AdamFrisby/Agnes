@@ -303,15 +303,19 @@ public static class Program
         Capture(window, "07-tabs.png");
 
         // 7m) A tab's own right-click menu: session actions first, Dock's layout items demoted into a
-        // submenu. Opening it here is also the only check that the flyout actually builds — a bad
-        // binding in it would otherwise surface for the first time on a user's right-click.
+        // submenu. Opened through DocumentContextMenu — the property Dock actually shows on right-click,
+        // so this also catches the menu being attached to a property nothing reads.
         if (window.GetVisualDescendants().OfType<DocumentTabStripItem>()
-                .FirstOrDefault(i => i.DataContext is SessionDocument) is { ContextFlyout: { } tabMenu } tab)
+                .FirstOrDefault(i => i.DataContext is SessionDocument) is { DocumentContextMenu: { } tabMenu } tab)
         {
-            tabMenu.ShowAt(tab);
+            // Dock hands DocumentContextMenu down to an element inside its template, and a ContextMenu
+            // refuses to open over anything but the control it's attached to — so find that one.
+            var owner = tab.GetSelfAndVisualDescendants().OfType<Control>()
+                .First(c => ReferenceEquals(c.ContextMenu, tabMenu));
+            tabMenu.Open(owner);
             Settle(200);
             Capture(window, "07m-tab-menu.png");
-            tabMenu.Hide();
+            tabMenu.Close();
             Settle(120);
         }
 

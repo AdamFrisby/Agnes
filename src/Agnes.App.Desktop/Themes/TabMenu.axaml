@@ -22,61 +22,65 @@
   </Styles.Resources>
 
   <Style Selector="dc|DocumentTabStripItem">
-    <!-- One shared MenuFlyout, not a template per item: a flyout is not a Control, so it can be a
-         Setter value, and its DataContext follows whichever tab it was opened on. -->
-    <Setter Property="ContextFlyout">
-      <MenuFlyout>
+    <!-- DocumentContextMenu, not ContextFlyout: Dock reads its own styled property here and ignores
+         the standard one, so setting ContextFlyout leaves the default menu in place and looks like the
+         style never applied. And a Template, not a bare value — a ContextMenu is a Control, so each tab
+         needs its own instance rather than one shared across the strip. -->
+    <Setter Property="DocumentContextMenu">
+      <Template>
+        <ContextMenu>
 
-        <!-- What the tab is -->
-        <MenuItem Header="Rename / tag…" Command="{Binding BeginRenameCommand}"
-                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
-        <MenuItem Header="Pin tab" Command="{Binding TogglePinCommand}"
-                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
-        <Separator IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <!-- What the tab is -->
+          <MenuItem Header="Rename / tag…" Command="{Binding BeginRenameCommand}"
+                    IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <MenuItem Header="Pin tab" Command="{Binding TogglePinCommand}"
+                    IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <Separator IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
 
-        <!-- Where it goes, and what to start from it -->
-        <MenuItem Header="Open in new window" Command="{Binding MoveToWindowCommand}"
-                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
-        <MenuItem Header="Duplicate (same session)" Command="{Binding DuplicateCommand}"
-                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
-        <MenuItem Header="New session (same setup)" Command="{Binding SameSetupCommand}"
-                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
-        <MenuItem Header="Fork (copy working folder)…" Command="{Binding ForkCommand}"
-                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
-        <Separator IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <!-- Where it goes, and what to start from it -->
+          <MenuItem Header="Open in new window" Command="{Binding MoveToWindowCommand}"
+                    IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <MenuItem Header="Duplicate (same session)" Command="{Binding DuplicateCommand}"
+                    IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <MenuItem Header="New session (same setup)" Command="{Binding SameSetupCommand}"
+                    IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <MenuItem Header="Fork (copy working folder)…" Command="{Binding ForkCommand}"
+                    IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <Separator IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
 
-        <!-- Recovering a stuck agent is a tab-level act: you reach for it when the tab looks wrong. -->
-        <MenuItem Header="Restart agent" Command="{Binding Session.RestartAgentCommand}"
-                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}"
-                  ToolTip.Tip="Relaunch the agent process and resume the conversation — recovers a crashed or hung agent." />
-        <Separator IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <!-- Recovering a stuck agent is a tab-level act: you reach for it when the tab looks wrong. -->
+          <MenuItem Header="Restart agent" Command="{Binding Session.RestartAgentCommand}"
+                    IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}"
+                    ToolTip.Tip="Relaunch the agent process and resume the conversation — recovers a crashed or hung agent." />
+          <Separator IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
 
-        <!-- Ending it. Archive keeps the session on the host; Close just drops the tab. -->
-        <MenuItem Header="Archive" Command="{Binding ArchiveCommand}"
-                  IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
-        <MenuItem Header="Close" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.Close}" />
-        <MenuItem Header="Close other tabs" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseOthers}" />
+          <!-- Ending it. Archive keeps the session on the host; Close just drops the tab. -->
+          <MenuItem Header="Archive" Command="{Binding ArchiveCommand}"
+                    IsVisible="{Binding ., Converter={StaticResource IsSessionTab}}" />
+          <MenuItem Header="Close" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.Close}" />
+          <MenuItem Header="Close other tabs" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseOthers}" />
 
-        <Separator />
-        <MenuItem Header="Tab layout">
-          <MenuItem Header="Float" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.Float}" />
-          <MenuItem Header="Float all" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.FloatAll}" />
           <Separator />
-          <MenuItem Header="Close all tabs" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseAll}" />
-          <MenuItem Header="Close tabs to the left" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseLeft}" />
-          <MenuItem Header="Close tabs to the right" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseRight}" />
-          <Separator />
-          <MenuItem Header="New horizontal document dock" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.NewHorizontalDock}" />
-          <MenuItem Header="New vertical document dock" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.NewVerticalDock}" />
-          <Separator />
-          <MenuItem Header="Place tabs on the left" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.TabsLeft}" />
-          <MenuItem Header="Place tabs on the top" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.TabsTop}" />
-          <MenuItem Header="Place tabs on the right" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.TabsRight}" />
-          <Separator />
-          <MenuItem Header="Tabbed" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.LayoutTabbed}" />
-          <MenuItem Header="Floating windows (MDI)" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.LayoutMdi}" />
-        </MenuItem>
-      </MenuFlyout>
+          <MenuItem Header="Tab layout">
+            <MenuItem Header="Float" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.Float}" />
+            <MenuItem Header="Float all" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.FloatAll}" />
+            <Separator />
+            <MenuItem Header="Close all tabs" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseAll}" />
+            <MenuItem Header="Close tabs to the left" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseLeft}" />
+            <MenuItem Header="Close tabs to the right" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.CloseRight}" />
+            <Separator />
+            <MenuItem Header="New horizontal document dock" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.NewHorizontalDock}" />
+            <MenuItem Header="New vertical document dock" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.NewVerticalDock}" />
+            <Separator />
+            <MenuItem Header="Place tabs on the left" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.TabsLeft}" />
+            <MenuItem Header="Place tabs on the top" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.TabsTop}" />
+            <MenuItem Header="Place tabs on the right" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.TabsRight}" />
+            <Separator />
+            <MenuItem Header="Tabbed" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.LayoutTabbed}" />
+            <MenuItem Header="Floating windows (MDI)" CommandParameter="{Binding}" Command="{x:Static ctl:DockCommands.LayoutMdi}" />
+          </MenuItem>
+        </ContextMenu>
+      </Template>
     </Setter>
   </Style>
 </Styles>
