@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
              x:Class="Agnes.App.Desktop.Views.DashboardView">
 
     <!-- DataContext is a DashboardDocument; narrow it to its view model so bindings read directly. -->
@@ -34,7 +35,7 @@
                     AutomationProperties.Name="Waiting on you">
                 <StackPanel Spacing="12">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="⚠" Foreground="{DynamicResource StatusAttention}" FontSize="15" VerticalAlignment="Center" />
+                        <ic:SymbolIcon Symbol="Warning" IconVariant="Filled" Classes="tone attention" FontSize="17" />
                         <TextBlock Text="WAITING ON YOU" Classes="section" Foreground="{DynamicResource StatusAttention}"
                                    VerticalAlignment="Center" />
                     </StackPanel>

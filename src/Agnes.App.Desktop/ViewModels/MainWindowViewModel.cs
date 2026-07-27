@@ -13,6 +13,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using FluentIcons.Common;
 
 namespace Agnes.App.Desktop.ViewModels;
 
@@ -187,25 +188,25 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SettingsCategories =
         [
             // This device (client-global)
-            new SettingsCategoryVm("appearance", "Appearance", "🎨", "theme dark light system ui scale zoom accessibility reduce motion font density"),
+            new SettingsCategoryVm("appearance", "Appearance", Symbol.PaintBrush, "theme dark light system ui scale zoom accessibility reduce motion font density"),
             // Keywords come from the shortcut catalogue itself, so searching "palette" or "interrupt" finds
             // this page — the words a user actually reaches for aren't "keyboard".
-            new SettingsCategoryVm("keyboard", "Keyboard", "⌨", KeyboardShortcuts.SearchKeywords),
+            new SettingsCategoryVm("keyboard", "Keyboard", Symbol.Keyboard, KeyboardShortcuts.SearchKeywords),
             // The connected host
-            new SettingsCategoryVm("github", "GitHub accounts", "⑂", "github git push credential token connect app scope repo installation secret account"),
-            new SettingsCategoryVm("devices", "Devices", "🔑", "paired devices pairing token revoke auth access per-device"),
-            new SettingsCategoryVm("sandboxes", "Sandboxes", "📦", "sandbox vm incus running stopped resume restart delete reap orphan cleanup lifecycle"),
-            new SettingsCategoryVm("mcp", "MCP servers", "🔌", "mcp model context protocol server tool preset install curated playwright github context7 scope workspace host preview effective strict"),
+            new SettingsCategoryVm("github", "GitHub accounts", Symbol.BranchFork, "github git push credential token connect app scope repo installation secret account"),
+            new SettingsCategoryVm("devices", "Devices", Symbol.Key, "paired devices pairing token revoke auth access per-device"),
+            new SettingsCategoryVm("sandboxes", "Sandboxes", Symbol.Box, "sandbox vm incus running stopped resume restart delete reap orphan cleanup lifecycle"),
+            new SettingsCategoryVm("mcp", "MCP servers", Symbol.PlugConnected, "mcp model context protocol server tool preset install curated playwright github context7 scope workspace host preview effective strict"),
             // Per-project
-            new SettingsCategoryVm("projects", "Projects", "📁", "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
-            new SettingsCategoryVm("plugins", "Plugins", "🧩", "plugin plugins extension nuget install uninstall browse marketplace capability consent provider adapter transport voice notification enable disable configure"),
+            new SettingsCategoryVm("projects", "Projects", Symbol.Folder, "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
+            new SettingsCategoryVm("plugins", "Plugins", Symbol.PuzzlePiece, "plugin plugins extension nuget install uninstall browse marketplace capability consent provider adapter transport voice notification enable disable configure"),
             // Help
-            new SettingsCategoryVm("bugreport", "Report a bug", "🐞", "bug report issue github feedback problem crash diagnostics support help"),
-            new SettingsCategoryVm("prompts", "Prompts", "📝", "prompt prompts template templates slash token library saved snippet reuse review insert send"),
-            new SettingsCategoryVm("profiles", "Launch profiles", "🚀", "launch profile profiles preset saved reusable session config agent permissions sandbox model new session"),
+            new SettingsCategoryVm("bugreport", "Report a bug", Symbol.Bug, "bug report issue github feedback problem crash diagnostics support help"),
+            new SettingsCategoryVm("prompts", "Prompts", Symbol.Note, "prompt prompts template templates slash token library saved snippet reuse review insert send"),
+            new SettingsCategoryVm("profiles", "Launch profiles", Symbol.Rocket, "launch profile profiles preset saved reusable session config agent permissions sandbox model new session"),
             // "friend" stays in the keywords though it's gone from the UI: it's what this was called, and
             // someone who remembers the old name should still find the page rather than conclude it's gone.
-            new SettingsCategoryVm("collaborators", "Collaborators", "🤝", "collaborator collaborators friend friends social contact colleague github handle org organization team eligible grant access share revoke"),
+            new SettingsCategoryVm("collaborators", "Collaborators", Symbol.Handshake, "collaborator collaborators friend friends social contact colleague github handle org organization team eligible grant access share revoke"),
         ];
         SettingsCategories[0].IsSelected = true;
         SetNewMcpRunAtCommand = new RelayCommand<string>(v => { if (v is not null) { NewMcpRunAt = v; } });

@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ic="using:FluentIcons.Avalonia">
   <!--
     App-wide styles for the desktop head, built on the Multitudal tokens in Tokens.axaml.
 
@@ -271,6 +272,58 @@
   </Style>
   <Style Selector="TextBlock.tone.error">
     <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+  </Style>
+
+  <!-- ================= icons ================= -->
+  <!--
+    Icons are FluentIcons `SymbolIcon`s over Microsoft's fluentui-system-icons, never emoji or a
+    stand-in text glyph (▦, ⋯, ✕). Two reasons beyond taste: an emoji is a colour bitmap on most
+    platforms, so it ignores `Foreground` and can't take a status hue; and none of the three brand
+    fonts covers emoji or the geometric-shapes block, so those glyphs fell through to whatever the OS
+    happened to ship — on a bare Linux box, tofu boxes.
+
+    `Foreground` is inherited, like a TextBlock's, so an icon takes the colour of the row or button it
+    sits in and wears the same roles as everything else — which is why the base style deliberately does
+    *not* set it. `FontSize` is the opposite case: FluentIcons re-registers it non-inheriting at 20px,
+    so it needs a default here, and 16px is what this app uses inline beside 11–13px label text.
+
+    Variant is a meaning, not a decoration: Regular for an affordance (close, search, expand),
+    Filled for a state that is *on* (pinned, favourited, autonomous, a warning that is firing).
+    `IconVariant="Color"` is deliberately unused — its COLRv1 rendering is unreliable on Skia, and a
+    multi-colour glyph would break one-meaning-per-hue anyway.
+  -->
+  <Style Selector="ic|SymbolIcon">
+    <Setter Property="FontSize" Value="16" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="ic|SymbolIcon.tone">
+    <Setter Property="Foreground" Value="{DynamicResource StatusIdle}" />
+  </Style>
+  <Style Selector="ic|SymbolIcon.tone.working">
+    <Setter Property="Foreground" Value="{DynamicResource StatusWorking}" />
+  </Style>
+  <Style Selector="ic|SymbolIcon.tone.done">
+    <Setter Property="Foreground" Value="{DynamicResource StatusDone}" />
+  </Style>
+  <Style Selector="ic|SymbolIcon.tone.attention">
+    <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+  </Style>
+  <Style Selector="ic|SymbolIcon.tone.error">
+    <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+  </Style>
+  <!-- Selection and brand, which are violet and never a status. -->
+  <Style Selector="ic|SymbolIcon.accent">
+    <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+  </Style>
+  <!-- A glyph standing in for a whole card or row heading, rather than sitting inline with text. -->
+  <Style Selector="ic|SymbolIcon.lead">
+    <Setter Property="FontSize" Value="20" />
+    <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+  </Style>
+  <!-- An expander's chevron / a list's leading marker: quieter and smaller than an inline icon. -->
+  <Style Selector="ic|SymbolIcon.hint">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
   </Style>
 
   <!-- The context meter ramps as the window fills: healthy → getting tight → nearly out. -->

@@ -3,6 +3,7 @@ using Agnes.Abstractions;
 using Agnes.App.Desktop.Persistence;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FluentIcons.Common;
 
 namespace Agnes.App.Desktop.ViewModels;
 
@@ -173,7 +174,7 @@ public sealed partial class ModelChoice : ObservableObject
     public bool IsAvailable { get; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(FavoriteGlyph))]
+    [NotifyPropertyChangedFor(nameof(FavoriteVariant))]
     private bool _isFavorite;
 
     /// <summary>Highlighted as the chosen model (one at a time across the list).</summary>
@@ -182,7 +183,9 @@ public sealed partial class ModelChoice : ObservableObject
 
     public IRelayCommand ToggleFavoriteCommand { get; }
 
-    public string FavoriteGlyph => IsFavorite ? "★" : "☆";
+    /// <summary>Favourited is the same star either way — filled when it's on, outline when it isn't. The
+    /// state is the variant, not a different character, so the two can't drift in size or baseline.</summary>
+    public IconVariant FavoriteVariant => IsFavorite ? IconVariant.Filled : IconVariant.Regular;
 }
 
 /// <summary>An agent option on the new-tab agent picker. Selectable — picking it highlights the row;

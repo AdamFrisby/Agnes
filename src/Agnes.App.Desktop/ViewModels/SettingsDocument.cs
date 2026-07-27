@@ -6,6 +6,7 @@ using Agnes.Abstractions;
 using Agnes.Protocol;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Dock.Model.Mvvm.Controls;
+using FluentIcons.Common;
 
 namespace Agnes.App.Desktop.ViewModels;
 
@@ -53,7 +54,7 @@ public sealed partial class SettingsCategoryVm : ObservableObject
 {
     private readonly string _keywords;
 
-    public SettingsCategoryVm(string id, string label, string icon, string keywords)
+    public SettingsCategoryVm(string id, string label, Symbol icon, string keywords)
     {
         Id = id;
         Label = label;
@@ -63,7 +64,10 @@ public sealed partial class SettingsCategoryVm : ObservableObject
 
     public string Id { get; }
     public string Label { get; }
-    public string Icon { get; }
+
+    /// <summary>The category's glyph, named from the icon catalogue rather than carried as a character,
+    /// so the compiler checks it and it takes the row's foreground like the label does.</summary>
+    public Symbol Icon { get; }
 
     [ObservableProperty] private bool _isVisible = true;
     [ObservableProperty] private bool _isSelected;

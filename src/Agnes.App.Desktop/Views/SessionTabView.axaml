@@ -1,6 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:tr="using:Agnes.Ui.Core.Transcript"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:icx="using:FluentIcons.Avalonia.Markup"
              xmlns:vm="using:Agnes.Ui.Core.ViewModels"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctb="using:ColorTextBlock.Avalonia"
@@ -142,7 +144,7 @@
                                 HorizontalAlignment="Left" ClipToBounds="True">
                         <Border Classes="dot" Classes.on="{Binding IsConnected}" Width="8" Height="8"
                                 CornerRadius="4" VerticalAlignment="Center" />
-                        <TextBlock Text="★" Foreground="{DynamicResource Accent}" FontSize="12" VerticalAlignment="Center"
+                        <ic:SymbolIcon Symbol="Pin" IconVariant="Filled" Foreground="{DynamicResource Accent}" FontSize="14"
                                    IsVisible="{Binding Pinned}" ToolTip.Tip="Pinned" />
                         <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
                                    VerticalAlignment="Center" MaxWidth="240" TextTrimming="CharacterEllipsis"
@@ -168,7 +170,7 @@
                                             BorderThickness="1" CornerRadius="10" Padding="8,1">
                                         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding}" Foreground="{DynamicResource FgDim}" FontSize="10" />
-                                            <Button Content="✕" Command="{Binding $parent[ItemsControl].DataContext.RemoveTagCommand}"
+                                            <Button Content="{icx:SymbolIcon Symbol=Dismiss}" Command="{Binding $parent[ItemsControl].DataContext.RemoveTagCommand}"
                                                     CommandParameter="{Binding}" Background="Transparent" Foreground="{DynamicResource FgFaint}"
                                                     BorderThickness="0" Padding="0" FontSize="9" Cursor="Hand"
                                                     AutomationProperties.Name="Remove tag" />
@@ -218,7 +220,10 @@
                                 BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="6" Padding="9,3"
                                 VerticalAlignment="Center" AutomationProperties.Name="Autonomy"
                                 ToolTip.Tip="This session runs tool calls without asking. Click to change how it asks.">
-                            <TextBlock Text="⚡ autonomous" Foreground="{DynamicResource Accent}" FontSize="11" FontWeight="SemiBold" />
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <ic:SymbolIcon Symbol="Flash" IconVariant="Filled" Foreground="{DynamicResource Accent}" FontSize="13" />
+                                    <TextBlock Text="autonomous" Foreground="{DynamicResource Accent}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
                             <Button.Flyout>
                                 <Flyout Placement="Bottom">
                                     <StackPanel Width="300" Spacing="10" DataContext="{Binding Session}">
@@ -257,7 +262,10 @@
                         <!-- Sandbox: isolation status + lifecycle -->
                         <Button Classes="chip" IsVisible="{Binding Session.HasSandbox}" Padding="9,3" FontSize="11"
                                 AutomationProperties.Name="Sandbox">
-                            <TextBlock Text="{Binding Session.SandboxSummary}" />
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <ic:SymbolIcon Symbol="Shield" FontSize="13" />
+                                <TextBlock Text="{Binding Session.SandboxSummary}" VerticalAlignment="Center" />
+                            </StackPanel>
                             <Button.Flyout>
                                 <Flyout Placement="Bottom">
                                     <StackPanel Width="280" Spacing="8">
@@ -288,7 +296,7 @@
                         <Button Classes="chip" IsVisible="{Binding Session.HasGit}" Padding="9,3" FontSize="11"
                                 AutomationProperties.Name="Git">
                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                <TextBlock Text="⎇" FontSize="12" />
+                                <ic:SymbolIcon Symbol="Branch" FontSize="14" />
                                 <TextBlock Text="{Binding Session.GitBranch}" />
                                 <Border Width="6" Height="6" CornerRadius="3" Background="{DynamicResource Accent}"
                                         VerticalAlignment="Center" IsVisible="{Binding Session.GitDirty}" />
@@ -411,7 +419,7 @@
                             </Button.Flyout>
                         </Button>
 
-                        <Button Classes="chip" Content="⋯" Padding="9,2" FontSize="12"
+                        <Button Classes="chip" Content="{icx:SymbolIcon Symbol=MoreHorizontal}" Padding="9,2" FontSize="12"
                                 VerticalContentAlignment="Center" IsVisible="{Binding IsLive}" AutomationProperties.Name="Session menu">
                             <Button.Flyout>
                                 <MenuFlyout>
@@ -501,7 +509,7 @@
                                         </StackPanel>
                                     </Button>
                                     <!-- Remove a saved host (built-in hosts have no Forget command → hidden). Defect #7. -->
-                                    <Button Command="{Binding Forget}" IsVisible="{Binding CanForget}" Content="✕"
+                                    <Button Command="{Binding Forget}" IsVisible="{Binding CanForget}" Content="{icx:SymbolIcon Symbol=Dismiss}"
                                             HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0"
                                             Background="Transparent" Foreground="{DynamicResource FgFaint}" BorderThickness="0"
                                             Padding="7,3" FontSize="12" Cursor="Hand"
@@ -586,7 +594,12 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel MaxWidth="500" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
                     <Button Command="{Binding BackCommand}" HorizontalAlignment="Left" Background="Transparent"
-                            Foreground="{DynamicResource FgDim}" BorderThickness="0" Padding="0" FontSize="12" Content="‹ Hosts" />
+                            Foreground="{DynamicResource FgDim}" BorderThickness="0" Padding="0" FontSize="12">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <ic:SymbolIcon Symbol="ChevronLeft" FontSize="13" />
+                            <TextBlock Text="Hosts" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <StackPanel Spacing="2">
                         <TextBlock Text="Configure session" Classes="display" FontSize="22"
                                    Foreground="{DynamicResource Fg}" HorizontalAlignment="Center" />
@@ -669,7 +682,7 @@
                     <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="10" Padding="14,10">
                         <Grid ColumnDefinitions="Auto,*,Auto">
-                            <TextBlock Grid.Column="0" Text="📦" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <ic:SymbolIcon Grid.Column="0" Classes="lead" Symbol="Box" Margin="0,0,10,0" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" Text="Sandbox" />
@@ -697,7 +710,7 @@
                     <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="10" Padding="14,10">
                         <Grid ColumnDefinitions="Auto,*,Auto" >
-                            <TextBlock Grid.Column="0" Text="🛡" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <ic:SymbolIcon Grid.Column="0" Classes="lead" Symbol="Shield" Margin="0,0,10,0" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" Text="Permissions" />
@@ -720,7 +733,7 @@
                     <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="10" Padding="14,10">
                         <Grid ColumnDefinitions="Auto,*,Auto">
-                            <TextBlock Grid.Column="0" Text="⑂" FontSize="16" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <ic:SymbolIcon Grid.Column="0" Classes="lead" Symbol="BranchFork" Margin="0,0,10,0" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold" Text="GitHub access" />
@@ -856,8 +869,8 @@
                                                 <Button Classes="chip" Content="Check now" Command="{Binding CheckAuthCommand}" IsVisible="{Binding CanCheckAuth}" Padding="8,2" FontSize="10" VerticalAlignment="Center"
                                                         ToolTip.Tip="Check whether this agent is signed in on the host"
                                                         AutomationProperties.Name="Check login status" />
-                                                <TextBlock Text="✓" Foreground="{DynamicResource Accent}" FontWeight="Bold"
-                                                           FontSize="14" VerticalAlignment="Center" IsVisible="{Binding IsSelected}" />
+                                                <ic:SymbolIcon Symbol="Checkmark" Foreground="{DynamicResource Accent}"
+                                                           FontSize="16" IsVisible="{Binding IsSelected}" />
                                             </StackPanel>
                                         </Grid>
                                     </Button>
@@ -888,14 +901,16 @@
                                                     <TextBlock Text="{Binding Id}" Foreground="{DynamicResource FgFaint}" FontSize="10"
                                                                FontFamily="{StaticResource MonoFont}" />
                                                 </StackPanel>
-                                                <TextBlock Grid.Column="1" Text="✓" Foreground="{DynamicResource Accent}" FontWeight="Bold"
-                                                           FontSize="14" VerticalAlignment="Center" IsVisible="{Binding IsSelected}" />
+                                                <ic:SymbolIcon Grid.Column="1" Symbol="Checkmark" Foreground="{DynamicResource Accent}"
+                                                           FontSize="16" IsVisible="{Binding IsSelected}" />
                                             </Grid>
                                         </Button>
-                                        <Button Grid.Column="1" Content="{Binding FavoriteGlyph}" Command="{Binding ToggleFavoriteCommand}"
+                                        <Button Grid.Column="1" Command="{Binding ToggleFavoriteCommand}"
                                                 Background="Transparent" BorderThickness="0" Foreground="{DynamicResource Accent}"
-                                                FontSize="16" Padding="8,0" VerticalAlignment="Center"
-                                                ToolTip.Tip="Favorite this model" AutomationProperties.Name="Toggle favorite model" />
+                                                Padding="8,0" VerticalAlignment="Center"
+                                                ToolTip.Tip="Favorite this model" AutomationProperties.Name="Toggle favorite model">
+                                                    <ic:SymbolIcon Symbol="Star" IconVariant="{Binding FavoriteVariant}" FontSize="17" />
+                                                </Button>
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -992,9 +1007,9 @@
                                     <Button Command="{Binding TogglePlanCommand}" Background="Transparent" BorderThickness="0"
                                             Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
                                                        IsVisible="{Binding PlanExpanded}" />
-                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
                                                        IsVisible="{Binding !PlanExpanded}" />
                                             <TextBlock Text="PLAN" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                         </StackPanel>
@@ -1029,9 +1044,9 @@
                                     <Button Command="{Binding ToggleAgentsCommand}" Background="Transparent" BorderThickness="0"
                                             Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
                                                        IsVisible="{Binding AgentsExpanded}" />
-                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
                                                        IsVisible="{Binding !AgentsExpanded}" />
                                             <TextBlock Text="AGENTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                         </StackPanel>
@@ -1045,9 +1060,9 @@
                                                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                                             Background="Transparent" BorderThickness="0" Padding="6,5" CornerRadius="6" Cursor="Hand">
                                                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                                                            <TextBlock Grid.Column="0" Text="◆" FontSize="9" VerticalAlignment="Top" Margin="0,3,0,0"
+                                                            <ic:SymbolIcon Grid.Column="0" Symbol="Diamond" IconVariant="Filled" FontSize="10" VerticalAlignment="Top" Margin="0,4,0,0"
                                                                        Foreground="{DynamicResource Good}" IsVisible="{Binding IsMain}" />
-                                                            <TextBlock Grid.Column="0" Text="•" FontSize="12" VerticalAlignment="Top"
+                                                            <ic:SymbolIcon Grid.Column="0" Symbol="Circle" IconVariant="Filled" FontSize="10" VerticalAlignment="Top" Margin="0,4,0,0"
                                                                        Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsMain}" />
                                                             <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" TextWrapping="Wrap"
                                                                        Foreground="{DynamicResource Fg}" Opacity="{Binding IsActive, Converter={StaticResource ActiveOpacity}}" />
@@ -1067,9 +1082,9 @@
                                     <Button Command="{Binding ToggleFilesCommand}" Background="Transparent" BorderThickness="0"
                                             Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
                                                        IsVisible="{Binding FilesExpanded}" />
-                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
                                                        IsVisible="{Binding !FilesExpanded}" />
                                             <TextBlock Text="FILES MODIFIED" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                         </StackPanel>
@@ -1154,9 +1169,9 @@
                                     <Button Command="{Binding ToggleToolsListCommand}" Background="Transparent" BorderThickness="0"
                                             Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
                                                        IsVisible="{Binding ToolsListExpanded}" />
-                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
                                                        IsVisible="{Binding !ToolsListExpanded}" />
                                             <TextBlock Text="TOOLS RUN" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                         </StackPanel>
@@ -1233,9 +1248,9 @@
                                     <Button Command="{Binding ToggleCredentialsCommand}" Background="Transparent" BorderThickness="0"
                                             Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <TextBlock Text="▾" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
                                                        IsVisible="{Binding CredentialsExpanded}" />
-                                            <TextBlock Text="▸" FontSize="9" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
                                                        IsVisible="{Binding !CredentialsExpanded}" />
                                             <TextBlock Text="CREDENTIALS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                         </StackPanel>
@@ -1290,11 +1305,11 @@
                                     </TextBox>
                                     <TextBlock Grid.Column="1" Text="{Binding MatchSummary}" Foreground="{DynamicResource FgFaint}"
                                                FontSize="11" VerticalAlignment="Center" MinWidth="52" />
-                                    <Button Classes="chip" Grid.Column="2" Content="‹" Command="{Binding PrevMatchCommand}" Padding="9,2"
+                                    <Button Classes="chip" Grid.Column="2" Content="{icx:SymbolIcon Symbol=ChevronUp}" Command="{Binding PrevMatchCommand}" Padding="9,2"
                                             AutomationProperties.Name="Previous match" />
-                                    <Button Classes="chip" Grid.Column="3" Content="›" Command="{Binding NextMatchCommand}" Padding="9,2"
+                                    <Button Classes="chip" Grid.Column="3" Content="{icx:SymbolIcon Symbol=ChevronDown}" Command="{Binding NextMatchCommand}" Padding="9,2"
                                             AutomationProperties.Name="Next match" />
-                                    <Button Grid.Column="4" Content="✕" Command="{Binding CloseSearchCommand}"
+                                    <Button Grid.Column="4" Content="{icx:SymbolIcon Symbol=Dismiss}" Command="{Binding CloseSearchCommand}"
                                             Background="Transparent" Foreground="{DynamicResource FgDim}" BorderThickness="0"
                                             Padding="8,2" AutomationProperties.Name="Close search" />
                                 </Grid>
@@ -1386,7 +1401,7 @@
                                                     <TextBlock Grid.Column="0" Text="{Binding Speaker}" FontSize="11"
                                                                Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
                                                     <!-- Per-message actions; only visible on hover (see Border.msg styles). -->
-                                                    <Button Grid.Column="1" Classes="rowmenu" Content="⋯" Background="Transparent"
+                                                    <Button Grid.Column="1" Classes="rowmenu" Content="{icx:SymbolIcon Symbol=MoreHorizontal}" Background="Transparent"
                                                             Foreground="{DynamicResource FgDim}" BorderThickness="0" Padding="6,0" FontSize="15"
                                                             Cursor="Hand" VerticalAlignment="Center" AutomationProperties.Name="Message actions">
                                                         <Button.Flyout>
@@ -1429,10 +1444,10 @@
                                                 ToolTip.Tip="Open the full tool output">
                                             <StackPanel Spacing="1">
                                                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
-                                                    <TextBlock Grid.Column="0" Text="▸" Classes="tone"
+                                                    <ic:SymbolIcon Grid.Column="0" Symbol="ChevronRight" Classes="tone"
                                                                Classes.working="{Binding IsRunning}" Classes.done="{Binding IsDone}"
                                                                Classes.error="{Binding IsFailed}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Top" />
+                                                               FontSize="12" VerticalAlignment="Top" />
                                                     <TextBlock Grid.Column="1" Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}"
                                                                FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Top" />
                                                     <SelectableTextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Fg}"
@@ -1565,8 +1580,10 @@
                                                     <Button Classes="chip" Content="Dismiss" Command="{Binding $parent[ItemsControl].DataContext.DismissQuestionCommand}"
                                                             CommandParameter="{Binding}" Padding="16,6" />
                                                 </StackPanel>
-                                                <TextBlock Text="✓ Answered" Foreground="{DynamicResource Good}" FontSize="11"
-                                                           IsVisible="{Binding Resolved}" />
+                                                <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding Resolved}">
+                                                               <ic:SymbolIcon Symbol="Checkmark" Foreground="{DynamicResource Good}" FontSize="13" />
+                                                               <TextBlock Text="Answered" Foreground="{DynamicResource Good}" FontSize="11" VerticalAlignment="Center" />
+                                                           </StackPanel>
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
@@ -1688,7 +1705,7 @@
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock Grid.Column="0" Text="Event log" Foreground="{DynamicResource Fg}"
                                                    FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
-                                        <Button Grid.Column="1" Content="✕" Command="{Binding ToggleInspectorCommand}"
+                                        <Button Grid.Column="1" Content="{icx:SymbolIcon Symbol=Dismiss}" Command="{Binding ToggleInspectorCommand}"
                                                 Background="Transparent" Foreground="{DynamicResource FgDim}" BorderThickness="0"
                                                 Padding="8,2" AutomationProperties.Name="Close event log" />
                                     </Grid>
@@ -1800,19 +1817,19 @@
                                                 <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
                                                         BorderThickness="1" CornerRadius="8" Padding="10,5" Margin="0,2">
                                                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                                                        <TextBlock Grid.Column="0" Text="⋮" Foreground="{DynamicResource FgFaint}"
-                                                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                        <ic:SymbolIcon Grid.Column="0" Symbol="MoreVertical" Foreground="{DynamicResource FgFaint}"
+                                                                   FontSize="14" Margin="0,0,8,0" />
                                                         <TextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
                                                                    FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                                        <Button Grid.Column="2" Content="↑" Padding="6,1" FontSize="11" Background="Transparent"
+                                                        <Button Grid.Column="2" Content="{icx:SymbolIcon Symbol=ArrowUp}" Padding="6,1" FontSize="11" Background="Transparent"
                                                                 Foreground="{DynamicResource FgDim}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.MoveQueuedUpCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Move up" />
-                                                        <Button Grid.Column="3" Content="↓" Padding="6,1" FontSize="11" Background="Transparent"
+                                                        <Button Grid.Column="3" Content="{icx:SymbolIcon Symbol=ArrowDown}" Padding="6,1" FontSize="11" Background="Transparent"
                                                                 Foreground="{DynamicResource FgDim}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.MoveQueuedDownCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Move down" />
-                                                        <Button Grid.Column="4" Content="✕" Padding="6,1" FontSize="11" Background="Transparent"
+                                                        <Button Grid.Column="4" Content="{icx:SymbolIcon Symbol=Dismiss}" Padding="6,1" FontSize="11" Background="Transparent"
                                                                 Foreground="{DynamicResource FgFaint}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.RemoveQueuedCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Remove from queue" />
@@ -1836,24 +1853,24 @@
                                                 <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
                                                         BorderThickness="1" CornerRadius="8" Padding="10,5" Margin="0,2">
                                                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
-                                                        <TextBlock Grid.Column="0" Text="⋮" Foreground="{DynamicResource FgFaint}"
-                                                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                        <ic:SymbolIcon Grid.Column="0" Symbol="MoreVertical" Foreground="{DynamicResource FgFaint}"
+                                                                   FontSize="14" Margin="0,0,8,0" />
                                                         <TextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
                                                                    FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                                        <Button Grid.Column="2" Content="↑" Padding="6,1" FontSize="11" Background="Transparent"
+                                                        <Button Grid.Column="2" Content="{icx:SymbolIcon Symbol=ArrowUp}" Padding="6,1" FontSize="11" Background="Transparent"
                                                                 Foreground="{DynamicResource FgDim}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.HostMoveUpCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Move up" />
-                                                        <Button Grid.Column="3" Content="↓" Padding="6,1" FontSize="11" Background="Transparent"
+                                                        <Button Grid.Column="3" Content="{icx:SymbolIcon Symbol=ArrowDown}" Padding="6,1" FontSize="11" Background="Transparent"
                                                                 Foreground="{DynamicResource FgDim}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.HostMoveDownCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Move down" />
-                                                        <Button Grid.Column="4" Content="⏵" Padding="6,1" FontSize="11" Background="Transparent"
+                                                        <Button Grid.Column="4" Content="{icx:SymbolIcon Symbol=Play}" Padding="6,1" FontSize="11" Background="Transparent"
                                                                 Foreground="{DynamicResource Accent}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.HostSendNowCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Send now"
                                                                 ToolTip.Tip="Interrupt the current turn and send this now" />
-                                                        <Button Grid.Column="5" Content="✕" Padding="6,1" FontSize="11" Background="Transparent"
+                                                        <Button Grid.Column="5" Content="{icx:SymbolIcon Symbol=Dismiss}" Padding="6,1" FontSize="11" Background="Transparent"
                                                                 Foreground="{DynamicResource FgFaint}" BorderThickness="0" Cursor="Hand"
                                                                 Command="{Binding $parent[ItemsControl].DataContext.HostRemoveCommand}"
                                                                 CommandParameter="{Binding}" AutomationProperties.Name="Remove from queue" />
@@ -1928,7 +1945,7 @@
                                                                FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
                                                     <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="11"
                                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="220" />
-                                                    <Button Content="✕" Command="{Binding $parent[ItemsControl].DataContext.RemoveAttachmentCommand}"
+                                                    <Button Content="{icx:SymbolIcon Symbol=Dismiss}" Command="{Binding $parent[ItemsControl].DataContext.RemoveAttachmentCommand}"
                                                             CommandParameter="{Binding}" Background="Transparent" Foreground="{DynamicResource FgFaint}"
                                                             BorderThickness="0" Padding="0" FontSize="9" Cursor="Hand"
                                                             AutomationProperties.Name="Remove attachment" />
@@ -2010,7 +2027,7 @@
                                 <Border IsVisible="{Binding IsReadOnly}" CornerRadius="10" Padding="12,10"
                                         Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                        <TextBlock Text="👁" FontSize="14" VerticalAlignment="Center" />
+                                        <ic:SymbolIcon Symbol="Eye" FontSize="17" />
                                         <TextBlock Text="Watching (read-only) — this session is running outside Agnes, so sending is disabled."
                                                    Foreground="{DynamicResource FgDim}" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
                                     </StackPanel>
@@ -2101,7 +2118,7 @@
                                     <Button Classes="chip" Grid.Column="3" Content="Full screen" Command="{Binding ToggleFullScreenCommand}"
                                             Padding="9,2" FontSize="11" Margin="0,0,8,0"
                                             ToolTip.Tip="Toggle full-screen review" AutomationProperties.Name="Toggle full-screen review" />
-                                    <Button Grid.Column="4" Content="✕" Command="{Binding ClosePreviewCommand}"
+                                    <Button Grid.Column="4" Content="{icx:SymbolIcon Symbol=Dismiss}" Command="{Binding ClosePreviewCommand}"
                                             Background="Transparent" Foreground="{DynamicResource FgDim}" BorderThickness="0"
                                             Padding="8,2" FontSize="13" AutomationProperties.Name="Close preview" />
                                 </Grid>

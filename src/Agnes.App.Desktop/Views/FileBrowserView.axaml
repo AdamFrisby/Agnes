@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
              xmlns:vm="using:Agnes.Ui.Core.ViewModels"
              xmlns:proto="using:Agnes.Protocol"
              x:Class="Agnes.App.Desktop.Views.FileBrowserView"
@@ -33,8 +34,8 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="proto:FileEntry">
                         <Grid ColumnDefinitions="Auto,*,Auto">
-                            <TextBlock Grid.Column="0" Text="📁" Margin="0,0,6,0" IsVisible="{Binding IsDirectory}" />
-                            <TextBlock Grid.Column="0" Text="📄" Margin="0,0,6,0" IsVisible="{Binding !IsDirectory}" />
+                            <ic:SymbolIcon Grid.Column="0" Symbol="Folder" FontSize="15" Margin="0,0,6,0" IsVisible="{Binding IsDirectory}" />
+                            <ic:SymbolIcon Grid.Column="0" Symbol="Document" FontSize="15" Margin="0,0,6,0" IsVisible="{Binding !IsDirectory}" />
                             <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
                             <TextBlock Grid.Column="2" Text="{Binding Size}" Foreground="{DynamicResource FgFaint}"
                                        IsVisible="{Binding !IsDirectory}" FontSize="11" VerticalAlignment="Center" />

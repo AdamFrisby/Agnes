@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
              xmlns:sys="using:System"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
@@ -56,8 +57,8 @@
                 <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                         CornerRadius="8" Padding="10,2" Width="340" HorizontalAlignment="Left">
                     <Grid ColumnDefinitions="Auto,*">
-                        <TextBlock Grid.Column="0" Text="&#x1F50D;" FontSize="12" Foreground="{DynamicResource FgFaint}"
-                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ic:SymbolIcon Grid.Column="0" Symbol="Search" FontSize="15" Foreground="{DynamicResource FgFaint}"
+                                       Margin="0,0,8,0" />
                         <TextBox Grid.Column="1" Text="{Binding SettingsSearch, Mode=TwoWay}" Watermark="Search settings…"
                                  Background="Transparent" BorderThickness="0" FontSize="13" Padding="0,6" />
                     </Grid>
@@ -77,7 +78,7 @@
                                     Command="{Binding $parent[ItemsControl].DataContext.SetSettingsCategoryCommand}"
                                     CommandParameter="{Binding Id}">
                                 <StackPanel Orientation="Horizontal" Spacing="9">
-                                    <TextBlock Text="{Binding Icon}" FontSize="13" VerticalAlignment="Center" />
+                                    <ic:SymbolIcon Symbol="{Binding Icon}" FontSize="16" />
                                     <TextBlock Text="{Binding Label}" FontSize="13" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
@@ -696,7 +697,10 @@
                                                     <StackPanel Grid.Column="0" Spacing="3">
                                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                                             <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
-                                                            <TextBlock Text="{Binding ReviewedLabel}" FontSize="10" Foreground="{DynamicResource Good}" VerticalAlignment="Center" />
+                                                            <StackPanel Orientation="Horizontal" Spacing="3" VerticalAlignment="Center" IsVisible="{Binding IsReviewed}">
+                                                                <ic:SymbolIcon Symbol="CheckmarkCircle" Foreground="{DynamicResource Good}" FontSize="12" />
+                                                                <TextBlock Text="{Binding ReviewedLabel}" FontSize="10" Foreground="{DynamicResource Good}" VerticalAlignment="Center" />
+                                                            </StackPanel>
                                                         </StackPanel>
                                                         <TextBlock Text="{Binding PackageId}" Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}" />
                                                         <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
@@ -1001,8 +1005,11 @@
                                                            FontFamily="{StaticResource MonoFont}" FontSize="12" Width="90" VerticalAlignment="Center" />
                                                 <TextBlock Grid.Column="1" Text="{Binding TargetLabel}" FontSize="12" VerticalAlignment="Center"
                                                            Foreground="{DynamicResource FgDim}" IsVisible="{Binding !IsBroken}" />
-                                                <TextBlock Grid.Column="1" Text="{Binding TargetLabel}" FontSize="12" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource Danger}" IsVisible="{Binding IsBroken}" />
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" IsVisible="{Binding IsBroken}">
+                                                    <ic:SymbolIcon Symbol="Warning" IconVariant="Filled" Foreground="{DynamicResource Danger}" FontSize="13" />
+                                                    <TextBlock Text="{Binding TargetLabel}" FontSize="12" VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource Danger}" />
+                                                </StackPanel>
                                                 <TextBlock Grid.Column="2" Text="send" FontSize="10" Foreground="{DynamicResource Good}" Margin="0,0,8,0"
                                                            VerticalAlignment="Center" IsVisible="{Binding SendImmediately}" />
                                                 <Button Grid.Column="3" Content="Delete" Classes="seg"

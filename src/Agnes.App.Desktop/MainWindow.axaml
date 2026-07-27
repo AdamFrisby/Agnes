@@ -1,6 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="using:Avalonia.Data.Converters"
+        xmlns:ic="using:FluentIcons.Avalonia"
+        xmlns:icx="using:FluentIcons.Avalonia.Markup"
         xmlns:dc="using:Dock.Avalonia.Controls"
         x:Class="Agnes.App.Desktop.MainWindow"
         Title="{Binding WindowTitle}" Width="1180" Height="760"
@@ -101,7 +103,7 @@
                     <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                             CornerRadius="8" Padding="10,5" Width="240">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="⌕" Foreground="{DynamicResource FgFaint}" FontSize="13" VerticalAlignment="Center" />
+                            <ic:SymbolIcon Symbol="Search" Foreground="{DynamicResource FgFaint}" FontSize="15" />
                             <TextBlock Text="Search across all sessions…" Foreground="{DynamicResource FgFaint}" FontSize="12"
                                        VerticalAlignment="Center" />
                         </StackPanel>
@@ -150,14 +152,18 @@
                     <Button Classes="accent" Command="{Binding OpenUpdateCommand}" IsVisible="{Binding UpdateAvailable}" Padding="10,5" FontSize="12"
                             AutomationProperties.Name="Download update"
                             ToolTip.Tip="A newer version of Agnes is available">
-                        <TextBlock Text="{Binding UpdateVersion, StringFormat='⬆ Update {0}'}" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <ic:SymbolIcon Symbol="ArrowCircleUp" FontSize="14" />
+                            <TextBlock Text="{Binding UpdateVersion, StringFormat='Update {0}'}" VerticalAlignment="Center" />
+                        </StackPanel>
                     </Button>
                     <!-- Approvals: open permission requests across every session that need a human -->
                     <Button Classes="chip" Padding="10,5" FontSize="12"
                             Command="{Binding Approvals.RefreshCommand}"
                             IsVisible="{Binding Approvals.HasApprovals}" AutomationProperties.Name="Approvals needing you">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <TextBlock Text="🔔 Approvals" VerticalAlignment="Center" />
+                            <ic:SymbolIcon Symbol="Alert" FontSize="14" />
+                            <TextBlock Text="Approvals" VerticalAlignment="Center" />
                             <Border Classes="status attention" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
                                 <TextBlock Text="{Binding Approvals.Count}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
@@ -221,7 +227,8 @@
                     <Button Classes="chip" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasInbox}" AutomationProperties.Name="Background run inbox">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <TextBlock Text="🗓 Inbox" VerticalAlignment="Center" />
+                            <ic:SymbolIcon Symbol="MailInbox" FontSize="14" />
+                            <TextBlock Text="Inbox" VerticalAlignment="Center" />
                             <Border Classes="status working" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
                                 <TextBlock Text="{Binding InboxCount}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
@@ -250,7 +257,8 @@
                     <Button Classes="chip" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasScheduledTasks}" AutomationProperties.Name="Automations">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <TextBlock Text="⏱ Automations" VerticalAlignment="Center" />
+                            <ic:SymbolIcon Symbol="Timer" FontSize="14" />
+                            <TextBlock Text="Automations" VerticalAlignment="Center" />
                             <Border Classes="status" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
                                 <TextBlock Text="{Binding ScheduledTaskCount}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
@@ -338,19 +346,19 @@
                     </Button>
 
                     <!-- Dashboard: the optional status-of-everything tab (Ctrl+Shift+D) -->
-                    <Button Classes="chip" Content="▦" Command="{Binding OpenDashboardCommand}" Padding="10,5" FontSize="12"
+                    <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Board}" Command="{Binding OpenDashboardCommand}" Padding="10,5" FontSize="12"
                             AutomationProperties.Name="Status dashboard"
                             ToolTip.Tip="Status of every session, and anything waiting on you (Ctrl+Shift+D)" />
 
                     <!-- Search: opens a first-class tab searching every recorded session's transcript -->
-                    <Button Classes="chip" Content="🔍" Command="{Binding OpenSearchCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Search history" />
+                    <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Search}" Command="{Binding OpenSearchCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Search history" />
 
                     <!-- Settings: opens a first-class, searchable Settings tab -->
-                    <Button Classes="chip" Content="⚙" Command="{Binding OpenSettingsCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings" />
+                    <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Settings}" Command="{Binding OpenSettingsCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings" />
                     <Button Classes="chip" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasArchived}" AutomationProperties.Name="Reopen archived sessions">
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="🗄" FontSize="12" />
+                            <ic:SymbolIcon Symbol="Archive" FontSize="14" />
                             <TextBlock Text="Archived" />
                         </StackPanel>
                         <Button.Flyout>
@@ -391,7 +399,7 @@
         <Border Grid.Row="1" IsVisible="{Binding ShowGitHubLinkPrompt}"
                 Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Accent}" BorderThickness="0,0,0,2" Padding="16,10">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                <TextBlock Grid.Column="0" Text="🔗" FontSize="14" VerticalAlignment="Center" Margin="0,0,10,0" />
+                <ic:SymbolIcon Grid.Column="0" Symbol="Link" FontSize="18" Foreground="{DynamicResource Accent}" Margin="0,0,10,0" />
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="Link a GitHub account?" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="13" />
                     <TextBlock Text="Sandboxed agents need it to clone or push private repositories. You can also do this later in Settings › GitHub."
@@ -588,7 +596,7 @@
                 <StackPanel Spacing="16">
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Grid.Column="0" Text="{Binding StepLabel}" Foreground="{DynamicResource FgFaint}" FontSize="11" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="✕" Command="{Binding DismissCommand}" Background="Transparent"
+                        <Button Grid.Column="1" Content="{icx:SymbolIcon Symbol=Dismiss}" Command="{Binding DismissCommand}" Background="Transparent"
                                 Foreground="{DynamicResource FgDim}" BorderThickness="0" Padding="6,2" FontSize="13" Cursor="Hand" />
                     </Grid>
                     <StackPanel Spacing="8" DataContext="{Binding Current}">
