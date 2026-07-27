@@ -169,6 +169,22 @@ How to add behaviour to Agnes. These are defaults, not absolutes — deviate whe
   both libraries alias their neutral chrome internally with `StaticResource`: override the leaf key a
   template actually reads, not the palette underneath it. `docs/mobile.md` § Brand states the rules.
 
+- **Icons are named, never typed as characters.** Every icon in every head is a glyph from Microsoft's
+  fluentui-system-icons, reached through `FluentIcons` — `<ic:SymbolIcon Symbol="Dismiss" />`, or
+  `{icx:SymbolIcon Symbol=Dismiss}` in a `Content=`. The whole ~2800-icon catalogue is available on
+  purpose, so a plugin screen can ask for any glyph without editing a head. **Never an emoji, and never
+  a stand-in text character** (`▦`, `⋯`, `✕`, `★`): an emoji is a colour bitmap that ignores
+  `Foreground`, so it can't take a status hue, and neither emoji nor the geometric-shapes block is
+  covered by the three embedded brand fonts — those glyphs fell through to the OS and rendered as tofu
+  boxes on Linux. A `SymbolIcon` inherits `Foreground` like text, so it wears the roles and the
+  `.tone.*` hues; `FontSize` does *not* inherit (FluentIcons re-registers it), which is why
+  `Themes/AppStyles.axaml` defaults it. Variant carries meaning: `Regular` for an affordance, `Filled`
+  for a state that is on. `IconVariant="Color"` is unused — unreliable on Skia, and multi-colour breaks
+  one-meaning-per-hue. Which icon to show is view-model state only when it *varies*: shared view models
+  in `Agnes.Ui.Core` name a `Symbol` (via the dependency-free `FluentIcons.Common`) and never embed a
+  glyph in a label string; a constant icon belongs to the view. The mobile head is the one exception —
+  its own chrome stays on the Lucide geometry in its `Themes/Icons.axaml` that matches the web design
+  kit, and it carries FluentIcons only for symbols it doesn't own.
 - **One meaning per hue.** State is shown in colour, and each colour means exactly one thing across the
   whole desktop app: **sky** = in motion (a turn running, a tool in flight), **amber** = blocked on you
   (permission cards, the answer bar, the state banner, the approvals count), **mint** = done/healthy

@@ -131,7 +131,11 @@ The app implements the **Multitudal** design system (`multitudal.com`), of which
 - **Type**: Space Grotesk (display), Manrope (UI/body, 15px), JetBrains Mono (code, logs, paths), all
   embedded so typography is identical on every device.
 - **Icons**: Lucide-style line glyphs on a 24×24 grid at 1.75px, stroked from geometry rather than an
-  icon font. **No emoji in the UI** — energy comes from colour.
+  icon font. **No emoji in the UI** — energy comes from colour. This head's *own* chrome is drawn from
+  `Themes/Icons.axaml`, which matches the web design kit glyph-for-glyph; `FluentIcons.Avalonia` is also
+  referenced, for the icons this head doesn't own — a `Symbol` named by a shared view model or
+  contributed by a plugin, which has to render on a phone too. Reach for a Lucide glyph first, and add
+  one to `Icons.axaml` if it's missing rather than mixing sets in this head's own screens.
 - **Voice**: sentence case, plain and confident, verb-first actions.
 
 The launcher icon is the Agnes squid mark as an adaptive icon (gradient foreground, ink background, and
