@@ -6,5 +6,8 @@
     See https://aka.platform.uno/using-uno-sdk#implicit-packages for more information regarding the Implicit Packages.
   -->
   <ItemGroup>
+    <!-- Icons: the Uno.WinUI build of the same fluentui-system-icons catalogue the Avalonia heads carry,
+         on the same upstream build (they take FluentIcons.Avalonia 2.1.333). -->
+    <PackageVersion Include="FluentIcons.WinUI" Version="2.2.333" />
   </ItemGroup>
 </Project>

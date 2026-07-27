@@ -37,6 +37,11 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Markdown.Avalonia" Version="12.0.0-a3" />
+    <!-- This head's own chrome is drawn from the Lucide geometry in Themes/Icons.axaml, which matches the
+         web design kit glyph-for-glyph. FluentIcons is here for the icons this head doesn't own: a
+         `Symbol` named by a shared view model or contributed by a plugin has to render on a phone too.
+         Kept in lockstep with tools/Agnes.MobilePreview, which links these sources. -->
+    <PackageReference Include="FluentIcons.Avalonia" Version="2.1.333" />
   </ItemGroup>
 
   <ItemGroup>

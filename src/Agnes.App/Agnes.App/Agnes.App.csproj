@@ -33,4 +33,11 @@
     <ProjectReference Include="..\..\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The same fluentui-system-icons catalogue the Avalonia heads use, in its Uno.WinUI build, so the
+         `Symbol` a shared view model names resolves here too. It also replaces this head's `FontIcon`s,
+         which addressed Segoe MDL2 by codepoint — a font that doesn't exist in a browser or on Linux. -->
+    <PackageReference Include="FluentIcons.WinUI" />
+  </ItemGroup>
+
 </Project>
