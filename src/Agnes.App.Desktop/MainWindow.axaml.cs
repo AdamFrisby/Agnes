@@ -94,7 +94,7 @@ public partial class MainWindow : Window
 
         leftBar.DataContext = DataContext;
         rightBar.DataContext = DataContext;
-        // A little vertical breathing room above/below the search box and the right-hand buttons.
+        // A little vertical breathing room above/below the brand lockup and the right-hand controls.
         leftBar.Margin = new Avalonia.Thickness(10, 7, 8, 7);
         rightBar.Margin = new Avalonia.Thickness(8, 7, 10, 7);
         strip.LeftContent = leftBar;
