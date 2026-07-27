@@ -44,8 +44,10 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
                     }
                     else
                     {
+                        // Carry the request's own input, not just the tool's name: "Allow Bash?" tells you
+                        // nothing about what is about to run, and this card is the only place to catch it.
                         yield return new PermissionRequestedEvent(requestId, toolUseId,
-                            $"Allow {toolName}?", DefaultPermissionOptions);
+                            $"Allow {toolName}?", DefaultPermissionOptions, PermissionDetail(req));
                     }
                 }
 
@@ -296,18 +298,36 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
         _ => ToolKind.Other,
     };
 
+    /// <summary>
+    /// The tool's target verbatim — the command, the path, the pattern. This used to be clipped to 80
+    /// characters here, which meant no client could ever show the rest of a long shell command however it
+    /// rendered: a truncation at the boundary is lossy for everyone downstream. Abbreviating for a narrow
+    /// row is a display decision, so it's left to the display.
+    /// </summary>
     private static string ToolTitle(string name, JsonElement block)
+        => block.TryGetProperty("input", out var input) && input.ValueKind == JsonValueKind.Object
+            ? ToolTarget(input) ?? name
+            : name;
+
+    /// <summary>
+    /// What the approval card shows verbatim: the command/path the tool was asked to act on, or — when the
+    /// tool has no single obvious target — its whole input, so nothing being approved is invisible.
+    /// </summary>
+    private static string? PermissionDetail(JsonElement request)
     {
-        if (block.TryGetProperty("input", out var input) && input.ValueKind == JsonValueKind.Object)
+        if (!request.TryGetProperty("input", out var input) || input.ValueKind != JsonValueKind.Object)
         {
-            var target = GetString(input, "file_path") ?? GetString(input, "path") ?? GetString(input, "pattern") ?? GetString(input, "command");
-            if (!string.IsNullOrEmpty(target))
-            {
-                return target!.Length > 80 ? target[..80] + "…" : target;
-            }
+            return null;
         }
 
-        return name;
+        return ToolTarget(input) ?? (input.EnumerateObject().Any() ? input.GetRawText() : null);
+    }
+
+    private static string? ToolTarget(JsonElement input)
+    {
+        var target = GetString(input, "file_path") ?? GetString(input, "path")
+            ?? GetString(input, "pattern") ?? GetString(input, "command");
+        return string.IsNullOrEmpty(target) ? null : target;
     }
 
     private static string InputSummary(JsonElement block)

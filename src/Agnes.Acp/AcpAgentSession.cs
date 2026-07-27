@@ -110,7 +110,8 @@ internal sealed class AcpAgentSession : IAgentSession
             parameters.ToolCall?.Title ?? "Permission required",
             parameters.Options
                 .Select(o => new Abstractions.PermissionOption(o.OptionId, o.Name, AcpMap.ToOptionKind(o.Kind)))
-                .ToArray()));
+                .ToArray(),
+            RawInputText(parameters.ToolCall?.RawInput)));
 
         try
         {
@@ -127,6 +128,16 @@ internal sealed class AcpAgentSession : IAgentSession
             _pending.TryRemove(requestId, out _);
         }
     }
+
+    /// <summary>The tool input as the approval card should read it: the plain string when the agent sent
+    /// one, else the JSON verbatim. An empty object carries nothing worth showing.</summary>
+    private static string? RawInputText(System.Text.Json.JsonElement? rawInput) => rawInput switch
+    {
+        null or { ValueKind: System.Text.Json.JsonValueKind.Null or System.Text.Json.JsonValueKind.Undefined } => null,
+        { ValueKind: System.Text.Json.JsonValueKind.String } s => s.GetString(),
+        { ValueKind: System.Text.Json.JsonValueKind.Object } o when !o.EnumerateObject().Any() => null,
+        { } other => other.GetRawText(),
+    };
 
     private static PermissionOutcome ResolveOutcome(AcpPermissionOutcome outcome, IReadOnlyList<AcpPermissionOption> options)
     {

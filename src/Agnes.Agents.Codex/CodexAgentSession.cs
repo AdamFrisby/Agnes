@@ -263,7 +263,7 @@ internal sealed class CodexAgentSession : IAgentSession
         [
             new PermissionOption("approve", "Approve", PermissionOptionKind.AllowOnce),
             new PermissionOption("deny", "Deny", PermissionOptionKind.RejectOnce),
-        ]));
+        ], ApprovalDetail(parameters)));
 
         try
         {
@@ -282,26 +282,28 @@ internal sealed class CodexAgentSession : IAgentSession
     }
 
     private static string ApprovalTitle(JsonElement p)
+        => GetString(p, "reason") is { Length: > 0 } reason
+            ? reason
+            : ApprovalCommand(p) is { } command ? $"Run: {command}" : "Approval required";
+
+    /// <summary>The command being approved, verbatim, whether or not Codex also gave a reason — the reason
+    /// used to displace it from the title, leaving nothing to actually review.</summary>
+    private static string? ApprovalDetail(JsonElement p) => ApprovalCommand(p);
+
+    // A command is a string, or an argv array — the same polymorphic field CodexMap handles.
+    private static string? ApprovalCommand(JsonElement p)
     {
-        if (GetString(p, "reason") is { Length: > 0 } reason)
+        if (!p.TryGetProperty("command", out var c))
         {
-            return reason;
+            return null;
         }
 
-        if (p.TryGetProperty("command", out var c))
+        return c.ValueKind switch
         {
-            if (c.ValueKind == JsonValueKind.String)
-            {
-                return $"Run: {c.GetString()}";
-            }
-
-            if (c.ValueKind == JsonValueKind.Array)
-            {
-                return "Run: " + string.Join(' ', c.EnumerateArray().Select(e => e.GetString()));
-            }
-        }
-
-        return "Approval required";
+            JsonValueKind.String => c.GetString(),
+            JsonValueKind.Array => string.Join(' ', c.EnumerateArray().Select(e => e.GetString())),
+            _ => null,
+        };
     }
 
     private static string? GetString(JsonElement element, string name)

@@ -150,6 +150,10 @@ internal sealed record AcpToolCall
     public string? Title { get; init; }
     public string? Kind { get; init; }
     public string? Status { get; init; }
+
+    /// <summary>The agent's own tool input, whose schema belongs to the tool and not to us — so it stays
+    /// as JSON at this boundary and is turned into text for the approval card, never traversed inward.</summary>
+    public JsonElement? RawInput { get; init; }
 }
 
 internal sealed record AcpPermissionOption

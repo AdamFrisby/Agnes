@@ -119,11 +119,18 @@ public sealed record PlanEvent(IReadOnlyList<PlanEntry> Entries) : SessionEvent;
 public sealed record ModeChangedEvent(string ModeId) : SessionEvent;
 
 /// <summary>The agent is requesting the user's permission to proceed with a tool call.</summary>
+/// <param name="Detail">
+/// The full, verbatim thing being approved — the shell command, the path, the tool input. Never
+/// abbreviated: an approval card is where oversight actually happens, and "Allow Bash?" or a command
+/// clipped at 80 characters is exactly the shape a dangerous tail hides behind. Null when the agent
+/// gave nothing beyond <paramref name="Title"/>; the UI decides how much of it to show at rest.
+/// </param>
 public sealed record PermissionRequestedEvent(
     string RequestId,
     string ToolCallId,
     string Title,
-    IReadOnlyList<PermissionOption> Options) : SessionEvent;
+    IReadOnlyList<PermissionOption> Options,
+    string? Detail = null) : SessionEvent;
 
 /// <summary>A pending permission request was resolved (by a client or by cancellation).</summary>
 public sealed record PermissionResolvedEvent(

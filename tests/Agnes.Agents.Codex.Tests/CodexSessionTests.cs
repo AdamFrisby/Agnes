@@ -114,6 +114,8 @@ public class CodexSessionTests
         var request = await ReadUntilAsync<PermissionRequestedEvent>(session, TimeSpan.FromSeconds(5));
         Assert.Equal("Delete the build folder?", request.Title);
         Assert.Equal("call-1", request.ToolCallId);
+        // The reason used to displace the command from the title, leaving nothing to actually review.
+        Assert.Equal("rm -rf build", request.Detail);
 
         await session.RespondToPermissionAsync(request.RequestId, "approve");
 
