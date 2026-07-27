@@ -147,7 +147,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             option.Refresh(_settings.Theme);
         }
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
-        RevokeDeviceCommand = new AsyncRelayCommand<string>(RevokeDeviceAsync);
+        RevokeDeviceCommand = new AsyncRelayCommand<DeviceRowVm>(RevokeDeviceAsync);
         ApproveDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: true));
         DenyDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: false));
         LoadMcpServersCommand = new AsyncRelayCommand(LoadMcpServersAsync);
@@ -155,19 +155,24 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         RemoveMcpServerCommand = new AsyncRelayCommand<string>(RemoveMcpServerAsync);
         ToggleMcpServerCommand = new AsyncRelayCommand<McpServerInfo>(ToggleMcpServerAsync);
         LoadMcpPresetsCommand = new AsyncRelayCommand(LoadMcpPresetsAsync);
-        InstallMcpPresetCommand = new AsyncRelayCommand<McpServerInfo>(InstallMcpPresetAsync);
+        InstallMcpPresetCommand = new AsyncRelayCommand<McpPresetRowVm>(InstallMcpPresetAsync);
         PreviewMcpCommand = new AsyncRelayCommand(PreviewMcpAsync);
+        LoadMcpCommand = new AsyncRelayCommand(LoadMcpAsync);
+        SearchMcpCatalogCommand = new AsyncRelayCommand(SearchMcpCatalogAsync);
+        InstallMcpCatalogEntryCommand = new AsyncRelayCommand<McpCatalogRowVm>(InstallMcpCatalogEntryAsync);
+        StartFromLaunchProfileCommand = new AsyncRelayCommand<LaunchProfileRowVm>(StartFromLaunchProfileAsync);
         SetMcpApprovalCommand = new RelayCommand<string>(v => { if (v is not null) { McpApproval = v; } });
         LoadCredentialStatusCommand = new AsyncRelayCommand(LoadCredentialStatusAsync);
         ConnectGitHubCommand = new AsyncRelayCommand(ConnectGitHubAsync);
+        UnlinkGitHubCommand = new AsyncRelayCommand<GitHubAccountRowVm>(UnlinkGitHubAsync);
         OpenSettingsCommand = new RelayCommand(OpenSettings);
         OpenDashboardCommand = new RelayCommand(OpenDashboard);
         SetSettingsCategoryCommand = new RelayCommand<string>(v => { if (v is not null) { SettingsCategory = v; } });
         LinkGitHubNowCommand = new RelayCommand(LinkGitHubNow);
         DismissGitHubLinkPromptCommand = new RelayCommand(() => ShowGitHubLinkPrompt = false);
         LoadSandboxesCommand = new AsyncRelayCommand(LoadSandboxesAsync);
-        DeleteSandboxRecordCommand = new AsyncRelayCommand<SandboxRecordDto>(DeleteSandboxRecordAsync);
-        ResumeSandboxRecordCommand = new AsyncRelayCommand<SandboxRecordDto>(ResumeSandboxRecordAsync);
+        DeleteSandboxRecordCommand = new AsyncRelayCommand<SandboxRowVm>(DeleteSandboxRecordAsync);
+        ResumeSandboxRecordCommand = new AsyncRelayCommand<SandboxRowVm>(ResumeSandboxRecordAsync);
         FindOrphansCommand = new AsyncRelayCommand(FindOrphansAsync);
         ReapOrphansCommand = new AsyncRelayCommand(ReapOrphansAsync);
         PauseAutomationCommand = new AsyncRelayCommand<AutomationRow>(PauseAutomationAsync);
@@ -183,7 +188,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         [
             // This device (client-global)
             new SettingsCategoryVm("appearance", "Appearance", "🎨", "theme dark light system ui scale zoom accessibility reduce motion font density"),
-            new SettingsCategoryVm("keyboard", "Keyboard", "⌨", "keyboard shortcuts keys bindings gestures"),
+            // Keywords come from the shortcut catalogue itself, so searching "palette" or "interrupt" finds
+            // this page — the words a user actually reaches for aren't "keyboard".
+            new SettingsCategoryVm("keyboard", "Keyboard", "⌨", KeyboardShortcuts.SearchKeywords),
             // The connected host
             new SettingsCategoryVm("github", "GitHub accounts", "⑂", "github git push credential token connect app scope repo installation secret account"),
             new SettingsCategoryVm("devices", "Devices", "🔑", "paired devices pairing token revoke auth access per-device"),
@@ -244,7 +251,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         BugReport = new BugReportViewModel(ActiveHost, _dispatcher, OpenInBrowser);
         PromptLibrary = new PromptLibraryViewModel(ActiveHost, _dispatcher);
         LaunchProfiles = new LaunchProfilesViewModel(ActiveHost, _dispatcher);
-        Friends = new FriendsViewModel(ActiveHost, _dispatcher);
+        Friends = new FriendsViewModel(ActiveHost, _dispatcher, GrantTargets);
         MultiHost = new MultiHostViewModel(_connector, _dispatcher);
     }
 
@@ -468,13 +475,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     // ---- device management (for the active session's host) ----
 
-    public ObservableCollection<DeviceInfo> Devices { get; } = [];
+    public ObservableCollection<DeviceRowVm> Devices { get; } = [];
 
     [ObservableProperty]
     private string _devicesStatus = "Open a session on a host to manage its paired devices.";
 
     public IAsyncRelayCommand LoadDevicesCommand { get; }
-    public IAsyncRelayCommand<string> RevokeDeviceCommand { get; }
+    public IAsyncRelayCommand<DeviceRowVm> RevokeDeviceCommand { get; }
 
     /// <summary>Devices asking to be let onto this host, waiting on a human here to vouch for them.</summary>
     public ObservableCollection<PendingPairApproval> PendingApprovals { get; } = [];
@@ -484,7 +491,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public IAsyncRelayCommand<string> ApproveDeviceCommand { get; }
     public IAsyncRelayCommand<string> DenyDeviceCommand { get; }
 
-    private (string Url, string Token)? ActiveHttpHost()
+    /// <summary>
+    /// What to put on a settings status line when a call to the host failed. The raw exception chain says
+    /// "An error occurred while sending the request", which named the symptom and never the cause — a whole
+    /// settings page of those is how a certificate problem reads as a mystery. This names the cause, and for a
+    /// rejected certificate says what to do about it.
+    /// </summary>
+    private static string Explain(Exception ex) => Agnes.Client.AuthDiscovery.DescribeFailure(ex);
+
+    private HostEndpoint? ActiveHttpHost()
     {
         static bool IsHttp(SessionDocument d) =>
             d.Host is { } h && h.HostUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase);
@@ -494,11 +509,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         // sandbox management that needs a host.
         if (_factory.DocumentDock?.ActiveDockable is SessionDocument active && IsHttp(active))
         {
-            return (active.Host!.HostUrl, active.HostToken);
+            return HostEndpoint.Of(active);
         }
 
         var any = AllDocuments().FirstOrDefault(IsHttp);
-        return any is not null ? (any.Host!.HostUrl, any.HostToken) : null;
+        return any is not null ? HostEndpoint.Of(any) : null;
     }
 
     /// <summary>The active host connection for hub-based management (plugins), preferring the active
@@ -525,16 +540,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         try
         {
             DevicesStatus = "Loading…";
-            var list = await DeviceManagement.ListAsync(target.Value.Url, target.Value.Token);
+            var list = await DeviceManagement.ListAsync(target.Url, target.Token, target.Http);
 
             // Requests to join load on the same trip. A host that predates approval pairing simply
             // returns none, so this never turns an older host into an error.
-            var waiting = await PairingManagement.PendingAsync(target.Value.Url, target.Value.Token);
+            var waiting = await PairingManagement.PendingAsync(target.Url, target.Token, target.Http);
 
+            var now = DateTimeOffset.UtcNow;
             _dispatcher.Post(() =>
             {
                 Devices.Clear();
-                foreach (var d in list) { Devices.Add(d); }
+                foreach (var d in list) { Devices.Add(new DeviceRowVm(d, now)); }
 
                 PendingApprovals.Clear();
                 foreach (var p in waiting) { PendingApprovals.Add(p); }
@@ -545,7 +561,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => DevicesStatus = "Couldn't load devices: " + ex.Message);
+            _dispatcher.Post(() => DevicesStatus = "Couldn't load devices: " + Explain(ex));
         }
     }
 
@@ -566,11 +582,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             if (approve)
             {
-                await PairingManagement.ApproveAsync(target.Value.Url, target.Value.Token, requestId);
+                await PairingManagement.ApproveAsync(target.Url, target.Token, requestId, target.Http);
             }
             else
             {
-                await PairingManagement.DenyAsync(target.Value.Url, target.Value.Token, requestId);
+                await PairingManagement.DenyAsync(target.Url, target.Token, requestId, target.Http);
             }
 
             await LoadDevicesAsync();
@@ -578,26 +594,49 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => DevicesStatus = "Couldn't answer that request: " + ex.Message);
+            _dispatcher.Post(() => DevicesStatus = "Couldn't answer that request: " + Explain(ex));
         }
     }
 
-    private async Task RevokeDeviceAsync(string? deviceId)
+    /// <summary>
+    /// Revoking cuts a device off for good, and the row you click might be the device you're sitting at, so
+    /// the first click only arms the row — the second one commits. Arming a row disarms every other, so an
+    /// armed button can't sit forgotten next to the one you meant to press.
+    /// </summary>
+    private async Task RevokeDeviceAsync(DeviceRowVm? row)
     {
         var target = ActiveHttpHost();
-        if (target is null || string.IsNullOrEmpty(deviceId))
+        if (target is null || row is null)
         {
+            return;
+        }
+
+        if (!row.IsConfirmingRevoke)
+        {
+            foreach (var other in Devices)
+            {
+                other.IsConfirmingRevoke = ReferenceEquals(other, row);
+            }
+
+            DevicesStatus = row.IsCurrentDevice
+                ? $"'{row.Name}' is the device you're using — revoking it signs this app out of {ActiveHostName}. Click again to confirm."
+                : $"Click again to revoke '{row.Name}'. It will need to pair afresh to get back in.";
             return;
         }
 
         try
         {
-            await DeviceManagement.RevokeAsync(target.Value.Url, target.Value.Token, deviceId);
+            await DeviceManagement.RevokeAsync(target.Url, target.Token, row.Id, target.Http);
+            _dispatcher.Post(() => DevicesStatus = $"Revoked '{row.Name}'.");
             await LoadDevicesAsync();
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => DevicesStatus = "Couldn't revoke: " + ex.Message);
+            _dispatcher.Post(() =>
+            {
+                row.IsConfirmingRevoke = false;
+                DevicesStatus = "Couldn't revoke: " + Explain(ex);
+            });
         }
     }
 
@@ -614,6 +653,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     public IAsyncRelayCommand LoadCredentialStatusCommand { get; }
     public IAsyncRelayCommand ConnectGitHubCommand { get; }
+    public IAsyncRelayCommand<GitHubAccountRowVm> UnlinkGitHubCommand { get; }
 
     // ---- Settings tab (a first-class document, opened by the gear) ----
     public IRelayCommand OpenSettingsCommand { get; }
@@ -712,7 +752,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var status = await CredentialManagement.GetStatusAsync(host, doc.HostToken);
+            var status = await CredentialManagement.GetStatusAsync(host, doc.HostToken, Agnes.Client.AgnesHttp.For(doc.Host?.PinnedFingerprint));
             var linked = status is not null && (status.State == "connected" || !string.IsNullOrWhiteSpace(status.Account));
             if (linked)
             {
@@ -772,6 +812,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatProfiles));
         OnPropertyChanged(nameof(CatFriends));
         OnPropertyChanged(nameof(ActiveHostName));
+        // Opening a page IS the request to see what's on it. Nothing here should need a Refresh click to
+        // show its contents for the first time — a page that opens blank tells you nothing about your host.
         if (value == "projects" && SelectedProject is null)
         {
             _ = LoadProjectsAsync();
@@ -780,10 +822,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             _ = LoadSandboxesAsync();
         }
+        else if (value == "devices")
+        {
+            _ = LoadDevicesAsync();
+        }
+        else if (value == "github")
+        {
+            _ = LoadCredentialStatusAsync();
+        }
         else if (value == "mcp")
         {
-            _ = LoadMcpServersAsync();
-            _ = LoadMcpPresetsAsync();
+            _ = LoadMcpAsync();
         }
         else if (value == "plugins")
         {
@@ -810,12 +859,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     // ---- Sandboxes: the host's managed VMs (stop-on-close · resume · delete) ----
     public IAsyncRelayCommand LoadSandboxesCommand { get; }
-    public IAsyncRelayCommand<SandboxRecordDto> DeleteSandboxRecordCommand { get; }
-    public IAsyncRelayCommand<SandboxRecordDto> ResumeSandboxRecordCommand { get; }
+    public IAsyncRelayCommand<SandboxRowVm> DeleteSandboxRecordCommand { get; }
+    public IAsyncRelayCommand<SandboxRowVm> ResumeSandboxRecordCommand { get; }
     public IAsyncRelayCommand FindOrphansCommand { get; }
     public IAsyncRelayCommand ReapOrphansCommand { get; }
 
-    public System.Collections.ObjectModel.ObservableCollection<SandboxRecordDto> Sandboxes { get; } = [];
+    public System.Collections.ObjectModel.ObservableCollection<SandboxRowVm> Sandboxes { get; } = [];
     public bool HasSandboxes => Sandboxes.Count > 0;
 
     public System.Collections.ObjectModel.ObservableCollection<string> OrphanVmNames { get; } = [];
@@ -831,7 +880,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var orphans = await SandboxManagement.OrphansAsync(target.Value.Url, target.Value.Token);
+            var orphans = await SandboxManagement.OrphansAsync(target.Url, target.Token, target.Http);
             _dispatcher.Post(() =>
             {
                 OrphanVmNames.Clear();
@@ -845,7 +894,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => SandboxesStatus = "Couldn't scan for orphans: " + ex.Message);
+            _dispatcher.Post(() => SandboxesStatus = "Couldn't scan for orphans: " + Explain(ex));
         }
     }
 
@@ -856,7 +905,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var reaped = await SandboxManagement.ReapAsync(target.Value.Url, target.Value.Token);
+            var reaped = await SandboxManagement.ReapAsync(target.Url, target.Token, target.Http);
             _dispatcher.Post(() =>
             {
                 OrphanVmNames.Clear();
@@ -867,7 +916,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => SandboxesStatus = "Couldn't reap: " + ex.Message);
+            _dispatcher.Post(() => SandboxesStatus = "Couldn't reap: " + Explain(ex));
         }
     }
 
@@ -882,11 +931,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var list = await SandboxManagement.ListAsync(target.Value.Url, target.Value.Token);
+            var list = await SandboxManagement.ListAsync(target.Url, target.Token, target.Http);
             _dispatcher.Post(() =>
             {
                 Sandboxes.Clear();
-                foreach (var s in list) { Sandboxes.Add(s); }
+                foreach (var s in list) { Sandboxes.Add(new SandboxRowVm(s)); }
                 OnPropertyChanged(nameof(HasSandboxes));
                 SandboxesStatus = list.Count == 0
                     ? "No sandboxes yet — sandboxed sessions appear here (stopped ones stay until you delete them)."
@@ -895,11 +944,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => SandboxesStatus = "Couldn't load sandboxes: " + ex.Message);
+            _dispatcher.Post(() => SandboxesStatus = "Couldn't load sandboxes: " + Explain(ex));
         }
     }
 
-    private async Task ResumeSandboxRecordAsync(SandboxRecordDto? sandbox)
+    private async Task ResumeSandboxRecordAsync(SandboxRowVm? sandbox)
     {
         var target = ActiveHttpHost();
         if (target is null || sandbox is null) { return; }
@@ -914,7 +963,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         try
         {
             _dispatcher.Post(() => SandboxesStatus = $"Resuming '{sandbox.Title}'… (the VM cold-starts, a few seconds)");
-            var info = await SandboxManagement.ResumeAsync(target.Value.Url, target.Value.Token, sandbox.SessionId);
+            var info = await SandboxManagement.ResumeAsync(target.Url, target.Token, sandbox.SessionId, target.Http);
             if (info is null)
             {
                 _dispatcher.Post(() => SandboxesStatus = "Resume failed — the host returned no session.");
@@ -924,7 +973,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             _dispatcher.Post(() =>
             {
                 // Open a tab attached to the resumed session (reuses the reconnect flow).
-                var descriptor = new SessionDescriptor(ActiveHostName, target.Value.Url, target.Value.Token, info.SessionId, info.AdapterId, sandbox.Title);
+                var descriptor = new SessionDescriptor(ActiveHostName, target.Url, target.Token, info.SessionId, info.AdapterId, sandbox.Title);
                 var doc = new SessionDocument(this, _dispatcher)
                 {
                     Title = sandbox.Title,
@@ -942,35 +991,86 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => SandboxesStatus = "Couldn't resume: " + ex.Message);
+            _dispatcher.Post(() => SandboxesStatus = "Couldn't resume: " + Explain(ex));
         }
     }
 
-    private async Task DeleteSandboxRecordAsync(SandboxRecordDto? sandbox)
+    /// <summary>
+    /// Deleting destroys a VM and everything in it, permanently — so, as with revoking a device, the first click
+    /// arms the row and the second commits. Arming one row disarms the rest.
+    /// </summary>
+    private async Task DeleteSandboxRecordAsync(SandboxRowVm? row)
     {
         var target = ActiveHttpHost();
-        if (target is null || sandbox is null) { return; }
+        if (target is null || row is null) { return; }
+
+        if (!row.IsConfirmingDelete)
+        {
+            foreach (var other in Sandboxes)
+            {
+                other.IsConfirmingDelete = ReferenceEquals(other, row);
+            }
+
+            SandboxesStatus = $"Deleting '{row.Title}' destroys its VM and everything in it, permanently. Click again to confirm.";
+            return;
+        }
 
         try
         {
-            var list = await SandboxManagement.DeleteAsync(target.Value.Url, target.Value.Token, sandbox.SessionId);
+            var list = await SandboxManagement.DeleteAsync(target.Url, target.Token, row.SessionId, target.Http);
             _dispatcher.Post(() =>
             {
                 Sandboxes.Clear();
-                foreach (var s in list) { Sandboxes.Add(s); }
+                foreach (var s in list) { Sandboxes.Add(new SandboxRowVm(s)); }
                 OnPropertyChanged(nameof(HasSandboxes));
-                SandboxesStatus = $"Deleted the sandbox for '{sandbox.Title}'.";
+                SandboxesStatus = $"Deleted the sandbox for '{row.Title}'.";
             });
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => SandboxesStatus = "Couldn't delete: " + ex.Message);
+            _dispatcher.Post(() =>
+            {
+                row.IsConfirmingDelete = false;
+                SandboxesStatus = "Couldn't delete: " + Explain(ex);
+            });
         }
+    }
+
+    /// <summary>
+    /// The shortcut groups the Keyboard page shows, narrowed by the settings search box — a list of thirty
+    /// shortcuts is only useful if you can ask it a question. Empty groups are dropped, so a search either
+    /// shows what matched or shows nothing.
+    /// </summary>
+    public ObservableCollection<KeyboardShortcutGroup> KeyboardGroups { get; } =
+        new(KeyboardShortcuts.Groups);
+
+    public bool HasKeyboardMatches => KeyboardGroups.Count > 0;
+
+    private void RebuildKeyboardGroups(string query)
+    {
+        KeyboardGroups.Clear();
+        foreach (var group in KeyboardShortcuts.Groups)
+        {
+            var matches = query.Length == 0
+                ? group.Shortcuts
+                : group.Shortcuts
+                    .Where(s => s.Gesture.Contains(query, StringComparison.OrdinalIgnoreCase)
+                                || s.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+            if (matches.Count > 0)
+            {
+                KeyboardGroups.Add(group with { Shortcuts = matches });
+            }
+        }
+
+        OnPropertyChanged(nameof(HasKeyboardMatches));
     }
 
     partial void OnSettingsSearchChanged(string value)
     {
         var query = (value ?? string.Empty).Trim();
+        RebuildKeyboardGroups(query);
+
         SettingsCategoryVm? firstMatch = null;
         foreach (var c in SettingsCategories)
         {
@@ -1145,8 +1245,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var list = await ProjectManagement.ListAsync(target.Value.Url, target.Value.Token);
-            var credentials = await CredentialManagement.GetStatusAsync(target.Value.Url, target.Value.Token);
+            var list = await ProjectManagement.ListAsync(target.Url, target.Token, target.Http);
+            var credentials = await CredentialManagement.GetStatusAsync(target.Url, target.Token, target.Http);
             _dispatcher.Post(() =>
             {
                 Projects.Clear();
@@ -1163,13 +1263,61 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => ProjectsStatus = "Couldn't load projects: " + ex.Message);
+            _dispatcher.Post(() => ProjectsStatus = "Couldn't load projects: " + Explain(ex));
         }
     }
+
+    // The project the user asked to switch to while another one had unsaved edits. Clicking it again commits
+    // to discarding those edits.
+    private ProjectDto? _armedProjectSwitch;
+
+    /// <summary>
+    /// Whether the project editor holds changes that aren't on the host yet. Saving a project rebuilds a VM
+    /// image, so it isn't done implicitly — which means switching projects, or refreshing, would otherwise throw
+    /// the edits away without a word.
+    /// </summary>
+    public bool IsProjectDirty => SelectedProject is { } p && !EditorMatches(p);
+
+    private bool EditorMatches(ProjectDto p)
+        => ProjName == p.Name
+           && ProjNode == p.Sandbox.Node
+           && ProjApt == string.Join(' ', p.Sandbox.AptPackages)
+           && ProjNpm == string.Join(' ', p.Sandbox.NpmGlobals)
+           && ProjPip == string.Join(' ', p.Sandbox.PipPackages)
+           && ProjCpu == (p.SandboxCpu?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)
+           && ProjMemoryGiB == (p.SandboxMemoryGiB?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)
+           && ProjDiskGiB == (p.SandboxDiskGiB?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)
+           && ProjGitMode == p.Defaults.GitCredentialMode
+           && ProjSkipPermissions == p.Defaults.SkipPermissions
+           && ProjMcpApproval == p.Defaults.McpApproval
+           && ProjAccount == (p.CredentialAccount ?? string.Empty)
+           && ProjRepo == (p.Repo ?? string.Empty)
+           && ProjectMcp.Select(m => m.Id).SequenceEqual(p.McpServers.Select(m => m.Id), StringComparer.Ordinal);
 
     private void SelectProject(ProjectDto? project)
     {
         if (project is null) { return; }
+
+        // Don't silently discard unsaved edits — say what would be lost and make the second click mean it.
+        if (SelectedProject is { } current && IsProjectDirty)
+        {
+            var switching = project.Id != current.Id;
+            if (switching && _armedProjectSwitch?.Id != project.Id)
+            {
+                _armedProjectSwitch = project;
+                ProjectsStatus = $"'{current.Name}' has unsaved changes. Save project first, or click '{project.Name}' again to discard them.";
+                return;
+            }
+
+            if (!switching)
+            {
+                // A reload landing on the project being edited: keep the edits rather than overwriting them.
+                SelectedProject = project;
+                return;
+            }
+        }
+
+        _armedProjectSwitch = null;
         SelectedProject = project;
         ProjName = project.Name;
         ProjNode = project.Sandbox.Node;
@@ -1219,13 +1367,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             IsSavingProject = true;
             ProjectsStatus = $"Saving '{dto.Name}' — rebuilding its sandbox image, this can take a minute…";
-            await ProjectManagement.SaveAsync(target.Value.Url, target.Value.Token, dto);
-            _dispatcher.Post(() => ProjectsStatus = $"Saved '{dto.Name}' — its sandbox image is rebuilding.");
+            await ProjectManagement.SaveAsync(target.Url, target.Token, dto, target.Http);
+            _dispatcher.Post(() =>
+            {
+                // The editor now matches the host again, so a switch no longer has anything to warn about.
+                SelectedProject = dto;
+                _armedProjectSwitch = null;
+                ProjectsStatus = $"Saved '{dto.Name}' — its sandbox image is rebuilding.";
+            });
             await LoadProjectsAsync();
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => ProjectsStatus = "Couldn't save: " + ex.Message);
+            _dispatcher.Post(() => ProjectsStatus = "Couldn't save: " + Explain(ex));
         }
         finally
         {
@@ -1252,23 +1406,109 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var target = ActiveHttpHost();
         if (target is null)
         {
-            _dispatcher.Post(() => CredentialStatus = "Open a session on a host to link GitHub.");
+            _dispatcher.Post(() =>
+            {
+                LinkedGitHubAccounts.Clear();
+                OnPropertyChanged(nameof(HasLinkedGitHubAccounts));
+                CredentialStatus = "Open a session on a host to link GitHub.";
+            });
             return;
         }
 
         try
         {
-            var status = await CredentialManagement.GetStatusAsync(target.Value.Url, target.Value.Token);
-            _dispatcher.Post(() => CredentialStatus = status switch
+            var status = await CredentialManagement.GetStatusAsync(target.Url, target.Token, target.Http);
+            _dispatcher.Post(() =>
             {
-                { Installed: true } => $"GitHub connected ({status.Slug}). Sandboxed pushes mint scoped tokens.",
-                { State: "app-created" } => "GitHub app created — finish installing it to enable pushes.",
-                _ => "GitHub not linked. Sandboxed git push needs a linked account.",
+                ApplyGitHubAccounts(status);
+                CredentialStatus = status switch
+                {
+                    { Installed: true } => $"GitHub connected ({status.Slug}). Sandboxed pushes mint scoped tokens.",
+                    { State: "app-created" } => "GitHub app created — finish installing it to enable pushes.",
+                    _ => "GitHub not linked. Sandboxed git push needs a linked account.",
+                };
             });
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => CredentialStatus = "Couldn't load credential status: " + ex.Message);
+            _dispatcher.Post(() => CredentialStatus = "Couldn't load credential status: " + Explain(ex));
+        }
+    }
+
+    /// <summary>
+    /// Fills both views of the same fact: the account names the Projects page picks from, and the rows the
+    /// GitHub page lists with an Unlink beside each. Reads the typed <see cref="CredentialStatus.Accounts"/>
+    /// where the host offers it and falls back to splitting the older comma-joined field otherwise.
+    /// </summary>
+    private void ApplyGitHubAccounts(CredentialStatus? status)
+    {
+        var accounts = status?.Accounts
+            ?? status?.Account?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            ?? [];
+
+        GitHubAccounts.Clear();
+        LinkedGitHubAccounts.Clear();
+        foreach (var a in accounts)
+        {
+            GitHubAccounts.Add(a);
+            LinkedGitHubAccounts.Add(new GitHubAccountRowVm(a));
+        }
+
+        OnPropertyChanged(nameof(HasLinkedGitHubAccounts));
+    }
+
+    /// <summary>The GitHub accounts linked on the connected host, each unlinkable.</summary>
+    public ObservableCollection<GitHubAccountRowVm> LinkedGitHubAccounts { get; } = [];
+
+    public bool HasLinkedGitHubAccounts => LinkedGitHubAccounts.Count > 0;
+
+    /// <summary>
+    /// Unlinks a GitHub account from the host. Two-step for the same reason revoking a device is: it drops the
+    /// App private key, so every sandboxed push through that account stops working and the only way back is to
+    /// run the connect flow again.
+    /// </summary>
+    private async Task UnlinkGitHubAsync(GitHubAccountRowVm? row)
+    {
+        var target = ActiveHttpHost();
+        if (target is null || row is null)
+        {
+            return;
+        }
+
+        if (!row.IsConfirmingUnlink)
+        {
+            foreach (var other in LinkedGitHubAccounts)
+            {
+                other.IsConfirmingUnlink = ReferenceEquals(other, row);
+            }
+
+            CredentialStatus = $"Unlinking '{row.Account}' stops sandboxed pushes that use it, and re-linking means running Connect again. Click again to confirm.";
+            return;
+        }
+
+        try
+        {
+            var removed = await CredentialManagement.DisconnectGitHubAsync(target.Url, target.Token, row.Account, target.Http);
+            if (!removed)
+            {
+                _dispatcher.Post(() =>
+                {
+                    row.IsConfirmingUnlink = false;
+                    CredentialStatus = $"The host didn't have '{row.Account}' linked (or is too old to unlink accounts).";
+                });
+                return;
+            }
+
+            await LoadCredentialStatusAsync();
+            _dispatcher.Post(() => CredentialStatus = $"Unlinked '{row.Account}'.");
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() =>
+            {
+                row.IsConfirmingUnlink = false;
+                CredentialStatus = "Couldn't unlink: " + Explain(ex);
+            });
         }
     }
 
@@ -1283,7 +1523,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var url = await CredentialManagement.ConnectGitHubAsync(target.Value.Url, target.Value.Token);
+            var url = await CredentialManagement.ConnectGitHubAsync(target.Url, target.Token, target.Http);
             if (url is { Length: > 0 })
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
@@ -1292,7 +1532,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => CredentialStatus = "Couldn't start GitHub connect: " + ex.Message);
+            _dispatcher.Post(() => CredentialStatus = "Couldn't start GitHub connect: " + Explain(ex));
         }
     }
 
@@ -1350,14 +1590,113 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public IAsyncRelayCommand<McpServerInfo> ToggleMcpServerCommand { get; }
 
     // ---- MCP curated presets + effective-config preview (for the active session's host) ----
-    public ObservableCollection<McpServerInfo> McpPresets { get; } = [];
+    public ObservableCollection<McpPresetRowVm> McpPresets { get; } = [];
     public ObservableCollection<McpServerInfo> EffectiveMcp { get; } = [];
 
-    [ObservableProperty] private string _mcpPreviewStatus = "Preview the servers that would be active.";
+    [ObservableProperty] private string _mcpPreviewStatus = "Open a session on a host to see what would be active.";
 
     public IAsyncRelayCommand LoadMcpPresetsCommand { get; }
-    public IAsyncRelayCommand<McpServerInfo> InstallMcpPresetCommand { get; }
+    public IAsyncRelayCommand<McpPresetRowVm> InstallMcpPresetCommand { get; }
     public IAsyncRelayCommand PreviewMcpCommand { get; }
+
+    /// <summary>Reloads the whole MCP page — servers, presets and the effective preview — in one go.</summary>
+    public IAsyncRelayCommand LoadMcpCommand { get; }
+
+    // ---- MCP catalogue: searching the registries the host has, and installing from them ----
+
+    /// <summary>Results from every MCP catalogue the host offers, each row naming where it came from.</summary>
+    public ObservableCollection<McpCatalogRowVm> McpCatalogResults { get; } = [];
+
+    public bool HasMcpCatalogResults => McpCatalogResults.Count > 0;
+
+    [ObservableProperty] private string _mcpCatalogQuery = string.Empty;
+
+    [ObservableProperty] private bool _isSearchingMcpCatalog;
+
+    [ObservableProperty]
+    private string _mcpCatalogStatus = "Search the registries for a server by name or by what it does.";
+
+    public IAsyncRelayCommand SearchMcpCatalogCommand { get; }
+    public IAsyncRelayCommand<McpCatalogRowVm> InstallMcpCatalogEntryCommand { get; }
+
+    /// <summary>
+    /// Searches every MCP catalogue the host has — the built-in curated set plus whatever registry plugins are
+    /// installed — and shows the results together. A registry that couldn't answer is named in the status
+    /// rather than quietly contributing nothing.
+    /// </summary>
+    private async Task SearchMcpCatalogAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => McpCatalogStatus = "Open a session on a host to search its MCP registries.");
+            return;
+        }
+
+        try
+        {
+            IsSearchingMcpCatalog = true;
+            var results = await McpManagement.SearchCatalogAsync(target.Url, target.Token, McpCatalogQuery ?? string.Empty, target.Http);
+            _dispatcher.Post(() =>
+            {
+                McpCatalogResults.Clear();
+                foreach (var hit in results.Hits)
+                {
+                    var installed = McpServers.Any(s => string.Equals(s.Name, hit.Entry.Name, StringComparison.OrdinalIgnoreCase));
+                    McpCatalogResults.Add(new McpCatalogRowVm(hit, installed));
+                }
+
+                OnPropertyChanged(nameof(HasMcpCatalogResults));
+                McpCatalogStatus = DescribeCatalog(results, McpCatalogQuery ?? string.Empty);
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => McpCatalogStatus = "Couldn't search: " + Explain(ex));
+        }
+        finally
+        {
+            _dispatcher.Post(() => IsSearchingMcpCatalog = false);
+        }
+    }
+
+    private static string DescribeCatalog(Agnes.Abstractions.CatalogResults<Agnes.Abstractions.McpCatalogEntry> results, string query)
+    {
+        var found = results.Hits.Count switch
+        {
+            0 when query.Length > 0 => $"Nothing matched '{query}'.",
+            0 => "The registries are offering nothing right now.",
+            var n when query.Length > 0 => $"{n} match(es) for '{query}'.",
+            var n => $"{n} server(s) offered.",
+        };
+
+        return results.Failures.Count == 0 ? found : $"{found} Couldn't reach: {string.Join("; ", results.Failures)}";
+    }
+
+    /// <summary>
+    /// Installs a catalogued server. The host resolves the entry against its registry again and maps it into a
+    /// server configuration, so the client never has to understand how a given registry describes a launch.
+    /// </summary>
+    private async Task InstallMcpCatalogEntryAsync(McpCatalogRowVm? row)
+    {
+        var target = ActiveHttpHost();
+        if (target is null || row is null || row.IsInstalled) { return; }
+
+        try
+        {
+            _dispatcher.Post(() => McpCatalogStatus = $"Installing '{row.Name}'…");
+            await McpManagement.InstallFromCatalogAsync(target.Url, target.Token, row.CatalogId, row.EntryId, runAt: null, httpClient: target.Http);
+            await LoadMcpAsync();
+            await SearchMcpCatalogAsync();
+            _dispatcher.Post(() => McpCatalogStatus = row.NeedsConfiguration
+                ? $"Installed '{row.Name}'. Fill in {row.RequiredEnvironment} under Configured servers before using it."
+                : $"Installed '{row.Name}'. It applies to sessions started from now on.");
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => McpCatalogStatus = $"Couldn't install '{row.Name}': " + Explain(ex));
+        }
+    }
 
     private async Task LoadMcpPresetsAsync()
     {
@@ -1370,23 +1709,29 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var presets = await McpManagement.PresetsAsync(target.Value.Url, target.Value.Token);
+            var presets = await McpManagement.PresetsAsync(target.Url, target.Token, target.Http);
             _dispatcher.Post(() =>
             {
                 McpPresets.Clear();
-                foreach (var p in presets) { McpPresets.Add(p); }
+                foreach (var p in presets)
+                {
+                    // A preset already in the configured list has nothing left to offer, so it says so
+                    // rather than inviting a second install of the same server.
+                    var installed = McpServers.Any(s => string.Equals(s.Name, p.Name, StringComparison.OrdinalIgnoreCase));
+                    McpPresets.Add(new McpPresetRowVm(p, installed));
+                }
             });
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => McpStatus = "Couldn't load presets: " + ex.Message);
+            _dispatcher.Post(() => McpStatus = "Couldn't load presets: " + Explain(ex));
         }
     }
 
-    private async Task InstallMcpPresetAsync(McpServerInfo? template)
+    private async Task InstallMcpPresetAsync(McpPresetRowVm? row)
     {
         var target = ActiveHttpHost();
-        if (target is null || template is null)
+        if (target is null || row is null || row.IsInstalled)
         {
             return;
         }
@@ -1394,13 +1739,26 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         try
         {
             // Quick-install: reuse the host's normal add-server path (no command/args retyped).
-            await McpManagement.InstallPresetAsync(target.Value.Url, target.Value.Token, template);
-            await LoadMcpServersAsync();
+            await McpManagement.InstallPresetAsync(target.Url, target.Token, row.Preset, httpClient: target.Http);
+            await LoadMcpAsync();
+            _dispatcher.Post(() => McpStatus = $"Installed '{row.Name}'. It applies to sessions started from now on.");
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => McpStatus = "Couldn't install preset: " + ex.Message);
+            _dispatcher.Post(() => McpStatus = "Couldn't install preset: " + Explain(ex));
         }
+    }
+
+    /// <summary>
+    /// Loads the whole MCP page in the order its parts depend on each other: the configured servers first (the
+    /// presets need them to know what's already installed), then the presets, then what would actually be
+    /// active. One call so the page is never half-populated.
+    /// </summary>
+    private async Task LoadMcpAsync()
+    {
+        await LoadMcpServersAsync();
+        await LoadMcpPresetsAsync();
+        await PreviewMcpAsync();
     }
 
     private async Task PreviewMcpAsync()
@@ -1408,13 +1766,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var target = ActiveHttpHost();
         if (target is null)
         {
+            _dispatcher.Post(() =>
+            {
+                EffectiveMcp.Clear();
+                McpPreviewStatus = "Open a session on a host to see what would be active.";
+            });
             return;
         }
 
         try
         {
             // Host-wide effective view (no workspace filter) — what would be active for a plain session now.
-            var effective = await McpManagement.PreviewEffectiveAsync(target.Value.Url, target.Value.Token);
+            var effective = await McpManagement.PreviewEffectiveAsync(target.Url, target.Token, workspaceId: null, agentId: null, httpClient: target.Http);
             _dispatcher.Post(() =>
             {
                 EffectiveMcp.Clear();
@@ -1429,7 +1792,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => McpPreviewStatus = "Couldn't preview: " + ex.Message);
+            _dispatcher.Post(() => McpPreviewStatus = "Couldn't preview: " + Explain(ex));
         }
     }
 
@@ -1445,7 +1808,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         try
         {
             McpStatus = "Loading…";
-            var list = await McpManagement.ListAsync(target.Value.Url, target.Value.Token);
+            var list = await McpManagement.ListAsync(target.Url, target.Token, target.Http);
             _dispatcher.Post(() =>
             {
                 McpServers.Clear();
@@ -1455,7 +1818,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => McpStatus = "Couldn't load MCP servers: " + ex.Message);
+            _dispatcher.Post(() => McpStatus = "Couldn't load MCP servers: " + Explain(ex));
         }
     }
 
@@ -1479,16 +1842,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            await McpManagement.AddAsync(target.Value.Url, target.Value.Token, request);
+            await McpManagement.AddAsync(target.Url, target.Token, request, target.Http);
             _dispatcher.Post(() =>
             {
                 NewMcpName = NewMcpCommand = NewMcpArgs = NewMcpUrl = string.Empty;
             });
-            await LoadMcpServersAsync();
+            await LoadMcpAsync();
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => McpStatus = "Couldn't add server: " + ex.Message);
+            _dispatcher.Post(() => McpStatus = "Couldn't add server: " + Explain(ex));
         }
     }
 
@@ -1502,12 +1865,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            await McpManagement.RemoveAsync(target.Value.Url, target.Value.Token, id);
-            await LoadMcpServersAsync();
+            await McpManagement.RemoveAsync(target.Url, target.Token, id, target.Http);
+            await LoadMcpAsync();
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => McpStatus = "Couldn't remove server: " + ex.Message);
+            _dispatcher.Post(() => McpStatus = "Couldn't remove server: " + Explain(ex));
         }
     }
 
@@ -1526,12 +1889,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            await McpManagement.UpdateAsync(target.Value.Url, target.Value.Token, server.Id, request);
-            await LoadMcpServersAsync();
+            await McpManagement.UpdateAsync(target.Url, target.Token, server.Id, request, target.Http);
+            // Reload the whole page: enabling or disabling a server changes what "would be active" says, and a
+            // stale answer there is worse than no answer.
+            await LoadMcpAsync();
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => McpStatus = "Couldn't update server: " + ex.Message);
+            _dispatcher.Post(() => McpStatus = "Couldn't update server: " + Explain(ex));
         }
     }
 
@@ -1568,7 +1933,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var view = await SandboxImageManagement.GetAsync(target.Value.Url, target.Value.Token);
+            var view = await SandboxImageManagement.GetAsync(target.Url, target.Token, target.Http);
             _dispatcher.Post(() =>
             {
                 if (view is null)
@@ -1588,7 +1953,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => SandboxImageStatus = "Couldn't load: " + ex.Message);
+            _dispatcher.Post(() => SandboxImageStatus = "Couldn't load: " + Explain(ex));
         }
     }
 
@@ -1611,13 +1976,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var status = await SandboxImageManagement.SaveAsync(target.Value.Url, target.Value.Token, BuildImageDto());
+            var status = await SandboxImageManagement.SaveAsync(target.Url, target.Token, BuildImageDto(), target.Http);
             _dispatcher.Post(() => SetImageStatus(status));
-            await PollImageStatusAsync(target.Value);
+            await PollImageStatusAsync(target);
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => SandboxImageStatus = "Couldn't save: " + ex.Message);
+            _dispatcher.Post(() => SandboxImageStatus = "Couldn't save: " + Explain(ex));
         }
     }
 
@@ -1631,18 +1996,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var status = await SandboxImageManagement.RebuildAsync(target.Value.Url, target.Value.Token);
+            var status = await SandboxImageManagement.RebuildAsync(target.Url, target.Token, target.Http);
             _dispatcher.Post(() => SetImageStatus(status));
-            await PollImageStatusAsync(target.Value);
+            await PollImageStatusAsync(target);
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => SandboxImageStatus = "Couldn't rebuild: " + ex.Message);
+            _dispatcher.Post(() => SandboxImageStatus = "Couldn't rebuild: " + Explain(ex));
         }
     }
 
     // Refresh status while a bake is in progress (baking can take minutes).
-    private async Task PollImageStatusAsync((string Url, string Token) target)
+    private async Task PollImageStatusAsync(HostEndpoint target)
     {
         for (var i = 0; i < 60; i++)
         {
@@ -1650,7 +2015,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             SandboxImageStatusDto? status;
             try
             {
-                status = await SandboxImageManagement.GetStatusAsync(target.Url, target.Token);
+                status = await SandboxImageManagement.GetStatusAsync(target.Url, target.Token, target.Http);
             }
             catch
             {
@@ -1959,6 +2324,33 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private IEnumerable<SessionDocument> OpenTabs()
         => _factory.DocumentDock?.VisibleDockables?.OfType<SessionDocument>() ?? [];
 
+    /// <summary>
+    /// What an access grant can be made against from here: the connected host as a whole, and each live session
+    /// on it. A grant's resource is an opaque id, so offering the real candidates is the difference between a
+    /// usable page and a text box nobody can fill in correctly.
+    /// </summary>
+    private IReadOnlyList<GrantTarget> GrantTargets()
+    {
+        var targets = new List<GrantTarget>();
+        if (ActiveHost() is { } host)
+        {
+            // Name the host this grant would be recorded on. Not ActiveHostName: that describes the *http*
+            // host used for the REST management pages, and reads "no connected host" for a hub-only host.
+            var label = AllDocuments().FirstOrDefault(d => ReferenceEquals(d.Host, host))?.HostName ?? host.HostUrl;
+            targets.Add(new GrantTarget($"host:{host.HostUrl}", $"All of {label}"));
+        }
+
+        foreach (var doc in AllDocuments())
+        {
+            if (doc.Descriptor is { } descriptor)
+            {
+                targets.Add(new GrantTarget($"session:{descriptor.SessionId}", $"Session — {doc.Title}"));
+            }
+        }
+
+        return targets;
+    }
+
     public IRelayCommand NextTabCommand { get; private set; } = null!;
     public IRelayCommand PrevTabCommand { get; private set; } = null!;
     public IRelayCommand<string> ActivateTabByIndexCommand { get; private set; } = null!;
@@ -2228,21 +2620,34 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
            && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps)
            && !string.IsNullOrEmpty(u.Host);
 
+    /// <summary>
+    /// Unpacks what the address field was given. An <c>agnes://pair?…</c> link pasted there carries three
+    /// things at once — where the host is, a one-time grant, and the fingerprint of the certificate it serves.
+    /// The fingerprint is the part that lets a self-signed host be trusted without a CA, and it only means
+    /// anything because the link came off the host's own screen rather than off the network.
+    ///
+    /// Shared by every way in (pairing code, keypair, GitHub sign-in) so they all reach the same host on the
+    /// same terms: reading it in only one of them is how a self-signed host ends up pairable but not
+    /// signable-into.
+    /// </summary>
+    private static (string Url, string? Grant, string? Fingerprint) ReadHostEntry(string entry)
+    {
+        if (!entry.StartsWith("agnes://pair", StringComparison.OrdinalIgnoreCase))
+        {
+            return (entry, null, null);
+        }
+
+        return (
+            Agnes.Protocol.PairingLink.HostOf(entry) ?? entry,
+            Agnes.Protocol.PairingLink.SecretOf(entry),
+            Agnes.Protocol.PairingLink.FingerprintOf(entry));
+    }
+
     public async Task AddHostAsync(SessionDocument doc)
     {
-        var url = doc.NewHostUrl.Trim();
-        var codeFromLink = (string?)null;
-        var fingerprint = (string?)null;
-
-        // An `agnes://pair?...` link pasted into the address field carries everything at once: where the
-        // host is, a one-time grant, and the fingerprint of the certificate it serves. That last part is
-        // what lets a self-signed host be trusted without a CA — and it only means anything because the
-        // link came off the host's own screen rather than off the network.
-        if (url.StartsWith("agnes://pair", StringComparison.OrdinalIgnoreCase))
+        var (url, codeFromLink, fingerprint) = ReadHostEntry(doc.NewHostUrl.Trim());
+        if (codeFromLink is not null || fingerprint is not null)
         {
-            codeFromLink = ReadLinkValue(url, "grant") ?? ReadLinkValue(url, "code");
-            fingerprint = Agnes.Protocol.PairingLink.FingerprintOf(url);
-            url = Agnes.Protocol.PairingLink.HostOf(url) ?? url;
             var resolved = url;
             _dispatcher.Post(() => doc.NewHostUrl = resolved);
         }
@@ -2301,7 +2706,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     public async Task DiscoverAuthMethodsAsync(SessionDocument doc)
     {
-        var url = doc.NewHostUrl.Trim();
+        // Asking a host which sign-in methods it offers is itself a call to that host, so it needs the same
+        // trust decision: a pasted pairing link's fingerprint has to be honoured here or a self-signed host
+        // never gets far enough to offer anything.
+        var (url, _, fingerprint) = ReadHostEntry(doc.NewHostUrl.Trim());
         if (!IsValidHostUrl(url))
         {
             _dispatcher.Post(() =>
@@ -2314,7 +2722,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             return;
         }
 
-        var methods = await Agnes.Client.AuthDiscovery.GetMethodsAsync(url).ConfigureAwait(false);
+        var methods = await Agnes.Client.AuthDiscovery.GetMethodsAsync(url, Agnes.Client.AgnesHttp.For(fingerprint)).ConfigureAwait(false);
         _dispatcher.Post(() =>
         {
             doc.HostSupportsGitHub = methods.GitHub;
@@ -2326,13 +2734,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     public async Task SignInWithKeyAsync(SessionDocument doc)
     {
-        var url = doc.NewHostUrl.Trim();
+        // Same unpacking as pairing: a pasted link's fingerprint has to reach the enrolment call and the saved
+        // host, or signing in with a key works everywhere except the self-signed hosts it exists for.
+        var (url, _, fingerprint) = ReadHostEntry(doc.NewHostUrl.Trim());
         if (!IsValidHostUrl(url))
         {
             _dispatcher.Post(() => doc.StatusText = "Enter a host address like https://your-host:5099 first.");
             return;
         }
 
+        var http = Agnes.Client.AgnesHttp.For(fingerprint);
         try
         {
             // Surface the public-key line so the operator can authorize this device on the host.
@@ -2348,9 +2759,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             }
 
             var deviceName = $"{Environment.MachineName} (desktop)";
-            var paired = await Agnes.Client.KeypairEnrollment.AuthenticateAsync(url, deviceName).ConfigureAwait(false);
+            var paired = await Agnes.Client.KeypairEnrollment.AuthenticateAsync(url, deviceName, httpClient: http).ConfigureAwait(false);
 
-            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token);
+            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
             var connected = await SelectHostAsync(doc, host);
             if (connected)
             {
@@ -2372,16 +2783,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     public async Task SignInWithGitHubAsync(SessionDocument doc)
     {
-        var url = doc.NewHostUrl.Trim();
+        var (url, _, fingerprint) = ReadHostEntry(doc.NewHostUrl.Trim());
         if (!IsValidHostUrl(url))
         {
             _dispatcher.Post(() => doc.StatusText = "Enter a host address like https://your-host:5099 first.");
             return;
         }
 
+        // GitHub's own device-flow endpoints are CA-signed and need no pin; the two calls that go to the
+        // Agnes host — discovering its methods, and exchanging the GitHub token for a device token — do.
+        var http = Agnes.Client.AgnesHttp.For(fingerprint);
         try
         {
-            var methods = await Agnes.Client.AuthDiscovery.GetMethodsAsync(url).ConfigureAwait(false);
+            var methods = await Agnes.Client.AuthDiscovery.GetMethodsAsync(url, http).ConfigureAwait(false);
             if (!methods.GitHub || string.IsNullOrEmpty(methods.GitHubClientId))
             {
                 _dispatcher.Post(() => doc.StatusText = "This host doesn't offer GitHub sign-in.");
@@ -2401,10 +2815,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
             var deviceName = $"{Environment.MachineName} (desktop)";
             var paired = await Agnes.Client.GitHubDeviceLogin
-                .CompleteAsync(url, methods.GitHubClientId, code, deviceName).ConfigureAwait(false);
+                .CompleteAsync(url, methods.GitHubClientId, code, deviceName, hostClient: http).ConfigureAwait(false);
 
             // Same persist-on-successful-connect flow as AddHostAsync — never save a host we couldn't reach.
-            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token);
+            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
             var connected = await SelectHostAsync(doc, host);
             if (connected)
             {
@@ -2692,7 +3106,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             while (!cancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
-                var status = await SandboxImageManagement.GetStatusAsync(url, doc.HostToken, cancellationToken: cancellationToken).ConfigureAwait(false);
+                var status = await SandboxImageManagement.GetStatusAsync(
+                    url, doc.HostToken, Agnes.Client.AgnesHttp.For(doc.Host?.PinnedFingerprint), cancellationToken).ConfigureAwait(false);
                 if (status is { State: "building" } && !string.IsNullOrWhiteSpace(status.Message) && doc.Stage == TabStage.Starting)
                 {
                     _dispatcher.Post(() => doc.StatusText = "Building sandbox image · " + status.Message);
@@ -2722,6 +3137,142 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     // ---- tab lifecycle ----
 
     private void AddTab() => AddDocument(CreateTab());
+
+    /// <summary>
+    /// Acts on an <c>agnes://pair</c> link that arrived from outside the app — clicked in a browser, scanned
+    /// from the host's QR, or passed to a second launch that handed it to this one.
+    ///
+    /// Mirrors what the phone does with the same link, because it's the same job: land on the connect surface
+    /// with everything already filled in. A <c>grant</c> is a one-time secret that came off the host's own
+    /// screen, so there is nothing left to ask and pairing starts immediately; a typed <c>code</c> is
+    /// prefilled but left for the user to confirm. An unpaired tab is reused rather than piling up a new one
+    /// per click.
+    /// </summary>
+    public void HandleLink(string link)
+    {
+        // What the link means is Agnes.Ui.Core's decision, shared with the phone so the same link does the
+        // same thing on both.
+        if (AgnesLinkRoute.Parse(link) is not { } route || !IsValidHostUrl(route.HostUrl))
+        {
+            return;
+        }
+
+        if (route.Kind == AgnesLinkKind.ViewSession)
+        {
+            _dispatcher.Post(() => ViewSharedSession(route));
+            return;
+        }
+
+        _dispatcher.Post(() =>
+        {
+            // Reuse a tab that hasn't picked a host yet; only open one if every tab is already in use.
+            var doc = OpenTabs().FirstOrDefault(d => d.Session is null && d.Host is null);
+            if (doc is null)
+            {
+                doc = CreateTab();
+                AddDocument(doc);
+            }
+            else
+            {
+                _factory.SetActiveDockable(doc);
+            }
+
+            doc.ShowAddHost = true;
+            doc.NewHostUrl = route.HostUrl;
+            doc.HostFingerprint = route.Fingerprint;
+            if (route.Secret is { Length: > 0 } secret)
+            {
+                doc.NewHostToken = secret;
+            }
+
+            doc.StatusText = route.AutoSubmit
+                ? "Pairing from the link…"
+                : "Check the address, then pair with the code shown on the host.";
+
+            if (route.AutoSubmit)
+            {
+                _ = AddHostAsync(doc);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Opens a session someone shared a link to.
+    ///
+    /// The link grants nothing — that is what makes it safe to paste into a group chat — so this only works
+    /// against a host this device is already paired with. If it isn't, we say so and stop. We deliberately do
+    /// <em>not</em> offer to pair: a message that can prompt a stranger's client to enrol with a host they've
+    /// never heard of is a phishing primitive, and pairing stays something you start yourself.
+    /// </summary>
+    private void ViewSharedSession(AgnesLinkRoute route)
+    {
+        var known = _knownHosts.FirstOrDefault(h => SameHost(h.Url, route.HostUrl));
+        if (known is null)
+        {
+            Notifier?.Notify(new AppNotification(
+                "You don't have access to that host",
+                $"This link points at {route.HostUrl}. Pair with it first, then open the link again.",
+                NotificationKind.Error,
+                route.SessionId ?? string.Empty));
+            return;
+        }
+
+        // Already open? Just go to it — and to the moment the link names.
+        if (AllDocuments().FirstOrDefault(d => d.Session?.SessionId == route.SessionId) is { } open)
+        {
+            FocusDocument(open);
+            RevealSequence(open, route.Sequence);
+            return;
+        }
+
+        var doc = CreateTab();
+        doc.Title = "Shared session";
+        doc.HostName = known.Name;
+        doc.HostFingerprint = known.Fingerprint ?? route.Fingerprint;
+        doc.Descriptor = new SessionDescriptor(
+            known.Name, known.Url, known.Token, route.SessionId!, string.Empty, "Shared session");
+        AddDocument(doc);
+
+        _ = AttachSharedSessionAsync(doc, route);
+    }
+
+    private async Task AttachSharedSessionAsync(SessionDocument doc, AgnesLinkRoute route)
+    {
+        await ReconnectAsync(doc, doc.Descriptor!);
+        _dispatcher.Post(() => RevealSequence(doc, route.Sequence));
+    }
+
+    /// <summary>
+    /// Scrolls a tab to the moment a link named. The transcript streams in, so the item may not exist the
+    /// instant we attach; this retries briefly rather than landing at the top and looking like the link's
+    /// position was ignored.
+    /// </summary>
+    private void RevealSequence(SessionDocument doc, long? sequence)
+    {
+        if (sequence is not > 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                var landed = false;
+                _dispatcher.Post(() => landed = doc.Session?.ScrollToSequence(sequence.Value) ?? false);
+                if (landed)
+                {
+                    return;
+                }
+
+                await Task.Delay(250).ConfigureAwait(false);
+            }
+        });
+    }
+
+    /// <summary>Whether two host addresses name the same host, ignoring trailing slashes and case.</summary>
+    private static bool SameHost(string a, string b)
+        => string.Equals(a.TrimEnd('/'), b.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 
     private void AddDocument(SessionDocument doc)
     {
@@ -3180,6 +3731,34 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             McpApproval = mcpApproval;
         }
     }
+
+    /// <summary>
+    /// Opens a new session tab from a saved profile: the point of a profile is to start something, so the
+    /// settings list can do it rather than only telling you a profile exists. The profile lives on the host it
+    /// was saved to, so that host is selected for you; the profile's options are applied as soon as the tab
+    /// has the host's agent list, and everything stays editable before Start.
+    /// </summary>
+    private async Task StartFromLaunchProfileAsync(LaunchProfileRowVm? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        var doc = CreateTab();
+        doc.PendingProfileId = row.Profile.Id;
+        AddDocument(doc);
+
+        // The profile is host-scoped, so there's exactly one right host to connect to — don't make the user
+        // pick it again from a list.
+        if (ActiveHost() is { } host
+            && _knownHosts.FirstOrDefault(h => string.Equals(h.Url, host.HostUrl, StringComparison.OrdinalIgnoreCase)) is { } known)
+        {
+            await SelectHostAsync(doc, known);
+        }
+    }
+
+    public IAsyncRelayCommand<LaunchProfileRowVm> StartFromLaunchProfileCommand { get; }
 
     public async Task ForkAsync(SessionDocument doc)
     {

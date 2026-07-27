@@ -94,6 +94,32 @@ public class DeviceRegistryTests : IDisposable
     }
 
     [Fact]
+    public void ListDevices_marks_the_calling_device_so_a_client_can_warn_before_self_revoking()
+    {
+        var reg = New();
+        var mine = reg.IssueDeviceToken("laptop", subject: "pairing", kind: "pairing");
+        reg.IssueDeviceToken("phone", subject: "pairing", kind: "pairing");
+
+        var listed = reg.ListDevices(mine.Token);
+
+        Assert.Equal(2, listed.Count);
+        Assert.Equal(mine.DeviceId, Assert.Single(listed, d => d.IsCurrentDevice).Id);
+    }
+
+    [Fact]
+    public void ListDevices_marks_nothing_without_a_caller_token_and_does_not_touch_last_seen()
+    {
+        var reg = New();
+        var mine = reg.IssueDeviceToken("laptop", subject: "pairing", kind: "pairing");
+
+        Assert.All(reg.ListDevices(), d => Assert.False(d.IsCurrentDevice));
+        Assert.All(reg.ListDevices("not-a-token"), d => Assert.False(d.IsCurrentDevice));
+
+        // Listing is a pure read: it must not make an unused device look freshly active.
+        Assert.Null(Assert.Single(reg.ListDevices(mine.Token)).LastSeenAt);
+    }
+
+    [Fact]
     public void Pairing_can_be_disabled_while_other_bootstraps_still_work()
     {
         var reg = new DeviceRegistry(null, _file, pairingEnabled: false);

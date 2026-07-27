@@ -92,5 +92,60 @@ public abstract class StubAgnesHost : IAgnesHost
     public virtual Task<IReadOnlyList<SessionSummary>> ListSessionsAsync()
         => Task.FromResult<IReadOnlyList<SessionSummary>>([]);
 
+    // The prompt/skill library and the friends/grants surface. These are declared here (not left to the
+    // interface defaults) so a derived fake can override them: the interface mapping is fixed at this class,
+    // and a default interface member a subclass merely shadows would never be called.
+
+    public virtual Task<IReadOnlyList<LibraryPrompt>> GetPromptsAsync()
+        => Task.FromResult<IReadOnlyList<LibraryPrompt>>([]);
+
+    public virtual Task<LibraryPrompt> SavePromptAsync(LibraryPrompt prompt)
+        => throw new NotSupportedException();
+
+    public virtual Task DeletePromptAsync(string id) => Task.CompletedTask;
+
+    public virtual Task<IReadOnlyList<PromptTemplate>> GetPromptTemplatesAsync()
+        => Task.FromResult<IReadOnlyList<PromptTemplate>>([]);
+
+    public virtual Task<PromptTemplate> SavePromptTemplateAsync(PromptTemplate template)
+        => throw new NotSupportedException();
+
+    public virtual Task DeletePromptTemplateAsync(string token) => Task.CompletedTask;
+
+    public virtual Task<IReadOnlyList<LibrarySkill>> GetSkillsAsync()
+        => Task.FromResult<IReadOnlyList<LibrarySkill>>([]);
+
+    public virtual Task DeleteSkillAsync(string id) => Task.CompletedTask;
+
+    public virtual Task<IReadOnlyList<CatalogSource>> GetSkillRegistriesAsync()
+        => Task.FromResult<IReadOnlyList<CatalogSource>>([]);
+
+    public virtual Task<IReadOnlyList<RegistrySkillEntry>> GetRegistrySkillsAsync(string registryId)
+        => Task.FromResult<IReadOnlyList<RegistrySkillEntry>>([]);
+
+    public virtual Task<CatalogResults<RegistrySkillEntry>> SearchSkillsAsync(string query)
+        => Task.FromResult(CatalogResults<RegistrySkillEntry>.Empty);
+
+    public virtual Task<LibrarySkill> InstallSkillFromRegistryAsync(string registryId, string entryId)
+        => throw new NotSupportedException();
+
+    public virtual Task<IReadOnlyList<Friend>> ListFriendsAsync()
+        => Task.FromResult<IReadOnlyList<Friend>>([]);
+
+    public virtual Task<Friend> AddFriendAsync(string gitHubLogin, string? displayName = null)
+        => throw new NotSupportedException();
+
+    public virtual Task RemoveFriendAsync(string gitHubLogin) => Task.CompletedTask;
+
+    public virtual Task<bool> CheckEligibilityAsync(string gitHubLogin) => Task.FromResult(false);
+
+    public virtual Task<IReadOnlyList<AccessGrant>> ListGrantsAsync()
+        => Task.FromResult<IReadOnlyList<AccessGrant>>([]);
+
+    public virtual Task<AccessGrant> GrantAccessAsync(string granteeLogin, string resource, GrantScope scope)
+        => throw new NotSupportedException();
+
+    public virtual Task RevokeGrantAsync(string grantId) => Task.CompletedTask;
+
     public virtual ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

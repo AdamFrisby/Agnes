@@ -216,11 +216,25 @@ public sealed class DeviceRegistry
         }
     }
 
-    public IReadOnlyList<DeviceInfo> ListDevices()
-        => _devices.Values
+    /// <summary>
+    /// The paired devices, newest first. When <paramref name="callerToken"/> is supplied, the entry that token
+    /// belongs to is marked <see cref="DeviceInfo.IsCurrentDevice"/> so a client can tell the caller which row
+    /// is the one they are connected on — revoking it locks them out, and that is worth knowing first. A pure
+    /// read: unlike <see cref="IsValid"/>/<see cref="ResolveCallerId"/> it does not touch last-seen.
+    /// </summary>
+    public IReadOnlyList<DeviceInfo> ListDevices(string? callerToken = null)
+    {
+        var currentId = callerToken is { Length: > 0 } && _devices.TryGetValue(Hash(callerToken), out var self)
+            ? self.Id
+            : null;
+
+        return _devices.Values
             .OrderByDescending(d => d.PairedAt)
-            .Select(d => new DeviceInfo(d.Id, d.Name, d.PairedAt, d.LastSeenAt, d.Subject))
+            .Select(d => new DeviceInfo(
+                d.Id, d.Name, d.PairedAt, d.LastSeenAt, d.Subject,
+                IsCurrentDevice: currentId is not null && string.Equals(d.Id, currentId, StringComparison.Ordinal)))
             .ToArray();
+    }
 
     /// <summary>
     /// Whether a resolved caller id is the host owner/operator. The configured bootstrap token (mapped to the

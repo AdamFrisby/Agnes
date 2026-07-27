@@ -36,6 +36,9 @@ public sealed class PromptLibraryViewModel : ObservableObject
         SaveTemplateCommand = new AsyncRelayCommand(SaveTemplateAsync, () => CanSaveTemplate);
         DeleteTemplateCommand = new AsyncRelayCommand<PromptTemplateRow>(DeleteTemplateAsync);
         DeleteSkillCommand = new AsyncRelayCommand<LibrarySkill>(DeleteSkillAsync);
+        CancelEditCommand = new RelayCommand(BeginNewPrompt);
+        BrowseRegistryCommand = new AsyncRelayCommand(BrowseRegistriesAsync);
+        InstallSkillCommand = new AsyncRelayCommand<RegistrySkillRow>(InstallSkillAsync);
     }
 
     /// <summary>The host's saved prompts.</summary>
@@ -47,12 +50,68 @@ public sealed class PromptLibraryViewModel : ObservableObject
     /// <summary>The host's saved skill bundles (SKILL.md + supporting files, managed as a unit).</summary>
     public ObservableCollection<LibrarySkill> Skills { get; } = [];
 
+    /// <summary>The registry sources this host offers skills from (a host with none configured reports an
+    /// empty list — which the surface has to explain rather than just showing nothing).</summary>
+    public ObservableCollection<CatalogSource> SkillRegistries { get; } = [];
+
+    /// <summary>
+    /// What the registries are currently offering: their front pages when nothing has been typed, and the
+    /// results of <see cref="SkillQuery"/> once something has. Every row names the registry it came from and
+    /// is flagged if the library already holds it.
+    /// </summary>
+    public ObservableCollection<RegistrySkillRow> RegistrySkills { get; } = [];
+
     private string _status = string.Empty;
     public string Status { get => _status; set => SetProperty(ref _status, value); }
 
+    /// <summary>
+    /// What to look for, across every registry at once. Searching all of them beats picking one first: a
+    /// person wants "a skill that does X", and which index happens to hold it is the registry's problem, not
+    /// theirs. The source is still shown on each result.
+    /// </summary>
+    private string _skillQuery = string.Empty;
+    public string SkillQuery { get => _skillQuery; set => SetProperty(ref _skillQuery, value); }
+
+    private string _skillStatus = string.Empty;
+
+    /// <summary>What the skills area has to say for itself — including <em>why</em> it's empty, which may be
+    /// "no registry is configured", "nothing matched", or "one of them is rate-limited right now".</summary>
+    public string SkillStatus { get => _skillStatus; set => SetProperty(ref _skillStatus, value); }
+
+    public bool HasSkillRegistries => SkillRegistries.Count > 0;
+
+    /// <summary>True while a registry query is in flight, so the surface can say it's working — these are
+    /// network calls to third-party indexes and can take a moment.</summary>
+    private bool _isSearchingSkills;
+    public bool IsSearchingSkills { get => _isSearchingSkills; set => SetProperty(ref _isSearchingSkills, value); }
+
     // ---- prompt editor (id null = a new prompt) ----
     private string? _editingPromptId;
-    public string? EditingPromptId { get => _editingPromptId; private set => SetProperty(ref _editingPromptId, value); }
+    public string? EditingPromptId
+    {
+        get => _editingPromptId;
+        private set
+        {
+            if (SetProperty(ref _editingPromptId, value))
+            {
+                OnPropertyChanged(nameof(IsEditingExistingPrompt));
+                OnPropertyChanged(nameof(EditorHeading));
+                OnPropertyChanged(nameof(SaveLabel));
+            }
+        }
+    }
+
+    /// <summary>True while the editor is overwriting a saved prompt rather than composing a new one. The
+    /// editor is a single set of fields for both jobs, so which job it's doing has to be visible — otherwise
+    /// Save silently overwrites the prompt you last clicked Edit on.</summary>
+    public bool IsEditingExistingPrompt => _editingPromptId is not null;
+
+    /// <summary>Names what Save will do, with the title of the prompt being overwritten when there is one.</summary>
+    public string EditorHeading => _editingPromptId is null
+        ? "New prompt"
+        : $"Editing “{Prompts.FirstOrDefault(p => p.Id == _editingPromptId)?.Title ?? "prompt"}”";
+
+    public string SaveLabel => _editingPromptId is null ? "Save prompt" : "Save changes";
 
     private string _promptTitle = string.Empty;
     public string PromptTitle { get => _promptTitle; set { if (SetProperty(ref _promptTitle, value)) { RaiseCanSavePrompt(); } } }
@@ -89,13 +148,27 @@ public sealed class PromptLibraryViewModel : ObservableObject
     public ICommand DeleteTemplateCommand { get; }
     public ICommand DeleteSkillCommand { get; }
 
+    /// <summary>Abandons an in-progress edit and returns the editor to composing a new prompt.</summary>
+    public ICommand CancelEditCommand { get; }
+
+    /// <summary>Runs <see cref="SkillQuery"/> against every registry (or re-lists them when it's blank).</summary>
+    public IAsyncRelayCommand BrowseRegistryCommand { get; }
+
+    public IAsyncRelayCommand<RegistrySkillRow> InstallSkillCommand { get; }
+
     /// <summary>Loads prompts and templates from the host and rebuilds both lists (recomputing broken flags).</summary>
     public async Task RefreshAsync()
     {
         var host = _host();
         if (host is null)
         {
-            _dispatcher.Post(() => { Prompts.Clear(); Templates.Clear(); Status = "Connect to a host to manage prompts."; });
+            _dispatcher.Post(() =>
+            {
+                Prompts.Clear();
+                Templates.Clear();
+                Status = "Connect to a host to manage prompts.";
+                SkillStatus = string.Empty;
+            });
             return;
         }
 
@@ -104,7 +177,13 @@ public sealed class PromptLibraryViewModel : ObservableObject
             var prompts = await host.GetPromptsAsync().ConfigureAwait(false);
             var templates = await host.GetPromptTemplatesAsync().ConfigureAwait(false);
             var skills = await host.GetSkillsAsync().ConfigureAwait(false);
-            _dispatcher.Post(() => Rebuild(prompts, templates, skills));
+            var registries = await host.GetSkillRegistriesAsync().ConfigureAwait(false);
+            _dispatcher.Post(() => Rebuild(prompts, templates, skills, registries));
+
+            if (registries.Count > 0)
+            {
+                await BrowseRegistriesAsync().ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
@@ -112,7 +191,91 @@ public sealed class PromptLibraryViewModel : ObservableObject
         }
     }
 
-    private void Rebuild(IReadOnlyList<LibraryPrompt> prompts, IReadOnlyList<PromptTemplate> templates, IReadOnlyList<LibrarySkill> skills)
+    /// <summary>
+    /// Asks every registry for <see cref="SkillQuery"/> at once — or, with nothing typed, for what each one
+    /// leads with. Registries that couldn't answer are named in the status rather than passed over: a
+    /// rate-limited index looks exactly like an empty one otherwise.
+    /// </summary>
+    private async Task BrowseRegistriesAsync()
+    {
+        var host = _host();
+        if (host is null)
+        {
+            _dispatcher.Post(RegistrySkills.Clear);
+            return;
+        }
+
+        var query = SkillQuery?.Trim() ?? string.Empty;
+        try
+        {
+            _dispatcher.Post(() => IsSearchingSkills = true);
+            var results = await host.SearchSkillsAsync(query).ConfigureAwait(false);
+            _dispatcher.Post(() =>
+            {
+                RegistrySkills.Clear();
+                foreach (var hit in results.Hits)
+                {
+                    RegistrySkills.Add(new RegistrySkillRow(hit.CatalogId, hit.CatalogName, hit.Entry, IsInstalled(hit.Entry.Title)));
+                }
+
+                SkillStatus = Describe(results, query);
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SkillStatus = "Couldn't reach the skill registries: " + ex.Message);
+        }
+        finally
+        {
+            _dispatcher.Post(() => IsSearchingSkills = false);
+        }
+    }
+
+    private static string Describe(CatalogResults<RegistrySkillEntry> results, string query)
+    {
+        var found = results.Hits.Count switch
+        {
+            0 when query.Length > 0 => $"Nothing matched '{query}'.",
+            0 => "The registries are offering nothing right now.",
+            var n when query.Length > 0 => $"{n} match(es) for '{query}'.",
+            var n => $"{n} skill(s) offered.",
+        };
+
+        return results.Failures.Count == 0 ? found : $"{found} Couldn't reach: {string.Join("; ", results.Failures)}";
+    }
+
+    /// <summary>Fetches a registry skill into the host's library, then refreshes so it appears as installed.</summary>
+    private async Task InstallSkillAsync(RegistrySkillRow? row)
+    {
+        var host = _host();
+        if (host is null || row is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _dispatcher.Post(() => SkillStatus = $"Installing '{row.Title}'…");
+            var installed = await host.InstallSkillFromRegistryAsync(row.RegistryId, row.EntryId).ConfigureAwait(false);
+            await RefreshAsync().ConfigureAwait(false);
+            _dispatcher.Post(() => SkillStatus = $"Installed '{installed.Title}'.");
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => SkillStatus = $"Couldn't install '{row.Title}': " + ex.Message);
+        }
+    }
+
+    /// <summary>A registry entry is "installed" when the library already holds a skill of that title — the
+    /// library's ids are its own, so the title is the only thing the two sides share.</summary>
+    private bool IsInstalled(string title)
+        => Skills.Any(s => string.Equals(s.Title, title, StringComparison.OrdinalIgnoreCase));
+
+    private void Rebuild(
+        IReadOnlyList<LibraryPrompt> prompts,
+        IReadOnlyList<PromptTemplate> templates,
+        IReadOnlyList<LibrarySkill> skills,
+        IReadOnlyList<CatalogSource> registries)
     {
         Prompts.Clear();
         foreach (var p in prompts)
@@ -126,6 +289,22 @@ public sealed class PromptLibraryViewModel : ObservableObject
         foreach (var s in skills)
         {
             Skills.Add(s);
+        }
+
+        SkillRegistries.Clear();
+        foreach (var r in registries)
+        {
+            SkillRegistries.Add(r);
+        }
+
+        OnPropertyChanged(nameof(HasSkillRegistries));
+        OnPropertyChanged(nameof(EditorHeading));
+
+        // An empty skills area has two very different causes; say which one it is.
+        if (registries.Count == 0)
+        {
+            RegistrySkills.Clear();
+            SkillStatus = "No skill registry is available on this host, so nothing can be installed from here — they may all be turned off (Agnes:Registries:…:Enabled).";
         }
 
         Status = $"{Prompts.Count} prompt(s), {Templates.Count} template(s), {Skills.Count} skill(s).";
@@ -276,6 +455,74 @@ public sealed class PromptLibraryViewModel : ObservableObject
         OnPropertyChanged(nameof(CanSaveTemplate));
         SaveTemplateCommand.NotifyCanExecuteChanged();
     }
+}
+
+/// <summary>
+/// A registry-offered skill as a bindable row, carrying the registry it came from (so installing needs no
+/// ambient selection) and whether the library already holds it (so the surface offers Install once, not
+/// every time you look at it).
+/// </summary>
+public sealed class RegistrySkillRow
+{
+    public RegistrySkillRow(string registryId, string registryName, RegistrySkillEntry entry, bool isInstalled)
+    {
+        RegistryId = registryId;
+        RegistryName = registryName;
+        Entry = entry;
+        IsInstalled = isInstalled;
+    }
+
+    public string RegistryId { get; }
+
+    /// <summary>Which registry offered it. Results from several are shown together, and a public index can
+    /// hold a dozen skills of the same name, so the row has to say where this one came from.</summary>
+    public string RegistryName { get; }
+
+    public RegistrySkillEntry Entry { get; }
+
+    public bool IsInstalled { get; }
+
+    public string EntryId => Entry.Id;
+
+    public string Title => Entry.Title;
+
+    public string Description => Entry.Description ?? "No description.";
+
+    public string Source => Entry.Source;
+
+    /// <summary>
+    /// Who published it and how popular it is, in one line — the facts that separate three identically-named
+    /// "pdf" skills. Blank when the registry reports neither, so a local directory shows nothing extra.
+    /// </summary>
+    public string Provenance
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (Entry.Publisher is { Length: > 0 } publisher)
+            {
+                parts.Add(publisher);
+            }
+
+            if (Entry.Stars is > 0 and var stars)
+            {
+                parts.Add($"★ {stars:N0}");
+            }
+
+            if (Entry.Downloads is > 0 and var downloads)
+            {
+                parts.Add($"{downloads:N0} installs");
+            }
+
+            parts.Add(RegistryName);
+            return string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>What the row's action reads as: nothing to do when it's already in the library.</summary>
+    public string ActionLabel => IsInstalled ? "Installed" : "Install";
+
+    public bool CanInstall => !IsInstalled;
 }
 
 /// <summary>A template as a bindable row; <see cref="IsBroken"/> is true when its referenced prompt is gone.</summary>

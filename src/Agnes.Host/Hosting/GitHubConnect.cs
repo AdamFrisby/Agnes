@@ -125,8 +125,15 @@ public sealed class GitHubAppStore
     }
 }
 
-/// <summary>Connection state surfaced to the UI.</summary>
-public sealed record GitHubConnectStatus(string State, string? Slug, bool Installed, string? Account);
+/// <summary>Connection state surfaced to the UI. Shape-compatible with <c>Agnes.Protocol.CredentialStatus</c>,
+/// which is what the client deserializes this into — <see cref="Accounts"/> is the list form, and
+/// <see cref="Account"/> the older comma-joined rendering of the same accounts.</summary>
+public sealed record GitHubConnectStatus(
+    string State,
+    string? Slug,
+    bool Installed,
+    string? Account,
+    IReadOnlyList<string>? Accounts = null);
 
 /// <summary>
 /// Drives the GitHub App Manifest flow so the user links GitHub in two clicks — no developer portal,
@@ -162,12 +169,13 @@ public sealed class GitHubConnectFlow
         var installed = apps.Where(a => a.InstallationId > 0).ToArray();
         if (installed.Length > 0)
         {
-            return new GitHubConnectStatus("connected", installed[0].Slug, true, string.Join(", ", installed.Select(a => a.Account)));
+            var accounts = installed.Select(a => a.Account).ToArray();
+            return new GitHubConnectStatus("connected", installed[0].Slug, true, string.Join(", ", accounts), accounts);
         }
 
         return apps.Count > 0
-            ? new GitHubConnectStatus("app-created", apps[^1].Slug, false, null)
-            : new GitHubConnectStatus("not-connected", null, false, null);
+            ? new GitHubConnectStatus("app-created", apps[^1].Slug, false, null, [])
+            : new GitHubConnectStatus("not-connected", null, false, null, []);
     }
 
     /// <summary>Begins a connect: returns the loopback URL the desktop opens in a browser.</summary>

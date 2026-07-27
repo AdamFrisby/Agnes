@@ -46,6 +46,33 @@ public static class CredentialManagement
         }
     }
 
+    /// <summary>
+    /// Unlinks one linked GitHub account from the host, dropping the App id and private key it was minting
+    /// push tokens with. Returns false when the host has no such account (or predates the endpoint), so a
+    /// caller can say "nothing to unlink" instead of reporting a failure.
+    /// </summary>
+    public static async Task<bool> DisconnectGitHubAsync(
+        string hostUrl, string token, string account, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            using var response = await client.DeleteAsync(
+                $"{hostUrl.TrimEnd('/')}/credentials/github/{Uri.EscapeDataString(account)}", cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return false;
+            }
+
+            response.EnsureSuccessStatusCode();
+            return true;
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
     /// <summary>Stores a token credential source (a fine-grained PAT) for a host.</summary>
     public static async Task StoreTokenAsync(
         string hostUrl, string token, string targetHost, string pat, string? username = null,

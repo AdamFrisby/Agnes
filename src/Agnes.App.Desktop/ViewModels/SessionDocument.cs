@@ -234,6 +234,13 @@ public sealed partial class SessionDocument : Document, ITraySession
     public IRelayCommand ToggleSaveProfileCommand { get; private set; } = null!;
     public IAsyncRelayCommand SaveProfileCommand { get; private set; } = null!;
 
+    /// <summary>
+    /// A profile picked somewhere else (the settings list) to apply the moment this tab knows its host's
+    /// profiles — by then the agent list has loaded too, which <see cref="ApplyLaunchProfile"/> needs to select
+    /// the right agent. Cleared once applied.
+    /// </summary>
+    public string? PendingProfileId { get; set; }
+
     /// <summary>Replaces the tab's launch-profile list (called by the controller after loading from the host).</summary>
     public void SetLaunchProfiles(IEnumerable<LaunchProfile> profiles)
     {
@@ -244,6 +251,13 @@ public sealed partial class SessionDocument : Document, ITraySession
         }
 
         OnPropertyChanged(nameof(HasLaunchProfiles));
+
+        if (PendingProfileId is { Length: > 0 } wanted
+            && LaunchProfiles.FirstOrDefault(p => p.Id == wanted) is { } pending)
+        {
+            PendingProfileId = null;
+            ApplyLaunchProfile(pending);
+        }
     }
 
     /// <summary>Applies <paramref name="profile"/>'s captured options to this tab's new-session controls:

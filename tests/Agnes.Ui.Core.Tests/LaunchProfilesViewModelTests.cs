@@ -44,6 +44,82 @@ public class LaunchProfilesViewModelTests
         Assert.False(vm.HasProfiles);
     }
 
+    [Fact]
+    public async Task A_row_describes_what_picking_the_profile_would_do()
+    {
+        var host = new FakeProfileHost();
+        host.Seed(new LaunchProfile(
+            "a", "Prod fixes", "claude-code", "/srv/app", UseWorktree: true, SkipPermissions: true,
+            McpApproval: "Trust", GitCredentialMode: "Ask", UseSandbox: true, ModelId: "claude-opus-5"));
+        var vm = new LaunchProfilesViewModel(() => host, ImmediateDispatcher.Instance);
+
+        await vm.RefreshAsync();
+
+        var row = Assert.Single(vm.Profiles);
+        Assert.Contains("claude-code", row.Where, StringComparison.Ordinal);
+        Assert.Contains("/srv/app", row.Where, StringComparison.Ordinal);
+        Assert.Contains("in a sandbox VM", row.Where, StringComparison.Ordinal);
+        Assert.Contains("own git worktree", row.Where, StringComparison.Ordinal);
+        Assert.Contains("autonomous", row.Posture, StringComparison.Ordinal);
+        Assert.Contains("MCP tools: Trust", row.Posture, StringComparison.Ordinal);
+        Assert.Contains("git credentials: Ask", row.Posture, StringComparison.Ordinal);
+        Assert.Contains("claude-opus-5", row.Posture, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_directory_less_profile_says_it_will_ask_at_launch()
+    {
+        var host = new FakeProfileHost();
+        host.Seed(new LaunchProfile("a", "Scratch", "opencode", UseSandbox: false));
+        var vm = new LaunchProfilesViewModel(() => host, ImmediateDispatcher.Instance);
+
+        await vm.RefreshAsync();
+
+        var row = Assert.Single(vm.Profiles);
+        Assert.Contains("asked at launch", row.Where, StringComparison.Ordinal);
+        Assert.Contains("on the host", row.Where, StringComparison.Ordinal);
+        Assert.Contains("asks before each tool", row.Posture, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Renaming_keeps_every_other_captured_option()
+    {
+        var host = new FakeProfileHost();
+        host.Seed(new LaunchProfile("a", "Scratch", "opencode", "/srv/app", SkipPermissions: true, ModelId: "gpt-5"));
+        var vm = new LaunchProfilesViewModel(() => host, ImmediateDispatcher.Instance);
+        await vm.RefreshAsync();
+
+        vm.BeginRenameCommand.Execute(vm.Profiles[0]);
+        Assert.True(vm.Profiles[0].IsRenaming);
+        Assert.Equal("Scratch", vm.Profiles[0].DraftName);
+
+        vm.Profiles[0].DraftName = "Nightly";
+        await vm.CommitRenameCommand.ExecuteAsync(vm.Profiles[0]);
+
+        var stored = Assert.Single(host.All);
+        Assert.Equal("Nightly", stored.Name);
+        Assert.Equal("a", stored.Id);
+        Assert.Equal("/srv/app", stored.WorkingDirectory);
+        Assert.True(stored.SkipPermissions);
+        Assert.Equal("gpt-5", stored.ModelId);
+        Assert.False(vm.Profiles[0].IsRenaming);
+    }
+
+    [Fact]
+    public async Task An_empty_rename_is_ignored_rather_than_wiping_the_name()
+    {
+        var host = new FakeProfileHost();
+        host.Seed(new LaunchProfile("a", "Scratch", "opencode"));
+        var vm = new LaunchProfilesViewModel(() => host, ImmediateDispatcher.Instance);
+        await vm.RefreshAsync();
+        vm.BeginRenameCommand.Execute(vm.Profiles[0]);
+
+        vm.Profiles[0].DraftName = "   ";
+        await vm.CommitRenameCommand.ExecuteAsync(vm.Profiles[0]);
+
+        Assert.Equal("Scratch", Assert.Single(host.All).Name);
+    }
+
     /// <summary>A minimal <see cref="IAgnesHost"/> with an in-memory launch-profile store; everything else
     /// leans on the interface defaults / throws.</summary>
     private sealed class FakeProfileHost : IAgnesHost

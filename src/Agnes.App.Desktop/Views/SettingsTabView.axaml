@@ -27,9 +27,12 @@
             <Setter Property="Foreground" Value="{DynamicResource Fg}" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
+        <!-- Scope notes explain which machine a page's settings live on, so they must not be cut off at the
+             right edge — several of them are a sentence or two long. -->
         <Style Selector="TextBlock.scopeNote">
             <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
             <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
         <Style Selector="TextBlock.fieldLabel">
             <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
@@ -128,16 +131,37 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- KEYBOARD (this device) -->
-                    <StackPanel Spacing="10" IsVisible="{Binding CatKeyboard}">
+                    <!-- KEYBOARD (this device). Rendered from KeyboardShortcuts.Groups so the page can't drift
+                         from the bindings, and narrowed by the search box above so you can ask it a question. -->
+                    <StackPanel Spacing="12" IsVisible="{Binding CatKeyboard}">
                         <TextBlock Classes="sectionTitle" Text="Keyboard shortcuts" />
-                        <StackPanel Spacing="5">
-                            <TextBlock Text="Ctrl+T  New tab · Ctrl+W  Close tab · Ctrl+Tab  Next tab" Foreground="{DynamicResource FgDim}" FontSize="12" />
-                            <TextBlock Text="Ctrl+Enter  Send · Alt+↑/↓  Prompt history" Foreground="{DynamicResource FgDim}" FontSize="12" />
-                            <TextBlock Text="Ctrl+F  Search · F3/Shift+F3  Next/prev match" Foreground="{DynamicResource FgDim}" FontSize="12" />
-                            <TextBlock Text="F8/F7  Next/prev prompt · Ctrl+F8/F7  Next/prev change" Foreground="{DynamicResource FgDim}" FontSize="12" />
-                            <TextBlock Text="Ctrl+K  Command palette" Foreground="{DynamicResource FgDim}" FontSize="12" />
-                        </StackPanel>
+                        <TextBlock Classes="scopeNote" TextWrapping="Wrap"
+                                   Text="These are fixed — Agnes doesn't support rebinding yet. Use the search box above to find one by what it does." />
+
+                        <TextBlock Text="Nothing matches that search." Foreground="{DynamicResource FgFaint}" FontSize="11"
+                                   IsVisible="{Binding !HasKeyboardMatches}" />
+
+                        <ItemsControl ItemsSource="{Binding KeyboardGroups}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Spacing="4" Margin="0,0,0,12">
+                                        <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                                        <ItemsControl ItemsSource="{Binding Shortcuts}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid ColumnDefinitions="160,*" Margin="0,2">
+                                                        <TextBlock Grid.Column="0" Text="{Binding Gesture}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                                                   FontFamily="{StaticResource MonoFont}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Description}" Foreground="{DynamicResource FgDim}"
+                                                                   FontSize="11" TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
 
                     <!-- GITHUB (host) -->
@@ -147,12 +171,29 @@
                             <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
                                           Description="Link one or more GitHub accounts so sandboxed agents can push. Each push uses the account that owns the repo, and mints a token scoped to that one repo, ~1h TTL."
                                           Security="These accounts live on the host you're connected to, not this device. App private keys never enter a sandbox; agents get only a short-lived, repo-scoped token at push time, all audited." />
-                            <Button Grid.Column="3" Content="Status" Command="{Binding LoadCredentialStatusCommand}" Classes="seg" />
+                            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadCredentialStatusCommand}" Classes="seg" />
                             <Button Grid.Column="4" Content="Connect account" Command="{Binding ConnectGitHubCommand}" Classes="seg" />
                         </Grid>
                         <TextBlock Classes="scopeNote">
                             <Run Text="Linked on the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
                         </TextBlock>
+
+                        <!-- The accounts themselves, which is what a page called "GitHub accounts" is for. Each
+                             is unlinkable: unlinking drops the App key the host mints push tokens with, so it's
+                             two-step rather than one irreversible click. -->
+                        <ItemsControl ItemsSource="{Binding LinkedGitHubAccounts}" IsVisible="{Binding HasLinkedGitHubAccounts}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                                        <TextBlock Grid.Column="0" Text="{Binding Account}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
+                                        <Button Classes="danger" Grid.Column="1" Content="{Binding UnlinkLabel}" FontSize="11" Padding="9,3"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                Command="{Binding $parent[ItemsControl].DataContext.UnlinkGitHubCommand}" CommandParameter="{Binding}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
                         <TextBlock Text="{Binding CredentialStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
                     </StackPanel>
 
@@ -199,17 +240,26 @@
                             </ItemsControl>
                         </StackPanel>
 
+                        <!-- Last-seen is the field that answers "which of these is stale?", and the device you're
+                             sitting at is marked because revoking it signs this app out. Revoke arms on the first
+                             click and commits on the second. -->
                         <ItemsControl ItemsSource="{Binding Devices}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Grid ColumnDefinitions="*,Auto" Margin="0,3">
                                         <StackPanel Grid.Column="0">
-                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                            <TextBlock Text="{Binding PairedAt, StringFormat='paired {0:yyyy-MM-dd}'}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
+                                                <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource AccentSoft}" VerticalAlignment="Center"
+                                                        IsVisible="{Binding IsCurrentDevice}">
+                                                    <TextBlock Text="this device" FontSize="10" Foreground="{DynamicResource Fg}" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                                         </StackPanel>
-                                        <Button Classes="danger" Grid.Column="1" Content="Revoke" FontSize="11" Padding="9,3"
+                                        <Button Classes="danger" Grid.Column="1" Content="{Binding RevokeLabel}" FontSize="11" Padding="9,3"
                                                 BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                                Command="{Binding $parent[ItemsControl].DataContext.RevokeDeviceCommand}" CommandParameter="{Binding Id}" />
+                                                Command="{Binding $parent[ItemsControl].DataContext.RevokeDeviceCommand}" CommandParameter="{Binding}" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -250,7 +300,8 @@
                                                 <Button Content="Resume" Command="{Binding $parent[ItemsControl].DataContext.ResumeSandboxRecordCommand}"
                                                         CommandParameter="{Binding}" Classes="seg" IsVisible="{Binding !Live}"
                                                         ToolTip.Tip="Cold-start the VM and reopen this session in a tab" />
-                                                <Button Classes="danger" Content="Delete" Command="{Binding $parent[ItemsControl].DataContext.DeleteSandboxRecordCommand}"
+                                                <!-- Two-step: this destroys a VM and its contents for good. -->
+                                                <Button Classes="danger" Content="{Binding DeleteLabel}" Command="{Binding $parent[ItemsControl].DataContext.DeleteSandboxRecordCommand}"
                                                         CommandParameter="{Binding}"
                                                         BorderBrush="{DynamicResource Line}" BorderThickness="1" Padding="10,4" FontSize="12" />
                                             </StackPanel>
@@ -286,9 +337,7 @@
                             <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
                                           Description="MCP servers give agents extra tools. Install a curated preset in one click, or add your own. Each server has a scope (all hosts / this host / this workspace) that decides which sessions see it. Changes apply on the next session start, never mid-session."
                                           Security="These servers live on the host you're connected to. A host-run server is proxied into a sandbox through the audited forward; a sandbox-run server runs inside the VM." />
-                            <Button Grid.Column="3" Content="Preview effective" Command="{Binding PreviewMcpCommand}" Classes="seg"
-                                    ToolTip.Tip="Show which servers would actually be active for a plain session right now (scope-filtered)." />
-                            <Button Grid.Column="4" Content="Refresh" Command="{Binding LoadMcpServersCommand}" Classes="seg" Margin="6,0,0,0" />
+                            <Button Grid.Column="4" Content="Refresh" Command="{Binding LoadMcpCommand}" Classes="seg" Margin="6,0,0,0" />
                         </Grid>
                         <TextBlock Classes="scopeNote">
                             <Run Text="Configured on the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
@@ -305,14 +354,60 @@
                                             <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
                                             <TextBlock Text="{Binding Command}" Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Content="Install" Classes="seg"
+                                        <!-- Reads "Installed" and disables once the host has it, so the list says what
+                                             you already have rather than offering the same install indefinitely. -->
+                                        <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" IsEnabled="{Binding CanInstall}"
                                                 Command="{Binding $parent[ItemsControl].DataContext.InstallMcpPresetCommand}" CommandParameter="{Binding}" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
+                        <!-- Search the registries. The curated list above is four servers; this reaches the
+                             official MCP registry (and any other catalogue plugin the host has). Results say
+                             what each server needs before you install it, not after it fails to start. -->
+                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
+                        <TextBlock Text="Find more" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <TextBox Grid.Column="0" Text="{Binding McpCatalogQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
+                                     Watermark="Search the MCP registries — e.g. postgres, figma, filesystem">
+                                <TextBox.KeyBindings>
+                                    <KeyBinding Gesture="Enter" Command="{Binding SearchMcpCatalogCommand}" />
+                                </TextBox.KeyBindings>
+                            </TextBox>
+                            <Button Grid.Column="1" Content="Search" Command="{Binding SearchMcpCatalogCommand}" Classes="seg" />
+                            <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
+                                         IsVisible="{Binding IsSearchingMcpCatalog}"
+                                         Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                        </Grid>
+                        <TextBlock Text="{Binding McpCatalogStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding McpCatalogResults}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                            CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                            <StackPanel Grid.Column="0" Spacing="2">
+                                                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="10"
+                                                           TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Provenance}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                                <TextBlock Text="{Binding RequiredEnvironmentLabel}" Foreground="{DynamicResource FgDim}" FontSize="10"
+                                                           FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap"
+                                                           IsVisible="{Binding NeedsConfiguration}"
+                                                           ToolTip.Tip="These environment variables are added empty on install — fill them in under Configured servers before the server will work." />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" VerticalAlignment="Center"
+                                                    IsEnabled="{Binding CanInstall}"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.InstallMcpCatalogEntryCommand}" CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
                         <!-- Configured servers (with scope + run location) -->
+                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
                         <TextBlock Text="Configured servers" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
                         <ItemsControl ItemsSource="{Binding McpServers}">
                             <ItemsControl.ItemTemplate>
@@ -324,8 +419,16 @@
                                                 <Run Text="{Binding RunAt}" /><Run Text=" · " /><Run Text="{Binding Transport}" /><Run Text=" · " /><Run Text="{Binding ApplyScope}" />
                                             </TextBlock>
                                         </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{Binding Enabled}" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
-                                        <Button Grid.Column="2" Content="Toggle" Classes="seg"
+                                        <!-- The row used to render the raw bool ("True"/"False") next to a button
+                                             called "Toggle", which says neither what state you're in nor what the
+                                             click will do. Now both are named. -->
+                                        <TextBlock Grid.Column="1" Text="enabled" Foreground="{DynamicResource Good}" FontSize="10" VerticalAlignment="Center"
+                                                   IsVisible="{Binding Enabled}" />
+                                        <TextBlock Grid.Column="1" Text="disabled" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center"
+                                                   IsVisible="{Binding !Enabled}" />
+                                        <Button Grid.Column="2" Content="Disable" Classes="seg" IsVisible="{Binding Enabled}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}" CommandParameter="{Binding}" />
+                                        <Button Grid.Column="2" Content="Enable" Classes="seg" IsVisible="{Binding !Enabled}"
                                                 Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}" CommandParameter="{Binding}" />
                                         <Button Classes="danger" Grid.Column="3" Content="Remove" FontSize="11" Padding="9,3"
                                                 BorderBrush="{DynamicResource Line}" BorderThickness="1"
@@ -357,6 +460,8 @@
                         <!-- Effective-config preview -->
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
                         <TextBlock Text="Would be active" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                        <TextBlock Classes="scopeNote" TextWrapping="Wrap"
+                                   Text="The scope-filtered answer for a plain session started right now — including servers from a CLI's own config that Agnes doesn't manage. Recomputed whenever you change something above." />
                         <TextBlock Text="{Binding McpPreviewStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
                         <ItemsControl ItemsSource="{Binding EffectiveMcp}">
                             <ItemsControl.ItemTemplate>
@@ -574,7 +679,12 @@
                             <!-- BROWSE: search the host's configured NuGet source(s) -->
                             <StackPanel Spacing="10" IsVisible="{Binding ShowBrowse}">
                                 <Grid ColumnDefinitions="*,Auto">
-                                    <TextBox Grid.Column="0" Watermark="Search plugins…" Text="{Binding SearchQuery, Mode=TwoWay}" />
+                                    <!-- Enter searches, so finding a plugin doesn't need a trip to the mouse. -->
+                                    <TextBox Grid.Column="0" Watermark="Search plugins…" Text="{Binding SearchQuery, Mode=TwoWay}">
+                                        <TextBox.KeyBindings>
+                                            <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
+                                        </TextBox.KeyBindings>
+                                    </TextBox>
                                     <Button Grid.Column="1" Margin="8,0,0,0" Content="Search" Command="{Binding SearchCommand}" Classes="seg" />
                                 </Grid>
                                 <ItemsControl ItemsSource="{Binding SearchResults}">
@@ -737,8 +847,17 @@
                             <TextBlock Classes="scopeNote"
                                        Text="Save prompts you retype, then bind a slash token (e.g. /review) that inserts one in the composer — or inserts and sends it." />
 
-                            <!-- Prompt editor -->
+                            <!-- Prompt editor. One set of fields serves both "new" and "edit", so which one it's
+                                 doing is stated above Save — otherwise Save silently overwrites whatever you last
+                                 clicked Edit on. -->
                             <StackPanel Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{Binding EditorHeading}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
+                                    <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
+                                            BorderThickness="1" VerticalAlignment="Center" IsVisible="{Binding IsEditingExistingPrompt}">
+                                        <TextBlock Text="Save replaces it" FontSize="10" Foreground="{DynamicResource FgDim}" />
+                                    </Border>
+                                </StackPanel>
                                 <TextBlock Classes="fieldLabel" Text="Title" />
                                 <TextBox Text="{Binding PromptTitle, Mode=TwoWay}" Watermark="e.g. Security review" FontSize="12" Padding="8,5" CornerRadius="6" />
                                 <TextBlock Classes="fieldLabel" Text="Prompt body" />
@@ -747,22 +866,35 @@
                                 <CheckBox IsChecked="{Binding PromptIsSystemAddition, Mode=TwoWay}"
                                           Content="Use as a system-prompt addition (prepended to a session's system prompt at open)" FontSize="12" />
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Content="Save prompt" Command="{Binding SavePromptCommand}" Classes="seg" />
-                                    <Button Content="New" Command="{Binding NewPromptCommand}" Classes="seg" />
+                                    <Button Content="{Binding SaveLabel}" Command="{Binding SavePromptCommand}" Classes="seg" />
+                                    <Button Content="Cancel edit" Command="{Binding CancelEditCommand}" Classes="seg" IsVisible="{Binding IsEditingExistingPrompt}" />
+                                    <Button Content="New" Command="{Binding NewPromptCommand}" Classes="seg" IsVisible="{Binding !IsEditingExistingPrompt}" />
                                 </StackPanel>
                             </StackPanel>
 
-                            <!-- Saved prompts -->
+                            <!-- Saved prompts. The body preview is the only thing that tells two similarly-named
+                                 prompts apart, so the row carries it rather than the title alone. -->
                             <ItemsControl ItemsSource="{Binding Prompts}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                                                 CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
-                                            <Grid ColumnDefinitions="*,Auto,Auto">
-                                                <TextBlock Grid.Column="0" Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
-                                                <Button Grid.Column="1" Content="Edit" Classes="seg"
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
+                                                        <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
+                                                                BorderThickness="1" VerticalAlignment="Center" IsVisible="{Binding IsSystemPromptAddition}"
+                                                                ToolTip.Tip="Prepended to a session's system prompt at open, rather than inserted per message.">
+                                                            <TextBlock Text="system prompt" FontSize="10" Foreground="{DynamicResource FgDim}" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding MarkdownBody}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                               MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Edit" Classes="seg" VerticalAlignment="Center"
                                                         Command="{Binding $parent[ItemsControl].DataContext.EditPromptCommand}" CommandParameter="{Binding}" />
-                                                <Button Grid.Column="2" Content="Delete" Classes="seg" Margin="6,0,0,0"
+                                                <Button Grid.Column="2" Content="Delete" Classes="seg" VerticalAlignment="Center"
                                                         Command="{Binding $parent[ItemsControl].DataContext.DeletePromptCommand}" CommandParameter="{Binding}" />
                                             </Grid>
                                         </Border>
@@ -770,10 +902,15 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
-                            <!-- Skill bundles -->
+                            <!-- Skill bundles. Installing is the point of this section — a delete-only list of
+                                 skills you have no way to acquire is a dead end — so the registry the host offers
+                                 is browsable here, and an unconfigured host says so instead of showing nothing. -->
                             <TextBlock Classes="sectionTitle" Text="Skills" FontSize="14" />
                             <TextBlock Classes="scopeNote"
-                                       Text="Skill bundles (a SKILL.md plus supporting files) imported from an external registry and managed as a unit." />
+                                       Text="Skill bundles (a SKILL.md plus supporting files) installed from a registry the host offers, and managed as a unit." />
+                            <TextBlock Text="{Binding SkillStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                       IsVisible="{Binding SkillStatus, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
                             <ItemsControl ItemsSource="{Binding Skills}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -792,6 +929,47 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+
+                            <!-- Install from a registry. One box searches every registry the host has at once:
+                                 what a person wants is "a skill that does X", and which index happens to hold it
+                                 is the registry's problem — so the source is shown per result instead of being
+                                 a choice you make first. -->
+                            <StackPanel Spacing="8" IsVisible="{Binding HasSkillRegistries}">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                    <TextBox Grid.Column="0" Text="{Binding SkillQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
+                                             Watermark="Search every skill registry — e.g. pdf, terraform, code review">
+                                        <TextBox.KeyBindings>
+                                            <KeyBinding Gesture="Enter" Command="{Binding BrowseRegistryCommand}" />
+                                        </TextBox.KeyBindings>
+                                    </TextBox>
+                                    <Button Grid.Column="1" Content="Search" Command="{Binding BrowseRegistryCommand}" Classes="seg" />
+                                    <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
+                                                 IsVisible="{Binding IsSearchingSkills}"
+                                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding RegistrySkills}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                    CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                    <StackPanel Grid.Column="0" Spacing="2">
+                                                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="10"
+                                                                   TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                                                        <!-- Publisher, popularity and source: a public index holds many
+                                                             skills of the same name, and this is how you tell them apart. -->
+                                                        <TextBlock Text="{Binding Provenance}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" VerticalAlignment="Center"
+                                                            IsEnabled="{Binding CanInstall}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.InstallSkillCommand}" CommandParameter="{Binding}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
 
                             <!-- Template editor -->
                             <TextBlock Classes="sectionTitle" Text="Templates" FontSize="14" />
@@ -849,17 +1027,36 @@
                             <TextBlock Classes="scopeNote"
                                        Text="Named, reusable new-session configs — agent, permission posture, git/sandbox defaults, model. Create one from the new-session screen with &quot;Save current as profile…&quot;; applying it there prefills the launch controls. Deleting a profile never affects a session already launched from it." />
 
+                            <!-- Each row spells out what the profile would actually do, because "name + adapter id"
+                                 can't answer that; and it can start a session, because starting one is the whole
+                                 point of having saved it. -->
                             <ItemsControl ItemsSource="{Binding Profiles}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                                    <TextBlock Text="{Binding AdapterId}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                                CornerRadius="8" Padding="10,8" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
+                                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                               IsVisible="{Binding !IsRenaming}" />
+                                                    <TextBox Text="{Binding DraftName, Mode=TwoWay}" FontSize="12" Padding="6,3" CornerRadius="6"
+                                                             MaxWidth="260" HorizontalAlignment="Left" IsVisible="{Binding IsRenaming}">
+                                                        <TextBox.KeyBindings>
+                                                            <KeyBinding Gesture="Enter" Command="{Binding $parent[ItemsControl].DataContext.CommitRenameCommand}" CommandParameter="{Binding}" />
+                                                            <KeyBinding Gesture="Escape" Command="{Binding $parent[ItemsControl].DataContext.CancelRenameCommand}" CommandParameter="{Binding}" />
+                                                        </TextBox.KeyBindings>
+                                                    </TextBox>
+                                                    <TextBlock Text="{Binding Where}" Foreground="{DynamicResource FgDim}" FontSize="10" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding Posture}" Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap" />
                                                 </StackPanel>
-                                                <Button Grid.Column="1" Content="Delete" Classes="seg"
+                                                <Button Grid.Column="1" Content="New session" Classes="seg" VerticalAlignment="Center"
+                                                        ToolTip.Tip="Open a new-session tab with this profile's options already applied."
+                                                        Command="{Binding $parent[UserControl].DataContext.Owner.StartFromLaunchProfileCommand}" CommandParameter="{Binding}" />
+                                                <Button Grid.Column="2" Content="Rename" Classes="seg" VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.BeginRenameCommand}" CommandParameter="{Binding}" />
+                                                <Button Grid.Column="2" Content="Save name" Classes="seg" VerticalAlignment="Center" IsVisible="{Binding IsRenaming}"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.CommitRenameCommand}" CommandParameter="{Binding}" />
+                                                <Button Grid.Column="3" Content="Delete" Classes="seg" VerticalAlignment="Center"
                                                         Command="{Binding $parent[ItemsControl].DataContext.DeleteCommand}" CommandParameter="{Binding}" />
                                             </Grid>
                                         </Border>
@@ -891,17 +1088,30 @@
                             <TextBlock Text="{Binding EligibilityHint}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
                                        IsVisible="{Binding EligibilityHint, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
+                            <!-- Each row says why the person is listed (added by hand vs surfaced from a shared
+                                 org/team) and can re-check its own eligibility, instead of making you retype the
+                                 handle into the box above to find out. -->
                             <ItemsControl ItemsSource="{Binding Friends}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                                                 CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding GitHubLogin}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                                    <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <TextBlock Text="{Binding GitHubLogin}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
+                                                        <Run Text="{Binding SourceLabel}" /><Run Text=" · " /><Run Text="{Binding AddedLabel}" />
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding EligibilityNote}" Foreground="{DynamicResource FgDim}" FontSize="10"
+                                                               IsVisible="{Binding HasEligibilityNote}" />
                                                 </StackPanel>
-                                                <Button Grid.Column="1" Content="Remove" Classes="seg"
+                                                <Button Grid.Column="1" Content="Check" Classes="seg" VerticalAlignment="Center"
+                                                        ToolTip.Tip="Ask the host, now, whether this person is currently eligible for a grant."
+                                                        Command="{Binding $parent[ItemsControl].DataContext.CheckFriendEligibilityCommand}" CommandParameter="{Binding}" />
+                                                <Button Grid.Column="2" Content="Remove" Classes="seg" VerticalAlignment="Center"
                                                         Command="{Binding $parent[ItemsControl].DataContext.RemoveFriendCommand}" CommandParameter="{Binding}" />
                                             </Grid>
                                         </Border>
@@ -909,9 +1119,15 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
-                            <!-- Grant access to an eligible friend -->
+                            <!-- Grant access to an eligible friend. What a grant names used to be a free-text
+                                 "resource id" with no discoverable values; it's now a picker built from the host
+                                 and its open sessions. -->
                             <TextBlock Classes="sectionTitle" Text="Access grants" Margin="0,6,0,0" />
-                            <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="8">
+                            <TextBlock Classes="scopeNote" TextWrapping="Wrap"
+                                       Text="A grant is recorded here and honoured wherever a feature asks for it. To hand someone a session today, use Share on that session — that path enforces access itself." />
+                            <TextBlock Classes="scopeNote" Text="Connect a host, and open a session, to have something to grant against."
+                                       IsVisible="{Binding !HasGrantTargets}" />
+                            <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding HasGrantTargets}">
                                 <ComboBox Grid.Column="0" ItemsSource="{Binding Friends}" SelectedItem="{Binding SelectedFriend, Mode=TwoWay}"
                                           PlaceholderText="Friend" HorizontalAlignment="Stretch">
                                     <ComboBox.ItemTemplate>
@@ -920,7 +1136,14 @@
                                         </DataTemplate>
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
-                                <TextBox Grid.Column="1" Text="{Binding GrantResource, Mode=TwoWay}" PlaceholderText="Resource id (e.g. host:main)" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding GrantTargets}" SelectedItem="{Binding SelectedGrantTarget, Mode=TwoWay}"
+                                          PlaceholderText="What they get" HorizontalAlignment="Stretch">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Label}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
                                 <ComboBox Grid.Column="2" ItemsSource="{Binding Scopes}" SelectedItem="{Binding NewGrantScope, Mode=TwoWay}" />
                                 <Button Grid.Column="3" Content="Grant" Command="{Binding GrantCommand}" Classes="seg" />
                             </Grid>
@@ -934,7 +1157,7 @@
                                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding GranteeLogin}" Foreground="{DynamicResource Fg}" FontSize="12" />
                                                     <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
-                                                        <Run Text="{Binding Resource}" /><Run Text=" · " /><Run Text="{Binding Scope}" />
+                                                        <Run Text="{Binding Resource}" /><Run Text=" · " /><Run Text="{Binding Scope}" /><Run Text=" · granted " /><Run Text="{Binding GrantedAt, StringFormat='{}{0:yyyy-MM-dd}'}" />
                                                     </TextBlock>
                                                 </StackPanel>
                                                 <Button Grid.Column="1" Content="Revoke" Classes="seg"
