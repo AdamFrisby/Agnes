@@ -16,9 +16,20 @@ public sealed class TranscriptBuilder
     private readonly Dictionary<string, PermissionItem> _permissions = new();
     private readonly Dictionary<string, QuestionItem> _questions = new();
     private MessageBubbleItem? _openBubble;
-    private PlanItemView? _plan;
 
     public ObservableCollection<TranscriptItem> Items { get; } = [];
+
+    /// <summary>
+    /// The agent's plan, once it has one — the single place a plan is assembled, whatever shape it arrived
+    /// in. ACP agents send <see cref="PlanEvent"/>; Claude instead drives its task list through the
+    /// TodoWrite/TaskCreate/TaskUpdate tools, so anything reading only <see cref="PlanEvent"/> sees no plan
+    /// at all from Claude. Both fold into this one view, which is then live: entries are updated in place
+    /// as the agent ticks them off, so every surface bound to it follows along.
+    /// </summary>
+    public PlanItemView? Plan { get; private set; }
+
+    /// <summary>Raised when a plan first appears (its entries thereafter update in place).</summary>
+    public event Action? PlanChanged;
 
     /// <summary>The unanswered permission request, if any.</summary>
     public PermissionItem? PendingPermission { get; private set; }
@@ -113,16 +124,7 @@ public sealed class TranscriptBuilder
                 break;
 
             case PlanEvent p:
-                if (_plan is null)
-                {
-                    _plan = new PlanItemView { Entries = p.Entries, AgentId = agentId };
-                    Items.Add(_plan);
-                }
-                else
-                {
-                    _plan.Entries = p.Entries;
-                }
-
+                SetPlan(p.Entries, agentId);
                 break;
 
             case PermissionRequestedEvent pr:
@@ -247,15 +249,22 @@ public sealed class TranscriptBuilder
                 break;
         }
 
-        var entries = _tasks.Select(t => new PlanEntry(t.Content, t.Status)).ToList();
-        if (_plan is null)
+        SetPlan(_tasks.Select(t => new PlanEntry(t.Content, t.Status)).ToList(), agentId);
+    }
+
+    /// <summary>Creates the plan on first sight, and thereafter updates the same view in place so that
+    /// anything already bound to it — the transcript row, the sidebar, a sheet — ticks along with it.</summary>
+    private void SetPlan(IReadOnlyList<PlanEntry> entries, string? agentId)
+    {
+        if (Plan is null)
         {
-            _plan = new PlanItemView { Entries = entries, AgentId = agentId };
-            Items.Add(_plan);
+            Plan = new PlanItemView { Entries = entries, AgentId = agentId };
+            Items.Add(Plan);
+            PlanChanged?.Invoke();
         }
         else
         {
-            _plan.Entries = entries;
+            Plan.Entries = entries;
         }
     }
 

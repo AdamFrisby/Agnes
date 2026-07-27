@@ -35,7 +35,6 @@ public sealed class SessionViewModel : ObservableObject
     private int _historyIndex;
     private string _promptText;
     private string _lastPrompt = string.Empty;
-    private PlanItemView? _plan;
     private PreviewViewModel? _selectedPreview;
     private bool _leftHidden;
     private bool _toolsExpanded = true;
@@ -187,6 +186,9 @@ public sealed class SessionViewModel : ObservableObject
 
         _transcript.PendingPermissionChanged += () => { OnPropertyChanged(nameof(PendingPermission)); RaiseActivity(); };
         _transcript.PendingQuestionChanged += () => { OnPropertyChanged(nameof(PendingQuestion)); RaiseActivity(); };
+        // Only the null → first-plan transition needs announcing; after that the same PlanItemView is
+        // updated in place and the panels are already bound to it.
+        _transcript.PlanChanged += () => { OnPropertyChanged(nameof(Plan)); RaisePanels(); };
         AnswerQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = AnswerQuestionAsync(item); });
         DismissQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = DismissQuestionAsync(item); });
 
@@ -617,11 +619,13 @@ public sealed class SessionViewModel : ObservableObject
     /// <summary>Audit trail: forwarded MCP tool calls a sandboxed agent made against host servers.</summary>
     public ObservableCollection<McpCallEntry> McpCalls { get; } = [];
 
-    public PlanItemView? Plan
-    {
-        get => _plan;
-        private set { if (SetProperty(ref _plan, value)) { RaisePanels(); } }
-    }
+    /// <summary>
+    /// The agent's plan, straight from the transcript builder. This used to be a second plan kept here and
+    /// fed only by <see cref="PlanEvent"/> — which Claude never sends, since it drives its task list through
+    /// the TodoWrite/TaskCreate/TaskUpdate tools, so the sidebar's plan was permanently empty on the most
+    /// common agent. One plan, assembled once, from every shape it arrives in.
+    /// </summary>
+    public PlanItemView? Plan => _transcript.Plan;
 
     // Right column
     public PreviewViewModel? SelectedPreview
@@ -1955,18 +1959,6 @@ public sealed class SessionViewModel : ObservableObject
     {
         switch (@event)
         {
-            case PlanEvent p:
-                if (Plan is null)
-                {
-                    Plan = new PlanItemView { Entries = p.Entries };
-                }
-                else
-                {
-                    Plan.Entries = p.Entries;
-                }
-
-                break;
-
             case ToolCallEvent tc:
                 var isFile = IsFileTool(tc.Kind);
                 // Modified files open as a DIFF, not the raw edit request — build one from the tool input.

@@ -40,6 +40,32 @@ public class MultiColumnTests
     }
 
     [Fact]
+    public void Claudes_task_list_populates_the_left_panel_too_and_stays_current()
+    {
+        // Claude never sends PlanEvent — its plan is the TodoWrite tool — so a sidebar fed only by
+        // PlanEvent showed nothing at all on the most common agent.
+        var vm = Build(out var view);
+        var raised = 0;
+        vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(SessionViewModel.Plan)) { raised++; } };
+
+        Assert.Null(vm.Plan);
+        view.Apply(Seq(new ToolCallEvent("t1", "TodoWrite", ToolKind.Other, ToolCallStatus.Completed,
+            [new TextContent("""{"todos":[{"content":"Investigate","status":"in_progress"}]}""")]), 1));
+
+        Assert.NotNull(vm.Plan);
+        Assert.Equal(1, raised);
+        Assert.True(vm.HasSidebarContent);
+        Assert.True(vm.ShowLeftPanel);
+
+        // Ticked off and extended: the panel is bound to this view, so it follows without re-binding.
+        view.Apply(Seq(new ToolCallEvent("t2", "TodoWrite", ToolKind.Other, ToolCallStatus.Completed,
+            [new TextContent("""{"todos":[{"content":"Investigate","status":"completed"},{"content":"Fix it","status":"in_progress"}]}""")]), 2));
+
+        Assert.Equal(2, vm.Plan!.Entries.Count);
+        Assert.Equal("completed", vm.Plan.Entries[0].Status);
+    }
+
+    [Fact]
     public void Tapping_a_tool_opens_the_full_preview()
     {
         var vm = Build(out var view);

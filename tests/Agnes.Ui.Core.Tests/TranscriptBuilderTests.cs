@@ -151,6 +151,49 @@ public class TranscriptBuilderTests
         Assert.Equal("Write docs", plan.Entries[0].Content);
         Assert.Equal("completed", plan.Entries[0].Status);        // TaskUpdate(id=1) landed on the first task
         Assert.Equal("pending", plan.Entries[1].Status);
+
+        // The same plan is the builder's own, so the sidebar shows it too — this is the whole point:
+        // Claude never sends PlanEvent, so anything reading only that saw no plan at all.
+        Assert.Same(plan, t.Plan);
+    }
+
+    [Fact]
+    public void The_plan_is_announced_once_and_thereafter_ticks_along_in_place()
+    {
+        var t = new TranscriptBuilder();
+        var announced = 0;
+        t.PlanChanged += () => announced++;
+
+        Assert.Null(t.Plan);
+        t.Apply(new ToolCallEvent("t1", "TodoWrite", ToolKind.Other, ToolCallStatus.Completed,
+            [new TextContent("""{"todos":[{"content":"Write docs","status":"in_progress"}]}""")]));
+
+        var plan = t.Plan;
+        Assert.NotNull(plan);
+        Assert.Equal(1, announced);
+        Assert.Equal("in_progress", plan!.Entries[0].Status);
+
+        // Ticking one off and adding another updates the SAME view, so anything bound to it follows.
+        t.Apply(new ToolCallEvent("t2", "TodoWrite", ToolKind.Other, ToolCallStatus.Completed,
+            [new TextContent("""{"todos":[{"content":"Write docs","status":"completed"},{"content":"Add tests","status":"pending"}]}""")]));
+
+        Assert.Same(plan, t.Plan);
+        Assert.Equal(1, announced);               // no second announcement — it was updated, not replaced
+        Assert.Equal(2, plan.Entries.Count);
+        Assert.Equal("completed", plan.Entries[0].Status);
+        Assert.Single(t.Items.OfType<PlanItemView>());
+    }
+
+    [Fact]
+    public void A_plan_event_and_the_task_tools_land_on_one_plan()
+    {
+        var t = new TranscriptBuilder();
+        t.Apply(new PlanEvent([new PlanEntry("from acp", "pending")]));
+        t.Apply(new ToolCallEvent("t1", "TodoWrite", ToolKind.Other, ToolCallStatus.Completed,
+            [new TextContent("""{"todos":[{"content":"from claude","status":"pending"}]}""")]));
+
+        Assert.Single(t.Items.OfType<PlanItemView>());
+        Assert.Equal("from claude", t.Plan!.Entries[0].Content);
     }
 
     [Fact]
