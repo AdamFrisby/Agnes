@@ -49,13 +49,13 @@ public interface IGitHubUserLookup
     Task<bool> IsOrgMemberAsync(string token, string org, CancellationToken cancellationToken);
     Task<bool> IsTeamMemberAsync(string token, string org, string team, string login, CancellationToken cancellationToken);
 
-    // ---- by-login probes (collaboration/01 friends & eligibility) ----
-    // The three above answer "who is *this token's owner*, and is *it* a member". The friends feature needs
-    // to reason about *other* logins (a friend handle, a prospective grantee) with no token of theirs in hand,
+    // ---- by-login probes (collaboration/01 collaborators & eligibility) ----
+    // The three above answer "who is *this token's owner*, and is *it* a member". The collaborators feature needs
+    // to reason about *other* logins (a collaborator handle, a prospective grantee) with no token of theirs in hand,
     // so these probe by login name. They are defaulted (false) so existing fakes/implementers keep compiling;
     // the real GitHubUserLookup overrides them with live API calls.
 
-    /// <summary>Whether a GitHub login resolves to a real user account — the friend-add verification. Live,
+    /// <summary>Whether a GitHub login resolves to a real user account — the collaborator-add verification. Live,
     /// never cached as trust. Default false for fakes that don't model it.</summary>
     Task<bool> UserExistsAsync(string login, CancellationToken cancellationToken) => Task.FromResult(false);
 

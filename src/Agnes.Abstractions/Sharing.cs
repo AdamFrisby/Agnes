@@ -27,7 +27,7 @@ public enum SessionAccessLevel
 
 /// <summary>
 /// A direct share of one session with one identified recipient. The recipient is an opaque identity string —
-/// either a GitHub login (a friend, per collaboration/01) or the id of a device already paired to this host
+/// either a GitHub login (a collaborator, per collaboration/01) or the id of a device already paired to this host
 /// (the v1 fallback when a cross-host account model isn't available). Carries no secret, so it is safe to
 /// persist and to list to a client. <see cref="AllowPermissionApprovals"/> is an explicit, orthogonal grant of
 /// the right to answer this session's tool-permission prompts — never implied by <see cref="Level"/>, and

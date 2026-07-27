@@ -1,14 +1,14 @@
 namespace Agnes.Abstractions;
 
 /// <summary>
-/// How a <see cref="Friend"/> entry came to exist. This is provenance only — it never confers trust on its
-/// own. A <see cref="SharedOrg"/> friend was surfaced because the two accounts share a configured GitHub
-/// org/team; an <see cref="Explicit"/> friend was added by handle by the host owner. Either way, access is
-/// only ever conferred by an explicit, revocable <see cref="AccessGrant"/>, never by being a friend.
+/// How a <see cref="Collaborator"/> entry came to exist. This is provenance only — it never confers trust on its
+/// own. A <see cref="SharedOrg"/> collaborator was surfaced because the two accounts share a configured GitHub
+/// org/team; an <see cref="Explicit"/> collaborator was added by handle by the host owner. Either way, access is
+/// only ever conferred by an explicit, revocable <see cref="AccessGrant"/>, never by being a collaborator.
 /// </summary>
-public enum FriendSource
+public enum CollaboratorSource
 {
-    /// <summary>The host owner added this GitHub handle to their friend directory by hand.</summary>
+    /// <summary>The host owner added this GitHub handle to their collaborator directory by hand.</summary>
     Explicit,
 
     /// <summary>Surfaced from shared GitHub org/team membership (eligibility), not an explicit add.</summary>
@@ -16,12 +16,12 @@ public enum FriendSource
 }
 
 /// <summary>
-/// A friend in the host owner's directory: a GitHub-verified user identified by their canonical GitHub
+/// A collaborator in the host owner's directory: a GitHub-verified user identified by their canonical GitHub
 /// <paramref name="GitHubLogin"/>. Membership in this directory is an address-book convenience — it makes a
 /// user <em>eligible</em> to be granted access, but it is not itself an access grant. Carries no secret, so
 /// it is safe to persist and to list to a client.
 /// </summary>
-public sealed record Friend(string GitHubLogin, string? DisplayName, DateTimeOffset AddedAt, FriendSource Source);
+public sealed record Collaborator(string GitHubLogin, string? DisplayName, DateTimeOffset AddedAt, CollaboratorSource Source);
 
 /// <summary>
 /// What an <see cref="AccessGrant"/> permits. Ordered least-to-most privileged so a required scope can be
@@ -41,7 +41,7 @@ public enum GrantScope
 /// An explicit, revocable authorization: GitHub user <paramref name="GranteeLogin"/> may access
 /// <paramref name="Resource"/> (an opaque id — a host, or later a session) at <paramref name="Scope"/>.
 /// This is the seam <c>collaboration/02</c> session-sharing consumes: it creates grants with a session
-/// resource id and enforces them via <c>IFriendAuthorizer</c>. A grant is created by an authenticated owner
+/// resource id and enforces them via <c>ICollaboratorAuthorizer</c>. A grant is created by an authenticated owner
 /// device only for an <em>eligible</em> grantee; setting <see cref="RevokedAt"/> invalidates it permanently
 /// (a revoked grant can never again authorize anything). Carries no secret.
 /// </summary>

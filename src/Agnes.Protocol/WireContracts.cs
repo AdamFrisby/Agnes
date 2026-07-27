@@ -1022,16 +1022,16 @@ public sealed record BugReportDto(
     string? ExpectedBehavior,
     bool AttachDiagnostics = false);
 
-// ---- friends & social (collaboration/01) ----
-// The domain records (Friend, AccessGrant, GrantScope) live in Agnes.Abstractions and cross the wire whole —
+// ---- collaborators & social (collaboration/01) ----
+// The domain records (Collaborator, AccessGrant, GrantScope) live in Agnes.Abstractions and cross the wire whole —
 // they carry no secret. These two are the small request shapes the owner-only management calls take.
 
-/// <summary>Adds a GitHub handle to the owner's friend directory. The host verifies the handle is a real
+/// <summary>Adds a GitHub handle to the owner's collaborator directory. The host verifies the handle is a real
 /// GitHub user before storing it.</summary>
-public sealed record AddFriendRequest(string GitHubLogin, string? DisplayName = null);
+public sealed record AddCollaboratorRequest(string GitHubLogin, string? DisplayName = null);
 
 /// <summary>Grants a GitHub user access to a resource (a host, or later a session id) at a scope. The host
-/// rejects the grant unless the grantee is currently eligible (an explicit friend, or a shared configured
+/// rejects the grant unless the grantee is currently eligible (an explicit collaborator, or a shared configured
 /// org/team, recomputed live).</summary>
 public sealed record GrantAccessRequest(string GranteeLogin, string Resource, GrantScope Scope);
 
@@ -1040,7 +1040,7 @@ public sealed record GrantAccessRequest(string GranteeLogin, string Resource, Gr
 // Agnes.Abstractions and cross the wire whole — none carries a secret (a public link's raw token is delivered
 // only inside its one-time URL, never re-listed).
 
-/// <summary>Shares a session with an identified recipient — a GitHub login (a friend) or a paired device id — at
+/// <summary>Shares a session with an identified recipient — a GitHub login (a collaborator) or a paired device id — at
 /// an access level, optionally granting the orthogonal right to answer this session's permission prompts.</summary>
 public sealed record ShareSessionRequest(
     string SessionId,

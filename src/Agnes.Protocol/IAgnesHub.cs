@@ -418,25 +418,25 @@ public interface IAgnesServer
     /// A distinguishable "unavailable" (null) rather than an error, so a badge degrades cleanly.</summary>
     Task<Abstractions.QuotaSnapshot?> GetQuotaSnapshot(string profileId);
 
-    // ---- friends & social (collaboration/01) ----
-    // Owner-only management of the host owner's friend directory and the explicit, revocable access grants
-    // that sit on top of it. A "friend" is a GitHub-verified user; eligibility (shared org/team OR explicit
-    // friend) is recomputed live and never stored as trust; every grant is explicit and revocable and is the
+    // ---- collaborators & social (collaboration/01) ----
+    // Owner-only management of the host owner's collaborator directory and the explicit, revocable access grants
+    // that sit on top of it. A "collaborator" is a GitHub-verified user; eligibility (shared org/team OR explicit
+    // collaborator) is recomputed live and never stored as trust; every grant is explicit and revocable and is the
     // seam collaboration/02 session-sharing consumes. Non-owner callers are refused. See
-    // <c>.ideas/collaboration/01-friends-and-social.md</c>.
+    // <c>.ideas/collaboration/01-collaborators-and-social.md</c>.
 
-    /// <summary>The host owner's friend directory (owner-only).</summary>
-    Task<IReadOnlyList<Abstractions.Friend>> ListFriends();
+    /// <summary>The host owner's collaborator directory (owner-only).</summary>
+    Task<IReadOnlyList<Abstractions.Collaborator>> ListCollaborators();
 
-    /// <summary>Adds a friend by GitHub handle after verifying it is a real GitHub user (owner-only). A
+    /// <summary>Adds a collaborator by GitHub handle after verifying it is a real GitHub user (owner-only). A
     /// non-existent handle is refused.</summary>
-    Task<Abstractions.Friend> AddFriend(AddFriendRequest request);
+    Task<Abstractions.Collaborator> AddCollaborator(AddCollaboratorRequest request);
 
-    /// <summary>Removes a friend by GitHub handle (owner-only). Never revokes an already-issued grant.</summary>
-    Task RemoveFriend(string gitHubLogin);
+    /// <summary>Removes a collaborator by GitHub handle (owner-only). Never revokes an already-issued grant.</summary>
+    Task RemoveCollaborator(string gitHubLogin);
 
     /// <summary>Whether a GitHub handle is currently eligible for the owner to grant access to — an explicit
-    /// friend, or a shared configured org/team (recomputed live). Drives the add/grant eligibility hint.</summary>
+    /// collaborator, or a shared configured org/team (recomputed live). Drives the add/grant eligibility hint.</summary>
     Task<bool> CheckEligibility(string gitHubLogin);
 
     /// <summary>The active (non-revoked) access grants (owner-only).</summary>

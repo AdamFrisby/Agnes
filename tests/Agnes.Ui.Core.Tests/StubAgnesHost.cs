@@ -92,7 +92,7 @@ public abstract class StubAgnesHost : IAgnesHost
     public virtual Task<IReadOnlyList<SessionSummary>> ListSessionsAsync()
         => Task.FromResult<IReadOnlyList<SessionSummary>>([]);
 
-    // The prompt/skill library and the friends/grants surface. These are declared here (not left to the
+    // The prompt/skill library and the collaborators/grants surface. These are declared here (not left to the
     // interface defaults) so a derived fake can override them: the interface mapping is fixed at this class,
     // and a default interface member a subclass merely shadows would never be called.
 
@@ -129,13 +129,13 @@ public abstract class StubAgnesHost : IAgnesHost
     public virtual Task<LibrarySkill> InstallSkillFromRegistryAsync(string registryId, string entryId)
         => throw new NotSupportedException();
 
-    public virtual Task<IReadOnlyList<Friend>> ListFriendsAsync()
-        => Task.FromResult<IReadOnlyList<Friend>>([]);
+    public virtual Task<IReadOnlyList<Collaborator>> ListCollaboratorsAsync()
+        => Task.FromResult<IReadOnlyList<Collaborator>>([]);
 
-    public virtual Task<Friend> AddFriendAsync(string gitHubLogin, string? displayName = null)
+    public virtual Task<Collaborator> AddCollaboratorAsync(string gitHubLogin, string? displayName = null)
         => throw new NotSupportedException();
 
-    public virtual Task RemoveFriendAsync(string gitHubLogin) => Task.CompletedTask;
+    public virtual Task RemoveCollaboratorAsync(string gitHubLogin) => Task.CompletedTask;
 
     public virtual Task<bool> CheckEligibilityAsync(string gitHubLogin) => Task.FromResult(false);
 

@@ -475,16 +475,16 @@ public sealed class HostConnection : IAgnesHost
     public Task<Abstractions.QuotaSnapshot?> GetQuotaSnapshotAsync(string profileId)
         => _hub.InvokeAsync<Abstractions.QuotaSnapshot?>(nameof(IAgnesServer.GetQuotaSnapshot), profileId);
 
-    // ---- friends & social (collaboration/01) ----
+    // ---- collaborators & social (collaboration/01) ----
 
-    public Task<IReadOnlyList<Abstractions.Friend>> ListFriendsAsync()
-        => _hub.InvokeAsync<IReadOnlyList<Abstractions.Friend>>(nameof(IAgnesServer.ListFriends));
+    public Task<IReadOnlyList<Abstractions.Collaborator>> ListCollaboratorsAsync()
+        => _hub.InvokeAsync<IReadOnlyList<Abstractions.Collaborator>>(nameof(IAgnesServer.ListCollaborators));
 
-    public Task<Abstractions.Friend> AddFriendAsync(string gitHubLogin, string? displayName = null)
-        => _hub.InvokeAsync<Abstractions.Friend>(nameof(IAgnesServer.AddFriend), new AddFriendRequest(gitHubLogin, displayName));
+    public Task<Abstractions.Collaborator> AddCollaboratorAsync(string gitHubLogin, string? displayName = null)
+        => _hub.InvokeAsync<Abstractions.Collaborator>(nameof(IAgnesServer.AddCollaborator), new AddCollaboratorRequest(gitHubLogin, displayName));
 
-    public Task RemoveFriendAsync(string gitHubLogin)
-        => _hub.InvokeAsync(nameof(IAgnesServer.RemoveFriend), gitHubLogin);
+    public Task RemoveCollaboratorAsync(string gitHubLogin)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RemoveCollaborator), gitHubLogin);
 
     public Task<bool> CheckEligibilityAsync(string gitHubLogin)
         => _hub.InvokeAsync<bool>(nameof(IAgnesServer.CheckEligibility), gitHubLogin);

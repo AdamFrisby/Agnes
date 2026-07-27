@@ -139,7 +139,7 @@ public sealed class DeviceRegistry
     /// <summary>
     /// Resolves a bearer token to the GitHub login of the paired device, or null when the device wasn't paired
     /// via GitHub (its <c>Subject</c> isn't <c>github:&lt;login&gt;</c>) or the token is unknown. This is how the
-    /// social/friends layer learns "who" a caller is on GitHub — the login the GitHub exchange recorded on the
+    /// social/collaborators layer learns "who" a caller is on GitHub — the login the GitHub exchange recorded on the
     /// device record — without a fresh GitHub round-trip. Never records last-seen (a pure identity read).
     /// </summary>
     public string? ResolveGitHubLogin(string? token)

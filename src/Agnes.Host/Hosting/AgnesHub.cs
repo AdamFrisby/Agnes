@@ -31,16 +31,16 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly Notifications.PushRegistrationStore _pushRegistrations;
     private readonly Notifications.ActiveSessionViewTracker _views;
     private readonly IPluginRegistry<INotificationChannel> _channels;
-    private readonly Social.FriendService _friends;
+    private readonly Social.CollaboratorService _collaborators;
     private readonly Sharing.SessionSharingService _sharing;
     private readonly Sharing.SessionAccessAuthorizer _access;
     private readonly Sharing.PublicLinkStore _publicLinks;
     private readonly Sharing.PublicViewerTracker _publicViewers;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.FriendService friends, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers, Git.CheckoutManager checkouts)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.CollaboratorService collaborators, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers, Git.CheckoutManager checkouts)
     {
         _checkouts = checkouts;
-        _friends = friends;
+        _collaborators = collaborators;
         _sharing = sharing;
         _access = access;
         _publicLinks = publicLinks;
@@ -615,54 +615,54 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task<Abstractions.QuotaSnapshot?> GetQuotaSnapshot(string profileId)
         => _quota.GetQuotaAsync(profileId);
 
-    // ---- friends & social (collaboration/01) ----
-    // All owner-only: managing the friend directory and minting/revoking access grants is a host-owner action.
+    // ---- collaborators & social (collaboration/01) ----
+    // All owner-only: managing the collaborator directory and minting/revoking access grants is a host-owner action.
     // A non-owner caller is refused up front (before any GitHub round-trip), so a paired-but-not-owner device
-    // can neither enumerate the owner's friends nor grant itself access. The acting owner's GitHub login (from
+    // can neither enumerate the owner's collaborators nor grant itself access. The acting owner's GitHub login (from
     // their device subject) is the eligibility "actor"; it may be null for a non-GitHub-paired owner, in which
-    // case only the explicit-friend eligibility path is available.
+    // case only the explicit-collaborator eligibility path is available.
 
-    public Task<IReadOnlyList<Abstractions.Friend>> ListFriends()
+    public Task<IReadOnlyList<Abstractions.Collaborator>> ListCollaborators()
     {
         RequireOwner();
-        return Task.FromResult(_friends.ListFriends());
+        return Task.FromResult(_collaborators.ListCollaborators());
     }
 
-    public Task<Abstractions.Friend> AddFriend(AddFriendRequest request)
+    public Task<Abstractions.Collaborator> AddCollaborator(AddCollaboratorRequest request)
     {
         RequireOwner();
-        return _friends.AddFriendAsync(request.GitHubLogin, request.DisplayName, Context.ConnectionAborted);
+        return _collaborators.AddCollaboratorAsync(request.GitHubLogin, request.DisplayName, Context.ConnectionAborted);
     }
 
-    public Task RemoveFriend(string gitHubLogin)
+    public Task RemoveCollaborator(string gitHubLogin)
     {
         RequireOwner();
-        _friends.RemoveFriend(gitHubLogin);
+        _collaborators.RemoveCollaborator(gitHubLogin);
         return Task.CompletedTask;
     }
 
     public Task<bool> CheckEligibility(string gitHubLogin)
     {
         RequireOwner();
-        return _friends.IsEligibleAsync(OwnerGitHubLogin() ?? string.Empty, gitHubLogin, Context.ConnectionAborted);
+        return _collaborators.IsEligibleAsync(OwnerGitHubLogin() ?? string.Empty, gitHubLogin, Context.ConnectionAborted);
     }
 
     public Task<IReadOnlyList<Abstractions.AccessGrant>> ListGrants()
     {
         RequireOwner();
-        return Task.FromResult(_friends.ListGrants());
+        return Task.FromResult(_collaborators.ListGrants());
     }
 
     public Task<Abstractions.AccessGrant> GrantAccess(GrantAccessRequest request)
     {
         var deviceId = RequireOwner();
-        return _friends.GrantAsync(OwnerGitHubLogin() ?? string.Empty, request.GranteeLogin, request.Resource, request.Scope, deviceId, Context.ConnectionAborted);
+        return _collaborators.GrantAsync(OwnerGitHubLogin() ?? string.Empty, request.GranteeLogin, request.Resource, request.Scope, deviceId, Context.ConnectionAborted);
     }
 
     public Task RevokeGrant(string grantId)
     {
         RequireOwner();
-        _friends.RevokeGrant(grantId);
+        _collaborators.RevokeGrant(grantId);
         return Task.CompletedTask;
     }
 
@@ -673,7 +673,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         var caller = CallerId();
         if (!_tokens.IsOwner(caller))
         {
-            throw new HubException("Only the host owner can manage friends and access grants.");
+            throw new HubException("Only the host owner can manage collaborators and access grants.");
         }
 
         return caller!;

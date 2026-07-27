@@ -491,20 +491,20 @@ public interface IAgnesHost : IAsyncDisposable
     Task<QuotaSnapshot?> GetQuotaSnapshotAsync(string profileId)
         => Task.FromResult<QuotaSnapshot?>(null);
 
-    // ---- friends & social (collaboration/01) ----
-    // Owner-only friend directory + explicit, revocable access grants. Defaulted so hosts/fixtures that
+    // ---- collaborators & social (collaboration/01) ----
+    // Owner-only collaborator directory + explicit, revocable access grants. Defaulted so hosts/fixtures that
     // predate the feature (or a non-owner client) reply empty / refuse writes instead of failing.
 
-    /// <summary>The host owner's friend directory. Default empty for hosts without the feature.</summary>
-    Task<IReadOnlyList<Friend>> ListFriendsAsync()
-        => Task.FromResult<IReadOnlyList<Friend>>([]);
+    /// <summary>The host owner's collaborator directory. Default empty for hosts without the feature.</summary>
+    Task<IReadOnlyList<Collaborator>> ListCollaboratorsAsync()
+        => Task.FromResult<IReadOnlyList<Collaborator>>([]);
 
-    /// <summary>Adds a friend by GitHub handle (verified real host-side). Default: unsupported.</summary>
-    Task<Friend> AddFriendAsync(string gitHubLogin, string? displayName = null)
-        => throw new NotSupportedException("This host does not support friends.");
+    /// <summary>Adds a collaborator by GitHub handle (verified real host-side). Default: unsupported.</summary>
+    Task<Collaborator> AddCollaboratorAsync(string gitHubLogin, string? displayName = null)
+        => throw new NotSupportedException("This host does not support collaborators.");
 
-    /// <summary>Removes a friend by GitHub handle. Default no-op.</summary>
-    Task RemoveFriendAsync(string gitHubLogin) => Task.CompletedTask;
+    /// <summary>Removes a collaborator by GitHub handle. Default no-op.</summary>
+    Task RemoveCollaboratorAsync(string gitHubLogin) => Task.CompletedTask;
 
     /// <summary>Whether a GitHub handle is currently eligible for a grant (recomputed live). Default false.</summary>
     Task<bool> CheckEligibilityAsync(string gitHubLogin) => Task.FromResult(false);

@@ -428,29 +428,29 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Approvals.ApprovalGateService
     sp.GetRequiredService<Agnes.Host.Approvals.ApprovalGate>(),
     sp.GetRequiredService<Agnes.Host.Approvals.ApprovalRequestStore>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Approvals.ApprovalGateService>()));
-// ---- friends & social + explicit access grants (collaboration/01) ----
-// A GitHub-verified friend directory, live eligibility (shared org/team OR explicit friend, recomputed on
-// every check — never cached as trust), and explicit, revocable access grants enforced by IFriendAuthorizer.
+// ---- collaborators & social + explicit access grants (collaboration/01) ----
+// A GitHub-verified collaborator directory, live eligibility (shared org/team OR explicit collaborator, recomputed on
+// every check — never cached as trust), and explicit, revocable access grants enforced by ICollaboratorAuthorizer.
 // Reuses the security/02 GitHub identity/membership lookup for all live checks. The grant + authorizer pair
-// is the seam collaboration/02 session-sharing consumes. See .ideas/collaboration/01-friends-and-social.md.
+// is the seam collaboration/02 session-sharing consumes. See .ideas/collaboration/01-collaborators-and-social.md.
 var socialDir = builder.Configuration["Agnes:SocialDir"]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
-builder.Services.AddSingleton(sp => new Agnes.Host.Social.FriendStore(
-    socialDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Social.FriendStore>()));
+builder.Services.AddSingleton(sp => new Agnes.Host.Social.CollaboratorStore(
+    socialDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Social.CollaboratorStore>()));
 builder.Services.AddSingleton(sp => new Agnes.Host.Social.GrantStore(
     socialDir, sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Social.GrantStore>()));
-builder.Services.AddSingleton(sp => new Agnes.Host.Social.FriendEligibilityService(
-    sp.GetRequiredService<Agnes.Host.Social.FriendStore>(),
+builder.Services.AddSingleton(sp => new Agnes.Host.Social.CollaboratorEligibilityService(
+    sp.GetRequiredService<Agnes.Host.Social.CollaboratorStore>(),
     sp.GetRequiredService<IGitHubUserLookup>(),
     sp.GetRequiredService<GitHubAuthOptions>()));
-builder.Services.AddSingleton<Agnes.Host.Social.IFriendAuthorizer>(sp => new Agnes.Host.Social.FriendAuthorizer(
+builder.Services.AddSingleton<Agnes.Host.Social.ICollaboratorAuthorizer>(sp => new Agnes.Host.Social.CollaboratorAuthorizer(
     sp.GetRequiredService<Agnes.Host.Social.GrantStore>(),
     sp.GetRequiredService<IGitHubUserLookup>()));
-builder.Services.AddSingleton(sp => new Agnes.Host.Social.FriendService(
-    sp.GetRequiredService<Agnes.Host.Social.FriendStore>(),
+builder.Services.AddSingleton(sp => new Agnes.Host.Social.CollaboratorService(
+    sp.GetRequiredService<Agnes.Host.Social.CollaboratorStore>(),
     sp.GetRequiredService<Agnes.Host.Social.GrantStore>(),
-    sp.GetRequiredService<Agnes.Host.Social.FriendEligibilityService>(),
+    sp.GetRequiredService<Agnes.Host.Social.CollaboratorEligibilityService>(),
     sp.GetRequiredService<IGitHubUserLookup>(),
     sp.GetRequiredService<TimeProvider>()));
 

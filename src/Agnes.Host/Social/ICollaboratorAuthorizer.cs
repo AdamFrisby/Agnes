@@ -10,7 +10,7 @@ namespace Agnes.Host.Social;
 /// grant covers the actor, resource, and required scope, <em>and</em> the actor's GitHub identity is currently
 /// valid. Handle-knowledge alone never authorizes anything.
 /// </summary>
-public interface IFriendAuthorizer
+public interface ICollaboratorAuthorizer
 {
     /// <summary>Whether <paramref name="actorLogin"/> may access <paramref name="resource"/> at
     /// <paramref name="requiredScope"/> or higher, right now.</summary>
@@ -18,17 +18,17 @@ public interface IFriendAuthorizer
 }
 
 /// <summary>
-/// Default <see cref="IFriendAuthorizer"/>: reads the <see cref="GrantStore"/> for a covering active grant and
+/// Default <see cref="ICollaboratorAuthorizer"/>: reads the <see cref="GrantStore"/> for a covering active grant and
 /// re-validates the actor's GitHub identity live via <see cref="IGitHubUserLookup"/> on every call. Both
 /// conditions are checked at decision time — a grant that was revoked, or an actor whose GitHub account no
 /// longer exists, fails immediately.
 /// </summary>
-public sealed class FriendAuthorizer : IFriendAuthorizer
+public sealed class CollaboratorAuthorizer : ICollaboratorAuthorizer
 {
     private readonly GrantStore _grants;
     private readonly IGitHubUserLookup _lookup;
 
-    public FriendAuthorizer(GrantStore grants, IGitHubUserLookup lookup)
+    public CollaboratorAuthorizer(GrantStore grants, IGitHubUserLookup lookup)
     {
         _grants = grants;
         _lookup = lookup;

@@ -1068,22 +1068,22 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- Friends & access grants (collaboration/01) -->
-                    <StackPanel IsVisible="{Binding CatFriends}">
-                        <StackPanel DataContext="{Binding Friends}" Spacing="14">
+                    <!-- Collaborators & access grants (collaboration/01) -->
+                    <StackPanel IsVisible="{Binding CatCollaborators}">
+                        <StackPanel DataContext="{Binding Collaborators}" Spacing="14">
                             <Grid ColumnDefinitions="Auto,*,Auto">
-                                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Friends" />
+                                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Collaborators" />
                                 <Button Grid.Column="2" Content="Refresh" Command="{Binding RefreshCommand}" Classes="seg" />
                             </Grid>
                             <TextBlock Classes="scopeNote"
-                                       Text="A friend is a GitHub-verified user. Being a friend (or sharing a configured org/team) only makes someone eligible — it shares nothing on its own. Access is conferred only by an explicit, revocable grant below. Owner-only." />
+                                       Text="A collaborator is a GitHub-verified user. Being a collaborator (or sharing a configured org/team) only makes someone eligible — it shares nothing on its own. Access is conferred only by an explicit, revocable grant below. Owner-only." />
 
-                            <!-- Add a friend by GitHub handle, with a live eligibility hint -->
+                            <!-- Add a collaborator by GitHub handle, with a live eligibility hint -->
                             <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="8">
-                                <TextBox Grid.Column="0" Text="{Binding NewFriendHandle, Mode=TwoWay}" PlaceholderText="GitHub handle" />
-                                <TextBox Grid.Column="1" Text="{Binding NewFriendDisplayName, Mode=TwoWay}" PlaceholderText="Display name (optional)" />
+                                <TextBox Grid.Column="0" Text="{Binding NewCollaboratorHandle, Mode=TwoWay}" PlaceholderText="GitHub handle" />
+                                <TextBox Grid.Column="1" Text="{Binding NewCollaboratorDisplayName, Mode=TwoWay}" PlaceholderText="Display name (optional)" />
                                 <Button Grid.Column="2" Content="Check" Command="{Binding CheckEligibilityCommand}" Classes="seg" />
-                                <Button Grid.Column="3" Content="Add friend" Command="{Binding AddFriendCommand}" Classes="seg" />
+                                <Button Grid.Column="3" Content="Add collaborator" Command="{Binding AddCollaboratorCommand}" Classes="seg" />
                             </Grid>
                             <TextBlock Text="{Binding EligibilityHint}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
                                        IsVisible="{Binding EligibilityHint, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
@@ -1091,7 +1091,7 @@
                             <!-- Each row says why the person is listed (added by hand vs surfaced from a shared
                                  org/team) and can re-check its own eligibility, instead of making you retype the
                                  handle into the box above to find out. -->
-                            <ItemsControl ItemsSource="{Binding Friends}">
+                            <ItemsControl ItemsSource="{Binding Collaborators}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
@@ -1110,16 +1110,16 @@
                                                 </StackPanel>
                                                 <Button Grid.Column="1" Content="Check" Classes="seg" VerticalAlignment="Center"
                                                         ToolTip.Tip="Ask the host, now, whether this person is currently eligible for a grant."
-                                                        Command="{Binding $parent[ItemsControl].DataContext.CheckFriendEligibilityCommand}" CommandParameter="{Binding}" />
+                                                        Command="{Binding $parent[ItemsControl].DataContext.CheckCollaboratorEligibilityCommand}" CommandParameter="{Binding}" />
                                                 <Button Grid.Column="2" Content="Remove" Classes="seg" VerticalAlignment="Center"
-                                                        Command="{Binding $parent[ItemsControl].DataContext.RemoveFriendCommand}" CommandParameter="{Binding}" />
+                                                        Command="{Binding $parent[ItemsControl].DataContext.RemoveCollaboratorCommand}" CommandParameter="{Binding}" />
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
-                            <!-- Grant access to an eligible friend. What a grant names used to be a free-text
+                            <!-- Grant access to an eligible collaborator. What a grant names used to be a free-text
                                  "resource id" with no discoverable values; it's now a picker built from the host
                                  and its open sessions. -->
                             <TextBlock Classes="sectionTitle" Text="Access grants" Margin="0,6,0,0" />
@@ -1128,8 +1128,8 @@
                             <TextBlock Classes="scopeNote" Text="Connect a host, and open a session, to have something to grant against."
                                        IsVisible="{Binding !HasGrantTargets}" />
                             <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding HasGrantTargets}">
-                                <ComboBox Grid.Column="0" ItemsSource="{Binding Friends}" SelectedItem="{Binding SelectedFriend, Mode=TwoWay}"
-                                          PlaceholderText="Friend" HorizontalAlignment="Stretch">
+                                <ComboBox Grid.Column="0" ItemsSource="{Binding Collaborators}" SelectedItem="{Binding SelectedCollaborator, Mode=TwoWay}"
+                                          PlaceholderText="Collaborator" HorizontalAlignment="Stretch">
                                     <ComboBox.ItemTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding GitHubLogin}" />

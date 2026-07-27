@@ -5,12 +5,12 @@ using Agnes.Host.Social;
 namespace Agnes.Host.Tests;
 
 /// <summary>
-/// Covers the collaboration/01 friends-and-social core under the maintainer's GitHub-identity model: a friend
+/// Covers the collaboration/01 collaborators-and-social core under the maintainer's GitHub-identity model: a collaborator
 /// is a GitHub-verified user; the social graph is shared GitHub org/team membership plus explicit add-by-handle;
 /// every access grant is explicit and revocable; there is no ambient trust. The GitHub API is stubbed by a fake
 /// <see cref="IGitHubUserLookup"/> (no network), and eligibility/identity are proven to be recomputed live.
 /// </summary>
-public class FriendSocialTests
+public class CollaboratorSocialTests
 {
     /// <summary>In-memory stand-in for the GitHub API. Every set is a knob the test flips to prove a decision is
     /// recomputed live rather than cached as trust.</summary>
@@ -20,12 +20,12 @@ public class FriendSocialTests
         public HashSet<(string Org, string Login)> OrgMembers { get; } = new();
         public HashSet<(string Org, string Team, string Login)> TeamMembers { get; } = new();
 
-        // Token-based paths (security/02 auth) are unused by the friends feature; default them away.
+        // Token-based paths (security/02 auth) are unused by the collaborators feature; default them away.
         public Task<string?> GetLoginAsync(string token, CancellationToken ct) => Task.FromResult<string?>(null);
         public Task<bool> IsOrgMemberAsync(string token, string org, CancellationToken ct) => Task.FromResult(false);
         public Task<bool> IsTeamMemberAsync(string token, string org, string team, string login, CancellationToken ct) => Task.FromResult(false);
 
-        // By-login probes the friends feature actually uses.
+        // By-login probes the collaborators feature actually uses.
         public Task<bool> UserExistsAsync(string login, CancellationToken ct) => Task.FromResult(Users.Contains(login));
         public Task<bool> IsOrgMemberByLoginAsync(string org, string login, CancellationToken ct) => Task.FromResult(OrgMembers.Contains((org, login)));
         public Task<bool> IsTeamMemberByLoginAsync(string org, string team, string login, CancellationToken ct) => Task.FromResult(TeamMembers.Contains((org, team, login)));
@@ -34,34 +34,34 @@ public class FriendSocialTests
     private static GitHubAuthOptions Options(params string[] orgs)
         => new() { Enabled = true, ClientId = "cid", AllowedOrgs = orgs };
 
-    private static (FriendStore Friends, GrantStore Grants, FriendEligibilityService Eligibility, FriendService Service, FriendAuthorizer Authorizer)
+    private static (CollaboratorStore Collaborators, GrantStore Grants, CollaboratorEligibilityService Eligibility, CollaboratorService Service, CollaboratorAuthorizer Authorizer)
         Build(FakeGitHub gh, GitHubAuthOptions options, string? dir = null)
     {
-        var friends = new FriendStore(dir);
+        var collaborators = new CollaboratorStore(dir);
         var grants = new GrantStore(dir, TimeProvider.System);
-        var eligibility = new FriendEligibilityService(friends, gh, options);
-        var service = new FriendService(friends, grants, eligibility, gh, TimeProvider.System);
-        var authorizer = new FriendAuthorizer(grants, gh);
-        return (friends, grants, eligibility, service, authorizer);
+        var eligibility = new CollaboratorEligibilityService(collaborators, gh, options);
+        var service = new CollaboratorService(collaborators, grants, eligibility, gh, TimeProvider.System);
+        var authorizer = new CollaboratorAuthorizer(grants, gh);
+        return (collaborators, grants, eligibility, service, authorizer);
     }
 
-    // ---- friend directory ----
+    // ---- collaborator directory ----
 
     [Fact]
-    public async Task Add_list_and_remove_a_friend()
+    public async Task Add_list_and_remove_a_collaborator()
     {
         var gh = new FakeGitHub();
         gh.Users.Add("octocat");
         var (_, _, _, service, _) = Build(gh, Options());
 
-        var added = await service.AddFriendAsync("octocat", "The Octocat");
+        var added = await service.AddCollaboratorAsync("octocat", "The Octocat");
         Assert.Equal("octocat", added.GitHubLogin);
-        Assert.Equal(FriendSource.Explicit, added.Source);
+        Assert.Equal(CollaboratorSource.Explicit, added.Source);
 
-        Assert.Contains(service.ListFriends(), f => f.GitHubLogin == "octocat" && f.DisplayName == "The Octocat");
+        Assert.Contains(service.ListCollaborators(), f => f.GitHubLogin == "octocat" && f.DisplayName == "The Octocat");
 
-        Assert.True(service.RemoveFriend("octocat"));
-        Assert.Empty(service.ListFriends());
+        Assert.True(service.RemoveCollaborator("octocat"));
+        Assert.Empty(service.ListCollaborators());
     }
 
     [Fact]
@@ -71,23 +71,50 @@ public class FriendSocialTests
         var gh = new FakeGitHub();
         var (_, _, _, service, _) = Build(gh, Options());
 
-        await Assert.ThrowsAsync<FriendActionException>(() => service.AddFriendAsync("ghost", null));
-        Assert.Empty(service.ListFriends());
+        await Assert.ThrowsAsync<CollaboratorActionException>(() => service.AddCollaboratorAsync("ghost", null));
+        Assert.Empty(service.ListCollaborators());
     }
 
     [Fact]
-    public async Task Friends_survive_a_reload_from_disk()
+    public void A_directory_written_under_the_old_name_survives_the_rename()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "agnes-friends-" + Guid.NewGuid().ToString("n"));
+        // Friends became Collaborators, which moved the file. Reading the old name once is what keeps an
+        // existing host's directory from silently emptying on upgrade — the worst possible outcome of a
+        // vocabulary change.
+        var dir = Path.Combine(Path.GetTempPath(), "agnes-collaborators-" + Guid.NewGuid().ToString("n"));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "friends.json"),
+                """[{"gitHubLogin":"alice","displayName":"Alice","addedAt":"2026-01-01T00:00:00+00:00","source":"Explicit"}]""");
+
+            var store = new CollaboratorStore(dir);
+
+            Assert.True(store.Contains("alice"));
+            Assert.Equal("Alice", store.Find("alice")!.DisplayName);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Collaborators_survive_a_reload_from_disk()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "agnes-collaborators-" + Guid.NewGuid().ToString("n"));
         try
         {
             var gh = new FakeGitHub();
             gh.Users.Add("alice");
-            var first = new FriendService(new FriendStore(dir), new GrantStore(dir, TimeProvider.System),
-                new FriendEligibilityService(new FriendStore(dir), gh, Options()), gh, TimeProvider.System);
-            await first.AddFriendAsync("alice", null);
+            var first = new CollaboratorService(new CollaboratorStore(dir), new GrantStore(dir, TimeProvider.System),
+                new CollaboratorEligibilityService(new CollaboratorStore(dir), gh, Options()), gh, TimeProvider.System);
+            await first.AddCollaboratorAsync("alice", null);
 
-            var reloaded = new FriendStore(dir);
+            var reloaded = new CollaboratorStore(dir);
             Assert.True(reloaded.Contains("alice"));
         }
         finally
@@ -113,7 +140,7 @@ public class FriendSocialTests
     }
 
     [Fact]
-    public async Task No_shared_org_and_not_a_friend_is_not_eligible()
+    public async Task No_shared_org_and_not_a_collaborator_is_not_eligible()
     {
         var gh = new FakeGitHub();
         gh.OrgMembers.Add(("acme", "owner")); // owner is in acme, but the target is not
@@ -123,13 +150,13 @@ public class FriendSocialTests
     }
 
     [Fact]
-    public async Task An_explicit_friend_is_eligible_without_any_shared_org()
+    public async Task An_explicit_collaborator_is_eligible_without_any_shared_org()
     {
         var gh = new FakeGitHub();
         gh.Users.Add("bob");
-        var (friends, _, eligibility, service, _) = Build(gh, Options("acme"));
-        await service.AddFriendAsync("bob", null);
-        Assert.True(friends.Contains("bob"));
+        var (collaborators, _, eligibility, service, _) = Build(gh, Options("acme"));
+        await service.AddCollaboratorAsync("bob", null);
+        Assert.True(collaborators.Contains("bob"));
 
         Assert.True(await eligibility.IsEligibleAsync("owner", "bob"));
     }
@@ -168,8 +195,8 @@ public class FriendSocialTests
         var gh = new FakeGitHub();
         var (_, _, _, service, _) = Build(gh, Options("acme"));
 
-        // Not a friend and shares no org → ineligible → grant refused.
-        await Assert.ThrowsAsync<FriendActionException>(
+        // Not a collaborator and shares no org → ineligible → grant refused.
+        await Assert.ThrowsAsync<CollaboratorActionException>(
             () => service.GrantAsync("owner", "stranger", "host:main", GrantScope.ReadOnly, "device-1"));
         Assert.Empty(service.ListGrants());
     }
@@ -180,7 +207,7 @@ public class FriendSocialTests
         var gh = new FakeGitHub();
         gh.Users.Add("bob");
         var (_, _, _, service, authorizer) = Build(gh, Options());
-        await service.AddFriendAsync("bob", null);
+        await service.AddCollaboratorAsync("bob", null);
 
         var grant = await service.GrantAsync("owner", "bob", "host:main", GrantScope.Collaborate, "device-1");
         Assert.True(await authorizer.AuthorizeAsync("bob", "host:main", GrantScope.Collaborate));
@@ -198,7 +225,7 @@ public class FriendSocialTests
         var gh = new FakeGitHub();
         gh.Users.Add("bob");
         var (_, _, _, service, authorizer) = Build(gh, Options());
-        await service.AddFriendAsync("bob", null);
+        await service.AddCollaboratorAsync("bob", null);
 
         await service.GrantAsync("owner", "bob", "host:main", GrantScope.ReadOnly, "device-1");
 
@@ -225,7 +252,7 @@ public class FriendSocialTests
         var gh = new FakeGitHub();
         gh.Users.Add("bob");
         var (_, _, _, service, authorizer) = Build(gh, Options());
-        await service.AddFriendAsync("bob", null);
+        await service.AddCollaboratorAsync("bob", null);
         await service.GrantAsync("owner", "bob", "host:main", GrantScope.ReadOnly, "device-1");
         Assert.True(await authorizer.AuthorizeAsync("bob", "host:main", GrantScope.ReadOnly));
 
@@ -241,7 +268,7 @@ public class FriendSocialTests
         var gh = new FakeGitHub();
         gh.Users.Add("bob");
         var (_, grants, _, service, _) = Build(gh, Options());
-        await service.AddFriendAsync("bob", null);
+        await service.AddCollaboratorAsync("bob", null);
         var grant = await service.GrantAsync("owner", "bob", "host:main", GrantScope.ReadOnly, "device-1");
 
         Assert.True(service.RevokeGrant(grant.Id));
@@ -277,16 +304,16 @@ public class FriendSocialTests
     }
 
     [Fact]
-    public async Task Removing_a_friend_does_not_revoke_an_existing_grant()
+    public async Task Removing_a_collaborator_does_not_revoke_an_existing_grant()
     {
         // AC3 analogue: contact removal is independent of access already granted.
         var gh = new FakeGitHub();
         gh.Users.Add("bob");
         var (_, _, _, service, authorizer) = Build(gh, Options());
-        await service.AddFriendAsync("bob", null);
+        await service.AddCollaboratorAsync("bob", null);
         await service.GrantAsync("owner", "bob", "host:main", GrantScope.ReadOnly, "device-1");
 
-        Assert.True(service.RemoveFriend("bob"));
+        Assert.True(service.RemoveCollaborator("bob"));
 
         // The grant is a separate, still-active fact; only an explicit revoke tears it down.
         Assert.True(await authorizer.AuthorizeAsync("bob", "host:main", GrantScope.ReadOnly));
