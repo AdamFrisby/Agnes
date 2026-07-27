@@ -389,11 +389,20 @@ public interface IAgnesServer
     /// <summary>Deletes a skill bundle by id (removing its managed files as a unit).</summary>
     Task DeleteSkill(string id);
 
-    /// <summary>The ids of the registered external skill-registry sources.</summary>
-    Task<IReadOnlyList<string>> GetSkillRegistries();
+    /// <summary>The registered external skill-registry sources, named, and flagged for whether searching them
+    /// means anything more than listing them.</summary>
+    Task<IReadOnlyList<Abstractions.CatalogSource>> GetSkillRegistries();
 
-    /// <summary>The skills a registry source currently offers (before import).</summary>
+    /// <summary>The skills a registry source currently offers (before import). For a large registry this is a
+    /// trending/front-page subset, not everything — use <see cref="SearchSkills"/> to find a specific one.</summary>
     Task<IReadOnlyList<Abstractions.RegistrySkillEntry>> GetRegistrySkills(string registryId);
+
+    /// <summary>
+    /// Searches every registered skill registry at once. A registry that can't answer (down, rate-limited)
+    /// contributes a line to <see cref="Abstractions.CatalogResults{TEntry}.Failures"/> instead of failing the
+    /// whole search, so one bad source can't hide the others.
+    /// </summary>
+    Task<Abstractions.CatalogResults<Abstractions.RegistrySkillEntry>> SearchSkills(string query);
 
     /// <summary>Fetches a registry entry and imports it into the library, returning the stored skill.</summary>
     Task<Abstractions.LibrarySkill> InstallSkillFromRegistry(string registryId, string entryId);

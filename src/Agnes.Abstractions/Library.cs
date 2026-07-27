@@ -46,7 +46,20 @@ public sealed record LibrarySkill(string Id, string Title, string SkillMdPath, I
 /// as surfaced by <see cref="IPromptRegistryProvider.ListAsync"/> before it is fetched into the library.
 /// <see cref="Source"/> is a human-readable origin (e.g. the on-disk path or catalog url).
 /// </summary>
-public sealed record RegistrySkillEntry(string Id, string Title, string? Description, string Source);
+public sealed record RegistrySkillEntry(string Id, string Title, string? Description, string Source)
+{
+    /// <summary>Who publishes it (e.g. a GitHub owner). A public registry can hold a dozen skills called
+    /// "pdf"; the publisher and the popularity below are what let a person pick between them.</summary>
+    public string? Publisher { get; init; }
+
+    public IReadOnlyList<string> Tags { get; init; } = [];
+
+    /// <summary>Stars on the source repository, where the registry reports them.</summary>
+    public int? Stars { get; init; }
+
+    /// <summary>Times the registry has served this skill, where it reports that.</summary>
+    public int? Downloads { get; init; }
+}
 
 /// <summary>How an installed skill's files are materialized into an agent-visible target directory.</summary>
 public enum SyncMode
@@ -69,17 +82,15 @@ public sealed record SkillSyncConflict(string Path, string ExistingDigest, strin
 /// <summary>
 /// One implementation per external registry source (see <c>.ideas/extensibility/02-prompts-skills-library.md</c>).
 /// Registered as an <see cref="IPluginRegistry{TProvider}"/> plugin point so "where do skills come from" is
-/// extensible — a built-in local-directory/git provider ships as the reference, and a shared-catalog/HTTP
-/// provider is a later drop-in with no core change.
+/// extensible — a built-in local-directory/git provider ships as the reference, and network-backed registries
+/// (skillshub.wtf, a GitHub repo of bundles) are separate plugin packages that add no core code.
+///
+/// Browsing and searching come from <see cref="ICatalogProvider{TEntry}"/>, shared with the MCP catalogue;
+/// fetching is the part that's specific to skills, because a skill bundle is a directory of files rather than
+/// a line of configuration.
 /// </summary>
-public interface IPromptRegistryProvider
+public interface IPromptRegistryProvider : ICatalogProvider<RegistrySkillEntry>
 {
-    /// <summary>Stable id for this registry source, e.g. <c>local-dir</c> or <c>shared-catalog</c>.</summary>
-    string Id { get; }
-
-    /// <summary>The skills this source currently offers.</summary>
-    Task<IReadOnlyList<RegistrySkillEntry>> ListAsync(CancellationToken ct = default);
-
     /// <summary>
     /// Materializes the entry identified by <paramref name="entryId"/> into <paramref name="destinationDir"/>
     /// (creating it if needed) and returns the resulting <see cref="LibrarySkill"/> pointing at the copied

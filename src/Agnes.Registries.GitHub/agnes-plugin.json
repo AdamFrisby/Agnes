@@ -1,0 +1,11 @@
+{
+  "id": "Agnes.Registries.GitHub",
+  "displayName": "GitHub skill repositories",
+  "version": "0.1.0",
+  "pluginPoints": ["IPromptRegistryProvider"],
+  "agnesApiVersion": "^0.1.0",
+  "capabilities": ["network", "credentials"],
+  "publisher": "Multitudal",
+  "repositoryUrl": "https://github.com/AdamFrisby/Agnes",
+  "homepage": "https://github.com/anthropics/skills"
+}

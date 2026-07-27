@@ -575,15 +575,18 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<string>> GetSkillRegistries()
-        => Task.FromResult<IReadOnlyList<string>>(_skillRegistries.All.Select(r => r.Id).ToArray());
+    public Task<IReadOnlyList<Abstractions.CatalogSource>> GetSkillRegistries()
+        => Task.FromResult(CatalogSearch.Sources(_skillRegistries.All));
 
     public async Task<IReadOnlyList<Abstractions.RegistrySkillEntry>> GetRegistrySkills(string registryId)
     {
         var registry = _skillRegistries.Find(registryId)
             ?? throw new InvalidOperationException($"Unknown skill registry '{registryId}'.");
-        return await registry.ListAsync().ConfigureAwait(false);
+        return await registry.ListAsync(Context.ConnectionAborted).ConfigureAwait(false);
     }
+
+    public Task<Abstractions.CatalogResults<Abstractions.RegistrySkillEntry>> SearchSkills(string query)
+        => CatalogSearch.SearchAsync(_skillRegistries.All, query ?? string.Empty, Context.ConnectionAborted);
 
     public async Task<Abstractions.LibrarySkill> InstallSkillFromRegistry(string registryId, string entryId)
     {

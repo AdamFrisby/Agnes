@@ -13,6 +13,9 @@
     <Project Path="src/Agnes.Cli/Agnes.Cli.csproj" />
     <Project Path="src/Agnes.Host/Agnes.Host.csproj" />
     <Project Path="src/Agnes.Protocol/Agnes.Protocol.csproj" />
+    <Project Path="src/Agnes.Registries.GitHub/Agnes.Registries.GitHub.csproj" />
+    <Project Path="src/Agnes.Registries.McpRegistry/Agnes.Registries.McpRegistry.csproj" />
+    <Project Path="src/Agnes.Registries.SkillsHub/Agnes.Registries.SkillsHub.csproj" />
     <Project Path="src/Agnes.Recording/Agnes.Recording.csproj" />
     <Project Path="src/Agnes.Relay/Agnes.Relay.csproj" />
     <Project Path="src/Agnes.Relay.Protocol/Agnes.Relay.Protocol.csproj" />

@@ -24,6 +24,10 @@ public sealed class LocalDirectoryRegistryProvider : IPromptRegistryProvider
 
     public string Id { get; }
 
+    /// <summary>A local directory's list is already everything it holds, so there is nothing for a search box
+    /// to do here that scrolling doesn't.</summary>
+    public string DisplayName => $"Local directory ({_root})";
+
     public Task<IReadOnlyList<RegistrySkillEntry>> ListAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();

@@ -236,9 +236,18 @@ builder.Services.AddSingleton(sp => new McpRegistry(
 // skipped-with-a-warning (lenient) or fails the session start naming the server (strict).
 builder.Services.AddSingleton(new McpOptions(builder.Configuration.GetValue("Agnes:Mcp:Strict", false)));
 
-// ---- MCP presets as built-in plugins (AC13): curated quick-install templates, extensible by plugins ----
-builder.Services.AddSingleton<IMcpPresetProvider, CuratedMcpPresetProvider>();
-builder.Services.AddPluginPoint<IMcpPresetProvider>(p => p.Id);
+// ---- MCP catalogues as plugins (AC13): where installable MCP servers come from ----
+// The curated handful is built in and needs no network. Breadth comes from registry plugins, shipped in-tree
+// the way the agent packages are: each is its own assembly implementing IMcpCatalogProvider, and each can be
+// turned off by an operator who doesn't want that egress (Agnes:Registries:<id>:Enabled=false).
+builder.Services.AddSingleton<IMcpCatalogProvider, CuratedMcpCatalogProvider>();
+if (RegistryEnabled(builder.Configuration, "mcp-official"))
+{
+    builder.Services.AddSingleton<IMcpCatalogProvider>(
+        new Agnes.Registries.McpRegistry.OfficialMcpRegistryProvider(new HttpClient()));
+}
+
+builder.Services.AddPluginPoint<IMcpCatalogProvider>(p => p.Id);
 
 // ---- projects: per-repo bundles (sandbox + MCP + GitHub account + defaults) a session inherits ----
 var projectsFile = builder.Configuration["Agnes:ProjectsFile"]
@@ -282,13 +291,38 @@ var skillLibraryDir = builder.Configuration["Agnes:SkillLibraryDir"] ?? promptLi
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.SkillLibrary(
     skillLibraryDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.SkillLibrary>()));
 
-// External skill registries as a plugin point: a configured local directory / local-git checkout is the
-// built-in reference source (NO network — Agnes reads the working tree). A shared-catalog / HTTP provider is
-// a later drop-in that implements IPromptRegistryProvider and registers here with no core change.
+// External skill registries as a plugin point. A configured local directory / local-git checkout is the
+// offline reference source (NO network — Agnes reads the working tree). The network-backed registries are
+// separate plugin assemblies: the official anthropics/skills repository over GitHub, and skillshub.wtf's
+// index across thousands of published skills. Each is opt-out per operator
+// (Agnes:Registries:<id>:Enabled=false) since each reaches the internet.
 var skillRegistryDir = builder.Configuration["Agnes:SkillRegistryDir"];
 if (!string.IsNullOrWhiteSpace(skillRegistryDir))
 {
     builder.Services.AddSingleton<IPromptRegistryProvider>(new Agnes.Host.Hosting.LocalDirectoryRegistryProvider(skillRegistryDir));
+}
+
+// A github.com token, when the host has one linked, only raises GitHub's anonymous API rate limit; both
+// registries work without it. Resolved through the same broker a NuGet-installed plugin would be handed.
+static Agnes.Registries.GitHub.GitHubSkillBundles GitHubBundles(IServiceProvider sp)
+{
+    var sources = sp.GetService<Agnes.Host.Hosting.CredentialSourceRegistry>();
+    var broker = sources is null ? null : new Agnes.Host.Plugins.HostCredentialBroker(sources);
+    return new Agnes.Registries.GitHub.GitHubSkillBundles(
+        new HttpClient(),
+        broker is null ? null : ct => broker.ResolveAsync("github.com", ct));
+}
+
+if (RegistryEnabled(builder.Configuration, "github:anthropics/skills"))
+{
+    builder.Services.AddSingleton<IPromptRegistryProvider>(sp =>
+        new Agnes.Registries.GitHub.GitHubSkillsRegistryProvider(GitHubBundles(sp)));
+}
+
+if (RegistryEnabled(builder.Configuration, "skillshub"))
+{
+    builder.Services.AddSingleton<IPromptRegistryProvider>(sp =>
+        new Agnes.Registries.SkillsHub.SkillsHubRegistryProvider(new HttpClient(), GitHubBundles(sp)));
 }
 
 builder.Services.AddPluginPoint<IPromptRegistryProvider>(p => p.Id);
@@ -1385,24 +1419,29 @@ static System.Net.IPAddress? ResolveBridgeAddress(string? configured, string bri
     }
 }
 
-// List / revoke paired devices (requires a valid token).
-static bool Authorized(HttpContext ctx, DeviceRegistry reg)
+// Whether a network-backed catalogue plugin should be registered. On by default — a registry nobody can see
+// is a registry nobody uses — and switched off per provider by an operator who doesn't want that egress:
+// Agnes:Registries:skillshub:Enabled=false.
+static bool RegistryEnabled(IConfiguration configuration, string id)
+    => configuration.GetValue($"Agnes:Registries:{id}:Enabled", true);
+
+// The bearer token a request presents, from the header or the query parameter the hub transport uses.
+static string RequestToken(HttpContext ctx)
 {
     var header = ctx.Request.Headers.Authorization.ToString();
-    var token = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+    return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
         ? header["Bearer ".Length..]
         : ctx.Request.Query[WireProtocol.TokenParameter].ToString();
-    return reg.IsValid(token);
 }
+
+// List / revoke paired devices (requires a valid token).
+static bool Authorized(HttpContext ctx, DeviceRegistry reg) => reg.IsValid(RequestToken(ctx));
 
 // Authorization for host-wide CONFIG mutations (image manifest, projects, MCP registry, sandbox lifecycle):
 // a valid token, plus — when Agnes:Security:RestrictConfigToOwner is set — the host owner specifically.
 static bool AuthorizedForConfig(HttpContext ctx, DeviceRegistry reg)
 {
-    var header = ctx.Request.Headers.Authorization.ToString();
-    var token = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-        ? header["Bearer ".Length..]
-        : ctx.Request.Query[WireProtocol.TokenParameter].ToString();
+    var token = RequestToken(ctx);
     if (!reg.IsValid(token))
     {
         return false;
@@ -1536,8 +1575,9 @@ static string Fingerprint(string publicKey)
     => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
         System.Text.Encoding.UTF8.GetBytes(publicKey.Trim())))[..16].ToLowerInvariant();
 
+// The caller's own token is passed through so the list can mark which row is the calling device.
 app.MapGet("/devices", (HttpContext ctx) =>
-    Authorized(ctx, tokens) ? Results.Ok(tokens.ListDevices()) : Results.Unauthorized());
+    Authorized(ctx, tokens) ? Results.Ok(tokens.ListDevices(RequestToken(ctx))) : Results.Unauthorized());
 
 app.MapDelete("/devices/{id}", async (HttpContext ctx, string id) =>
 {
@@ -1573,10 +1613,40 @@ app.MapGet("/mcp", (HttpContext ctx) =>
     Authorized(ctx, tokens) ? Results.Ok(mcp.List()) : Results.Unauthorized());
 
 // Curated MCP presets, aggregated from every registered IMcpPresetProvider plugin (AC13).
-app.MapGet("/mcp/presets", (HttpContext ctx, IPluginRegistry<IMcpPresetProvider> presets) =>
+// The quick-install list: everything every catalogue offers up front, as ready-to-install templates. The
+// curated built-in answers instantly; a registry plugin contributes its front page.
+app.MapGet("/mcp/presets", async (HttpContext ctx, IPluginRegistry<IMcpCatalogProvider> catalogs, CancellationToken ct) =>
     Authorized(ctx, tokens)
-        ? Results.Ok(presets.All.SelectMany(p => p.Presets).ToArray())
+        ? Results.Ok((await CatalogSearch.ListAsync(catalogs.All, ct)).Hits.Select(h => McpCatalogMapping.ToInfo(h.Entry)).ToArray())
         : Results.Unauthorized());
+
+// The catalogues themselves, so a client can say which sources it is searching and which of them can search.
+app.MapGet("/mcp/catalogs", (HttpContext ctx, IPluginRegistry<IMcpCatalogProvider> catalogs) =>
+    Authorized(ctx, tokens) ? Results.Ok(CatalogSearch.Sources(catalogs.All)) : Results.Unauthorized());
+
+// Search across every registered catalogue at once. One slow or unreachable registry degrades to "that one
+// found nothing" rather than failing the whole search — see McpCatalogSearch.
+app.MapGet("/mcp/catalog/search", async (HttpContext ctx, string? q, IPluginRegistry<IMcpCatalogProvider> catalogs, CancellationToken ct) =>
+    Authorized(ctx, tokens)
+        ? Results.Ok(await CatalogSearch.SearchAsync(catalogs.All, q ?? string.Empty, ct))
+        : Results.Unauthorized());
+
+// Install a catalogued server: the host resolves the entry and maps it into its own configuration, so the
+// client never has to know how a registry describes a launch.
+app.MapPost("/mcp/catalog/install", async (HttpContext ctx, McpCatalogInstallRequest request,
+        IPluginRegistry<IMcpCatalogProvider> catalogs, CancellationToken ct) =>
+{
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
+
+    var provider = catalogs.Find(request.CatalogId);
+    if (provider is null) return Results.NotFound();
+
+    var entry = (await provider.SearchAsync(request.EntryId, ct)).FirstOrDefault(e => e.Id == request.EntryId)
+                ?? (await provider.ListAsync(ct)).FirstOrDefault(e => e.Id == request.EntryId);
+    return entry is null
+        ? Results.NotFound()
+        : Results.Ok(mcp.Add(McpCatalogMapping.ToRequest(entry, request.RunAt ?? "Host")));
+});
 
 // Effective-config preview: the merged, scope-filtered set that WOULD be active for a workspace right now —
 // Agnes-managed servers unioned with any an agent CLI already has in its OWN native config (flagged read-only).
@@ -1701,6 +1771,17 @@ app.MapGet("/credentials/github/start", (string? state) =>
 app.MapGet("/credentials/github/callback", async (string? code, string? state, string? installation_id) =>
     ghConnect is null ? Results.NotFound()
     : Results.Content(await ghConnect.HandleCallbackAsync(code, state, installation_id), "text/html"));
+
+// Unlink one linked account: drops its App id and private key from the host, so nothing can mint a token
+// for it again. Host-wide config, hence owner-gated when the operator restricts config. The minting source
+// reads the store live, so removal takes effect at once without re-registering anything.
+app.MapDelete("/credentials/github/{account}", (HttpContext ctx, string account) =>
+{
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
+    var store = app.Services.GetService<Agnes.Host.Hosting.GitHubAppStore>();
+    if (store is null) return Results.NotFound();
+    return store.Remove(account) ? Results.NoContent() : Results.NotFound();
+});
 
 // Fallback: store a token credential source (a fine-grained PAT) for a host.
 var credentialSources = app.Services.GetService<Agnes.Host.Hosting.CredentialSourceRegistry>();

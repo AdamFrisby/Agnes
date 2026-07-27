@@ -70,6 +70,12 @@
     <ProjectReference Include="..\Agnes.Agents.OpenCode\Agnes.Agents.OpenCode.csproj" />
     <ProjectReference Include="..\Agnes.Agents.Native\Agnes.Agents.Native.csproj" />
     <ProjectReference Include="..\Agnes.Agents.Codex\Agnes.Agents.Codex.csproj" />
+    <!-- Catalogue plugins, shipped in-tree the way the agent packages are: each is its own assembly with its
+         own IAgnesPluginModule, so the same code also installs as a NuGet plugin on a host that doesn't
+         bundle it. Each is opt-out per operator (Agnes:Registries:<id>:Enabled). -->
+    <ProjectReference Include="..\Agnes.Registries.GitHub\Agnes.Registries.GitHub.csproj" />
+    <ProjectReference Include="..\Agnes.Registries.SkillsHub\Agnes.Registries.SkillsHub.csproj" />
+    <ProjectReference Include="..\Agnes.Registries.McpRegistry\Agnes.Registries.McpRegistry.csproj" />
     <ProjectReference Include="..\Agnes.Sandbox\Agnes.Sandbox.csproj" />
     <ProjectReference Include="..\Agnes.Sandbox.Incus\Agnes.Sandbox.Incus.csproj" />
     <!-- Relay connection-setup frames: the host relay transport dials out to a relay and answers

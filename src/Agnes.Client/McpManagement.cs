@@ -24,7 +24,66 @@ public static class McpManagement
         }
     }
 
-    /// <summary>The host's curated quick-install presets (aggregated across every IMcpPresetProvider).</summary>
+    /// <summary>The catalogue sources the host can offer MCP servers from, named.</summary>
+    public static async Task<IReadOnlyList<Abstractions.CatalogSource>> CatalogsAsync(
+        string hostUrl, string token, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            return await client.GetFromJsonAsync<IReadOnlyList<Abstractions.CatalogSource>>(
+                       hostUrl.TrimEnd('/') + "/mcp/catalogs", cancellationToken).ConfigureAwait(false)
+                   ?? [];
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Searches every MCP catalogue the host has at once — the built-in curated set plus whatever registry
+    /// plugins are installed. A source that couldn't answer reports itself in
+    /// <see cref="Abstractions.CatalogResults{TEntry}.Failures"/> rather than failing the search.
+    /// </summary>
+    public static async Task<Abstractions.CatalogResults<Abstractions.McpCatalogEntry>> SearchCatalogAsync(
+        string hostUrl, string token, string query, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            return await client.GetFromJsonAsync<Abstractions.CatalogResults<Abstractions.McpCatalogEntry>>(
+                       $"{hostUrl.TrimEnd('/')}/mcp/catalog/search?q={Uri.EscapeDataString(query)}", cancellationToken)
+                       .ConfigureAwait(false)
+                   ?? Abstractions.CatalogResults<Abstractions.McpCatalogEntry>.Empty;
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
+    /// <summary>Installs a catalogued server by naming its catalogue and entry; the host resolves and maps it.</summary>
+    public static async Task<McpServerInfo?> InstallFromCatalogAsync(
+        string hostUrl, string token, string catalogId, string entryId, string? runAt = null,
+        HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            using var response = await client.PostAsJsonAsync(
+                hostUrl.TrimEnd('/') + "/mcp/catalog/install",
+                new McpCatalogInstallRequest(catalogId, entryId, runAt), cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<McpServerInfo>(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
+    /// <summary>The host's quick-install templates: the front page of every registered MCP catalogue.</summary>
     public static async Task<IReadOnlyList<McpServerInfo>> PresetsAsync(
         string hostUrl, string token, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
     {

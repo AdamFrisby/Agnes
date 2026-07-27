@@ -1,0 +1,11 @@
+{
+  "id": "Agnes.Registries.McpRegistry",
+  "displayName": "Official MCP registry",
+  "version": "0.1.0",
+  "pluginPoints": ["IMcpCatalogProvider"],
+  "agnesApiVersion": "^0.1.0",
+  "capabilities": ["network"],
+  "publisher": "Multitudal",
+  "repositoryUrl": "https://github.com/AdamFrisby/Agnes",
+  "homepage": "https://registry.modelcontextprotocol.io"
+}

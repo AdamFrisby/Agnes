@@ -22,6 +22,15 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>The host's base URL (also used as the pool key).</summary>
     string HostUrl { get; }
 
+    /// <summary>
+    /// The certificate fingerprint this connection authenticates the host by, or null when the host presents
+    /// a normally-trusted certificate. Exposed because the hub is not the only thing that talks to a host: the
+    /// management REST calls behind the settings surface have to make the same trust decision, and reading it
+    /// off the live connection is the only way they can't disagree with it. Pass it to
+    /// <see cref="AgnesHttp.For"/>. Null by default, so a simulated or in-memory host needs nothing.
+    /// </summary>
+    string? PinnedFingerprint => null;
+
     /// <summary>Stable, transport-agnostic identity of this host — what a session is attributed to so a
     /// same-named session reached through two different servers is never conflated (multi-server support,
     /// <c>connectivity/02</c>). Defaults to <see cref="HostUrl"/> for hosts/fixtures that don't advertise a
@@ -457,13 +466,18 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Deletes a skill bundle by id.</summary>
     Task DeleteSkillAsync(string id) => Task.CompletedTask;
 
-    /// <summary>The ids of the host's external skill-registry sources. Default empty.</summary>
-    Task<IReadOnlyList<string>> GetSkillRegistriesAsync()
-        => Task.FromResult<IReadOnlyList<string>>([]);
+    /// <summary>The host's external skill-registry sources, named. Default empty.</summary>
+    Task<IReadOnlyList<CatalogSource>> GetSkillRegistriesAsync()
+        => Task.FromResult<IReadOnlyList<CatalogSource>>([]);
 
-    /// <summary>The skills a registry source currently offers. Default empty.</summary>
+    /// <summary>The skills a registry source currently offers — its front page, for a large registry.
+    /// Default empty.</summary>
     Task<IReadOnlyList<RegistrySkillEntry>> GetRegistrySkillsAsync(string registryId)
         => Task.FromResult<IReadOnlyList<RegistrySkillEntry>>([]);
+
+    /// <summary>Searches every registered skill registry at once. Default: nothing found, nothing failed.</summary>
+    Task<CatalogResults<RegistrySkillEntry>> SearchSkillsAsync(string query)
+        => Task.FromResult(CatalogResults<RegistrySkillEntry>.Empty);
 
     /// <summary>Fetches a registry entry and imports it into the host's library, returning the stored skill.</summary>
     Task<LibrarySkill> InstallSkillFromRegistryAsync(string registryId, string entryId)
