@@ -45,6 +45,13 @@ public sealed class SimulatedHost : IAgnesHost
         "   return { ...defaultConfig, ...partial };\n" +
         " }\n";
 
+    /// <summary>A shell line that no single row can hold — the transcript, the sidebar and the preview all
+    /// have to wrap it, because the interesting part of a command like this is at the end.</summary>
+    private const string LongCommand =
+        "find src -name '*.ts' -not -path '*/node_modules/*' -print0 "
+        + "| xargs -0 grep -ln 'defaultConfig' "
+        + "| while read -r f; do sed -i.bak 's/retries: 3/retries: 5/g' \"$f\" && rm -f \"$f.bak\"; done";
+
     private const string LongAnswer =
         """
         ## Agent Client Protocol (ACP)
@@ -655,6 +662,10 @@ public sealed class SimulatedHost : IAgnesHost
                 await Task.Delay(150, cancel).ConfigureAwait(false);
                 session.Emit(new ToolCallEvent("tc-read", "src/config.ts", ToolKind.Read, ToolCallStatus.Completed,
                     [new TextContent("read 42 lines")]));
+                await Task.Delay(150, cancel).ConfigureAwait(false);
+                // A command far past one line: the case where clipping used to hide what actually ran.
+                session.Emit(new ToolCallEvent("tc-shell", LongCommand, ToolKind.Execute, ToolCallStatus.Completed,
+                    [new TextContent("src/config.ts\nsrc/io.ts\n2 files")]));
                 await Task.Delay(200, cancel).ConfigureAwait(false);
                 session.Emit(new ToolCallEvent("tc-1", "src/config.ts", ToolKind.Edit, ToolCallStatus.InProgress, [new TextContent(SampleDiff)]));
                 await Task.Delay(400, cancel).ConfigureAwait(false);

@@ -998,17 +998,16 @@
                                                 <DataTemplate DataType="vm:AgentNode">
                                                     <Button Command="{Binding SelectCommand}" Classes.sel="{Binding IsSelected}"
                                                             Margin="{Binding Depth, Converter={StaticResource AgentIndent}}"
-                                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                                             Background="Transparent" BorderThickness="0" Padding="6,5" CornerRadius="6" Cursor="Hand">
-                                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                                            <TextBlock Text="◆" FontSize="9" VerticalAlignment="Center"
+                                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                                            <TextBlock Grid.Column="0" Text="◆" FontSize="9" VerticalAlignment="Top" Margin="0,3,0,0"
                                                                        Foreground="{DynamicResource Good}" IsVisible="{Binding IsMain}" />
-                                                            <TextBlock Text="•" FontSize="12" VerticalAlignment="Center"
+                                                            <TextBlock Grid.Column="0" Text="•" FontSize="12" VerticalAlignment="Top"
                                                                        Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsMain}" />
-                                                            <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
-                                                                       TextTrimming="CharacterEllipsis"
+                                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" TextWrapping="Wrap"
                                                                        Foreground="{DynamicResource Fg}" Opacity="{Binding IsActive, Converter={StaticResource ActiveOpacity}}" />
-                                                        </StackPanel>
+                                                        </Grid>
                                                     </Button>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -1050,17 +1049,22 @@
                                     <ItemsControl ItemsSource="{Binding ModifiedFiles}" IsVisible="{Binding FilesExpanded}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
+                                                <!-- A horizontal StackPanel measures its children with infinite
+                                                     width, so a long path neither wraps nor ellipsizes — it just
+                                                     runs off the edge of the panel. A Grid gives the name the real
+                                                     width, and it wraps into it. Same shape for every list below. -->
                                                 <Button Command="{Binding $parent[ItemsControl].DataContext.ShowFilePreviewCommand}"
                                                         CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                        HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0"
                                                         Padding="6,5" CornerRadius="6" Cursor="Hand" ToolTip.Tip="Open the diff">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                                                   FontFamily="{StaticResource MonoFont}" />
-                                                        <TextBlock Text="{Binding StatusText}" Classes="tone" FontSize="10"
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                                   FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding StatusText}" Classes="tone" FontSize="10"
+                                                                   VerticalAlignment="Top"
                                                                    Classes.working="{Binding IsRunning}" Classes.done="{Binding IsDone}"
                                                                    Classes.error="{Binding IsFailed}" />
-                                                    </StackPanel>
+                                                    </Grid>
                                                 </Button>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
@@ -1075,7 +1079,7 @@
                                             <DataTemplate>
                                                 <StackPanel Spacing="3" Margin="0,0,0,6">
                                                     <TextBlock Text="{Binding FilePath}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                                               FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
+                                                               FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
                                                     <ItemsControl ItemsSource="{Binding Comments}">
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate>
@@ -1132,16 +1136,18 @@
                                         <ItemsControl ItemsSource="{Binding VisibleToolActivity}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
+                                                    <!-- The whole command, wrapped: this list is the session's
+                                                         record of what ran, and a clipped one records nothing. -->
                                                     <Button Command="{Binding $parent[ItemsControl].DataContext.ShowFilePreviewCommand}"
                                                             CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                                            HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                            HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0"
                                                             Padding="6,5" CornerRadius="6" Cursor="Hand">
-                                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                                            <TextBlock Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}" FontSize="10"
-                                                                       FontFamily="{StaticResource MonoFont}" Width="52" />
-                                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                                                       FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
-                                                        </StackPanel>
+                                                        <Grid ColumnDefinitions="52,*" ColumnSpacing="8">
+                                                            <TextBlock Grid.Column="0" Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" VerticalAlignment="Top" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                                        </Grid>
                                                     </Button>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -1160,16 +1166,16 @@
                                     <ItemsControl ItemsSource="{Binding Approvals}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
-                                                    <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                                                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,3">
+                                                    <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Top" Margin="0,4,0,0"
                                                             Background="{DynamicResource Good}" IsVisible="{Binding Allowed}" />
-                                                    <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                                                    <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Top" Margin="0,4,0,0"
                                                             Background="{DynamicResource Accent}" IsVisible="{Binding !Allowed}" />
-                                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
-                                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                               TextWrapping="Wrap" />
+                                                </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -1181,12 +1187,12 @@
                                     <ItemsControl ItemsSource="{Binding McpCalls}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
-                                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
-                                                    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                                               FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                </StackPanel>
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,3">
+                                                    <TextBlock Grid.Column="0" Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                               FontFamily="{StaticResource MonoFont}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                               FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                                </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -1209,15 +1215,16 @@
                                         <ItemsControl ItemsSource="{Binding VisibleCredentialUses}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
-                                                        <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                                                   FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
-                                                        <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                                                   FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                        <TextBlock Text="{Binding StatusText}" Classes="tone" FontSize="10" VerticalAlignment="Center"
+                                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="0,3">
+                                                        <TextBlock Grid.Column="0" Text="{Binding TimeText}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                                   FontFamily="{StaticResource MonoFont}" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                                                   FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding StatusText}" Classes="tone" FontSize="10" VerticalAlignment="Top"
+                                                                   Margin="0,2,0,0"
                                                                    Classes.working="{Binding IsRunning}" Classes.done="{Binding IsDone}"
                                                                    Classes.error="{Binding IsFailed}" />
-                                                    </StackPanel>
+                                                    </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
@@ -1379,9 +1386,12 @@
                                         </Border>
                                     </DataTemplate>
 
-                                    <!-- Compact, dense single-line tool call (this is a developer tool): no
-                                         card chrome, tight margins. Full output opens in the preview pane on
-                                         click; the "Tool output" toggle reveals a one-line summary under each. -->
+                                    <!-- Dense tool call (this is a developer tool): no card chrome, tight
+                                         margins. The command WRAPS rather than ellipsizing — a shell line you
+                                         can only read the first 60 characters of can't be overseen, and the
+                                         tail is where the damage usually is. Small edits show their diff right
+                                         here; anything longer opens in the preview pane on click, as does the
+                                         full output. The "Tool output" toggle reveals a summary under each. -->
                                     <DataTemplate DataType="tr:ToolCallItem">
                                         <Button Classes="tool" Command="{Binding $parent[ItemsControl].DataContext.ShowToolPreviewCommand}"
                                                 CommandParameter="{Binding}" HorizontalAlignment="Stretch"
@@ -1393,23 +1403,59 @@
                                                     <TextBlock Grid.Column="0" Text="▸" Classes="tone"
                                                                Classes.working="{Binding IsRunning}" Classes.done="{Binding IsDone}"
                                                                Classes.error="{Binding IsFailed}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Top" />
                                                     <TextBlock Grid.Column="1" Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
-                                                    <TextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Fg}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Center"
-                                                               TextTrimming="CharacterEllipsis" />
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Top" />
+                                                    <SelectableTextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Fg}"
+                                                                         FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                                                         TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                                     <TextBlock Grid.Column="3" Text="{Binding StatusText}" Classes="tone"
                                                                Classes.working="{Binding IsRunning}" Classes.error="{Binding IsFailed}"
-                                                               FontSize="11" VerticalAlignment="Center" IsVisible="{Binding ShowStatus}" />
+                                                               FontSize="11" VerticalAlignment="Top" IsVisible="{Binding ShowStatus}" />
                                                     <TextBlock Grid.Column="4" Text="{Binding DurationText}" Foreground="{DynamicResource FgFaint}"
-                                                               FontSize="11" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center"
+                                                               FontSize="11" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Top"
                                                                IsVisible="{Binding HasDuration}" />
                                                 </Grid>
+
+                                                <!-- A small edit, in place: quicker to read here than to open,
+                                                     and watching changes go by is the point of watching an agent. -->
+                                                <Border Margin="20,3,0,3" CornerRadius="6" IsVisible="{Binding HasInlineDiff}"
+                                                        Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
+                                                        BorderThickness="1" Padding="0,4">
+                                                    <ItemsControl ItemsSource="{Binding InlineDiffLines}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Classes.add="{Binding IsAdded}" Classes.del="{Binding IsRemoved}">
+                                                                    <Grid ColumnDefinitions="14,*">
+                                                                        <TextBlock Grid.Column="0" Text="{Binding Marker}" Foreground="{DynamicResource FgDim}"
+                                                                                   FontFamily="{StaticResource MonoFont}" FontSize="11" Padding="4,1,0,1" />
+                                                                        <SelectableTextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
+                                                                                             FontFamily="{StaticResource MonoFont}" FontSize="11" Padding="2,1,8,1"
+                                                                                             TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Border>
+
+                                                <!-- A larger edit states its size and stays one click away. -->
+                                                <TextBlock Text="{Binding DiffSummary}" Foreground="{DynamicResource FgFaint}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" Margin="20,0,0,0"
+                                                           IsVisible="{Binding HasCollapsedDiff}" />
+
+                                                <!-- Shown when "Tool output" is on — but not under an inline
+                                                     diff, where it would only repeat the diff's first line. -->
                                                 <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}"
                                                            FontFamily="{StaticResource MonoFont}" FontSize="11" Margin="20,0,0,0"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           IsVisible="{Binding $parent[ItemsControl].DataContext.ToolsExpanded}" />
+                                                           TextTrimming="CharacterEllipsis" MaxLines="1">
+                                                    <TextBlock.IsVisible>
+                                                        <MultiBinding Converter="{x:Static conv:BoolConverters.And}">
+                                                            <Binding Path="$parent[ItemsControl].DataContext.ToolsExpanded" />
+                                                            <Binding Path="ShowSummary" />
+                                                        </MultiBinding>
+                                                    </TextBlock.IsVisible>
+                                                </TextBlock>
                                             </StackPanel>
                                         </Button>
                                     </DataTemplate>
@@ -1501,6 +1547,21 @@
                                                 <TextBlock Text="Permission requested" Foreground="{DynamicResource StatusAttention}"
                                                            FontWeight="SemiBold" FontSize="12" />
                                                 <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
+
+                                                <!-- Exactly what is being approved, verbatim and wrapped. This is
+                                                     the last point at which a command can be stopped, so it is
+                                                     never ellipsized: the tail of a long line is where the harm
+                                                     hides. Tall requests scroll rather than push the buttons off. -->
+                                                <Border IsVisible="{Binding HasDetail}" MaxHeight="220" CornerRadius="6"
+                                                        Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
+                                                        BorderThickness="1" Padding="9,7">
+                                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                        <SelectableTextBlock Text="{Binding Detail}" Foreground="{DynamicResource Fg}"
+                                                                             FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                                                             TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
+                                                    </ScrollViewer>
+                                                </Border>
+
                                                 <!-- the five facts -->
                                                 <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="2">
                                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Touches" Foreground="{DynamicResource FgFaint}" FontSize="11" />
@@ -1632,8 +1693,12 @@
                                                            Classes.done="{Binding Kind, Converter={StaticResource EventSettled}}"
                                                            Classes.error="{Binding Kind, Converter={StaticResource EventBroken}}"
                                                            FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                                <!-- One line per event is what makes this readable as an index,
+                                                     so the summary ellipsizes — but the whole of it is on the
+                                                     tooltip, since a clipped command is unreviewable. -->
                                                 <TextBlock Grid.Column="3" Text="{Binding Summary}" Foreground="{DynamicResource FgDim}"
-                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                           ToolTip.Tip="{Binding Summary}" />
                                             </Grid>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
@@ -1649,9 +1714,21 @@
                             <Grid ColumnDefinitions="*,Auto,Auto" MaxWidth="768" HorizontalAlignment="Center">
                                 <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding PendingPermission.Title}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                                    <!-- The bar answers the request without scrolling to the card, so it has to
+                                         show the same full command the card does — approving from here must not
+                                         mean approving less than you read. -->
+                                    <Border IsVisible="{Binding PendingPermission.HasDetail}" MaxHeight="132" CornerRadius="6"
+                                            Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
+                                            BorderThickness="1" Padding="8,6" Margin="0,2">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <SelectableTextBlock Text="{Binding PendingPermission.Detail}" Foreground="{DynamicResource Fg}"
+                                                                 FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                                                 TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
+                                        </ScrollViewer>
+                                    </Border>
                                     <StackPanel Orientation="Horizontal" Spacing="10">
                                         <TextBlock Text="{Binding PendingPermission.ResourceText}" Foreground="{DynamicResource FgDim}" FontSize="11"
-                                                   FontFamily="{StaticResource MonoFont}" />
+                                                   FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
                                         <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" FontSize="11" />
                                         <TextBlock Text="{Binding PendingPermission.ReversibleText}" Foreground="{DynamicResource FgDim}" FontSize="11" />
                                     </StackPanel>
@@ -1973,9 +2050,11 @@
                         <Grid RowDefinitions="Auto,*">
                             <Border Grid.Row="0" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="14,10">
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+                                    <!-- Wraps: this header is often the whole command, and the buttons beside
+                                         it keep their own width, so it grows downward rather than cutting off. -->
                                     <TextBlock Grid.Column="0" Text="{Binding SelectedPreview.Title}" Foreground="{DynamicResource Fg}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
-                                               TextTrimming="CharacterEllipsis" />
+                                               TextWrapping="Wrap" Margin="0,0,10,0" MaxHeight="72" />
                                     <Button Classes="chip" Grid.Column="1" Command="{Binding SelectedPreview.ToggleSplitCommand}"
                                             IsVisible="{Binding SelectedPreview.IsDiff}"
                                             Padding="9,2" FontSize="11" Margin="0,0,8,0"
