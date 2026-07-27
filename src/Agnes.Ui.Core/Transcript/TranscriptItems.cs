@@ -7,8 +7,19 @@ namespace Agnes.Ui.Core.Transcript;
 /// <summary>Base type for a rendered item in a session transcript.</summary>
 public abstract class TranscriptItem : ObservableObject
 {
-    /// <summary>Stable id for deep-linking / scroll-to-anchor.</summary>
+    /// <summary>
+    /// Identity for scrolling <em>within this client</em>. Freshly generated per item, so it is emphatically
+    /// not an address anyone else can use — see <see cref="Sequence"/> for the one that travels.
+    /// </summary>
     public string AnchorId { get; } = Guid.NewGuid().ToString("n");
+
+    /// <summary>
+    /// The event-log sequence this item was built from, stamped by the builder. Unlike
+    /// <see cref="AnchorId"/> this is the same number on every client, which is what makes "look at this
+    /// moment" shareable: a link carries the sequence, and the receiving client resolves it back to whichever
+    /// item its own render produced. Zero for an item no single event produced.
+    /// </summary>
+    public long Sequence { get; set; }
 
     /// <summary>Which agent produced this item: null for the main agent, else a subagent id.</summary>
     public string? AgentId { get; init; }

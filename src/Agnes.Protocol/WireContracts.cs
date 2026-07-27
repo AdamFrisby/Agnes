@@ -82,6 +82,93 @@ public static class PairingLink
     /// <summary>The pinned certificate fingerprint an existing link carries, if any.</summary>
     public static string? FingerprintOf(string deepLink) => ValueOf(deepLink, "fp");
 
+    /// <summary>
+    /// The one-time <c>grant</c> a link carries, if any — the secret minted by a paired device and displayed
+    /// as a QR on the host's own screen. Distinct from <see cref="CodeOf"/> on purpose: a grant proves the
+    /// link came from the host, so a client can act on it unattended, whereas a typed code is only ever
+    /// prefilled for a person to confirm.
+    /// </summary>
+    public static string? GrantOf(string deepLink) => ValueOf(deepLink, "grant");
+
+    /// <summary>The typed bootstrap <c>code</c> a link carries, if any.</summary>
+    public static string? CodeOf(string deepLink) => ValueOf(deepLink, "code");
+
+    /// <summary>Whichever pairing secret the link carries, preferring the stronger one.</summary>
+    public static string? SecretOf(string deepLink) => GrantOf(deepLink) ?? CodeOf(deepLink);
+
+    /// <summary>The session a link points at, when the QR was minted from one — so scanning lands there.</summary>
+    public static string? SessionOf(string deepLink) => ValueOf(deepLink, "session");
+
+    /// <summary>The event-log position a link points at, or null. See <see cref="SessionLink"/>.</summary>
+    public static long? SequenceOf(string deepLink)
+        => long.TryParse(ValueOf(deepLink, "seq"), System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out var sequence) && sequence > 0
+            ? sequence
+            : null;
+
+    /// <summary>Whether a link is asking to pair a device, rather than to look at something.</summary>
+    public static bool IsPairLink(string deepLink)
+        => deepLink.TrimStart().StartsWith("agnes://pair", StringComparison.OrdinalIgnoreCase);
+
+    private static string? ValueOf(string deepLink, string key)
+    {
+        if (!Uri.TryCreate(deepLink, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var split = pair.Split('=', 2);
+            if (split.Length == 2 && split[0] == key)
+            {
+                return Uri.UnescapeDataString(split[1]);
+            }
+        }
+
+        return null;
+    }
+}
+
+/// <summary>
+/// A pointer to something worth looking at: <c>agnes://session?host=…&amp;session=…&amp;seq=…&amp;fp=…</c>.
+///
+/// Deliberately a different thing from a <see cref="PairingLink"/>, and the difference is the whole point. A
+/// pairing link carries a grant — redeeming it enrols a device and gives it the run of the host, so it is
+/// something you hand over once, on purpose, usually in person. A session link carries <em>no credential at
+/// all</em>. It says only "this host, this session, this moment", which makes it safe to paste into a group
+/// chat: it is useful to colleagues who already have access to that host and inert to everyone else.
+///
+/// A recipient who isn't paired must be told they need access — never offered pairing off the back of the
+/// link. A message that can talk a stranger's client into enrolling with a host they've never heard of is a
+/// phishing primitive, so the parser refuses to read a grant out of a session link even if one is bolted on.
+/// </summary>
+public static class SessionLink
+{
+    /// <param name="sequence">The event-log position to open at, or null for the live tail.</param>
+    /// <param name="fingerprint">The host's certificate fingerprint — not a secret (it's a public hash), and
+    /// it saves a recipient who is paired but has since forgotten the pin.</param>
+    public static string Build(string hostAddress, string sessionId, long? sequence = null, string? fingerprint = null)
+    {
+        var link = "agnes://session?host=" + Uri.EscapeDataString(hostAddress.Trim())
+                   + "&session=" + Uri.EscapeDataString(sessionId.Trim());
+        if (sequence is > 0)
+        {
+            link += "&seq=" + sequence.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (!string.IsNullOrWhiteSpace(fingerprint))
+        {
+            link += "&fp=" + Uri.EscapeDataString(fingerprint);
+        }
+
+        return link;
+    }
+
+    /// <summary>Whether a link is a session pointer.</summary>
+    public static bool IsSessionLink(string deepLink)
+        => deepLink.TrimStart().StartsWith("agnes://session", StringComparison.OrdinalIgnoreCase);
+
     private static string? ValueOf(string deepLink, string key)
     {
         if (!Uri.TryCreate(deepLink, UriKind.Absolute, out var uri))
@@ -466,8 +553,19 @@ public sealed record CreateCheckoutRequest(string RepositoryUrl, string Path, st
 /// create) or a clear message (e.g. the uncommitted-work refusal that blocks a non-forced clean-up).</summary>
 public sealed record CheckoutOperationResult(bool Success, CheckoutDto? Checkout, string Message);
 
-/// <summary>A device paired with a host (metadata only — never the token).</summary>
-public sealed record DeviceInfo(string Id, string Name, DateTimeOffset PairedAt, DateTimeOffset? LastSeenAt, string? Subject = null);
+/// <summary>
+/// A device paired with a host (metadata only — never the token). <see cref="IsCurrentDevice"/> is resolved
+/// per caller: it marks the entry belonging to the token that asked, so a client can warn before revoking
+/// the device it is itself connected on. It is additive and defaults false, so a host that predates it
+/// simply marks nothing.
+/// </summary>
+public sealed record DeviceInfo(
+    string Id,
+    string Name,
+    DateTimeOffset PairedAt,
+    DateTimeOffset? LastSeenAt,
+    string? Subject = null,
+    bool IsCurrentDevice = false);
 
 /// <summary>
 /// How widely an MCP server applies, resolved at session start. <see cref="AllHosts"/> and
@@ -528,6 +626,10 @@ public sealed record McpServerRequest(
     string? BearerTokenEnv = null,
     McpApplyScope ApplyScope = McpApplyScope.AllHosts,
     string? WorkspaceId = null);
+
+/// <summary>Installs a catalogued MCP server by naming the catalogue and the entry. The host resolves the
+/// entry against that registry again rather than trusting a description the client sent back.</summary>
+public sealed record McpCatalogInstallRequest(string CatalogId, string EntryId, string? RunAt = null);
 
 /// <summary>Status of the sandbox a session runs in, or null if it runs on the host.</summary>
 public sealed record SandboxStatus(string Provider, string Id, string State);
@@ -681,8 +783,19 @@ public sealed record HandoffState(
 /// <summary>Stores a token credential source for a host (the low-setup fine-grained-PAT fallback).</summary>
 public sealed record StoreCredentialRequest(string Host, string Token, string? Username = null);
 
-/// <summary>The host's credential-linking state (GitHub App): not-connected / app-created / connected.</summary>
-public sealed record CredentialStatus(string State, string? Slug, bool Installed, string? Account);
+/// <summary>
+/// The host's credential-linking state (GitHub App): not-connected / app-created / connected.
+/// <see cref="Accounts"/> is the linked accounts as a list — the thing a caller actually wants, since more
+/// than one account can be linked. <see cref="Account"/> is the older comma-joined rendering of the same
+/// facts, kept so a client that predates the list keeps working; new callers should read
+/// <see cref="Accounts"/> and treat null as "this host is too old to say".
+/// </summary>
+public sealed record CredentialStatus(
+    string State,
+    string? Slug,
+    bool Installed,
+    string? Account,
+    IReadOnlyList<string>? Accounts = null);
 
 /// <summary>Request to send a prompt to a session.</summary>
 public sealed record PromptRequest(string SessionId, IReadOnlyList<ContentBlock> Content);

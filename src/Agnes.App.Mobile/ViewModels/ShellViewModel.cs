@@ -346,6 +346,29 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Push(new ConnectPageViewModel(this, Hosts, Sessions, hostUrl, code, sessionId, autoSubmit, fingerprint));
     }
 
+    /// <summary>
+    /// Opens a session someone shared a link to.
+    ///
+    /// The link carries no credential — that's what makes it safe to paste into a group chat — so it only
+    /// works against a host this phone is already paired with. If it isn't, say so and stop: offering to pair
+    /// off the back of a message anyone could have sent would turn a shared link into a way to talk a stranger
+    /// into enrolling with a host they've never heard of.
+    /// </summary>
+    public void ViewSharedSession(string hostUrl, string sessionId, long? sequence)
+    {
+        var link = Hosts.Links.FirstOrDefault(l =>
+            string.Equals(l.Url.TrimEnd('/'), hostUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
+        if (link is null)
+        {
+            Toast($"You don't have access to {hostUrl}. Pair with it first, then open the link again.", ToastKind.Warning);
+            return;
+        }
+
+        PopToRoot();
+        SelectTab(ShellTab.Sessions);
+        Sessions.OpenById(link, sessionId, sequence);
+    }
+
     /// <summary>Opens a session by id if this device knows it (used by notification taps).</summary>
     public void OpenSessionById(string sessionId)
     {

@@ -418,6 +418,7 @@
                                     <MenuItem Header="Rename / tag…" Command="{Binding BeginRenameCommand}" />
                                     <MenuItem Header="Pin tab" Command="{Binding TogglePinCommand}" />
                                     <MenuItem Header="Copy session link (hand off to another device)" Click="OnCopySessionLink" />
+                                    <MenuItem Header="Copy share link (for a colleague who has access)" Click="OnCopyShareLink" />
                                     <MenuItem Header="Schedule the composer prompt (every 5 min)" Command="{Binding Session.ScheduleCommand}" />
                                     <Separator />
                                     <MenuItem Header="Compact context" Command="{Binding Session.CompactCommand}"
@@ -1338,6 +1339,7 @@
                                             <Border.ContextFlyout>
                                                 <MenuFlyout>
                                                     <MenuItem Header="Copy message" Click="OnCopyMessage" />
+                                                    <MenuItem Header="Copy link to this message" Click="OnCopyMessageLink" />
                                                     <MenuItem Header="View from here"
                                                               Command="{Binding $parent[ItemsControl].DataContext.RewindToCommand}"
                                                               CommandParameter="{Binding}" />
@@ -1354,6 +1356,7 @@
                                                         <Button.Flyout>
                                                             <MenuFlyout>
                                                                 <MenuItem Header="Copy message" Click="OnCopyMessage" />
+                                                    <MenuItem Header="Copy link to this message" Click="OnCopyMessageLink" />
                                                                 <MenuItem Header="View from here"
                                                                           Command="{Binding $parent[ItemsControl].DataContext.RewindToCommand}"
                                                                           CommandParameter="{Binding}" />

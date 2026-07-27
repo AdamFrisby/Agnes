@@ -696,6 +696,27 @@ public partial class SessionTabView : UserControl
         }
     }
 
+    // "Come and look at this": a pointer to the session that confers nothing, so it can go in a group chat.
+    private async void OnCopyShareLink(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_session is not null && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(_session.ShareLink);
+        }
+    }
+
+    // The same, aimed at one message. The event-log sequence is the same number on every client, so the
+    // recipient's app scrolls to the moment you meant rather than the top of the transcript.
+    private async void OnCopyMessageLink(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: Agnes.Ui.Core.Transcript.TranscriptItem item }
+            && _session is not null
+            && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(_session.ShareLinkTo(item.Sequence));
+        }
+    }
+
     private async void OnCopyPreview(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_workspace?.DataContext is SessionViewModel { SelectedPreview: { } preview }

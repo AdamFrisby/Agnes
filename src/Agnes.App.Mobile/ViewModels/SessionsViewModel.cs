@@ -250,6 +250,54 @@ public sealed partial class SessionsViewModel : ObservableObject
         _ = AttachAsync(entry);
     }
 
+    /// <summary>
+    /// Opens a session named by a shared link. It may be one this phone already tracks, or one it has never
+    /// seen — a colleague's link points at a session on a host you have access to, not necessarily at
+    /// something already in your list — so an unknown id is adopted rather than refused.
+    /// </summary>
+    public void OpenById(HostLink host, string sessionId, long? sequence)
+    {
+        var entry = All.FirstOrDefault(s => s.SessionId == sessionId && s.Host == host);
+        if (entry is null)
+        {
+            var saved = new SavedSession(host.Name, host.Url, host.Saved.Token, sessionId, AdapterId: string.Empty, Title: "Shared session");
+            entry = new SessionEntry(saved, host);
+            entry.Changed += _ => Resort();
+            All.Add(entry);
+            Resort();
+            Persist();
+        }
+
+        Open(entry);
+        if (sequence is > 0)
+        {
+            RevealSequence(entry, sequence.Value);
+        }
+    }
+
+    /// <summary>
+    /// Scrolls to the moment a link named, once the transcript has streamed far enough to contain it. The
+    /// session may still be attaching when the page opens, so this retries briefly rather than landing at the
+    /// top and looking as though the link's position was ignored.
+    /// </summary>
+    private void RevealSequence(SessionEntry entry, long sequence)
+    {
+        _ = Task.Run(async () =>
+        {
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                var landed = false;
+                _shell.Dispatcher.Post(() => landed = entry.Session?.ScrollToSequence(sequence) ?? false);
+                if (landed)
+                {
+                    return;
+                }
+
+                await Task.Delay(250).ConfigureAwait(false);
+            }
+        });
+    }
+
     public void StartNew()
     {
         _shell.Haptics.Tick();

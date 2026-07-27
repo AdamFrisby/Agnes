@@ -38,11 +38,13 @@ public sealed class TranscriptBuilder
         var agentId = @event.AgentId;
         var before = Items.Count;
         ApplyCore(@event, agentId);
-        // Stamp every item this event created with its time (one choke point covers all the cases above),
-        // so the scroll-position hint can show where you are in the conversation.
+        // Stamp every item this event created with its time and its place in the log (one choke point covers
+        // all the cases above): the time drives the scroll-position hint, and the sequence is the stable
+        // address a shared link uses to point at this moment.
         for (var i = before; i < Items.Count; i++)
         {
             Items[i].Timestamp = @event.Timestamp;
+            Items[i].Sequence = @event.Sequence;
         }
     }
 

@@ -1,4 +1,5 @@
 using Agnes.App.Mobile.Services;
+using Agnes.Ui.Core;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
@@ -90,24 +91,22 @@ public sealed class MainActivity : AvaloniaMainActivity
             return;
         }
 
-        if (intent.Action == Intent.ActionView && intent.Data is { Scheme: "agnes" } uri)
+        if (intent.Action == Intent.ActionView && intent.Data is { Scheme: "agnes" } uri
+            && AgnesLinkRoute.Parse(uri.ToString()) is { } route)
         {
-            var host = uri.GetQueryParameter("host");
-            // `grant` is a scanned one-time secret; `code` is a typed bootstrap code. `session` rides
-            // along when the QR came from a specific session, so scanning lands you in it.
-            var grant = uri.GetQueryParameter("grant");
-            var code = uri.GetQueryParameter("code");
-            var session = uri.GetQueryParameter("session");
-            // `fp` is the host's certificate fingerprint. It arrives on a QR shown on the host's own
-            // screen, which is the whole point: no network attacker can substitute it, so the phone can
-            // trust a self-signed host on the very first connection without any CA.
-            var fingerprint = uri.GetQueryParameter("fp");
-            if (!string.IsNullOrWhiteSpace(host))
+            // What the link means is decided in Agnes.Ui.Core, shared with the desktop: same link, same
+            // behaviour, and — unlike this file — compiled and tested without the android workload.
+            shell.Dispatcher.Post(() =>
             {
-                shell.Dispatcher.Post(() => shell.BeginPairing(
-                    host!, grant ?? code, session,
-                    autoSubmit: !string.IsNullOrWhiteSpace(grant), fingerprint: fingerprint));
-            }
+                if (route.Kind == AgnesLinkKind.ViewSession)
+                {
+                    shell.ViewSharedSession(route.HostUrl, route.SessionId!, route.Sequence);
+                }
+                else
+                {
+                    shell.BeginPairing(route.HostUrl, route.Secret, route.SessionId, route.AutoSubmit, route.Fingerprint);
+                }
+            });
         }
     }
 }

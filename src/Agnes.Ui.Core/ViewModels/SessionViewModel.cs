@@ -881,8 +881,49 @@ public sealed class SessionViewModel : ObservableObject
     // Search within the session (deep-links each hit by anchor).
     public ObservableCollection<SearchHit> Matches { get; } = [];
 
+    /// <summary>
+    /// A link to this session — <c>agnes://session?…</c> — for pasting wherever colleagues talk.
+    ///
+    /// It carries no credential of any kind, which is what makes it safe to put in a group chat: it names a
+    /// host, a session and (optionally) a moment, and is useful only to someone whose device is already paired
+    /// with that host. Handing someone access is a separate, deliberate act; this is just a pointer to look at.
+    /// The certificate fingerprint rides along because it's a public hash, not a secret, and it spares a
+    /// recipient whose pin has gone stale.
+    /// </summary>
+    public string ShareLink => SessionLink.Build(_host.HostUrl, SessionId, null, _host.PinnedFingerprint);
+
+    /// <summary>The same link, pointing at one moment in the transcript — "look at <em>this</em>".</summary>
+    public string ShareLinkTo(long sequence)
+        => SessionLink.Build(_host.HostUrl, SessionId, sequence, _host.PinnedFingerprint);
+
     /// <summary>Raised with a transcript item's <c>AnchorId</c> when the view should scroll to it.</summary>
     public event Action<string>? ScrollToRequested;
+
+    /// <summary>
+    /// Scrolls to the moment a shared link points at. The link carries an event-log sequence, which is the
+    /// same number on every client; this resolves it against whatever items this client's own render produced.
+    ///
+    /// Not every event yields a transcript item (a mode change, say), and a link may name one that didn't, so
+    /// this lands on the first item at or after the sequence rather than insisting on an exact hit. Returns
+    /// false when the transcript hasn't reached that far yet — the caller can retry once more has streamed in
+    /// rather than silently doing nothing.
+    /// </summary>
+    public bool ScrollToSequence(long sequence)
+    {
+        if (sequence <= 0)
+        {
+            return false;
+        }
+
+        var target = Items.FirstOrDefault(i => i.Sequence >= sequence);
+        if (target is null)
+        {
+            return false;
+        }
+
+        ScrollToRequested?.Invoke(target.AnchorId);
+        return true;
+    }
 
     public bool IsSearchOpen
     {

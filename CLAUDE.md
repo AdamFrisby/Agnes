@@ -72,6 +72,8 @@ Every `session/update` from an agent's ACP stream is normalized into a `SessionE
 | `Agnes.Agents.Native` | Native stream-json adapter (e.g. `claude --print --input-format stream-json`) for agents driven outside ACP proper. |
 | `Agnes.Agents.Codex` | Codex adapter (native app-server, persistent JSON-RPC over stdio). |
 | `Agnes.Protocol` | Transport-agnostic host↔client wire contract (DTOs + hub interface: subscribe, send prompt, permission response, terminal I/O, snapshot/tail cursors). Default binding is SignalR but the contract doesn't assume it. |
+| `Agnes.Registries.GitHub` / `Agnes.Registries.SkillsHub` | Skill-registry plugins (`IPromptRegistryProvider`): a GitHub repo of `SKILL.md` bundles (defaults to the official `anthropics/skills`), and the skillshub.wtf index. The GitHub package also holds the shared `GitHubSkillBundles` fetcher, which SkillsHub reuses — the same relationship the agent plugins have with `Agnes.Acp`. |
+| `Agnes.Registries.McpRegistry` | MCP-catalogue plugin (`IMcpCatalogProvider`) over the official registry at `registry.modelcontextprotocol.io`. |
 | `Agnes.Host` | ASP.NET Core daemon: plugin loader, `SessionManager`, event-sourced SQLite store, `PtyManager` fallback, SignalR hub, device-pairing/GitHub/keypair auth, scheduled tasks. |
 | `Agnes.Client` | Frontend-agnostic client library: connection pool across multiple hosts, snapshot+tail replay, auto-reconnect, device-token store. |
 | `Agnes.Client.Simulation` | In-memory simulated host/agent for offline UI development and screenshots. |
@@ -82,11 +84,57 @@ Every `session/update` from an agent's ACP stream is normalized into a `SessionE
 | `Agnes.App.Mobile` | Avalonia **Android** client. Shares `Agnes.Ui.Core` with the desktop head and **nothing else** — see below. |
 | `Agnes.App` | Uno Platform app: web (WASM) plus a desktop head, composed from `Agnes.Ui.Core`. |
 
-New agent CLIs are added as new `Agnes.Agents.*` packages implementing `IAgentAdapter`, not by changing core code.
+New agent CLIs are added as new `Agnes.Agents.*` packages implementing `IAgentAdapter`, not by changing core code. Likewise, new places to **get** things from are new `Agnes.Registries.*` packages implementing `ICatalogProvider<T>` — `IPromptRegistryProvider` for skill bundles, `IMcpCatalogProvider` for MCP servers. Each is opt-out per operator via `Agnes:Registries:<id>:Enabled`, since each reaches the internet.
 
 ### ACP surface implemented (protocol v1)
 
 Client → Agent: `initialize`, `authenticate`, `session/new`, `session/prompt`, `session/load`, `session/set_mode`. Agent → Client: `session/request_permission`, `fs/read_text_file`, `fs/write_text_file`, `terminal/*`. Notifications: `session/update` (streamed), `session/cancel`. Conventions: JSON keys camelCase, discriminators snake_case, all paths absolute, line numbers 1-based.
+
+### `agnes://` links and one window per machine
+
+**Two kinds of link, kept rigidly apart.** `agnes://pair` enrols a device and hands it the run of a host — a
+deliberate act, usually in person, carrying a one-time `grant`. `agnes://session?host=…&session=…&seq=…` is a
+*pointer*: it carries **no credential**, so it is safe to paste in Slack and is useful only to someone whose
+device is already paired with that host. A recipient who isn't paired is told they need access and **never
+offered pairing** — a message that can talk a stranger's client into enrolling with an unknown host is a
+phishing primitive. `AgnesLinkRoute` enforces this rather than trusting callers: a view link's `Secret` is
+null however the URL is crafted.
+
+`seq` addresses a moment. Transcript items carry the originating event's `Sequence` (stamped by
+`TranscriptBuilder`), which is the same number on every client — unlike `AnchorId`, which is a per-render GUID
+good only for scrolling locally. `SessionViewModel.ScrollToSequence` resolves one to whichever item this
+client rendered, landing on the first item at or after it since not every event yields one.
+
+What a link *means* is decided once, in `Agnes.Ui.Core.AgnesLinkRoute`; each head is a few lines of glue over
+it, which matters because neither entry point is testable: Android's `MainActivity` only compiles with the
+android workload, and macOS delivers links as an Apple Event.
+
+Registration differs per platform and only two can self-register: Linux writes a `.desktop` entry and Windows
+an `HKCU` protocol key, both at startup pointing at the current executable (Agnes ships as a bare download
+with no installer). macOS reads `CFBundleURLTypes` from a bundle on disk, so `build.sh`/`build.ps1` produce a
+real `Agnes.app` and the runtime registration no-ops there.
+
+The desktop is **single-instance** (`SingleInstance`): one window reaches as many hosts as you like, so a
+second copy only competes for the same saved tabs. A second launch forwards its link to the running one over a
+named pipe and exits. Two rules: the first listener is opened *synchronously* before the claim is handed back
+(otherwise clicking a link just after launch races it and silently does nothing), and any failure in the gate
+resolves to "run anyway" — the worst outcome of a bug there must be two windows, never zero. Multiple windows
+are still available within the one process by detaching a tab.
+
+### Talking to a host: always through `AgnesHttp`
+
+An Agnes host is commonly **self-signed and authenticated by a pinned certificate fingerprint**, learned from
+the pairing QR/link (`PinnedTls`). A default `HttpClient` rejects exactly those certificates, so any REST call
+to a host built with `new HttpClient()` fails the handshake on precisely the deployments Agnes is designed for
+— while the SignalR hub, which does honour the pin, stays connected and makes it look like the host is fine.
+
+So: every call to a host goes through `AgnesHttp.For(pin)`, and the pin comes from the connection
+(`IAgnesHost.PinnedFingerprint`) or the saved host record — never from a fresh guess. The desktop carries
+`HostEndpoint` (url + token + fingerprint, with an `Http` property); mobile has `HostLink.Http`; the CLI stores
+`HostEntry.Fingerprint`. `AgnesHttp` pools the *handler* per pin and hands out a *client* per call, because the
+management helpers set an `Authorization` header on the client they're given and a shared one would let two
+hosts' tokens cross. A call that legitimately reaches two services with different trust rules takes two clients
+(see `GitHubDeviceLogin.CompleteAsync`, which polls github.com and exchanges at the host).
 
 ### Security model
 
