@@ -75,11 +75,26 @@ public sealed class NuGetProtocolFeed : INuGetPluginFeed
         return [];
     }
 
-    public async Task<NuGetPluginPackage> DownloadAsync(string packageId, string? version, CancellationToken cancellationToken = default)
+    public async Task<NuGetPluginPackage> DownloadAsync(
+        string packageId,
+        string? version,
+        string? source = null,
+        CancellationToken cancellationToken = default)
     {
-        foreach (var source in _sources)
+        var candidateSources = source is null
+            ? _sources
+            : _sources.Where(repository => string.Equals(
+                PluginTrustPolicy.CanonicalizeSource(repository.PackageSource.Source),
+                PluginTrustPolicy.CanonicalizeSource(source),
+                StringComparison.Ordinal)).ToArray();
+        if (candidateSources.Count == 0)
         {
-            var findById = await source.GetResourceAsync<FindPackageByIdResource>(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException($"Configured plugin source '{source}' was not found.");
+        }
+
+        foreach (var repository in candidateSources)
+        {
+            var findById = await repository.GetResourceAsync<FindPackageByIdResource>(cancellationToken).ConfigureAwait(false);
 
             NuGetVersion? resolvedVersion;
             if (version is not null)
@@ -104,9 +119,13 @@ public sealed class NuGetProtocolFeed : INuGetPluginFeed
                 continue;
             }
 
-            return new NuGetPluginPackage(packageId, resolvedVersion.ToNormalizedString(), buffer.ToArray());
+            return new NuGetPluginPackage(
+                PluginTrustPolicy.CanonicalizeSource(repository.PackageSource.Source),
+                packageId,
+                resolvedVersion.ToNormalizedString(),
+                buffer.ToArray());
         }
 
-        throw new InvalidOperationException($"Package '{packageId}' (version {version ?? "latest"}) was not found on any configured source.");
+        throw new InvalidOperationException($"Package '{packageId}' (version {version ?? "latest"}) was not found on the selected configured source.");
     }
 }

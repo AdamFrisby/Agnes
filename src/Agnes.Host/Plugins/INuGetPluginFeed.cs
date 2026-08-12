@@ -3,7 +3,7 @@ using Agnes.Abstractions;
 namespace Agnes.Host.Plugins;
 
 /// <summary>A downloaded, not-yet-verified plugin package.</summary>
-public sealed record NuGetPluginPackage(string PackageId, string Version, byte[] Content);
+public sealed record NuGetPluginPackage(string Source, string PackageId, string Version, byte[] Content);
 
 /// <summary>
 /// The subset of NuGet's search/download protocol <see cref="PluginInstaller"/> needs, behind an
@@ -17,6 +17,11 @@ public interface INuGetPluginFeed
 
     Task<IReadOnlyList<string>> ListVersionsAsync(string packageId, CancellationToken cancellationToken = default);
 
-    /// <summary>Downloads a package's raw .nupkg bytes. <paramref name="version"/> null means "latest".</summary>
-    Task<NuGetPluginPackage> DownloadAsync(string packageId, string? version, CancellationToken cancellationToken = default);
+    /// <summary>Downloads a package's raw .nupkg bytes. <paramref name="version"/> null means "latest".
+    /// <paramref name="source"/> selects one exact configured feed when supplied.</summary>
+    Task<NuGetPluginPackage> DownloadAsync(
+        string packageId,
+        string? version,
+        string? source = null,
+        CancellationToken cancellationToken = default);
 }

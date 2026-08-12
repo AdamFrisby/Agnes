@@ -1039,7 +1039,13 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginCapabilityServi
     PluginCapabilityIds.Credentials,
     (pluginServices, hostServices) => pluginServices.AddSingleton(hostServices.GetRequiredService<ICredentialBroker>())));
 
-var pluginSources = builder.Configuration.GetSection("Agnes:Plugins:Sources").Get<string[]>() ?? [];
+var pluginTrustOptions = new PluginTrustOptions();
+builder.Configuration.GetSection("Agnes:Plugins").Bind(pluginTrustOptions);
+var pluginTrustPolicy = builder.Environment.IsDevelopment()
+    ? PluginTrustPolicy.Development
+    : PluginTrustPolicy.CreateProduction(pluginTrustOptions);
+var pluginSources = pluginTrustOptions.Sources;
+builder.Services.AddSingleton(pluginTrustPolicy);
 builder.Services.AddSingleton<Agnes.Host.Plugins.INuGetPluginFeed>(
     _ => new Agnes.Host.Plugins.NuGetProtocolFeed(pluginSources));
 
@@ -1060,7 +1066,7 @@ var pluginStateFile = builder.Configuration["Agnes:Plugins:StateFile"]
 builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginStateStore(
     pluginStateFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.PluginStateStore>()));
 
-builder.Services.AddSingleton<IPluginInstaller>(sp => new Agnes.Host.Plugins.PluginInstaller(
+builder.Services.AddSingleton<Agnes.Host.Plugins.PluginInstaller>(sp => new Agnes.Host.Plugins.PluginInstaller(
     sp.GetRequiredService<Agnes.Host.Plugins.INuGetPluginFeed>(),
     sp.GetRequiredService<Agnes.Host.Plugins.IPluginPackageVerifier>(),
     sp.GetRequiredService<Agnes.Host.Plugins.PluginStateStore>(),
@@ -1068,7 +1074,9 @@ builder.Services.AddSingleton<IPluginInstaller>(sp => new Agnes.Host.Plugins.Plu
     sp,
     sp.GetServices<Agnes.Host.Plugins.IPluginPointMerger>(),
     sp.GetServices<Agnes.Host.Plugins.PluginCapabilityService>(),
-    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.PluginInstaller>()));
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.PluginInstaller>(),
+    sp.GetRequiredService<PluginTrustPolicy>()));
+builder.Services.AddSingleton<IPluginInstaller>(sp => sp.GetRequiredService<Agnes.Host.Plugins.PluginInstaller>());
 
 // The wire-facing adapter the SignalR hub delegates to (DTO mapping + consent-exception → typed outcome).
 builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginManagementService(
@@ -1102,9 +1110,9 @@ _ = app.Services.GetRequiredService<Agnes.Host.Channels.ChannelBridgeRouter>();
 _ = app.Services.GetRequiredService<Agnes.Host.Notifications.PushRegistrationStore>();
 _ = app.Services.GetRequiredService<Agnes.Host.Notifications.PushNotificationDispatcher>();
 
-// Eagerly resolve the plugin installer so previously installed, enabled plugins reload (and merge
-// back into their registries) on this same startup, not lazily on the first plugin-management call.
-_ = app.Services.GetRequiredService<IPluginInstaller>();
+// Restore and verify enabled plugins before exposing any transport. In Production this rebuilds from
+// locally cached, SHA-512-pinned package archives and fails startup if provenance is incomplete.
+await app.Services.GetRequiredService<Agnes.Host.Plugins.PluginInstaller>().RestoreEnabledPluginsAsync();
 
 var tokens = app.Services.GetRequiredService<DeviceRegistry>();
 // The host event spine — auth endpoints emit observe-only audit events (device paired/revoked) on it so a

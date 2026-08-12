@@ -2,6 +2,8 @@ using Agnes.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NuGet.Packaging;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Agnes.Host.Plugins;
 
@@ -46,6 +48,7 @@ public sealed class PluginInstaller : IPluginInstaller
     private readonly IReadOnlyList<IPluginPointMerger> _mergers;
     private readonly IReadOnlyList<PluginCapabilityService> _capabilityServices;
     private readonly ILogger<PluginInstaller> _logger;
+    private readonly PluginTrustPolicy _trustPolicy;
 
     private readonly object _gate = new();
     private readonly Dictionary<string, PluginLoadContext> _contexts = new();
@@ -59,7 +62,8 @@ public sealed class PluginInstaller : IPluginInstaller
         IServiceProvider hostServices,
         IEnumerable<IPluginPointMerger> mergers,
         IEnumerable<PluginCapabilityService> capabilityServices,
-        ILogger<PluginInstaller> logger)
+        ILogger<PluginInstaller> logger,
+        PluginTrustPolicy? trustPolicy = null)
     {
         _feed = feed;
         _verifier = verifier;
@@ -69,49 +73,82 @@ public sealed class PluginInstaller : IPluginInstaller
         _mergers = mergers.ToArray();
         _capabilityServices = capabilityServices.ToArray();
         _logger = logger;
-
-        RestoreEnabledPlugins();
+        _trustPolicy = trustPolicy ?? PluginTrustPolicy.Development;
     }
 
-    // Reload every previously installed, enabled plugin from its already-extracted directory — a
-    // plugin survives a host restart exactly like a paired device does. One plugin failing to load
-    // (a deleted dependency, a corrupted extraction) is logged and skipped rather than blocking the
-    // rest of the host's plugins, or the host itself, from starting (consistent with AC2).
-    private void RestoreEnabledPlugins()
+    /// <summary>
+    /// Reloads enabled plugins before the host begins accepting clients. Production first rebuilds every
+    /// plugin directory from its exact approved archive, so stale state or tampered files fail startup
+    /// instead of becoming executable code.
+    /// </summary>
+    public async Task RestoreEnabledPluginsAsync(CancellationToken cancellationToken = default)
     {
         foreach (var record in _state.All().Where(r => r.Enabled))
         {
             try
             {
-                Load(record.PluginId, record.MainAssemblyPath, record.GrantedCapabilities, record.Settings);
+                var restored = await RehydrateRecordAsync(record, cancellationToken).ConfigureAwait(false);
+                Load(restored.PluginId, restored.MainAssemblyPath, restored.GrantedCapabilities, restored.Settings);
+                if (restored != record)
+                {
+                    _state.Set(restored);
+                }
             }
             catch (Exception ex)
             {
+                if (_trustPolicy.RequiresExactApproval)
+                {
+                    throw new InvalidOperationException(
+                        $"Production plugin '{record.PluginId}' could not be restored from its approved archive.", ex);
+                }
+
                 _logger.LogError(ex, "Failed to restore plugin {PluginId} on startup; leaving it unloaded.", record.PluginId);
             }
         }
     }
 
-    public Task<IReadOnlyList<PluginSearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default)
-        => _feed.SearchAsync(query, cancellationToken);
+    public async Task<IReadOnlyList<PluginSearchResult>> SearchAsync(string query, CancellationToken cancellationToken = default)
+    {
+        var results = await _feed.SearchAsync(query, cancellationToken).ConfigureAwait(false);
+        if (!_trustPolicy.RequiresExactApproval)
+        {
+            return results;
+        }
+
+        return results
+            .Where(result => _trustPolicy.IsApprovedPackage(result.PackageId))
+            .Select(result => result with { Versions = _trustPolicy.ApprovedVersions(result.PackageId) })
+            .ToArray();
+    }
 
     public async Task<InstalledPlugin> InstallAsync(string packageId, string? version, IReadOnlyCollection<string> grantedCapabilities, CancellationToken cancellationToken = default)
     {
-        var package = await _feed.DownloadAsync(packageId, version, cancellationToken).ConfigureAwait(false);
+        var approval = _trustPolicy.ResolveInstall(packageId, version);
+        var package = await _feed.DownloadAsync(packageId, version, approval?.Source, cancellationToken).ConfigureAwait(false);
+        var sha512 = _trustPolicy.VerifyDownloaded(package, approval);
         var manifest = await VerifyAndReadManifestAsync(package, cancellationToken).ConfigureAwait(false);
         RequireConsent(manifest, grantedCapabilities);
 
         var pluginDir = ExtractPackage(package, manifest);
         var mainAssemblyPath = FindMainAssembly(pluginDir, manifest);
+        PersistPackageArchive(package, sha512);
 
         // The effective granted set is exactly what the manifest declared — RequireConsent already
         // proved that's a subset of what the caller passed in. A plugin never gets a capability it
         // didn't itself ask for, even if a caller happened to grant something broader (AC11).
-        Load(manifest.Id, mainAssemblyPath, manifest.Capabilities, PluginSettings.Empty.Values);
-
         var record = new PluginRecord(manifest.Id, packageId, manifest.Version, Enabled: true,
-            manifest.Capabilities, pluginDir, mainAssemblyPath, DateTimeOffset.UtcNow, PluginSettings.Empty.Values);
-        _state.Set(record);
+            manifest.Capabilities, pluginDir, mainAssemblyPath, DateTimeOffset.UtcNow, PluginSettings.Empty.Values,
+            package.Source, sha512);
+        Load(manifest.Id, mainAssemblyPath, manifest.Capabilities, PluginSettings.Empty.Values);
+        try
+        {
+            _state.Set(record);
+        }
+        catch
+        {
+            Unload(manifest.Id);
+            throw;
+        }
         _logger.LogInformation("Installed plugin {PluginId} {Version} from package {PackageId}.", manifest.Id, manifest.Version, packageId);
         return ToInstalledPlugin(record);
     }
@@ -120,19 +157,31 @@ public sealed class PluginInstaller : IPluginInstaller
     {
         var existing = _state.Find(pluginId) ?? throw new PluginInstallException($"Unknown plugin '{pluginId}'.");
 
-        var package = await _feed.DownloadAsync(existing.PackageId, version: null, cancellationToken).ConfigureAwait(false);
+        var approval = _trustPolicy.ResolveUpdate(existing);
+        if (_trustPolicy.RequiresExactApproval && approval is null)
+        {
+            return ToInstalledPlugin(existing);
+        }
+
+        var package = await _feed.DownloadAsync(
+            existing.PackageId,
+            approval?.Version.ToNormalizedString(),
+            approval?.Source,
+            cancellationToken).ConfigureAwait(false);
+        var sha512 = _trustPolicy.VerifyDownloaded(package, approval);
         var manifest = await VerifyAndReadManifestAsync(package, cancellationToken).ConfigureAwait(false);
         RequireConsent(manifest, grantedCapabilities); // AC10: a capability the prior version didn't have requires fresh consent too
 
-        var pluginDir = ExtractPackage(package, manifest);
-        var mainAssemblyPath = FindMainAssembly(pluginDir, manifest);
-
-        var wasEnabled = existing.Enabled;
-        if (wasEnabled)
+        if (string.Equals(manifest.Version, existing.Version, StringComparison.Ordinal))
         {
-            Unload(pluginId);
+            return ToInstalledPlugin(existing);
         }
 
+        var pluginDir = ExtractPackage(package, manifest);
+        var mainAssemblyPath = FindMainAssembly(pluginDir, manifest);
+        PersistPackageArchive(package, sha512);
+
+        var wasEnabled = existing.Enabled;
         var record = existing with
         {
             Version = manifest.Version,
@@ -141,29 +190,55 @@ public sealed class PluginInstaller : IPluginInstaller
             ExtractedPath = pluginDir,
             MainAssemblyPath = mainAssemblyPath,
             InstalledAt = DateTimeOffset.UtcNow,
+            Source = package.Source,
+            Sha512 = sha512,
         };
 
         if (wasEnabled)
         {
-            Load(record.PluginId, mainAssemblyPath, record.GrantedCapabilities, record.Settings);
+            Unload(pluginId);
+            try
+            {
+                Load(record.PluginId, mainAssemblyPath, record.GrantedCapabilities, record.Settings);
+            }
+            catch
+            {
+                Load(existing.PluginId, existing.MainAssemblyPath, existing.GrantedCapabilities, existing.Settings);
+                throw;
+            }
         }
 
-        _state.Set(record);
+        try
+        {
+            _state.Set(record);
+        }
+        catch
+        {
+            if (wasEnabled)
+            {
+                Unload(pluginId);
+                Load(existing.PluginId, existing.MainAssemblyPath, existing.GrantedCapabilities, existing.Settings);
+            }
+
+            throw;
+        }
         _logger.LogInformation("Updated plugin {PluginId} to {Version}.", manifest.Id, manifest.Version);
         return ToInstalledPlugin(record);
     }
 
-    public Task SetEnabledAsync(string pluginId, bool enabled, CancellationToken cancellationToken = default)
+    public async Task SetEnabledAsync(string pluginId, bool enabled, CancellationToken cancellationToken = default)
     {
         var record = _state.Find(pluginId) ?? throw new PluginInstallException($"Unknown plugin '{pluginId}'.");
         if (record.Enabled == enabled)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         if (enabled)
         {
-            Load(pluginId, record.MainAssemblyPath, record.GrantedCapabilities, record.Settings);
+            var verified = await RehydrateRecordAsync(record, cancellationToken).ConfigureAwait(false);
+            Load(pluginId, verified.MainAssemblyPath, verified.GrantedCapabilities, verified.Settings);
+            record = verified;
         }
         else
         {
@@ -171,7 +246,6 @@ public sealed class PluginInstaller : IPluginInstaller
         }
 
         _state.Set(record with { Enabled = enabled });
-        return Task.CompletedTask;
     }
 
     public Task UninstallAsync(string pluginId, CancellationToken cancellationToken = default)
@@ -204,7 +278,7 @@ public sealed class PluginInstaller : IPluginInstaller
         return Task.CompletedTask;
     }
 
-    public Task ConfigureAsync(string pluginId, IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default)
+    public async Task ConfigureAsync(string pluginId, IReadOnlyDictionary<string, string> settings, CancellationToken cancellationToken = default)
     {
         var record = _state.Find(pluginId) ?? throw new PluginInstallException($"Unknown plugin '{pluginId}'.");
         var updated = record with { Settings = settings };
@@ -213,12 +287,12 @@ public sealed class PluginInstaller : IPluginInstaller
         // reloaded for a settings change to actually take effect.
         if (updated.Enabled)
         {
+            updated = await RehydrateRecordAsync(updated, cancellationToken).ConfigureAwait(false);
             Unload(pluginId);
             Load(pluginId, updated.MainAssemblyPath, updated.GrantedCapabilities, updated.Settings);
         }
 
         _state.Set(updated);
-        return Task.CompletedTask;
     }
 
     public async Task<IReadOnlyList<InstalledPlugin>> ListInstalledAsync(CancellationToken cancellationToken = default)
@@ -228,7 +302,11 @@ public sealed class PluginInstaller : IPluginInstaller
         foreach (var record in records)
         {
             var updateAvailable = false;
-            try
+            if (_trustPolicy.RequiresExactApproval)
+            {
+                updateAvailable = _trustPolicy.ResolveUpdate(record) is not null;
+            }
+            else try
             {
                 var versions = await _feed.ListVersionsAsync(record.PackageId, cancellationToken).ConfigureAwait(false);
                 updateAvailable = versions.Count > 0 && versions[0] != record.Version;
@@ -256,7 +334,17 @@ public sealed class PluginInstaller : IPluginInstaller
 
         using var stream = new MemoryStream(package.Content);
         using var archive = new PackageArchiveReader(stream, leaveStreamOpen: true);
-        return PluginManifestReader.Read(archive);
+        var manifest = PluginManifestReader.Read(archive);
+        if (!string.Equals(manifest.Id, package.PackageId, StringComparison.OrdinalIgnoreCase) ||
+            !NuGet.Versioning.NuGetVersion.TryParse(manifest.Version, out var manifestVersion) ||
+            !NuGet.Versioning.NuGetVersion.TryParse(package.Version, out var packageVersion) ||
+            manifestVersion != packageVersion)
+        {
+            throw new PluginInstallException(
+                $"Package '{package.PackageId}' metadata does not match its Agnes plugin manifest.");
+        }
+
+        return manifest;
     }
 
     private static void RequireConsent(PluginManifest manifest, IReadOnlyCollection<string> grantedCapabilities)
@@ -314,6 +402,64 @@ public sealed class PluginInstaller : IPluginInstaller
         }
 
         return pluginDir;
+    }
+
+    private void PersistPackageArchive(NuGetPluginPackage package, string sha512)
+    {
+        var archivePath = PackageArchivePath(sha512);
+        Directory.CreateDirectory(Path.GetDirectoryName(archivePath)!);
+        if (File.Exists(archivePath))
+        {
+            return;
+        }
+
+        var temporaryPath = archivePath + ".tmp-" + Guid.NewGuid().ToString("n");
+        try
+        {
+            File.WriteAllBytes(temporaryPath, package.Content);
+            File.Move(temporaryPath, archivePath);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private async Task<PluginRecord> RehydrateRecordAsync(PluginRecord record, CancellationToken cancellationToken)
+    {
+        if (!_trustPolicy.RequiresExactApproval)
+        {
+            return record;
+        }
+
+        _trustPolicy.ValidateRecordApproval(record);
+        var archivePath = PackageArchivePath(record.Sha512!);
+        if (!File.Exists(archivePath))
+        {
+            throw new PluginInstallException(
+                $"Approved package archive for plugin '{record.PluginId}' is missing. Reinstall the plugin from its approved package.");
+        }
+
+        var content = await File.ReadAllBytesAsync(archivePath, cancellationToken).ConfigureAwait(false);
+        var package = new NuGetPluginPackage(record.Source!, record.PackageId, record.Version, content);
+        _trustPolicy.VerifyDownloaded(package, _trustPolicy.ResolveInstall(record.PackageId, record.Version));
+        var manifest = await VerifyAndReadManifestAsync(package, cancellationToken).ConfigureAwait(false);
+        var pluginDir = ExtractPackage(package, manifest);
+        return record with
+        {
+            ExtractedPath = pluginDir,
+            MainAssemblyPath = FindMainAssembly(pluginDir, manifest),
+        };
+    }
+
+    private string PackageArchivePath(string sha512)
+    {
+        var digest = Convert.FromBase64String(sha512);
+        var archiveFileName = Convert.ToHexString(SHA256.HashData(digest)) + ".nupkg";
+        return Path.Combine(_pluginsRoot, ".packages", archiveFileName);
     }
 
     // NuGet convention: the assembly name usually matches the package id. Falls back to the only DLL

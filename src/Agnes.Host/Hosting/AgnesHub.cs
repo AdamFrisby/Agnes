@@ -513,25 +513,46 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         => Task.FromResult(_sessions.GetSandboxStatus(sessionId));
 
     public Task<IReadOnlyList<PluginSearchResultDto>> SearchPlugins(string query)
-        => _plugins.SearchAsync(query);
+    {
+        RequireOwner();
+        return _plugins.SearchAsync(query);
+    }
 
     public Task<PluginInstallOutcome> InstallPlugin(InstallPluginRequest request)
-        => _plugins.InstallAsync(request);
+    {
+        RequireOwner();
+        return _plugins.InstallAsync(request);
+    }
 
     public Task<PluginInstallOutcome> UpdatePlugin(string pluginId, IReadOnlyList<string> grantedCapabilities)
-        => _plugins.UpdateAsync(pluginId, grantedCapabilities);
+    {
+        RequireOwner();
+        return _plugins.UpdateAsync(pluginId, grantedCapabilities);
+    }
 
     public Task SetPluginEnabled(string pluginId, bool enabled)
-        => _plugins.SetEnabledAsync(pluginId, enabled);
+    {
+        RequireOwner();
+        return _plugins.SetEnabledAsync(pluginId, enabled);
+    }
 
     public Task ConfigurePlugin(string pluginId, IReadOnlyDictionary<string, string> settings)
-        => _plugins.ConfigureAsync(pluginId, settings);
+    {
+        RequireOwner();
+        return _plugins.ConfigureAsync(pluginId, settings);
+    }
 
     public Task UninstallPlugin(string pluginId)
-        => _plugins.UninstallAsync(pluginId);
+    {
+        RequireOwner();
+        return _plugins.UninstallAsync(pluginId);
+    }
 
     public Task<IReadOnlyList<InstalledPluginDto>> ListInstalledPlugins()
-        => _plugins.ListInstalledAsync();
+    {
+        RequireOwner();
+        return _plugins.ListInstalledAsync();
+    }
 
     // Map the wire DTO to the domain report (client never sends a payload) and route to the host's selected
     // sink. The router assembles the owner-only host-log diagnostic bundle host-side and attaches it ONLY when
@@ -683,7 +704,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         var caller = CallerId();
         if (!_tokens.IsOwner(caller))
         {
-            throw new HubException("Only the host owner can manage collaborators and access grants.");
+            throw new HubException("Only the host owner can manage privileged host configuration.");
         }
 
         return caller!;

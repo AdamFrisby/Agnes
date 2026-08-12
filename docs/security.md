@@ -122,6 +122,45 @@ manifest pre-compromises every subsequent sandbox. Plugin installation is admin-
 unsigned packages by default; keep that on. `Agnes:CustomBackends` lets config point the launcher
 at an arbitrary command — treat it as admin-only.
 
+## Production plugin provenance (`Agnes:Plugins:*`)
+
+Plugins execute code in the host process. In Production, Agnes therefore accepts only an
+operator-approved, exact package artifact: the source URL, package id, normalized version, and
+SHA-512 of the complete `.nupkg` must all match. Search results are limited to approved packages;
+installs cannot use `latest`; and an enabled plugin is rebuilt from a verified local archive before
+the host accepts clients. Legacy enabled-plugin records without provenance fail closed until they
+are reinstalled.
+
+Leave both arrays empty when third-party plugins are not needed. To approve one, configure the
+specific HTTPS source and its immutable artifact together (the source list and approvals must agree):
+
+```jsonc
+"Agnes": {
+  "Plugins": {
+    "Sources": ["https://api.nuget.org/v3/index.json"],
+    "ApprovedPackages": [
+      {
+        "Source": "https://api.nuget.org/v3/index.json",
+        "PackageId": "Example.Agnes.Plugin",
+        "Version": "1.2.3",
+        "Sha512": "<base64 SHA-512 of the downloaded .nupkg>"
+      }
+    ],
+    "AllowUnsignedPackages": false
+  }
+}
+```
+
+Calculate the digest over the downloaded package, not over an extracted directory:
+
+```bash
+openssl dgst -sha512 -binary Example.Agnes.Plugin.1.2.3.nupkg | base64 --wrap=0
+```
+
+Treat adding or upgrading an approval as a security-sensitive production change. It remains
+subject to normal NuGet signature verification; `AllowUnsignedPackages` is rejected outside the
+Development environment.
+
 ## Authentication
 
 - **Bootstrap methods** are opt-in. Prefer **GitHub SSO restricted to your org/users** or OIDC

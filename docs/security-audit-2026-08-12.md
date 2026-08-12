@@ -19,10 +19,10 @@ This living report covers pre-open-source readiness under a hostile authenticate
 
 | ID | Severity | Finding | Evidence | Required disposition | Status |
 | --- | --- | --- | --- | --- | --- |
-| AG-2026-001 | High | The deployed Agnes container runs with the image's default user and mounts the entire `/opt/apps/multitudal` tree read-write at `/work`. A compromised agent can access or alter all three checked-out repositories and deployment files visible through that mount. | `../deploy/compose.yaml`; live container/mount inspection on 2026-08-12 | Run non-root; mount only the assigned workspace; make code/config read-only where possible; prohibit the full-stack mount. | Remediated 2026-08-12: UID 10001, dedicated `/var/lib/agnes/workspaces`, no deployment-tree mount, read-only root. |
+| AG-2026-001 | High | The deployed Agnes container ran with the image's default user and mounted the full deployment tree read-write at `/work`. A compromised agent could access or alter unrelated repositories and deployment files visible through that mount. | Deployment Compose file; live container/mount inspection on 2026-08-12 | Run non-root; mount only the assigned workspace; make code/config read-only where possible; prohibit the full-stack mount. | Remediated 2026-08-12: UID 10001, dedicated `/var/lib/agnes/workspaces`, no deployment-tree mount, read-only root. |
 | AG-2026-002 | High | The deployed configuration does not enable `RequireSandbox`, allowed session roots, per-user/group isolation, owner-only configuration, or a sandbox provider, despite the shared-host threat model. | `../deploy/compose.yaml`; `docs/security.md` secure-baseline comparison | Configure a kernel-isolated provider and enforce the documented shared-host baseline before release. | Partially mitigated 2026-08-12: roots, attended execution, MCP deny-all and per-group isolation enforced. Host is explicitly trusted/shared-kernel; untrusted mode fails closed without dedicated-kernel capability. Dedicated-kernel test remains open. |
 | AG-2026-003 | Medium | The deployed container has no CPU, memory, PID, disk, or bounded-log controls and uses a writable root filesystem. | `../deploy/compose.yaml` | Add explicit resource budgets, read-only root where supported, bounded writable volumes, and log rotation. | Partially remediated 2026-08-12: read-only root, noexec tmpfs, CPU/memory/PID budgets. Bounded logging/disk quota remains open. |
-| AG-2026-004 | Medium | GitHub Actions used mutable major-version action tags and lacked dedicated CodeQL and dependency review. | `.github/workflows/ci.yml`, `.github/workflows/release.yml` | Pin actions by commit SHA, minimize permissions, and add required security checks. | Partially remediated 2026-08-12: actions pinned, permissions minimized, CodeQL/dependency audit/review added. Dedicated secret/workflow/container scans remain open. |
+| AG-2026-004 | Medium | GitHub Actions used mutable major-version action tags and lacked dedicated CodeQL and dependency review. | `.github/workflows/ci.yml`, `.github/workflows/release.yml` | Pin actions by commit SHA, minimize permissions, and add required security checks. | Remediated 2026-08-12: actions pinned, permissions minimized, CodeQL/dependency audit/review plus blocking Gitleaks, zizmor, Trivy filesystem and production-image scans added. |
 | AG-2026-005 | Medium | Release workflows published binaries and a container without a published SBOM, checksums, or provenance evidence. | `.github/workflows/release.yml` | Produce CycloneDX/SPDX SBOMs, checksums, and signed GitHub artifact/container attestations. | Remediated 2026-08-12 for binaries: CycloneDX SBOMs, SHA-256 checksums and GitHub provenance attestations added; image provenance is attached to its immutable digest. |
 
 ## Additional code hardening — 2026-08-12
@@ -31,7 +31,11 @@ This living report covers pre-open-source readiness under a hostile authenticate
 - Production rejects unsigned-plugin mode.
 - Plugin extraction now rejects canonical paths outside the version root, including prefix-sibling traversal.
 - Plugin state writes propagate failures and roll back their in-memory mutation rather than reporting an install that will disappear after restart.
-- Exact plugin source/version/digest approval and persisted provenance remain an open supply-chain task.
+- Production plugin source/version/SHA-512 approvals are exact, persisted with plugin state, and
+  revalidated from the cached archive before enabled plugins load. Production rejects legacy or
+  unapproved plugin state, non-HTTPS/unconfigured sources, unpinned installs, and unsigned mode.
+- Plugin-management hub methods are host-owner-only; a paired collaborator cannot search, install,
+  configure, enable, update, unload, or enumerate host-process plugins.
 | AG-2026-006 | Medium | Repository governance does not currently enforce protected changes on the default branch. | GitHub default-branch protection and ruleset inspection on 2026-08-12 | Require reviewed pull requests and mandatory security/build checks; block force-push/deletion. | Open |
 
 ## Positive controls observed
