@@ -28,6 +28,7 @@ This living report covers pre-open-source readiness under a hostile authenticate
 ## Additional code hardening — 2026-08-12
 
 - Claude Code ACP is installed at an exact version during image construction and is no longer resolved with `npx` while the service is running.
+- The ACP image uses the vendor-fixed `minimatch` 10.2.3 artifact until an ACP release updates its direct 10.2.1 pin (CVE-2026-27903 / CVE-2026-27904).
 - Production rejects unsigned-plugin mode.
 - Plugin extraction now rejects canonical paths outside the version root, including prefix-sibling traversal.
 - Plugin state writes propagate failures and roll back their in-memory mutation rather than reporting an install that will disappear after restart.
