@@ -298,9 +298,13 @@ public sealed class PluginInstaller : IPluginInstaller
             }
 
             var targetPath = Path.GetFullPath(Path.Combine(pluginDir, file));
-            if (!targetPath.StartsWith(pluginDir, StringComparison.Ordinal))
+            var relativePath = Path.GetRelativePath(pluginDir, targetPath);
+            if (relativePath == ".." ||
+                relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+                Path.IsPathRooted(relativePath))
             {
-                continue; // reject a zip-slip path escaping the extraction root
+                throw new PluginInstallException(
+                    $"Package '{package.PackageId}' contains a path outside its extraction root.");
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);

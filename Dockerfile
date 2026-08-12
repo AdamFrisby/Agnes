@@ -18,9 +18,11 @@ COPY . .
 RUN dotnet publish src/Agnes.Host/Agnes.Host.csproj -c Release -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
-# Node (for `npx @zed-industries/claude-code-acp`) and git (for worktree isolation).
+# Install the version-pinned ACP bridge at image build time. The running host never resolves
+# or downloads executable packages from the network.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm git ca-certificates \
+    && npm install --global @zed-industries/claude-code-acp@0.16.2 --ignore-scripts \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 agnes \
     && useradd --uid 10001 --gid agnes --create-home --home-dir /home/agnes --shell /usr/sbin/nologin agnes \

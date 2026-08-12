@@ -14,18 +14,23 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   # Gate: on the daily schedule, only continue when there were commits in the last day.
   # Non-scheduled triggers (pull_request, manual) always continue.
   gate:
     name: Decide whether to run
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       run: ${{ steps.check.outputs.run }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - id: check
         run: |
@@ -45,11 +50,15 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: global.json
 
@@ -58,6 +67,9 @@ jobs:
       # built in a separate job once those heads are added.
       - name: Restore
         run: dotnet restore Agnes.Core.slnf
+
+      - name: Dependency vulnerability audit
+        run: dotnet list Agnes.Core.slnf package --vulnerable --include-transitive
 
       - name: Build
         run: dotnet build Agnes.Core.slnf --configuration Release --no-restore
@@ -78,11 +90,15 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: global.json
 

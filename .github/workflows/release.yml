@@ -4,13 +4,15 @@ on:
   push:
     tags: ['v*']
 
-permissions:
-  contents: write
-  packages: write
+permissions: {}
 
 jobs:
   # Self-contained desktop app for each OS, uploaded to the GitHub Release.
   desktop:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     strategy:
       matrix:
         include:
@@ -20,8 +22,10 @@ jobs:
           - { os: macos-latest,   rid: osx-x64 }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: global.json
 
@@ -38,16 +42,39 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path out/${{ matrix.rid }}/* -DestinationPath agnes-desktop-${{ matrix.rid }}-v${{ steps.v.outputs.version }}.zip
 
-      - uses: softprops/action-gh-release@v2
+      - name: Generate CycloneDX SBOM
+        shell: bash
+        run: |
+          dotnet tool install --tool-path .tools CycloneDX --version 6.2.0
+          .tools/dotnet-CycloneDX src/Agnes.App.Desktop/Agnes.App.Desktop.csproj --output . --filename sbom-desktop-${{ matrix.rid }}.json
+
+      - name: Generate checksum
+        shell: pwsh
+        run: Get-FileHash agnes-desktop-*.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } | Set-Content SHA256SUMS-${{ matrix.rid }}
+
+      - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
-          files: agnes-desktop-*.zip
+          subject-path: agnes-desktop-*.zip
+
+      - uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
+        with:
+          files: |
+            agnes-desktop-*.zip
+            SHA256SUMS-*
+            sbom-desktop-*.json
 
   # Self-contained host bundle (Linux) for the Release.
   host:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: global.json
       - id: v
@@ -55,26 +82,50 @@ jobs:
       - run: dotnet publish src/Agnes.Host -c Release -r linux-x64 --self-contained
              -p:Version=${{ steps.v.outputs.version }} -o out/host
       - run: tar -C out/host -czf agnes-host-linux-x64-v${{ steps.v.outputs.version }}.tar.gz .
-      - uses: softprops/action-gh-release@v2
+      - name: Generate CycloneDX SBOM
+        run: |
+          dotnet tool install --tool-path .tools CycloneDX --version 6.2.0
+          .tools/dotnet-CycloneDX src/Agnes.Host/Agnes.Host.csproj --output . --filename sbom-host-linux-x64.json
+      - run: sha256sum agnes-host-*.tar.gz > SHA256SUMS-host-linux-x64
+      - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
-          files: agnes-host-*.tar.gz
+          subject-path: agnes-host-*.tar.gz
+      - uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
+        with:
+          files: |
+            agnes-host-*.tar.gz
+            SHA256SUMS-host-linux-x64
+            sbom-host-linux-x64.json
 
   # Host container image to GHCR: ghcr.io/<owner>/agnes:<version> and :latest
   image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: v
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/agnes:${{ steps.v.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/agnes:latest
+      - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/agnes
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

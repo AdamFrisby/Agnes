@@ -8,10 +8,10 @@ namespace Agnes.Agents.ClaudeCode;
 public sealed record ClaudeCodeOptions
 {
     /// <summary>Executable that hosts the Claude Code ACP bridge.</summary>
-    public string Command { get; init; } = "npx";
+    public string Command { get; init; } = "claude-code-acp";
 
     /// <summary>Arguments that start the bridge in ACP mode.</summary>
-    public IReadOnlyList<string> Arguments { get; init; } = ["-y", "@zed-industries/claude-code-acp"];
+    public IReadOnlyList<string> Arguments { get; init; } = [];
 
     /// <summary>Extra environment variables (e.g. credentials) for the agent.</summary>
     public IReadOnlyDictionary<string, string>? Environment { get; init; }

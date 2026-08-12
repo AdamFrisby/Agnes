@@ -751,7 +751,7 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
     {
         Command = builder.Configuration["Agnes:ClaudeCode:Command"] ?? "npx",
         Arguments = builder.Configuration.GetSection("Agnes:ClaudeCode:Args").Get<string[]>()
-                    ?? ["-y", "@zed-industries/claude-code-acp"],
+                    ?? [],
     };
     return ClaudeCodeAgent.Create(loggerFactory, options);
 });
@@ -1044,6 +1044,11 @@ builder.Services.AddSingleton<Agnes.Host.Plugins.INuGetPluginFeed>(
     _ => new Agnes.Host.Plugins.NuGetProtocolFeed(pluginSources));
 
 var allowUnsignedPlugins = builder.Configuration.GetValue("Agnes:Plugins:AllowUnsignedPackages", false);
+if (!builder.Environment.IsDevelopment() && allowUnsignedPlugins)
+{
+    throw new InvalidOperationException(
+        "Agnes:Plugins:AllowUnsignedPackages may only be enabled in Development.");
+}
 builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPackageVerifier>(sp =>
     new Agnes.Host.Plugins.NuGetSignatureVerifier(allowUnsignedPlugins,
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.NuGetSignatureVerifier>()));

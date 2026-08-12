@@ -19,8 +19,9 @@ public sealed record PluginRecord(
 /// <summary>
 /// Persisted installed-plugin state: id, version, source, enabled flag, granted capabilities, install
 /// date — host state, exactly like paired-device records, not something that lives only in memory. JSON
-/// file-backed, mirroring <c>DeviceRegistry</c>'s pattern (whole-file read on load, atomic write-then-move
-/// on save, warnings — not throws — on I/O failure).
+/// file-backed, mirroring <c>DeviceRegistry</c>'s pattern (whole-file read on load and atomic
+/// write-then-move on save). Persistence failures are propagated so callers cannot report an install
+/// as successful when it will disappear on restart.
 /// </summary>
 public sealed class PluginStateStore
 {
@@ -48,14 +49,36 @@ public sealed class PluginStateStore
 
     public void Set(PluginRecord record)
     {
-        lock (_gate) { _byPluginId[record.PluginId] = record; }
-        Save();
+        lock (_gate)
+        {
+            var previous = _byPluginId.GetValueOrDefault(record.PluginId);
+            _byPluginId[record.PluginId] = record;
+            try
+            {
+                SaveLocked();
+            }
+            catch
+            {
+                if (previous is null) _byPluginId.Remove(record.PluginId);
+                else _byPluginId[record.PluginId] = previous;
+                throw;
+            }
+        }
     }
 
     public void Remove(string pluginId)
     {
-        lock (_gate) { _byPluginId.Remove(pluginId); }
-        Save();
+        lock (_gate)
+        {
+            var previous = _byPluginId.GetValueOrDefault(pluginId);
+            _byPluginId.Remove(pluginId);
+            try { SaveLocked(); }
+            catch
+            {
+                if (previous is not null) _byPluginId[pluginId] = previous;
+                throw;
+            }
+        }
     }
 
     private void Load()
@@ -79,26 +102,17 @@ public sealed class PluginStateStore
         }
     }
 
-    private void Save()
+    private void SaveLocked()
     {
-        try
+        var dir = Path.GetDirectoryName(_path);
+        if (!string.IsNullOrEmpty(dir))
         {
-            var dir = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrEmpty(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            List<PluginRecord> snapshot;
-            lock (_gate) { snapshot = _byPluginId.Values.ToList(); }
-
-            var tmp = _path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(snapshot));
-            File.Move(tmp, _path, overwrite: true);
+            Directory.CreateDirectory(dir);
         }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "Could not persist plugin state to {Path}", _path);
-        }
+
+        var snapshot = _byPluginId.Values.ToList();
+        var tmp = _path + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(snapshot));
+        File.Move(tmp, _path, overwrite: true);
     }
 }
