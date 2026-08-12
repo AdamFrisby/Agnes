@@ -440,6 +440,19 @@ public sealed class SessionManager : IAsyncDisposable
     /// toggle to attended; enforced host-side regardless.</summary>
     public bool PermissionPromptsRequired => _security.RequirePermissionPrompts;
 
+    public WorkloadTrust WorkloadTrust => _security.WorkloadTrust;
+
+    public SandboxIsolationLevel EffectiveSandboxIsolation =>
+        _sandboxes?.IsolationLevel ?? SandboxIsolationLevel.None;
+
+    public bool NewExecutionPermitted => !_security.EnforceIsolationPolicy
+        || EffectiveSandboxIsolation == SandboxIsolationLevel.DedicatedKernel
+        || (_security.WorkloadTrust == WorkloadTrust.Trusted && _security.AcknowledgeSharedKernelRisk);
+
+    public string? ExecutionBlockReason => NewExecutionPermitted
+        ? null
+        : "Untrusted workloads require a dedicated-kernel sandbox provider.";
+
     /// <summary>The recorded owner (principal id) and group (repo scope) of a session — for access decisions
     /// under session isolation. Both null for a session opened before ownership tracking, or with no resolvable
     /// identity / repo. Read from the in-memory catalogue (repopulated from the store on restart).</summary>
@@ -659,6 +672,27 @@ public sealed class SessionManager : IAsyncDisposable
         // handoff — is covered, and before any project checkout / credential work happens. `willSandbox` is
         // whether this session will actually run inside a sandbox (an adopted / CoW-cloned VM counts).
         var willSandbox = existingSandbox is not null || (_sandboxes is not null && useSandbox);
+        if (_security.EnforceIsolationPolicy
+            && _security.WorkloadTrust == WorkloadTrust.Untrusted
+            && EffectiveSandboxIsolation != SandboxIsolationLevel.DedicatedKernel)
+        {
+            _logger.LogWarning(
+                "Refused session {SessionId}: untrusted workloads require dedicated-kernel isolation; effective={Isolation}.",
+                sessionId,
+                EffectiveSandboxIsolation);
+            throw new SessionSecurityException(
+                "Refused to open the session: untrusted workloads require a dedicated-kernel sandbox provider.");
+        }
+
+        if (_security.EnforceIsolationPolicy
+            && _security.WorkloadTrust == WorkloadTrust.Trusted
+            && EffectiveSandboxIsolation != SandboxIsolationLevel.DedicatedKernel
+            && !_security.AcknowledgeSharedKernelRisk)
+        {
+            throw new SessionSecurityException(
+                "Refused to open the session: trusted shared-kernel or unsandboxed execution requires " +
+                "Agnes:Security:AcknowledgeSharedKernelRisk=true.");
+        }
         if (_security.RequireSandbox && !willSandbox)
         {
             var reason = _sandboxes is null

@@ -10,7 +10,17 @@ namespace Agnes.Protocol;
 /// lock it — the host enforces this regardless of what the client sends. <see cref="RequirePermissionPrompts"/>
 /// likewise tells the client the host forbids autonomous / skip-permissions mode, so the UI can lock the
 /// permission toggle to attended.</summary>
-public sealed record HostInfo(string HostId, string DisplayName, string Version, bool SandboxAvailable = false, bool RequireSandbox = false, bool RequirePermissionPrompts = false);
+public sealed record HostInfo(
+    string HostId,
+    string DisplayName,
+    string Version,
+    bool SandboxAvailable = false,
+    bool RequireSandbox = false,
+    bool RequirePermissionPrompts = false,
+    string WorkloadTrust = "Trusted",
+    string SandboxIsolation = "None",
+    bool NewExecutionPermitted = true,
+    string? ExecutionBlockReason = null);
 
 /// <summary>
 /// Request to pair a new device.

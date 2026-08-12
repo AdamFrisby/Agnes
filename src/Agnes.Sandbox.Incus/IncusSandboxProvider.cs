@@ -34,6 +34,8 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
 
     public string Name => ProviderId;
 
+    public SandboxIsolationLevel IsolationLevel => SandboxIsolationLevel.DedicatedKernel;
+
     public async Task<ISandbox> CreateAsync(SandboxSpec spec, CancellationToken cancellationToken = default)
     {
         var name = CreateInstanceName();

@@ -12,6 +12,22 @@ namespace Agnes.Host.Sessions;
 public sealed record SessionSecurityOptions
 {
     /// <summary>
+    /// Enforces workload-trust admission against the selected sandbox capability. The host enables this
+    /// automatically outside Development; the explicit switch keeps the reusable session library backwards
+    /// compatible for embedded/test hosts that have not opted into production admission policy.
+    /// </summary>
+    public bool EnforceIsolationPolicy { get; init; }
+
+    /// <summary>Trust assigned to repository and agent-controlled workloads on this host.</summary>
+    public WorkloadTrust WorkloadTrust { get; init; } = WorkloadTrust.Trusted;
+
+    /// <summary>
+    /// Explicit operator acknowledgement required before trusted workloads may use a provider
+    /// weaker than a dedicated-kernel sandbox in Production.
+    /// </summary>
+    public bool AcknowledgeSharedKernelRisk { get; init; }
+
+    /// <summary>
     /// If non-empty, every session's working directory must canonicalise to a location inside one of these
     /// roots (the root itself, or a descendant of it). Empty = unrestricted (the default). Relative entries
     /// are resolved against the host process's current directory when the check runs.
@@ -47,6 +63,12 @@ public sealed record SessionSecurityOptions
     /// any configured host server runs. Sandbox-run servers are unaffected.
     /// </summary>
     public IReadOnlyList<string> AllowedHostMcpServers { get; init; } = [];
+
+    /// <summary>
+    /// Explicit policy for MCP servers executed on the host. Legacy preserves the historic
+    /// empty-list-is-unrestricted behavior; use DenyAll for a real deny-all configuration.
+    /// </summary>
+    public HostMcpPolicy HostMcpPolicy { get; init; } = HostMcpPolicy.Legacy;
 
     /// <summary>
     /// How sessions are scoped to callers on a shared host. <see cref="SessionIsolation.Shared"/> (default) is
@@ -86,12 +108,29 @@ public sealed record SessionSecurityOptions
 
     /// <summary>True when <see cref="AllowedHostMcpServers"/> actually constrains host MCP servers.</summary>
     [JsonIgnore]
-    public bool RestrictsHostMcpServers => AllowedHostMcpServers.Count > 0;
+    public bool RestrictsHostMcpServers => HostMcpPolicy is HostMcpPolicy.DenyAll or HostMcpPolicy.AllowList
+        || AllowedHostMcpServers.Count > 0;
 
     /// <summary>Whether a host-run MCP server with this name is permitted (always true when no allowlist is set).</summary>
     public bool IsHostMcpServerAllowed(string serverName)
-        => AllowedHostMcpServers.Count == 0
-        || AllowedHostMcpServers.Any(a => string.Equals(a, serverName, StringComparison.OrdinalIgnoreCase));
+        => HostMcpPolicy != HostMcpPolicy.DenyAll
+        && (HostMcpPolicy == HostMcpPolicy.Unrestricted
+            || (HostMcpPolicy == HostMcpPolicy.Legacy && AllowedHostMcpServers.Count == 0)
+            || AllowedHostMcpServers.Any(a => string.Equals(a, serverName, StringComparison.OrdinalIgnoreCase)));
+}
+
+public enum WorkloadTrust
+{
+    Trusted,
+    Untrusted,
+}
+
+public enum HostMcpPolicy
+{
+    Legacy,
+    Unrestricted,
+    DenyAll,
+    AllowList,
 }
 
 /// <summary>How sessions are scoped to callers on a shared host — see <see cref="SessionSecurityOptions.SessionIsolation"/>.</summary>

@@ -561,11 +561,23 @@ builder.Services.AddSingleton<ICliFallback, Agnes.Host.Sessions.PortaPtyCliFallb
 // regardless of what a client sends.
 builder.Services.AddSingleton(new Agnes.Host.Sessions.SessionSecurityOptions
 {
+    EnforceIsolationPolicy = !builder.Environment.IsDevelopment(),
+    WorkloadTrust = Enum.TryParse<Agnes.Host.Sessions.WorkloadTrust>(
+        builder.Configuration["Agnes:Security:WorkloadTrust"], ignoreCase: true, out var workloadTrust)
+            ? workloadTrust
+            : builder.Environment.IsDevelopment()
+                ? Agnes.Host.Sessions.WorkloadTrust.Trusted
+                : Agnes.Host.Sessions.WorkloadTrust.Untrusted,
+    AcknowledgeSharedKernelRisk = builder.Configuration.GetValue("Agnes:Security:AcknowledgeSharedKernelRisk", false),
     AllowedSessionRoots = builder.Configuration.GetSection("Agnes:Security:AllowedSessionRoots").Get<string[]>() ?? [],
     RequireSandbox = builder.Configuration.GetValue("Agnes:Security:RequireSandbox", false),
     RequirePermissionPrompts = builder.Configuration.GetValue("Agnes:Security:RequirePermissionPrompts", false),
     AllowUnsandboxedSkipPermissions = builder.Configuration.GetValue("Agnes:Security:AllowUnsandboxedSkipPermissions", false),
     AllowedHostMcpServers = builder.Configuration.GetSection("Agnes:Security:AllowedHostMcpServers").Get<string[]>() ?? [],
+    HostMcpPolicy = Enum.TryParse<Agnes.Host.Sessions.HostMcpPolicy>(
+        builder.Configuration["Agnes:Security:HostMcpPolicy"], ignoreCase: true, out var hostMcpPolicy)
+            ? hostMcpPolicy
+            : Agnes.Host.Sessions.HostMcpPolicy.Legacy,
     SessionIsolation = Enum.TryParse<Agnes.Host.Sessions.SessionIsolation>(
         builder.Configuration["Agnes:Security:SessionIsolation"], ignoreCase: true, out var iso) ? iso : Agnes.Host.Sessions.SessionIsolation.Shared,
     RestrictConfigToOwner = builder.Configuration.GetValue("Agnes:Security:RestrictConfigToOwner", false),

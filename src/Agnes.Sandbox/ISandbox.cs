@@ -8,6 +8,12 @@ public interface ISandboxProvider
     /// <summary>Backend id, e.g. "incus".</summary>
     string Name { get; }
 
+    /// <summary>
+    /// Strongest isolation boundary this provider guarantees. Plugin providers are deliberately
+    /// treated as providing no isolation until they opt in explicitly.
+    /// </summary>
+    SandboxIsolationLevel IsolationLevel => SandboxIsolationLevel.None;
+
     /// <summary>Provisions a sandbox and returns a live handle (persisted until explicitly deleted).</summary>
     Task<ISandbox> CreateAsync(SandboxSpec spec, CancellationToken cancellationToken = default);
 
@@ -18,6 +24,13 @@ public interface ISandboxProvider
     /// after a daemon restart when the in-memory handle is gone. When <paramref name="start"/> is true
     /// the VM is (cold-)started and waited-ready.</summary>
     Task<ISandbox> AttachAsync(string vmName, SandboxSpec spec, bool start, CancellationToken cancellationToken = default);
+}
+
+public enum SandboxIsolationLevel
+{
+    None,
+    SharedKernel,
+    DedicatedKernel,
 }
 
 /// <summary>

@@ -99,7 +99,17 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     }
 
     public Task<HostInfo> GetHostInfo()
-        => Task.FromResult(new HostInfo(_identity.HostId, _identity.DisplayName, _identity.Version, _sessions.SandboxAvailable, _sessions.SandboxRequired, _sessions.PermissionPromptsRequired));
+        => Task.FromResult(new HostInfo(
+            _identity.HostId,
+            _identity.DisplayName,
+            _identity.Version,
+            _sessions.SandboxAvailable,
+            _sessions.SandboxRequired,
+            _sessions.PermissionPromptsRequired,
+            _sessions.WorkloadTrust.ToString(),
+            _sessions.EffectiveSandboxIsolation.ToString(),
+            _sessions.NewExecutionPermitted,
+            _sessions.ExecutionBlockReason));
 
     public Task<IReadOnlyList<AgentInfo>> ListAgents()
         => Task.FromResult(_sessions.ListAgents());

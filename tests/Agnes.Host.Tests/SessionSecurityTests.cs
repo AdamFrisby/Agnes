@@ -219,4 +219,47 @@ public class SessionSecurityTests
         Assert.True(restricted.IsHostMcpServerAllowed("files")); // case-insensitive
         Assert.False(restricted.IsHostMcpServerAllowed("secrets"));
     }
+
+    [Fact]
+    public void Host_mcp_deny_all_is_unambiguous()
+    {
+        var denied = new SessionSecurityOptions { HostMcpPolicy = HostMcpPolicy.DenyAll };
+
+        Assert.True(denied.RestrictsHostMcpServers);
+        Assert.False(denied.IsHostMcpServerAllowed("anything"));
+    }
+
+    [Fact]
+    public async Task Untrusted_workloads_require_dedicated_kernel_isolation()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        await using var manager = Manager(adapter, new SessionSecurityOptions
+        {
+            EnforceIsolationPolicy = true,
+            WorkloadTrust = WorkloadTrust.Untrusted
+        });
+
+        var ex = await Assert.ThrowsAsync<SessionSecurityException>(
+            () => manager.OpenSessionAsync("scripted", "/tmp/work"));
+
+        Assert.Contains("dedicated-kernel", ex.Message);
+        Assert.Null(adapter.LastOptions);
+    }
+
+    [Fact]
+    public async Task Trusted_shared_kernel_execution_requires_explicit_acknowledgement()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        await using var manager = Manager(adapter, new SessionSecurityOptions
+        {
+            EnforceIsolationPolicy = true,
+            WorkloadTrust = WorkloadTrust.Trusted
+        });
+
+        var ex = await Assert.ThrowsAsync<SessionSecurityException>(
+            () => manager.OpenSessionAsync("scripted", "/tmp/work"));
+
+        Assert.Contains("AcknowledgeSharedKernelRisk", ex.Message);
+        Assert.Null(adapter.LastOptions);
+    }
 }

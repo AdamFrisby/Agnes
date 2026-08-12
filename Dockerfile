@@ -21,7 +21,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 # Node (for `npx @zed-industries/claude-code-acp`) and git (for worktree isolation).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm git ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 agnes \
+    && useradd --uid 10001 --gid agnes --create-home --home-dir /home/agnes --shell /usr/sbin/nologin agnes \
+    && install -d -o agnes -g agnes /data /work
 
 WORKDIR /app
 COPY --from=build /app .
@@ -31,5 +34,7 @@ ENV ASPNETCORE_URLS=http://0.0.0.0:5081 \
     Agnes__Database=/data/agnes.db \
     Agnes__DevicesFile=/data/devices.json
 VOLUME ["/data", "/work"]
+
+USER agnes
 
 ENTRYPOINT ["dotnet", "Agnes.Host.dll"]
