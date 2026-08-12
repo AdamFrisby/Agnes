@@ -25,7 +25,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm git ca-certificates \
     && npm install --global @zed-industries/claude-code-acp@0.16.2 --ignore-scripts \
-    && npm install --prefix /usr/local/lib/node_modules/@zed-industries/claude-code-acp --ignore-scripts --save-exact minimatch@10.2.3 \
+    && npm install --prefix /usr/local/lib/node_modules/@zed-industries/claude-code-acp --omit=dev --ignore-scripts --save-exact minimatch@10.2.3 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 agnes \
     && useradd --uid 10001 --gid agnes --create-home --home-dir /home/agnes --shell /usr/sbin/nologin agnes \
