@@ -38,6 +38,7 @@ This living report covers pre-open-source readiness under a hostile authenticate
 - Plugin-management hub methods are host-owner-only; a paired collaborator cannot search, install,
   configure, enable, update, unload, or enumerate host-process plugins.
 | AG-2026-006 | Medium | Repository governance does not currently enforce protected changes on the default branch. | GitHub default-branch protection and ruleset inspection on 2026-08-12 | Require reviewed pull requests and mandatory security/build checks; block force-push/deletion. | Open |
+| AG-2026-007 | High | CodeQL identified an IIS deployment configuration that disabled custom errors for remote clients and omitted clickjacking protection. This could expose framework error details and allow the UI to be framed by another site when deployed behind IIS. | GitHub CodeQL alerts #1 and #2; `src/Agnes.App/Agnes.App/Platforms/WebAssembly/wwwroot/web.config` | Do not expose detailed errors remotely; send an `X-Frame-Options` response header. | Remediated 2026-08-12: `customErrors` is `RemoteOnly` and IIS sends `X-Frame-Options: DENY`. The next CodeQL run verifies both alerts are closed. |
 
 ## Positive controls observed
 
