@@ -25,14 +25,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Headless" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Skia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Markdown.Avalonia" Version="12.0.0-a3" />
     <!-- Mirrors Agnes.App.Mobile's package list; the linked sources compile against it. -->
-    <PackageReference Include="FluentIcons.Avalonia" Version="2.1.333" />
+    <PackageReference Include="FluentIcons.Avalonia" Version="2.1.335" />
   </ItemGroup>
 
   <ItemGroup>

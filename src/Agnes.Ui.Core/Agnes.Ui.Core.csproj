@@ -21,7 +21,7 @@
          view model can name an icon type-safely and each head renders it with its own control (Avalonia's
          SymbolIcon on desktop/mobile, the WinUI one on the Uno web head). Icons that never vary are left
          to the views; this is for the cases where *which* icon to show is view-model state. -->
-    <PackageReference Include="FluentIcons.Common" Version="2.1.333" />
+    <PackageReference Include="FluentIcons.Common" Version="2.1.335" />
   </ItemGroup>
 
   <ItemGroup>

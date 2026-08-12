@@ -11,10 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.0" />
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
     <PackageReference Include="Dock.Avalonia" Version="12.0.0.2" />
     <PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.0.0.2" />
     <PackageReference Include="Dock.Model.Mvvm" Version="12.0.0.2" />
@@ -26,7 +26,7 @@
          are generated from Microsoft's own repo, which is where the actual artwork risk would live. It is
          the only Avalonia icon package built against Avalonia 12. `Agnes.Ui.Core` takes the dependency-free
          `FluentIcons.Common` alone, so shared view models can name a symbol without pulling in a toolkit. -->
-    <PackageReference Include="FluentIcons.Avalonia" Version="2.1.333" />
+    <PackageReference Include="FluentIcons.Avalonia" Version="2.1.335" />
     <!-- Third-party VT/terminal control for the embedded terminal head (platform/03). Deliberately
          confined to the desktop head — never core or Agnes.Ui.Core. Maintainer-approved for this use;
          restores against Avalonia 12 (its dep is Avalonia 12.0.2). -->
