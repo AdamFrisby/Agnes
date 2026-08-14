@@ -13,6 +13,31 @@ docker compose up --build          # or: docker build -t agnes-host . && docker 
 docker compose logs agnes          # read the pairing code from the logs
 ```
 
+The default `host-only` image contains the host daemon only. To include the
+optional same-origin browser operator UI, build the `web-ui-host` target and
+set `Agnes__WebRoot=/app/wwwroot` on the container:
+
+```bash
+docker build --target web-ui-host -t agnes-host .
+docker run -e Agnes__WebRoot=/app/wwwroot ... agnes-host
+```
+
+The browser UI is served at the host root — it is not a separate `/admin`
+route. Put the entire host, including that root route, behind the chosen
+authentication gateway. Leave `Agnes__WebRoot` unset and build `host-only` for
+an API/desktop-client-only installation.
+
+The browser operator image deliberately does not enable offline/PWA mode by
+default. Its manifest and service-worker fetches cannot follow an interactive
+Cloudflare Access redirect, and an offline cache is inappropriate for a
+protected admin surface. A non-gateway deployment may explicitly opt in with
+`--build-arg AGNES_ENABLE_PWA=true` in its own build wrapper.
+
+The protected build versions its bootstrap and configuration URLs, and serves
+them with `Cache-Control: no-store`. This prevents an already-open browser from
+reusing a PWA-enabled bootstrap after an operator switches the deployment to an
+Access-gated UI.
+
 The image ships Node + git (for the Claude Code ACP bridge and worktrees);
 mount your projects at `/work` and agent credentials as needed (see
 `compose.yaml`). The container serves plain HTTP on 5081 — put TLS in front of
@@ -206,9 +231,16 @@ the forwarding header and a normal Agnes device token is returned. Native client
 existing OIDC or device-token paths because browser Access cookies are not available to arbitrary
 desktop processes.
 
+When the optional browser UI is installed, it defaults its host field to its own protected origin.
+Choose **Continue with Cloudflare Access** to perform this exchange. It is not a second Google
+sign-in and it never exposes or stores the Cloudflare assertion in browser code; the proxy injects
+that signed assertion into the same-origin request. The browser instead receives a standard Agnes
+device token, which can be revoked through Agnes device management.
+
 ## Rate limiting
 
-The token-minting endpoints (`/pair`, `/auth/github/exchange`, `/auth/keypair`[`/challenge`])
+The token-minting endpoints (`/pair`, `/auth/github/exchange`,
+`/auth/cloudflare-access/exchange`, `/auth/keypair`[`/challenge`])
 are throttled **per client IP and globally** — on by default. A single IP can't
 hammer them, and a distributed attempt is still capped overall. Discovery
 (`/auth/methods`) is exempt. Defaults (per minute): `10` per IP, `100` global.
