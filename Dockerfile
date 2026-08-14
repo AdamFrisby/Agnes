@@ -25,7 +25,7 @@ ARG AGNES_ENABLE_PWA=false
 # The framework bundle's directory name is stable across an application-only change. Keep the
 # bootstrap/config query version separate so a browser that cached an earlier PWA bootstrap loads
 # the protected-admin variant on its next navigation.
-ARG AGNES_UI_ASSET_REVISION=cf-access-v1
+ARG AGNES_UI_ASSET_REVISION=cf-access-v2
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 \
     && ln -s /usr/bin/python3 /usr/local/bin/python \

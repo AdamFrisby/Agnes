@@ -38,6 +38,11 @@ them with `Cache-Control: no-store`. This prevents an already-open browser from
 reusing a PWA-enabled bootstrap after an operator switches the deployment to an
 Access-gated UI.
 
+The browser head uses Uno's native WebAssembly renderer. The desktop target
+continues to use its Skia desktop renderer, but the browser admin UI does not
+require WebGL; this avoids startup failures in privacy-hardened browsers that
+withhold WebGL renderer-identification capabilities.
+
 The image ships Node + git (for the Claude Code ACP bridge and worktrees);
 mount your projects at `/work` and agent credentials as needed (see
 `compose.yaml`). The container serves plain HTTP on 5081 — put TLS in front of
