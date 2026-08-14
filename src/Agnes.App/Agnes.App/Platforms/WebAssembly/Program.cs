@@ -1,18 +1,15 @@
-using Uno.UI.Hosting;
+using Microsoft.UI.Xaml;
 
 namespace Agnes.App;
 
 public class Program
 {
-    public static async Task Main(string[] args)
+    private static App? _app;
+
+    public static int Main(string[] args)
     {
         App.InitializeLogging();
-
-        var host = UnoPlatformHostBuilder.Create()
-            .App(() => new App())
-            .UseWebAssembly()
-            .Build();
-
-        await host.RunAsync();
+        Application.Start(_ => _app = new App());
+        return 0;
     }
 }

@@ -8,13 +8,20 @@
             <TextBlock Text="Agnes" FontSize="22" FontWeight="Bold" />
             <TextBlock Text="Connect to a host" Opacity="0.7" />
 
+            <Button Content="Continue with Cloudflare Access"
+                    Click="OnCloudflareAccessClick"
+                    HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" />
+            <TextBlock Text="Use this when this browser has already passed Cloudflare Access."
+                       TextWrapping="Wrap" Opacity="0.65" />
+            <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.8" />
+
             <TextBox Header="Host URL" Text="{Binding HostUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="Or connect with an existing Agnes device token" FontWeight="SemiBold" Margin="0,8,0,0" />
             <PasswordBox Header="Pairing token" Password="{Binding Token, Mode=TwoWay}" />
             <TextBox Header="Working directory (on host)" Text="{Binding WorkingDirectory, Mode=TwoWay}" />
 
             <Button Content="Connect" Command="{Binding ConnectCommand}"
                     HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" />
-            <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.8" />
 
             <TextBlock Text="Agents" FontWeight="SemiBold" Margin="0,8,0,0" />
             <ItemsControl ItemsSource="{Binding Agents}">

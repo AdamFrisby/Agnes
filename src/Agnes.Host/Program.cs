@@ -1172,6 +1172,20 @@ if (webFiles is not null)
         ContentTypeProvider = contentTypes,
         ServeUnknownFileTypes = true,
         DefaultContentType = "application/octet-stream",
+        // Always revalidate the HTML shell and the two bootstrap modules. If an Access session expires,
+        // a cached shell would keep trying to load protected framework assets and surface misleading
+        // CORS/service-worker errors instead of taking the user through the gateway again. The bootstrap
+        // modules are deliberately not immutable: Uno keeps their package directory stable, so a browser
+        // must not reuse an older PWA-enabled config after the server changes it for an Access-gated UI.
+        OnPrepareResponse = context =>
+        {
+            if (string.Equals(context.File.Name, "index.html", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(context.File.Name, "uno-bootstrap.js", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(context.File.Name, "uno-config.js", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Context.Response.Headers.CacheControl = "no-store";
+            }
+        },
     };
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = webFiles });
     app.UseStaticFiles(staticOptions);
@@ -1906,7 +1920,11 @@ app.MapDelete("/projects/{id}", (HttpContext ctx, string id) =>
 
 if (webFiles is not null)
 {
-    app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = webFiles });
+    app.MapFallbackToFile("index.html", new StaticFileOptions
+    {
+        FileProvider = webFiles,
+        OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-store",
+    });
 }
 else
 {
