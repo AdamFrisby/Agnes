@@ -298,6 +298,10 @@ public sealed record GitHubExchangeRequest(string Token, string DeviceName);
 /// Agnes device token. The OIDC token is verified then discarded.</summary>
 public sealed record OidcExchangeRequest(string Token, string DeviceName);
 
+/// <summary>Exchange the signed Cloudflare Access assertion forwarded with this browser request for a
+/// per-device Agnes token. The assertion stays in the request header; the body carries no credential.</summary>
+public sealed record CloudflareAccessExchangeRequest(string DeviceName);
+
 /// <summary>The start of the interactive OIDC authorization-code (PKCE) redirect flow (from
 /// <c>GET /auth/oidc/start</c>): the client opens <see cref="AuthorizationUrl"/> in a browser and the host
 /// finishes the exchange at its callback. <see cref="State"/> is the opaque CSRF token tying the browser

@@ -21,7 +21,7 @@ public sealed record AuthRateLimitOptions
 
 /// <summary>
 /// Rate-limits the token-minting / challenge endpoints (<c>/pair</c>, <c>/auth/github/exchange</c>,
-/// <c>/auth/keypair</c>[/challenge]) both per client IP and globally — so no single IP can hammer them and
+/// <c>/auth/cloudflare-access/exchange</c>, <c>/auth/keypair</c>[/challenge]) both per client IP and globally — so no single IP can hammer them and
 /// a distributed attempt is still capped overall. <c>/auth/methods</c> is deliberately exempt: it exposes
 /// no secret and clients poll it while entering a host address. Uses the built-in ASP.NET rate limiter.
 /// </summary>
@@ -30,6 +30,7 @@ public static class AuthRateLimit
     public static bool IsSensitivePath(PathString path) =>
         path.StartsWithSegments("/pair")
         || path.StartsWithSegments("/auth/github/exchange")
+        || path.StartsWithSegments("/auth/cloudflare-access/exchange")
         || path.StartsWithSegments("/auth/keypair"); // also covers /auth/keypair/challenge
 
     /// <summary>The partition key for per-IP limiting (honours X-Forwarded-For only when trusted).</summary>

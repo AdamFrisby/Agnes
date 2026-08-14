@@ -192,6 +192,23 @@ builder.Services.AddSingleton(sp => new OidcRedirectFlow(
     TimeProvider.System,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<OidcRedirectFlow>()));
 
+// ---- Cloudflare Access browser assertion — optional and separate from native OIDC ----
+var cloudflareAccessOptions = new CloudflareAccessOptions
+{
+    Enabled = builder.Configuration.GetValue("Agnes:Auth:CloudflareAccess:Enabled", false),
+    TeamDomain = builder.Configuration["Agnes:Auth:CloudflareAccess:TeamDomain"],
+    Audience = builder.Configuration["Agnes:Auth:CloudflareAccess:Audience"],
+    JwksJson = builder.Configuration["Agnes:Auth:CloudflareAccess:JwksJson"],
+    JwksUri = builder.Configuration["Agnes:Auth:CloudflareAccess:JwksUri"],
+    AllowedEmailDomains = builder.Configuration.GetSection("Agnes:Auth:CloudflareAccess:AllowedEmailDomains").Get<string[]>() ?? [],
+};
+if (cloudflareAccessOptions.Enabled && !cloudflareAccessOptions.IsUsable)
+{
+    throw new InvalidOperationException(
+        "Enabled Cloudflare Access requires TeamDomain, Audience, and at least one allowed email domain.");
+}
+builder.Services.AddSingleton(new CloudflareAccessIdentity(cloudflareAccessOptions, new HttpClient()));
+
 // ---- mTLS client-certificate auth (enterprise) — optional; a certificate that chains to the configured
 // CA or matches a pin is the sole credential. Fail-closed the same way as OIDC above. ----
 var mtlsOptions = new MtlsOptions
@@ -1315,6 +1332,34 @@ app.MapPost("/auth/oidc/exchange", async (OidcExchangeRequest request, OidcIdent
 
     var result = tokens.IssueDeviceToken(request.DeviceName, subject: "oidc:" + validated.Subject, kind: "oidc");
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "oidc", "oidc:" + validated.Subject));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+});
+
+// Browser clients that have already passed Cloudflare Access can exchange the signed assertion which
+// cloudflared forwards for a normal, individually revocable Agnes device token. The edge email header is
+// intentionally ignored; only the issuer/audience/signature-validated JWT is accepted.
+app.MapPost("/auth/cloudflare-access/exchange", async (
+    CloudflareAccessExchangeRequest request,
+    HttpContext context,
+    CloudflareAccessIdentity cloudflareAccess,
+    DeviceRegistry tokens,
+    CancellationToken ct) =>
+{
+    if (!cloudflareAccess.Options.IsUsable)
+    {
+        return Results.Json(new { error = "Cloudflare Access sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    var assertion = context.Request.Headers[CloudflareAccessIdentity.AssertionHeaderName].FirstOrDefault();
+    var validated = await cloudflareAccess.ValidateAsync(assertion, ct);
+    if (!validated.Ok || validated.Email is null || validated.Subject is null)
+    {
+        return Results.Json(new { error = "Cloudflare Access authentication failed." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "cloudflare:" + validated.Subject, kind: "cloudflare-access");
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(
+        result.DeviceId, result.DeviceName, "cloudflare-access", "cloudflare:" + validated.Email));
     return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
 });
 

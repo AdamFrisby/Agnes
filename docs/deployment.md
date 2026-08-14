@@ -170,6 +170,42 @@ On a client, **+ Add host** → **Sign in with a key**: it generates a key on fi
 (`~/.agnes/client_key.p8`) and shows the exact line to paste into the host's
 `authorized_keys`; add it, retry, and you're connected.
 
+## Google and Cloudflare Access sign-in
+
+Agnes keeps its own per-device, revocable token after bootstrap. Two optional sources can mint
+that token without using a typed pairing code:
+
+- **Native Google** uses the existing OIDC configuration. Register
+  `https://<agnes-host>/auth/oidc/callback` in Google, then set the Google issuer, client ID,
+  optional client secret, audience, and redirect URI under `Agnes:Auth:Oidc`. Keep the normal
+  OIDC JWKS validation enabled; do not accept a client-provided email as proof of identity.
+- **Cloudflare Access** accepts only Cloudflare's signed
+  `Cf-Access-Jwt-Assertion`, validates its issuer, exact Access application audience and signing
+  key, then checks an Agnes-side email-domain allowlist. It never trusts
+  `Cf-Access-Authenticated-User-Email`.
+
+```json
+{
+  "Agnes": {
+    "Auth": {
+      "CloudflareAccess": {
+        "Enabled": true,
+        "TeamDomain": "your-team.cloudflareaccess.com",
+        "Audience": "your-access-application-audience-tag",
+        "AllowedEmailDomains": [ "example.com" ]
+      }
+    }
+  }
+}
+```
+
+An enabled-but-incomplete Cloudflare configuration fails host startup. A browser client that has
+already completed Cloudflare Access can call `POST /auth/cloudflare-access/exchange` with a
+`CloudflareAccessExchangeRequest` body containing only its device name; the assertion remains in
+the forwarding header and a normal Agnes device token is returned. Native clients retain their
+existing OIDC or device-token paths because browser Access cookies are not available to arbitrary
+desktop processes.
+
 ## Rate limiting
 
 The token-minting endpoints (`/pair`, `/auth/github/exchange`, `/auth/keypair`[`/challenge`])
@@ -208,6 +244,8 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 | `Auth:Pairing:Enabled` | Turn the pairing-code bootstrap off (default on) — e.g. GitHub-only. |
 | `Auth:GitHub:{Enabled,ClientId,AllowedUsers,AllowedOrgs}` | GitHub-SSO sign-in + allowlist (see above). |
 | `Auth:Keypair:{Enabled,AuthorizedKeysFile}` | Keypair (authorized_keys) sign-in (see above). |
+| `Auth:Oidc:{Enabled,Issuer,Audience,JwksUri,ClientId,ClientSecret,RedirectUri}` | Native OIDC sign-in; Google is configured through this standard flow. |
+| `Auth:CloudflareAccess:{Enabled,TeamDomain,Audience,AllowedEmailDomains}` | Exchange a validated Cloudflare Access browser assertion for a revocable device token. |
 | `Auth:RateLimit:{Enabled,PerIpPerMinute,GlobalPerMinute,TrustForwardedFor}` | Throttle the auth endpoints (see above). |
 | `DevicesFile` | Where paired-device hashes are stored. |
 | `AllowedOrigins` / `AllowAllOrigins` | Cross-origin browser policy. |
