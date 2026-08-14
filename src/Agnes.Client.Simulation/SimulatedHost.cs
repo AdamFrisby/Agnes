@@ -274,7 +274,11 @@ public sealed class SimulatedHost : IAgnesHost
         // real agent would — so the demo exercises the real per-session usage path, not a fake one.
         session.RecordUsage(1_200 + text.Length * 3, 0.002 + text.Length * 0.00002);
 
-        _ = Task.Run(() => RespondAsync(session, text, session.NewTurn()));
+        // Mark the turn active before yielding to the background streamer. Otherwise a caller can
+        // cancel immediately after PromptAsync returns, while the queued task has not yet called
+        // NewTurn, and the cancellation is silently lost.
+        var turn = session.NewTurn();
+        _ = Task.Run(() => RespondAsync(session, text, turn));
         return Task.CompletedTask;
     }
 
@@ -781,7 +785,7 @@ public sealed class SimulatedHost : IAgnesHost
         {
             lock (_gate)
             {
-                if (_turn is { IsCancellationRequested: false })
+                if (_turnActive && _turn is { IsCancellationRequested: false })
                 {
                     _turn.Cancel();
                     return true;
