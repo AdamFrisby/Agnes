@@ -30,6 +30,7 @@ public sealed class DesktopBrandingTests
         Assert.NotNull(about.FindControl<Image>("BrandLogo")?.Source);
         Assert.Equal("Agnes", about.FindControl<TextBlock>("ProductNameText")?.Text);
         Assert.Equal(DesktopBranding.Version, about.FindControl<TextBlock>("VersionText")?.Text);
+        Assert.Equal("A remote interface to coding CLIs.", about.FindControl<TextBlock>("DescriptionText")?.Text);
         Assert.Equal("Learn more about Agnes", about.FindControl<Button>("LearnMoreButton")?.Content);
         Assert.Equal(DesktopBranding.Copyright, about.FindControl<TextBlock>("CopyrightText")?.Text);
     }

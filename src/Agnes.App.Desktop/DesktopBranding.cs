@@ -7,6 +7,7 @@ namespace Agnes.App.Desktop;
 public static class DesktopBranding
 {
     public static string ApplicationName { get; } = "Agnes";
+    public static string Description { get; } = "A remote interface to coding CLIs.";
     public static string AboutMenuLabel { get; } = "About Agnes";
     public static string LearnMoreLabel { get; } = "Learn more about Agnes";
     public static Uri RepositoryUri { get; } = new("https://github.com/AdamFrisby/Agnes");
