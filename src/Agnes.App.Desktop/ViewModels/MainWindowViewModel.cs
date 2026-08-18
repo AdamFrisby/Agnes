@@ -2239,14 +2239,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     private async Task CloseActiveTabAsync()
     {
-        if (_factory.DocumentDock?.ActiveDockable is not SessionDocument doc)
+        if (_factory.DocumentDock?.ActiveDockable is not { CanClose: true } active)
         {
             return;
         }
 
         // A live session's tab can be guarded by a client plugin (BeforeSessionClose veto); an unstarted
-        // tab has no session id, so it just closes.
-        if (doc.Session?.SessionId is { } sid)
+        // tab and non-session documents have no session id, so they just close.
+        if (active is SessionDocument { Session.SessionId: { } sid } doc)
         {
             if (!await EnsureClientPlugins().EventBus.AllowsAsync(new BeforeSessionCloseEvent(sid)))
             {
@@ -2259,7 +2259,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             return;
         }
 
-        _factory.CloseDockable(doc);
+        _factory.CloseDockable(active);
         SaveState();
     }
 
