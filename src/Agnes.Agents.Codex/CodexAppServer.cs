@@ -35,12 +35,18 @@ public sealed class CodexAppServerAdapter : IAgentAdapter, IModelListingAdapter
 
     public bool IsAvailable() => AgentCommand.IsOnPath(_spec.Command);
 
-    /// <summary>Codex's selectable models. The app-server also accepts other ids the installed CLI knows, so
-    /// custom entry stays enabled — the picker isn't authoritative, it's a convenience over the common ones.</summary>
+    /// <summary>Codex's selectable models. The first row deliberately lets Codex use its own configured
+    /// default (including <c>~/.codex/config.toml</c>); explicit rows track the current ChatGPT-sign-in
+    /// model ids. The app-server also accepts other ids the installed CLI knows, so custom entry stays
+    /// enabled — the picker isn't authoritative, it's a convenience over the common ones.</summary>
     public IReadOnlyList<ModelInfo> StaticModels { get; } =
     [
-        new ModelInfo("gpt-5-codex", "GPT-5 Codex"),
-        new ModelInfo("gpt-5", "GPT-5"),
+        new ModelInfo(string.Empty, "Codex default"),
+        new ModelInfo("gpt-5.6", "GPT-5.6"),
+        new ModelInfo("gpt-5.6-sol", "GPT-5.6 Sol"),
+        new ModelInfo("gpt-5.6-terra", "GPT-5.6 Terra"),
+        new ModelInfo("gpt-5.6-luna", "GPT-5.6 Luna"),
+        new ModelInfo("gpt-5.5", "GPT-5.5"),
     ];
 
     public Task<IReadOnlyList<ModelInfo>?> ListModelsAsync(CancellationToken ct = default)
