@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Linq;
 using Agnes.Ui.Core.Transcript;
 using Agnes.Ui.Core.ViewModels;
+using Agnes.App.Desktop.Keymaps;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -31,6 +32,7 @@ public partial class SessionTabView : UserControl
     private int _wantedRow = -1;  // latest row a drag asked for; a seek in flight picks it up when it lands
     private bool _seeking;        // a seek chain is running — new targets coalesce into it
     private double _lastSeekOffset = double.NaN; // offset at the previous seek pass, to notice a stalled one
+    private KeymapService? _keymap;
 
     public SessionTabView()
     {
@@ -45,7 +47,12 @@ public partial class SessionTabView : UserControl
         }
 
         // Activating a tab re-attaches its view; land at the latest message rather than wherever it was.
-        AttachedToVisualTree += (_, _) => RequestScrollToBottom();
+        AttachedToVisualTree += (_, _) =>
+        {
+            RequestScrollToBottom();
+            SetKeymap(KeymapBinder.GetService(this));
+        };
+        DetachedFromVisualTree += (_, _) => SetKeymap(null);
 
         // Drop files (or an image) anywhere on the session to attach them to the composer.
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
@@ -148,6 +155,7 @@ public partial class SessionTabView : UserControl
         }
 
         UpdateColumns();
+        UpdateComposerHint();
     }
 
     private void OnScrollToBottomRequested() => RequestScrollToBottom();
@@ -581,6 +589,42 @@ public partial class SessionTabView : UserControl
         {
             UpdateColumns();
         }
+        else if (e.PropertyName == nameof(SessionViewModel.IsTurnActive))
+        {
+            UpdateComposerHint();
+        }
+    }
+
+    private void SetKeymap(KeymapService? keymap)
+    {
+        if (ReferenceEquals(_keymap, keymap)) return;
+        if (_keymap is not null) _keymap.Changed -= OnKeymapChanged;
+        _keymap = keymap;
+        if (_keymap is not null) _keymap.Changed += OnKeymapChanged;
+        UpdateComposerHint();
+    }
+
+    /// <summary>Injects the same keymap supplied by the containing window. Normally inherited when the view
+    /// attaches; explicit injection also makes the presentation behavior headless-testable without a native
+    /// windowing lifetime.</summary>
+    public void InstallKeymap(KeymapService keymap) => SetKeymap(keymap);
+
+    private void OnKeymapChanged(object? sender, EventArgs e)
+    {
+        if (Dispatcher.UIThread.CheckAccess()) UpdateComposerHint();
+        else Dispatcher.UIThread.Post(UpdateComposerHint);
+    }
+
+    private void UpdateComposerHint()
+    {
+        if (_keymap is null || _session is null || this.FindControl<TextBlock>("ComposerSendHint") is not { } hint) return;
+        var send = _keymap.Effective.PrimaryGesture(AgnesCommand.ComposerSend, KeymapContext.ComposerFocus);
+        var sendNow = _keymap.Effective.PrimaryGesture(AgnesCommand.ComposerSendNow, KeymapContext.ComposerFocus);
+        var sendText = send is null ? "Send" : KeyGestureParser.Display(send);
+        var sendNowText = sendNow is null ? "Send now" : KeyGestureParser.Display(sendNow);
+        hint.Text = _session.IsTurnActive
+            ? $"{sendText} queues after this turn · {sendNowText} sends now"
+            : $"{sendText} to send";
     }
 
     private void UpdateColumns()

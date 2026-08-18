@@ -8,12 +8,14 @@
              xmlns:ctb="using:ColorTextBlock.Avalonia"
              xmlns:appconv="using:Agnes.App.Desktop.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              xmlns:views="using:Agnes.App.Desktop.Views"
              xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
              Background="{DynamicResource Bg}"
              FontFamily="{StaticResource UiFont}"
-             DragDrop.AllowDrop="True">
+             DragDrop.AllowDrop="True"
+             km:KeymapBinder.Context="Session">
 
     <UserControl.Resources>
         <appconv:IndentConverter x:Key="AgentIndent" Step="16" />
@@ -31,17 +33,6 @@
         <appconv:StringEqualsConverter x:Key="EventSettled" Match="TurnEnded,PermissionResolved,QuestionAnswered" />
         <appconv:StringEqualsConverter x:Key="EventBroken" Match="AgentError" />
     </UserControl.Resources>
-
-    <UserControl.KeyBindings>
-        <KeyBinding Gesture="Ctrl+F" Command="{Binding Session.OpenSearchCommand}" />
-        <KeyBinding Gesture="Escape" Command="{Binding Session.CloseSearchCommand}" />
-        <KeyBinding Gesture="F3" Command="{Binding Session.NextMatchCommand}" />
-        <KeyBinding Gesture="Shift+F3" Command="{Binding Session.PrevMatchCommand}" />
-        <KeyBinding Gesture="F7" Command="{Binding Session.PrevPromptCommand}" />
-        <KeyBinding Gesture="F8" Command="{Binding Session.NextPromptCommand}" />
-        <KeyBinding Gesture="Ctrl+F8" Command="{Binding Session.NextChangeCommand}" />
-        <KeyBinding Gesture="Ctrl+F7" Command="{Binding Session.PrevChangeCommand}" />
-    </UserControl.KeyBindings>
 
     <UserControl.Styles>
         <Style Selector="Border.user">
@@ -458,21 +449,14 @@
                     <TextBox Text="{Binding RenameText, Mode=TwoWay}" Width="240" Watermark="Tab name"
                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                              BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                             AutomationProperties.Name="Rename tab">
-                        <TextBox.KeyBindings>
-                            <KeyBinding Gesture="Enter" Command="{Binding CommitRenameCommand}" />
-                            <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />
-                        </TextBox.KeyBindings>
-                    </TextBox>
+                             AutomationProperties.Name="Rename tab"
+                             km:KeymapBinder.Context="SessionRenameFocus" />
                     <Button Classes="accent" Content="Save" Command="{Binding CommitRenameCommand}" Padding="12,4" FontSize="12" />
                     <TextBox Text="{Binding TagInput, Mode=TwoWay}" Width="160" Watermark="Add tag + Enter"
                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                              BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                             AutomationProperties.Name="Add tag">
-                        <TextBox.KeyBindings>
-                            <KeyBinding Gesture="Enter" Command="{Binding AddTagCommand}" />
-                        </TextBox.KeyBindings>
-                    </TextBox>
+                             AutomationProperties.Name="Add tag"
+                             km:KeymapBinder.Context="SessionTagFocus" />
                     <Button Classes="chip" Content="Done" Command="{Binding CancelRenameCommand}" Padding="12,4" FontSize="12" />
                 </StackPanel>
             </StackPanel>
@@ -1288,7 +1272,7 @@
                     <!-- MIDDLE: chat -->
                     <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding ShowChat}">
 
-                        <!-- within-session search (Ctrl+F) -->
+                        <!-- within-session search -->
                         <Border Grid.Row="0" IsVisible="{Binding IsSearchOpen}" Background="{DynamicResource Panel}"
                                 BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="24,8">
                             <StackPanel MaxWidth="768" HorizontalAlignment="Center" Spacing="6">
@@ -1296,13 +1280,8 @@
                                     <TextBox Grid.Column="0" Text="{Binding SearchQuery, Mode=TwoWay}" Watermark="Search this session…"
                                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                                              BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                                             AutomationProperties.Name="Search this session">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Enter" Command="{Binding NextMatchCommand}" />
-                                            <KeyBinding Gesture="Shift+Enter" Command="{Binding PrevMatchCommand}" />
-                                            <KeyBinding Gesture="Escape" Command="{Binding CloseSearchCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
+                                             AutomationProperties.Name="Search this session"
+                                             km:KeymapBinder.Context="SessionFindFocus" />
                                     <TextBlock Grid.Column="1" Text="{Binding MatchSummary}" Foreground="{DynamicResource FgFaint}"
                                                FontSize="11" VerticalAlignment="Center" MinWidth="52" />
                                     <Button Classes="chip" Grid.Column="2" Content="{icx:SymbolIcon Symbol=ChevronUp}" Command="{Binding PrevMatchCommand}" Padding="9,2"
@@ -1962,11 +1941,8 @@
                                              Margin="0,0,6,6"
                                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                                              BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                                             AutomationProperties.Name="Add a context reference">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Enter" Command="{Binding AddReferenceCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
+                                             AutomationProperties.Name="Add a context reference"
+                                             km:KeymapBinder.Context="SessionReferenceFocus" />
                                     <Button Classes="chip" Content="Add" Command="{Binding AddReferenceCommand}" Margin="0,0,6,6" Padding="10,4" FontSize="12" />
                                     <Button Classes="chip" Content="Attach file…" Click="OnAttachFile" Margin="0,0,6,6" Padding="10,4" FontSize="12"
                                             AutomationProperties.Name="Attach a file or image" />
@@ -2042,18 +2018,11 @@
                                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                                              BorderBrush="{DynamicResource Line}" CornerRadius="10" Padding="12,10"
-                                             AutomationProperties.Name="Message the agent">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Ctrl+Enter" Command="{Binding SendCommand}" />
-                                            <KeyBinding Gesture="Meta+Enter" Command="{Binding SendCommand}" />
-                                            <KeyBinding Gesture="Ctrl+Shift+Enter" Command="{Binding SendNowCommand}" />
-                                            <KeyBinding Gesture="Alt+Up" Command="{Binding RecallPreviousCommand}" />
-                                            <KeyBinding Gesture="Alt+Down" Command="{Binding RecallNextCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
-                                    <!-- Live hint: Ctrl+Enter sends when idle but QUEUES while a turn runs, so
-                                         the gesture's current meaning is always spelled out (defect #5). -->
-                                    <TextBlock Text="{Binding SendGestureHint}" Foreground="{DynamicResource FgFaint}"
+                                             AutomationProperties.Name="Message the agent"
+                                             km:KeymapBinder.Context="ComposerFocus" />
+                                    <!-- The code-behind derives this live hint from the effective keymap and
+                                         whether sending would send or queue, so display and execution stay aligned. -->
+                                    <TextBlock x:Name="ComposerSendHint" Foreground="{DynamicResource FgFaint}"
                                                FontSize="10" Margin="2,0,0,0" />
                                     </StackPanel>
 

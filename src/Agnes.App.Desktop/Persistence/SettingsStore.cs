@@ -24,6 +24,8 @@ public sealed class SettingsStore
 
     public SettingsStore(string? path = null) => _path = path ?? DefaultPath();
 
+    public string FilePath => _path;
+
     public static string DefaultPath()
     {
         var dir = Path.Combine(

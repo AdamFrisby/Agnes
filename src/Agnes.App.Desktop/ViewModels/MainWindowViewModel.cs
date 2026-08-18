@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Agnes.Abstractions.Events;
 using Agnes.App.Desktop.Persistence;
+using Agnes.App.Desktop.Keymaps;
 using Agnes.App.Desktop.Plugins;
 using Agnes.App.Desktop.Themes;
 using Agnes.Client;
@@ -36,6 +37,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private readonly IPromptStore _prompts;
     private readonly IPermissionPolicy _policy;
     private readonly SettingsStore _settingsStore;
+    private readonly KeymapService _keymap;
     private readonly ModelFavoritesStore _modelFavorites;
     private readonly IOnboardingStore _onboarding;
     private readonly DockFactory _factory;
@@ -81,7 +83,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SessionStateStore? archiveStore = null,
         SettingsStore? settingsStore = null,
         IPermissionPolicy? policy = null,
-        IOnboardingStore? onboarding = null)
+        IOnboardingStore? onboarding = null,
+        KeymapService? keymap = null)
     {
         _connector = connector;
         _dispatcher = dispatcher;
@@ -91,6 +94,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _prompts = prompts ?? new FilePromptStore();
         _policy = policy ?? new FilePermissionPolicy();
         _settingsStore = settingsStore ?? new SettingsStore();
+        _keymap = keymap ?? KeymapService.CreateDefault(_settingsStore.FilePath, watch: false);
         _settings = _settingsStore.Load();
         _modelFavorites = new ModelFavoritesStore();
         _onboarding = onboarding ?? new FileOnboardingStore();
@@ -189,9 +193,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         [
             // This device (client-global)
             new SettingsCategoryVm("appearance", "Appearance", Symbol.PaintBrush, "theme dark light system ui scale zoom accessibility reduce motion font density"),
-            // Keywords come from the shortcut catalogue itself, so searching "palette" or "interrupt" finds
-            // this page — the words a user actually reaches for aren't "keyboard".
-            new SettingsCategoryVm("keyboard", "Keyboard", Symbol.Keyboard, KeyboardShortcuts.SearchKeywords),
+            new SettingsCategoryVm("keymap", "Keymap", Symbol.Keyboard, KeymapSearchKeywords),
             // The connected host
             new SettingsCategoryVm("github", "GitHub accounts", Symbol.BranchFork, "github git push credential token connect app scope repo installation secret account"),
             new SettingsCategoryVm("devices", "Devices", Symbol.Key, "paired devices pairing token revoke auth access per-device"),
@@ -227,6 +229,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             FontScale = s switch { "small" => 0.9, "large" => 1.2, _ => 1.0 };
         });
+        EditKeymapCommand = new AsyncRelayCommand(EditKeymapAsync);
+        _keymap.Changed += OnKeymapChanged;
+        _keymap.StatusChanged += OnKeymapStatusChanged;
+        RebuildKeymapGroups(string.Empty);
         _factory.ActiveDockableChanged += (_, e) =>
         {
             UpdateWindowTitle();
@@ -778,7 +784,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     [ObservableProperty] private string _settingsCategory = "appearance";
 
     public bool CatAppearance => SettingsCategory == "appearance";
-    public bool CatKeyboard => SettingsCategory == "keyboard";
+    public bool CatKeymap => SettingsCategory == "keymap";
     public bool CatGitHub => SettingsCategory == "github";
     public bool CatDevices => SettingsCategory == "devices";
     public bool CatSandboxes => SettingsCategory == "sandboxes";
@@ -803,7 +809,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
 
         OnPropertyChanged(nameof(CatAppearance));
-        OnPropertyChanged(nameof(CatKeyboard));
+        OnPropertyChanged(nameof(CatKeymap));
         OnPropertyChanged(nameof(CatGitHub));
         OnPropertyChanged(nameof(CatDevices));
         OnPropertyChanged(nameof(CatSandboxes));
@@ -1039,45 +1045,112 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
-    /// <summary>
-    /// The shortcut groups the Keyboard page shows, narrowed by the settings search box — a list of thirty
-    /// shortcuts is only useful if you can ask it a question. Empty groups are dropped, so a search either
-    /// shows what matched or shows nothing.
-    /// </summary>
-    public ObservableCollection<KeyboardShortcutGroup> KeyboardGroups { get; } =
-        new(KeyboardShortcuts.Groups);
+    private static string KeymapSearchKeywords { get; } = string.Join(' ',
+        CommandCatalogue.All.SelectMany(d => new[] { d.Id, d.Description, d.ContextDisplay, d.Group })
+            .Prepend("keymap keyboard shortcuts keys bindings gestures rebinding"));
+    private static readonly HashSet<string> KeymapPageAliases = new(StringComparer.OrdinalIgnoreCase)
+        { "keymap", "keyboard", "shortcut", "shortcuts", "key", "keys", "binding", "bindings", "gesture", "gestures", "rebinding" };
 
-    public bool HasKeyboardMatches => KeyboardGroups.Count > 0;
+    public ObservableCollection<KeymapCommandGroup> KeymapGroups { get; } = [];
+    public bool HasKeymapMatches => KeymapGroups.Count > 0;
+    public string KeymapPath => _keymap.UserPath;
+    public string KeymapStatus => _keymap.Status;
+    public string KeymapDiagnostic => _keymap.Diagnostic?.ToString() ?? KeymapEditError;
+    public bool HasKeymapDiagnostic => KeymapDiagnostic.Length > 0;
+    public IAsyncRelayCommand EditKeymapCommand { get; }
 
-    private void RebuildKeyboardGroups(string query)
+    [ObservableProperty] private string _keymapEditError = string.Empty;
+
+    partial void OnKeymapEditErrorChanged(string value)
     {
-        KeyboardGroups.Clear();
-        foreach (var group in KeyboardShortcuts.Groups)
+        OnPropertyChanged(nameof(KeymapDiagnostic));
+        OnPropertyChanged(nameof(HasKeymapDiagnostic));
+    }
+
+    private async Task EditKeymapAsync()
+    {
+        try
         {
-            var matches = query.Length == 0
-                ? group.Shortcuts
-                : group.Shortcuts
-                    .Where(s => s.Gesture.Contains(query, StringComparison.OrdinalIgnoreCase)
-                                || s.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-            if (matches.Count > 0)
+            KeymapEditError = string.Empty;
+            await _keymap.EditAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => KeymapEditError = $"Couldn't open the keymap: {ex.Message}");
+        }
+    }
+
+    private void OnKeymapChanged(object? sender, EventArgs e) => _dispatcher.Post(() =>
+    {
+        RebuildKeymapGroups(SettingsSearch.Trim());
+        RebuildPalette();
+        OnPropertyChanged(nameof(KeymapStatus));
+        OnPropertyChanged(nameof(KeymapDiagnostic));
+        OnPropertyChanged(nameof(HasKeymapDiagnostic));
+        OnPropertyChanged(nameof(DashboardToolTip));
+    });
+
+    private void OnKeymapStatusChanged(object? sender, EventArgs e)
+        => _dispatcher.Post(() => OnPropertyChanged(nameof(KeymapStatus)));
+
+    public string DashboardToolTip
+    {
+        get
+        {
+            var gesture = GestureFor(AgnesCommand.DashboardOpen, KeymapContext.Window);
+            return gesture == "Unassigned"
+                ? "Status of every session, and anything waiting on you"
+                : $"Status of every session, and anything waiting on you ({gesture})";
+        }
+    }
+
+    private string GestureFor(AgnesCommand command, KeymapContext context)
+        => _keymap.Effective.PrimaryGesture(command, context) is { } gesture
+            ? KeyGestureParser.Display(gesture)
+            : "Unassigned";
+
+    private void RebuildKeymapGroups(string query)
+    {
+        if (KeymapPageAliases.Contains(query)) query = string.Empty;
+        KeymapGroups.Clear();
+        foreach (var group in CommandCatalogue.All.GroupBy(d => d.Group))
+        {
+            var rows = group.Select(definition =>
             {
-                KeyboardGroups.Add(group with { Shortcuts = matches });
-            }
+                var rules = _keymap.Effective.Rules
+                    .Where(r => r.Command == definition.Command)
+                    .ToArray();
+                var gestures = rules
+                    .Select(r => KeyGestureParser.Display(r.Gesture))
+                    .Distinct(StringComparer.OrdinalIgnoreCase);
+                return new KeymapCommandRow(
+                    definition.Command,
+                    definition.Id,
+                    definition.Description,
+                    definition.ContextDisplay,
+                    string.Join(" / ", gestures.DefaultIfEmpty("Unassigned")),
+                    rules.LastOrDefault() is { } primary ? KeymapCommandRow.FormatJson(primary) : null);
+            }).Where(row => query.Length == 0
+                || row.CommandId.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Description.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Context.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Gesture.Contains(query, StringComparison.OrdinalIgnoreCase))
+              .ToArray();
+            if (rows.Length > 0) KeymapGroups.Add(new KeymapCommandGroup(group.Key, rows));
         }
 
-        OnPropertyChanged(nameof(HasKeyboardMatches));
+        OnPropertyChanged(nameof(HasKeymapMatches));
     }
 
     partial void OnSettingsSearchChanged(string value)
     {
         var query = (value ?? string.Empty).Trim();
-        RebuildKeyboardGroups(query);
+        RebuildKeymapGroups(query);
 
         SettingsCategoryVm? firstMatch = null;
         foreach (var c in SettingsCategories)
         {
-            c.IsVisible = c.Matches(query);
+            c.IsVisible = c.Id == "keymap" ? HasKeymapMatches : c.Matches(query);
             firstMatch ??= c.IsVisible ? c : null;
         }
 
@@ -1138,7 +1211,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public DashboardViewModel? Dashboard
         => _factory.DocumentDock?.VisibleDockables?.OfType<DashboardDocument>().FirstOrDefault()?.Dashboard;
 
-    /// <summary>Opens the status dashboard tab (Ctrl+Shift+D, the top bar, or the palette).</summary>
+    /// <summary>Opens the status dashboard tab (from its configured key, the top bar, or the palette).</summary>
     public IRelayCommand OpenDashboardCommand { get; private set; } = null!;
 
     /// <summary>
@@ -2358,7 +2431,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public IRelayCommand PrevTabCommand { get; private set; } = null!;
     public IRelayCommand<string> ActivateTabByIndexCommand { get; private set; } = null!;
 
-    // ---- command palette (Ctrl+K): jump to a session or run a global action ----
+    // ---- command palette: jump to a session or run a global action ----
 
     [ObservableProperty]
     private bool _isPaletteOpen;
@@ -2391,8 +2464,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var q = PaletteQuery.Trim();
         var all = new List<PaletteItem>
         {
-            new("New tab", "Ctrl+T", () => NewTabCommand.Execute(null)),
-            new("Open dashboard", "Ctrl+Shift+D", () => OpenDashboardCommand.Execute(null)),
+            new("New tab", GestureFor(AgnesCommand.TabNew, KeymapContext.Window), () => NewTabCommand.Execute(null)),
+            new("Open dashboard", GestureFor(AgnesCommand.DashboardOpen, KeymapContext.Window), () => OpenDashboardCommand.Execute(null)),
             new("Show onboarding tour", "help", () => Showcase.Show()),
         };
         all.AddRange(AllDocuments().Select(t => new PaletteItem(
