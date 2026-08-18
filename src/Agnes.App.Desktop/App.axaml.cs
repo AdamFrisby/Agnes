@@ -1,8 +1,10 @@
 using Agnes.App.Desktop.Persistence;
 using Agnes.App.Desktop.ViewModels;
+using Agnes.App.Desktop.Views;
 using Agnes.Client;
 using Agnes.Client.Simulation;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 
@@ -13,8 +15,41 @@ public partial class App : Application
     // Held for the app's lifetime so the tray icon + its menu aren't garbage-collected. Null when the
     // platform has no usable system tray (the app still runs, just without a tray presence).
     private TrayPresence? _tray;
+    private AboutAgnesWindow? _aboutWindow;
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        NativeMenu.SetMenu(this, DesktopBranding.CreateApplicationMenu(OnAboutAgnes));
+    }
+
+    private void OnAboutAgnes(object? sender, EventArgs e)
+    {
+        if (_aboutWindow is { } existing)
+        {
+            existing.Activate();
+            return;
+        }
+
+        var about = new AboutAgnesWindow();
+        _aboutWindow = about;
+        about.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_aboutWindow, about))
+            {
+                _aboutWindow = null;
+            }
+        };
+
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: { IsVisible: true } owner })
+        {
+            _ = about.ShowDialog(owner);
+        }
+        else
+        {
+            about.Show();
+        }
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
