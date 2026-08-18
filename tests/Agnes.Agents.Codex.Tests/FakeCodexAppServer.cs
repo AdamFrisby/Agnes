@@ -22,6 +22,10 @@ internal sealed class FakeCodexAppServer : IAsyncDisposable
     /// <summary>The <c>answers</c> object the client returned for the last user-input request (null if none).</summary>
     public JsonElement? LastUserInputAnswers { get; private set; }
 
+    public List<JsonElement> ModelListRequests { get; } = [];
+
+    public Func<JsonElement, object>? OnModelList { get; set; }
+
     public static (Stream Client, FakeCodexAppServer Server) Create()
     {
         var (a, b) = FullDuplexStream.CreatePair();
@@ -74,6 +78,13 @@ internal sealed class FakeCodexAppServer : IAsyncDisposable
 
         [JsonRpcMethod("thread/start", UseSingleObjectParameterDeserialization = true)]
         public object ThreadStart(JsonElement _) => new { thread = new { id = "th-1" }, model = "gpt-test" };
+
+        [JsonRpcMethod("model/list", UseSingleObjectParameterDeserialization = true)]
+        public object ModelList(JsonElement p)
+        {
+            server.ModelListRequests.Add(p.Clone());
+            return server.OnModelList?.Invoke(p) ?? new { data = Array.Empty<object>(), nextCursor = (string?)null };
+        }
 
         [JsonRpcMethod("turn/start", UseSingleObjectParameterDeserialization = true)]
         public async Task<object> TurnStart(JsonElement _)

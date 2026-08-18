@@ -44,6 +44,34 @@ internal sealed class CodexConnection : ICodexRpc, IAsyncDisposable
         _logger.LogInformation("Codex app-server initialized");
     }
 
+    public async Task<IReadOnlyList<CodexModel>> ListModelsAsync(bool includeHidden = false, CancellationToken cancellationToken = default)
+    {
+        var models = new List<CodexModel>();
+        var seenCursors = new HashSet<string>(StringComparer.Ordinal);
+        string? cursor = null;
+
+        while (true)
+        {
+            var result = await _rpc.InvokeWithParameterObjectAsync<CodexModelListResult>(
+                "model/list",
+                new CodexModelListParams(cursor, includeHidden),
+                cancellationToken).ConfigureAwait(false);
+
+            models.AddRange(result.Data);
+
+            cursor = string.IsNullOrWhiteSpace(result.NextCursor) ? null : result.NextCursor;
+            if (cursor is null)
+            {
+                return models;
+            }
+
+            if (!seenCursors.Add(cursor))
+            {
+                throw new InvalidOperationException($"Codex model/list returned cursor '{cursor}' more than once.");
+            }
+        }
+    }
+
     public async Task<CodexAgentSession> StartThreadAsync(
         string workingDirectory, string approvalPolicy, string sandbox, string? model, CancellationToken cancellationToken)
     {
