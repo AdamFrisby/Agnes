@@ -26,6 +26,8 @@ public sealed class PairApprovalEndpointTests
 
     private sealed class Factory : WebApplicationFactory<Program>
     {
+        private readonly string _devicesFile = Path.Combine(Path.GetTempPath(), $"agnes-pair-approval-devices-{Guid.NewGuid():n}.json");
+
         protected override IHost CreateHost(IHostBuilder builder)
         {
             builder.ConfigureHostConfiguration(config =>
@@ -33,8 +35,15 @@ public sealed class PairApprovalEndpointTests
                 {
                     // Stands in for the first device, already paired by whatever bootstrap the operator used.
                     ["Agnes:PairingToken"] = ApproverToken,
+                    ["Agnes:DevicesFile"] = _devicesFile,
                 }));
             return base.CreateHost(builder);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && File.Exists(_devicesFile)) File.Delete(_devicesFile);
         }
     }
 

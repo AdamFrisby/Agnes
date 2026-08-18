@@ -25,14 +25,23 @@ public sealed class PairingAddressChoiceTests
 
     private sealed class Factory : WebApplicationFactory<Program>
     {
+        private readonly string _devicesFile = Path.Combine(Path.GetTempPath(), $"agnes-pairing-address-devices-{Guid.NewGuid():n}.json");
+
         protected override IHost CreateHost(IHostBuilder builder)
         {
             builder.ConfigureHostConfiguration(config =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Agnes:PairingToken"] = Token,
+                    ["Agnes:DevicesFile"] = _devicesFile,
                 }));
             return base.CreateHost(builder);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && File.Exists(_devicesFile)) File.Delete(_devicesFile);
         }
     }
 
