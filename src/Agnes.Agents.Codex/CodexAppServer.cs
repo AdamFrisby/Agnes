@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Threading.Channels;
 using Agnes.Abstractions;
+using Agnes.Agents.Codex.Wire;
 using Microsoft.Extensions.Logging;
 
 namespace Agnes.Agents.Codex;
@@ -22,29 +23,88 @@ public sealed record CodexLaunchSpec
 /// </summary>
 public sealed class CodexAppServerAdapter : IAgentAdapter, IModelListingAdapter
 {
+    private static readonly TimeSpan ModelProbeTimeout = TimeSpan.FromSeconds(5);
+
     private readonly CodexLaunchSpec _spec;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly Func<bool, CancellationToken, Task<IReadOnlyList<CodexModel>>>? _modelProbe;
 
     public CodexAppServerAdapter(CodexLaunchSpec spec, ILoggerFactory loggerFactory)
+        : this(spec, loggerFactory, modelProbe: null)
+    {
+    }
+
+    internal CodexAppServerAdapter(
+        CodexLaunchSpec spec,
+        ILoggerFactory loggerFactory,
+        Func<bool, CancellationToken, Task<IReadOnlyList<CodexModel>>>? modelProbe)
     {
         _spec = spec;
         _loggerFactory = loggerFactory;
+        _modelProbe = modelProbe;
     }
 
     public AgentDescriptor Descriptor => _spec.Descriptor;
 
     public bool IsAvailable() => AgentCommand.IsOnPath(_spec.Command);
 
-    /// <summary>Codex's selectable models. The app-server also accepts other ids the installed CLI knows, so
-    /// custom entry stays enabled — the picker isn't authoritative, it's a convenience over the common ones.</summary>
+    /// <summary>Codex's selectable models. The first row deliberately lets Codex use its own configured
+    /// default (including <c>~/.codex/config.toml</c>); explicit rows track the current ChatGPT-sign-in
+    /// model ids. The app-server also accepts other ids the installed CLI knows, so custom entry stays
+    /// enabled — the picker isn't authoritative, it's a convenience over the common ones.</summary>
     public IReadOnlyList<ModelInfo> StaticModels { get; } =
     [
-        new ModelInfo("gpt-5-codex", "GPT-5 Codex"),
-        new ModelInfo("gpt-5", "GPT-5"),
+        new ModelInfo(string.Empty, "Codex default"),
+        new ModelInfo("gpt-5.6", "GPT-5.6"),
+        new ModelInfo("gpt-5.6-sol", "GPT-5.6 Sol"),
+        new ModelInfo("gpt-5.6-terra", "GPT-5.6 Terra"),
+        new ModelInfo("gpt-5.6-luna", "GPT-5.6 Luna"),
+        new ModelInfo("gpt-5.5", "GPT-5.5"),
     ];
 
-    public Task<IReadOnlyList<ModelInfo>?> ListModelsAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<ModelInfo>?>(null);
+    public async Task<IReadOnlyList<ModelInfo>?> ListModelsAsync(CancellationToken ct = default)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(ModelProbeTimeout);
+
+        try
+        {
+            var models = _modelProbe is null
+                ? await ProbeModelsAsync(includeHidden: false, timeout.Token).ConfigureAwait(false)
+                : await _modelProbe(false, timeout.Token).ConfigureAwait(false);
+
+            return CodexModelCatalog.ToModelInfo(models, includeHidden: false);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            _loggerFactory.CreateLogger<CodexAppServerAdapter>().LogDebug(ex, "Codex model listing timed out; falling back to static models");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            _loggerFactory.CreateLogger<CodexAppServerAdapter>().LogDebug(ex, "Codex model listing failed; falling back to static models");
+            return null;
+        }
+    }
+
+    private async Task<IReadOnlyList<CodexModel>> ProbeModelsAsync(bool includeHidden, CancellationToken cancellationToken)
+    {
+        var process = StartProcess(new AgentSessionOptions { WorkingDirectory = Environment.CurrentDirectory });
+        var lifetime = new ProcessLifetime(process, _loggerFactory.CreateLogger<CodexAppServerAdapter>());
+        await using var connection = new CodexConnection(
+            process.StandardInput.BaseStream,
+            process.StandardOutput.BaseStream,
+            _loggerFactory.CreateLogger<CodexConnection>(),
+            lifetime);
+
+        await connection.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        return await connection.ListModelsAsync(includeHidden, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {
