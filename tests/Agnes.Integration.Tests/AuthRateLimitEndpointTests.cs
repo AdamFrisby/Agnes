@@ -12,6 +12,8 @@ public class AuthRateLimitEndpointTests
 {
     private sealed class Factory : WebApplicationFactory<Program>
     {
+        private readonly string _devicesFile = Path.Combine(Path.GetTempPath(), $"agnes-rate-limit-devices-{Guid.NewGuid():n}.json");
+
         protected override IHost CreateHost(IHostBuilder builder)
         {
             builder.ConfigureHostConfiguration(config =>
@@ -19,8 +21,15 @@ public class AuthRateLimitEndpointTests
                 {
                     ["Agnes:Auth:RateLimit:PerIpPerMinute"] = "3",  // small so the test is fast + deterministic
                     ["Agnes:Auth:RateLimit:GlobalPerMinute"] = "1000",
+                    ["Agnes:DevicesFile"] = _devicesFile,
                 }));
             return base.CreateHost(builder);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && File.Exists(_devicesFile)) File.Delete(_devicesFile);
         }
     }
 

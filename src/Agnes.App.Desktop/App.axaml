@@ -9,7 +9,8 @@
              xmlns:ctb="using:ColorTextBlock.Avalonia"
              xmlns:sty="using:Avalonia.Styling"
              xmlns:themes="using:Agnes.App.Desktop.Themes"
-             x:Class="Agnes.App.Desktop.App">
+             x:Class="Agnes.App.Desktop.App"
+             Name="{x:Static app:DesktopBranding.ApplicationName}">
 
     <Application.Resources>
         <ResourceDictionary>

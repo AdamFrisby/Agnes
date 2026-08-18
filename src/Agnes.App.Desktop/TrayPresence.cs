@@ -34,6 +34,7 @@ internal sealed class TrayPresence
     private readonly MainWindowViewModel _viewModel;
     private readonly TrayStatusViewModel _status;
     private readonly TrayIcon _icon;
+    private readonly NativeMenu _menu;
     private readonly WindowIcon _idleIcon;
     private readonly WindowIcon _attentionIcon;
     private bool _quitting;
@@ -51,11 +52,13 @@ internal sealed class TrayPresence
         _status = new TrayStatusViewModel(viewModel.OpenSessions);
         _idleIcon = MakeIcon(IdleColor);
         _attentionIcon = MakeIcon(AttentionColor);
+        _menu = new NativeMenu();
         _icon = new TrayIcon
         {
             Icon = _status.HasAttention ? _attentionIcon : _idleIcon,
             ToolTipText = _status.Tooltip,
             IsVisible = true,
+            Menu = _menu,
         };
     }
 
@@ -150,34 +153,34 @@ internal sealed class TrayPresence
     // plus a show/quit pair. Cheap and only fires when the attention set changes.
     private void RebuildMenu()
     {
-        var menu = new NativeMenu();
+        // Avalonia's native exporter keeps the first menu instance it receives. Mutate that menu's
+        // observable items instead of replacing the object after it has been attached to the tray icon.
+        _menu.Items.Clear();
         if (_status.NeedsAttention.Count == 0)
         {
-            menu.Add(new NativeMenuItem("Nothing needs you right now") { IsEnabled = false });
+            _menu.Add(new NativeMenuItem("Nothing needs you right now") { IsEnabled = false });
         }
         else
         {
-            menu.Add(new NativeMenuItem("Needs attention") { IsEnabled = false });
+            _menu.Add(new NativeMenuItem("Needs attention") { IsEnabled = false });
             foreach (var row in _status.NeedsAttention)
             {
                 var sessionId = row.SessionId;
                 var item = new NativeMenuItem($"    {row.Title}");
                 item.Click += (_, _) => OnActivateRequested(sessionId);
-                menu.Add(item);
+                _menu.Add(item);
             }
         }
 
-        menu.Add(new NativeMenuItemSeparator());
+        _menu.Add(new NativeMenuItemSeparator());
 
         var show = new NativeMenuItem("Show Agnes");
         show.Click += (_, _) => ShowWindow();
-        menu.Add(show);
+        _menu.Add(show);
 
         var quit = new NativeMenuItem("Quit Agnes");
         quit.Click += (_, _) => Quit();
-        menu.Add(quit);
-
-        _icon.Menu = menu;
+        _menu.Add(quit);
     }
 
     // A tiny solid dot rendered in software (no asset needed); recolored to signal the attention state.

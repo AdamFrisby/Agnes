@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:app="using:Agnes.App.Desktop"
+        x:Class="Agnes.App.Desktop.Views.AboutAgnesWindow"
+        Title="About Agnes"
+        Width="390" Height="430"
+        MinWidth="390" MinHeight="430"
+        MaxWidth="390" MaxHeight="430"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource Bg}"
+        FontFamily="{StaticResource UiFont}"
+        Icon="avares://Agnes.App.Desktop/Assets/Brand/Agnes.png">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="36,30,36,26">
+        <Image x:Name="BrandLogo"
+               Grid.Row="0"
+               Width="128" Height="128"
+               HorizontalAlignment="Center"
+               Source="avares://Agnes.App.Desktop/Assets/Brand/Agnes.png"
+               Stretch="Uniform" />
+
+        <TextBlock x:Name="ProductNameText"
+                   Grid.Row="1"
+                   Margin="0,18,0,0"
+                   Text="{x:Static app:DesktopBranding.ApplicationName}"
+                   HorizontalAlignment="Center"
+                   FontFamily="{StaticResource DisplayFont}"
+                   FontSize="30"
+                   FontWeight="Bold" />
+
+        <TextBlock x:Name="VersionText"
+                   Grid.Row="2"
+                   Margin="0,5,0,0"
+                   Text="{x:Static app:DesktopBranding.Version}"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource FgMuted}"
+                   FontSize="13" />
+
+        <TextBlock x:Name="DescriptionText"
+                   Grid.Row="3"
+                   Margin="0,14,0,0"
+                   Text="{x:Static app:DesktopBranding.Description}"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource FgMuted}"
+                   FontSize="14" />
+
+        <Button x:Name="LearnMoreButton"
+                Grid.Row="5"
+                Classes="primary"
+                Margin="0,24,0,0"
+                Padding="16,8"
+                HorizontalAlignment="Center"
+                Content="{x:Static app:DesktopBranding.LearnMoreLabel}"
+                Click="OnLearnMore" />
+
+        <TextBlock x:Name="CopyrightText"
+                   Grid.Row="6"
+                   Margin="0,20,0,0"
+                   Text="{x:Static app:DesktopBranding.Copyright}"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource FgFaint}"
+                   FontSize="11" />
+    </Grid>
+</Window>
