@@ -147,7 +147,7 @@ public sealed class HostChoice
     public bool CanForget => Forget is not null;
 }
 
-/// <summary>An entry in the command palette (Ctrl+K): a session to jump to or a global action.</summary>
+/// <summary>An entry in the command palette: a session to jump to or a global action.</summary>
 public sealed record PaletteItem(string Label, string Hint, System.Action Invoke);
 
 /// <summary>A model option on the new-tab model picker (per the selected agent). Built from a reconciled
