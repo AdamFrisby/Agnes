@@ -125,17 +125,78 @@ public class CodexMapTests
     }
 
     [Fact]
-    public void Token_usage_becomes_real_usage_context_window_and_output()
+    public void Token_usage_uses_latest_total_tokens_and_cumulative_output_without_double_counting_cache()
     {
         var map = new CodexMap();
         var e = map.TokenUsage(J(
             "{\"threadId\":\"t1\",\"turnId\":\"u1\",\"tokenUsage\":{\"modelContextWindow\":272000," +
-            "\"total\":{\"inputTokens\":1000,\"cachedInputTokens\":8000,\"outputTokens\":250,\"reasoningOutputTokens\":40,\"totalTokens\":9250}}}"));
+            "\"last\":{\"inputTokens\":1000,\"cachedInputTokens\":8000,\"outputTokens\":250,\"reasoningOutputTokens\":40,\"totalTokens\":9250}," +
+            "\"total\":{\"inputTokens\":910000,\"cachedInputTokens\":800000,\"outputTokens\":42000,\"totalTokens\":1752000}}}"));
         var u = Assert.IsType<UsageReportedEvent>(e);
-        Assert.Equal(9000, u.Metrics.ContextUsed); // input + cached
+        Assert.Equal(9250, u.Metrics.ContextUsed);
         Assert.Equal(272000, u.Metrics.ContextWindow);
-        Assert.Equal(250, u.Metrics.OutputTokens);
+        Assert.Equal(42000, u.Metrics.OutputTokens);
         Assert.Null(u.Metrics.CostUsd); // Codex reports no USD cost here — never fabricated
+    }
+
+    [Fact]
+    public void Legacy_flattened_usage_uses_flattened_total_tokens()
+    {
+        var map = new CodexMap();
+        var usage = Assert.IsType<UsageReportedEvent>(map.TokenUsage(J(
+            "{\"tokenUsage\":{\"modelContextWindow\":128000,\"inputTokens\":7000," +
+            "\"cachedInputTokens\":6000,\"outputTokens\":900,\"totalTokens\":7900}}")));
+
+        Assert.Equal(7900, usage.Metrics.ContextUsed);
+        Assert.Equal(900, usage.Metrics.OutputTokens);
+        Assert.Equal(128000, usage.Metrics.ContextWindow);
+    }
+
+    [Fact]
+    public void Cumulative_total_without_latest_request_never_becomes_context_occupancy()
+    {
+        var map = new CodexMap();
+        var usage = Assert.IsType<UsageReportedEvent>(map.TokenUsage(J(
+            "{\"tokenUsage\":{\"modelContextWindow\":128000," +
+            "\"total\":{\"inputTokens\":900000,\"cachedInputTokens\":800000," +
+            "\"outputTokens\":30000,\"totalTokens\":1730000}}}")));
+
+        Assert.Null(usage.Metrics.ContextUsed);
+        Assert.Equal(30000, usage.Metrics.OutputTokens);
+        Assert.Equal(128000, usage.Metrics.ContextWindow);
+    }
+
+    [Fact]
+    public void Partial_and_missing_window_updates_preserve_only_trustworthy_values()
+    {
+        var map = new CodexMap();
+        Assert.Null(map.TokenUsage(J("{\"tokenUsage\":{\"modelContextWindow\":200000}}")));
+
+        var afterWindow = Assert.IsType<UsageReportedEvent>(map.TokenUsage(J(
+            "{\"tokenUsage\":{\"last\":{\"totalTokens\":12000}}}")));
+        Assert.Equal(12000, afterWindow.Metrics.ContextUsed);
+        Assert.Equal(200000, afterWindow.Metrics.ContextWindow);
+
+        var noWindowMap = new CodexMap();
+        var withoutWindow = Assert.IsType<UsageReportedEvent>(noWindowMap.TokenUsage(J(
+            "{\"tokenUsage\":{\"last\":{\"totalTokens\":5000}}}")));
+        Assert.Equal(5000, withoutWindow.Metrics.ContextUsed);
+        Assert.Null(withoutWindow.Metrics.ContextWindow);
+    }
+
+    [Fact]
+    public void Empty_malformed_and_inconsistent_usage_never_fabricate_values()
+    {
+        var map = new CodexMap();
+        Assert.Null(map.TokenUsage(J("{}")));
+        Assert.Null(map.TokenUsage(J("{\"tokenUsage\":null}")));
+        Assert.Null(map.TokenUsage(J("{\"tokenUsage\":{\"last\":\"unexpected\"}}")));
+
+        var inconsistent = Assert.IsType<UsageReportedEvent>(map.TokenUsage(J(
+            "{\"tokenUsage\":{\"modelContextWindow\":200000," +
+            "\"last\":{\"totalTokens\":250000}}}")));
+        Assert.Equal(250000, inconsistent.Metrics.ContextUsed); // retain raw provider data
+        Assert.Equal(200000, inconsistent.Metrics.ContextWindow);
     }
 
     [Fact]

@@ -35,7 +35,9 @@
   <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.CodeBlock">
     <Setter Property="Background" Value="{DynamicResource CodeBg}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="10,6" />
   </Style>
   <Style Selector=".Markdown_Avalonia_MarkdownViewer TextBlock.CodeBlock">
     <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />

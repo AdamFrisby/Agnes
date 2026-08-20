@@ -97,15 +97,22 @@ internal sealed record CodexAgentMessageDeltaNotification(string? ItemId, string
 /// <summary>A <c>thread/tokenUsage/updated</c> notification.</summary>
 internal sealed record CodexTokenUsageNotification(CodexTokenUsage? TokenUsage);
 
-/// <summary>Token usage. Totals may arrive nested under <see cref="Total"/> or flattened onto this object;
-/// the mapper prefers the nested form and falls back to the top-level fields.</summary>
+/// <summary>Token usage. <see cref="Last"/> is the latest request (and therefore current context
+/// occupancy), while <see cref="Total"/> is cumulative for the thread. Older app-server versions
+/// flattened the latest request onto this object, so those fields remain as a boundary fallback.</summary>
 internal sealed record CodexTokenUsage
 {
     public long? ModelContextWindow { get; init; }
+    public CodexTokenTotals? Last { get; init; }
     public CodexTokenTotals? Total { get; init; }
     public long? InputTokens { get; init; }
     public long? CachedInputTokens { get; init; }
     public long? OutputTokens { get; init; }
+    public long? TotalTokens { get; init; }
 }
 
-internal sealed record CodexTokenTotals(long? InputTokens, long? CachedInputTokens, long? OutputTokens);
+internal sealed record CodexTokenTotals(
+    long? InputTokens,
+    long? CachedInputTokens,
+    long? OutputTokens,
+    long? TotalTokens);

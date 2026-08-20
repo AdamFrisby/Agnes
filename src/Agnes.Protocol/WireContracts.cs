@@ -337,13 +337,15 @@ public sealed record UsageInfo(UsageMetrics Metrics)
     /// <summary>The model reported a context-token count (so we can show at least the number).</summary>
     [JsonIgnore] public bool HasAnyContext => Metrics.ContextUsed is >= 0;
 
-    /// <summary>We know both the used tokens and the model's window (so we can show a meter).</summary>
-    [JsonIgnore] public bool HasContext => Metrics.ContextWindow is > 0 && Metrics.ContextUsed is >= 0;
+    /// <summary>We know a consistent occupancy/window pair, so a ratio meter would be meaningful.</summary>
+    [JsonIgnore] public bool HasContext => Metrics.ContextWindow is > 0
+        && Metrics.ContextUsed is >= 0
+        && Metrics.ContextUsed <= Metrics.ContextWindow;
 
     [JsonIgnore] public double ContextPercent => HasContext ? Math.Clamp(100.0 * Metrics.ContextUsed!.Value / Metrics.ContextWindow!.Value, 0, 100) : 0;
 
-    /// <summary>"18,240 / 200,000" when the window is known, else just "18,240", else empty.</summary>
-    [JsonIgnore] public string ContextText => HasContext
+    /// <summary>Keep raw provider counts visible even when an inconsistent window suppresses the meter.</summary>
+    [JsonIgnore] public string ContextText => Metrics.ContextWindow is > 0 && HasAnyContext
         ? $"{Metrics.ContextUsed:N0} / {Metrics.ContextWindow:N0}"
         : HasAnyContext ? $"{Metrics.ContextUsed:N0}" : string.Empty;
 
