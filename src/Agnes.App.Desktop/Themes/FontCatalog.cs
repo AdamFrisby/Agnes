@@ -1,45 +1,57 @@
-using System.Collections.Generic;
-using System.Linq;
 using Avalonia;
 using Avalonia.Media;
 
 namespace Agnes.App.Desktop.Themes;
 
-/// <summary>One interface font offered by the desktop client.</summary>
-/// <param name="Id">Stable id persisted in settings.</param>
-/// <param name="Name">Label shown in Appearance settings.</param>
-/// <param name="Family">The Avalonia family applied to ordinary UI and transcript text.</param>
-public sealed record AppFont(string Id, string Name, FontFamily Family);
-
-/// <summary>The supported interface fonts. Code and terminal text retain the dedicated mono face.</summary>
+/// <summary>Normalises the free-form interface-font setting and resolves its Avalonia family.</summary>
 public static class FontCatalog
 {
     private const string FontAssetRoot = "avares://Agnes.App.Desktop/Assets/Fonts";
+    public const string Default = "Default";
 
-    public static IReadOnlyList<AppFont> All { get; } =
-    [
-        new("Manrope", "Manrope", new FontFamily($"{FontAssetRoot}#Manrope")),
-        new("System", "System default", FontFamily.Default),
-        new("JetBrainsMono", "JetBrains Mono", new FontFamily($"{FontAssetRoot}#JetBrains Mono")),
-    ];
+    /// <summary>Blank input means the Agnes default. Every other value is an installed family name.</summary>
+    public static string Normalize(string? name)
+        => string.IsNullOrWhiteSpace(name) ? Default : name.Trim();
 
-    /// <summary>Unknown or absent ids fall back to the branded default.</summary>
-    public static AppFont Resolve(string? id)
-        => All.FirstOrDefault(font => string.Equals(font.Id, id, System.StringComparison.Ordinal)) ?? All[0];
+    /// <summary>The editable text field is blank for the default and contains the exact custom family.</summary>
+    public static string InputValue(string? name)
+    {
+        var normalized = Normalize(name);
+        return normalized is Default or "Manrope" or "System" ? string.Empty
+            : normalized == "JetBrainsMono" ? "JetBrains Mono"
+            : normalized;
+    }
+
+    public static FontFamily Resolve(string? name)
+        => Normalize(name) switch
+        {
+            Default or "Manrope" or "System" => new FontFamily($"{FontAssetRoot}#Manrope"),
+            "JetBrainsMono" or "JetBrains Mono" => new FontFamily($"{FontAssetRoot}#JetBrains Mono"),
+            var installedFamily => new FontFamily(installedFamily),
+        };
 }
 
 /// <summary>Applies the selected interface font to dynamic app and Fluent font resources.</summary>
 public static class FontManager
 {
-    public static void Apply(string? fontId)
+    public static void Apply(string? fontFamily)
     {
         if (Application.Current is not { } app)
         {
             return;
         }
 
-        var family = FontCatalog.Resolve(fontId).Family;
+        var family = FontCatalog.Resolve(fontFamily);
         app.Resources["UiFont"] = family;
         app.Resources["ContentControlThemeFontFamily"] = family;
+    }
+
+    /// <summary>Updates the shared scale resource consumed by every live chat surface.</summary>
+    public static void ApplyChatScale(double scale)
+    {
+        if (Application.Current is { } app)
+        {
+            app.Resources["ChatFontScale"] = scale;
+        }
     }
 }

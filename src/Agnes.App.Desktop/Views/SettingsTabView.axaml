@@ -121,32 +121,41 @@
                         <StackPanel Spacing="6">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <TextBlock Classes="fieldLabel" Text="Interface font" VerticalAlignment="Center" />
-                                <ctl:InfoHint Description="Used for the interface and transcript. Code and terminal text keep the dedicated monospace font." />
+                                <ctl:InfoHint Description="Enter the exact name of any installed font family. Leave it blank for the Agnes default (Manrope). Code and terminal text keep the dedicated monospace font." />
                             </StackPanel>
-                            <ItemsControl ItemsSource="{Binding Fonts}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Button Content="{Binding Name}" Classes="seg" Margin="0,0,6,6"
-                                                Classes.on="{Binding IsSelected}"
-                                                Command="{Binding $parent[ItemsControl].DataContext.SetFontCommand}"
-                                                CommandParameter="{Binding Id}" />
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <Grid ColumnDefinitions="280,Auto,Auto" ColumnSpacing="6" HorizontalAlignment="Left">
+                                <TextBox Grid.Column="0" Text="{Binding FontFamilyInput, Mode=TwoWay}"
+                                         Watermark="Default (Manrope)" Padding="9,5"
+                                         AutomationProperties.Name="Interface font family">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Gesture="Enter" Command="{Binding ApplyFontFamilyCommand}" />
+                                    </TextBox.KeyBindings>
+                                </TextBox>
+                                <Button Grid.Column="1" Content="Apply" Command="{Binding ApplyFontFamilyCommand}" Classes="seg" />
+                                <Button Grid.Column="2" Content="Default" Command="{Binding UseDefaultFontCommand}" Classes="seg" />
+                            </Grid>
                         </StackPanel>
 
                         <StackPanel Spacing="6">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock Classes="fieldLabel" Text="Font size" VerticalAlignment="Center" />
+                                <TextBlock Classes="fieldLabel" Text="UI scale" VerticalAlignment="Center" />
                                 <ctl:InfoHint Description="Scales the interface with the text so controls and spacing remain proportional." />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <Button Content="Small" Command="{Binding SetScaleCommand}" CommandParameter="small" Classes.on="{Binding IsScaleSmall}" Classes="seg" />
                                 <Button Content="Default" Command="{Binding SetScaleCommand}" CommandParameter="default" Classes.on="{Binding IsScaleDefault}" Classes="seg" />
                                 <Button Content="Large" Command="{Binding SetScaleCommand}" CommandParameter="large" Classes.on="{Binding IsScaleLarge}" Classes="seg" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Chat font size" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Shared by every chat. Use the configurable Increase/Decrease chat font size commands (Cmd+Plus and Cmd+Minus by default on macOS) while a chat is focused." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{Binding ChatFontScaleText}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" MinWidth="38" />
+                                <Button Content="Reset" Command="{Binding ResetChatFontScaleCommand}" Classes="seg" />
                             </StackPanel>
                         </StackPanel>
 

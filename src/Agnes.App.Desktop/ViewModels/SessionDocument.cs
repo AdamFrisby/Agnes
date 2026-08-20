@@ -74,6 +74,8 @@ public sealed partial class SessionDocument : Document, ITraySession
         SameSetupCommand = new AsyncRelayCommand(() => _controller.NewSessionSameSetupAsync(this));
         ForkCommand = new AsyncRelayCommand(() => _controller.ForkAsync(this));
         MoveToWindowCommand = new RelayCommand(() => _controller.FloatTab(this));
+        IncreaseChatFontSizeCommand = new RelayCommand(() => _controller.AdjustChatFontSize(1));
+        DecreaseChatFontSizeCommand = new RelayCommand(() => _controller.AdjustChatFontSize(-1));
         // Stop waiting on a slow/opaque session open and drop back to the agent picker (defect #8/#10).
         CancelStartCommand = new RelayCommand(() =>
         {
@@ -82,6 +84,9 @@ public sealed partial class SessionDocument : Document, ITraySession
             StatusText = "Cancelled — choose an agent to try again.";
         });
     }
+
+    public IRelayCommand IncreaseChatFontSizeCommand { get; }
+    public IRelayCommand DecreaseChatFontSizeCommand { get; }
 
     /// <summary>The sessions already running on this tab's host, offered on the new-session screen so a
     /// freshly connected client can rejoin work instead of only starting more of it.</summary>

@@ -17,6 +17,9 @@ namespace Agnes.App.Desktop.Views;
 
 public partial class SessionTabView : UserControl
 {
+    public static readonly StyledProperty<double> ChatFontScaleProperty =
+        AvaloniaProperty.Register<SessionTabView, double>(nameof(ChatFontScale), 1.0);
+
     private const double SplitterWidth = 5;
     private Grid? _workspace;
     private ListBox? _transcript;
@@ -33,12 +36,27 @@ public partial class SessionTabView : UserControl
     private bool _indexSeekScheduled;
     private KeymapService? _keymap;
 
+    static SessionTabView()
+    {
+        ChatFontScaleProperty.Changed.AddClassHandler<SessionTabView>((view, _) => view.UpdateChatScaleRoot());
+    }
+
+    public double ChatFontScale
+    {
+        get => GetValue(ChatFontScaleProperty);
+        set => SetValue(ChatFontScaleProperty, value);
+    }
+
     public SessionTabView()
     {
         InitializeComponent();
         _workspace = this.FindControl<Grid>("Workspace");
         _transcript = this.FindControl<ListBox>("Transcript");
         _indexBar = this.FindControl<ScrollBar>("IndexScroll");
+        if (this.FindControl<Control>("ChatViewport") is { } chatViewport)
+        {
+            chatViewport.SizeChanged += (_, _) => UpdateChatScaleRoot();
+        }
         if (_workspace is not null)
         {
             _workspace.DataContextChanged += (_, _) => HookSession();
@@ -50,6 +68,7 @@ public partial class SessionTabView : UserControl
         {
             RequestScrollToBottom();
             SetKeymap(KeymapBinder.GetService(this));
+            Dispatcher.UIThread.Post(UpdateChatScaleRoot);
         };
         DetachedFromVisualTree += (_, _) =>
         {
@@ -66,6 +85,33 @@ public partial class SessionTabView : UserControl
         if (this.FindControl<TextBox>("Composer") is { } composer)
         {
             composer.AddHandler(InputElement.KeyDownEvent, OnComposerKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        }
+    }
+
+    /// <summary>
+    /// Gives the transformed chat the inverse unscaled viewport size. Its scaled result therefore fills the
+    /// middle column exactly: larger text reflows sooner, while the session sidebars keep their own scale.
+    /// </summary>
+    private void UpdateChatScaleRoot()
+    {
+        if (this.FindControl<Control>("ChatViewport") is not { } viewport
+            || this.FindControl<Control>("ChatScaleRoot") is not { } root
+            || viewport.Bounds.Width <= 0 || viewport.Bounds.Height <= 0)
+        {
+            return;
+        }
+
+        var scale = Math.Clamp(ChatFontScale, 0.8, 1.6);
+        var width = viewport.Bounds.Width / scale;
+        var height = viewport.Bounds.Height / scale;
+        if (double.IsNaN(root.Width) || Math.Abs(root.Width - width) > 0.5)
+        {
+            root.Width = width;
+        }
+
+        if (double.IsNaN(root.Height) || Math.Abs(root.Height - height) > 0.5)
+        {
+            root.Height = height;
         }
     }
 

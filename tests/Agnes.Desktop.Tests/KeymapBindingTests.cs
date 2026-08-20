@@ -38,6 +38,11 @@ public sealed class KeymapBindingTests
             Assert.Equal(OperatingSystem.IsMacOS() ? "Cmd+T" : "Ctrl+T", GestureOf(MenuItem(state.MainWindow, "New Tab")));
             Assert.Equal(OperatingSystem.IsMacOS() ? "Cmd+Enter to send" : "Ctrl+Enter to send",
                 state.SessionView.FindControl<TextBlock>("ComposerSendHint")?.Text);
+            var chat = Assert.IsAssignableFrom<Control>(state.SessionView.FindControl<Control>("ChatViewport"));
+            Assert.Contains(chat.KeyBindings, binding => GestureOf(binding)
+                == (OperatingSystem.IsMacOS() ? "Cmd+Plus" : "Ctrl+Plus"));
+            Assert.Contains(chat.KeyBindings, binding => GestureOf(binding)
+                == (OperatingSystem.IsMacOS() ? "Cmd+Minus" : "Ctrl+Minus"));
             File.WriteAllText(state.Service.UserPath, """
                 [
                   { "key": "ctrl+t", "command": "-agnes.tab.new", "when": "window" },
@@ -60,6 +65,32 @@ public sealed class KeymapBindingTests
         }, CancellationToken.None);
     }
 
+    [Fact]
+    public async Task Chat_zoom_reflows_inside_the_middle_column_without_resizing_the_workspace()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(KeymapTestApp));
+        await session.Dispatch(() =>
+        {
+            using var state = CreatePresentationState();
+            state.SessionWindow.Width = 900;
+            state.SessionWindow.Height = 700;
+            state.SessionWindow.Show();
+
+            var workspace = Assert.IsType<Grid>(state.SessionView.FindControl<Grid>("Workspace"));
+            var viewport = Assert.IsType<Grid>(state.SessionView.FindControl<Grid>("ChatViewport"));
+            var scaleRoot = Assert.IsType<Grid>(state.SessionView.FindControl<Grid>("ChatScaleRoot"));
+            var workspaceWidth = workspace.Bounds.Width;
+
+            state.SessionView.ChatFontScale = 1.2;
+
+            Assert.True(viewport.Bounds.Width > 0);
+            Assert.Equal(viewport.Bounds.Width / 1.2, scaleRoot.Width, 1);
+            Assert.Equal(viewport.Bounds.Height / 1.2, scaleRoot.Height, 1);
+            Assert.Equal(workspaceWidth, workspace.Bounds.Width, 1);
+            state.SessionWindow.Close();
+        }, CancellationToken.None);
+    }
+
     private static BindingState CreateBindingState()
     {
         var directory = TempDirectory();
@@ -75,6 +106,7 @@ public sealed class KeymapBindingTests
 
         var root = new StackPanel();
         var windowTarget = Target(main, KeymapContext.Window);
+        var chatTarget = Target(document, KeymapContext.Chat);
         var sessionTarget = Target(sessionVm, KeymapContext.SessionFindFocus);
         var composerTarget = Target(sessionVm, KeymapContext.ComposerFocus);
         var settingsTarget = Target(plugins, KeymapContext.SettingsPluginSearchFocus);
@@ -86,6 +118,7 @@ public sealed class KeymapBindingTests
         foreach (var dataContext in new object[] { profiles, main.PromptLibrary, plugins, memory, sessionVm, document, main })
             allCommandsTree = new Border { DataContext = dataContext, Child = allCommandsTree };
         root.Children.Add(windowTarget);
+        root.Children.Add(chatTarget);
         root.Children.Add(sessionTarget);
         root.Children.Add(composerTarget);
         root.Children.Add(settingsTarget);
@@ -95,13 +128,17 @@ public sealed class KeymapBindingTests
 
         var host = new Window { Content = root };
         KeymapBinder.SetService(host, service);
-        return new BindingState(service, host, main, sessionVm, plugins, memory, profiles, profileRow,
-            windowTarget, sessionTarget, composerTarget, settingsTarget, searchTarget, renameTarget, allCommandsTarget);
+        return new BindingState(service, host, main, document, sessionVm, plugins, memory, profiles, profileRow,
+            windowTarget, chatTarget, sessionTarget, composerTarget, settingsTarget, searchTarget, renameTarget, allCommandsTarget);
     }
 
     private static void AssertRepresentativeBindings(BindingState state)
     {
         AssertBound(state.WindowTarget, OperatingSystem.IsMacOS() ? "Cmd+T" : "Ctrl+T", state.Main.NewTabCommand);
+        AssertBound(state.ChatTarget, OperatingSystem.IsMacOS() ? "Cmd+Plus" : "Ctrl+Plus",
+            state.Document.IncreaseChatFontSizeCommand);
+        AssertBound(state.ChatTarget, OperatingSystem.IsMacOS() ? "Cmd+Minus" : "Ctrl+Minus",
+            state.Document.DecreaseChatFontSizeCommand);
         AssertBound(state.SessionTarget, "Enter", state.Session.NextMatchCommand);
         AssertBound(state.ComposerTarget, OperatingSystem.IsMacOS() ? "Cmd+Enter" : "Ctrl+Enter", state.Session.SendCommand);
         AssertBound(state.SettingsTarget, "Enter", state.Plugins.SearchCommand);
@@ -181,12 +218,14 @@ public sealed class KeymapBindingTests
         KeymapService Service,
         Window Host,
         MainWindowViewModel Main,
+        SessionDocument Document,
         SessionViewModel Session,
         PluginManagementViewModel Plugins,
         MemorySearchViewModel Memory,
         LaunchProfilesViewModel Profiles,
         LaunchProfileRowVm ProfileRow,
         TextBox WindowTarget,
+        TextBox ChatTarget,
         TextBox SessionTarget,
         TextBox ComposerTarget,
         TextBox SettingsTarget,

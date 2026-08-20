@@ -11,8 +11,9 @@ public sealed record AppSettings(
     int WindowY = int.MinValue,
     bool WindowMaximized = false,
     string Theme = "System",
-    string FontFamily = "Manrope",
+    string FontFamily = "Default",
     double FontScale = 1.0,
+    double ChatFontScale = 1.0,
     string WorkingDirectory = "",
     string McpApproval = "Ask",
     bool GitHubPromptShown = false);

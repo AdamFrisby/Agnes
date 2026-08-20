@@ -43,6 +43,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private readonly DockFactory _factory;
     private readonly List<KnownHost> _knownHosts = [];
     private AppSettings _settings;
+    private string _fontFamilyInput = string.Empty;
     private bool _ready;
 
     /// <summary>Surfaces session notifications (toast / OS). Set by the shell once a window exists.</summary>
@@ -96,6 +97,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         _settingsStore = settingsStore ?? new SettingsStore();
         _keymap = keymap ?? KeymapService.CreateDefault(_settingsStore.FilePath, watch: false);
         _settings = _settingsStore.Load();
+        _fontFamilyInput = FontCatalog.InputValue(_settings.FontFamily);
         _modelFavorites = new ModelFavoritesStore();
         _onboarding = onboarding ?? new FileOnboardingStore();
 
@@ -151,11 +153,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             option.Refresh(_settings.Theme);
         }
-        SetFontCommand = new RelayCommand<string>(font => { if (font is not null) { FontFamily = font; } });
-        foreach (var option in Fonts)
+        ApplyFontFamilyCommand = new RelayCommand(() => FontFamily = FontFamilyInput);
+        UseDefaultFontCommand = new RelayCommand(() =>
         {
-            option.Refresh(FontFamily);
-        }
+            FontFamilyInput = string.Empty;
+            FontFamily = FontCatalog.Default;
+        });
+        ResetChatFontScaleCommand = new RelayCommand(() => ChatFontScale = 1.0);
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
         RevokeDeviceCommand = new AsyncRelayCommand<DeviceRowVm>(RevokeDeviceAsync);
         ApproveDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: true));
@@ -197,7 +201,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SettingsCategories =
         [
             // This device (client-global)
-            new SettingsCategoryVm("appearance", "Appearance", Symbol.PaintBrush, "theme dark light system ui scale zoom accessibility reduce motion font density"),
+            new SettingsCategoryVm("appearance", "Appearance", Symbol.PaintBrush, "theme dark light system ui scale zoom accessibility reduce motion font family installed chat size density"),
             new SettingsCategoryVm("keymap", "Keymap", Symbol.Keyboard, KeymapSearchKeywords),
             // The connected host
             new SettingsCategoryVm("github", "GitHub accounts", Symbol.BranchFork, "github git push credential token connect app scope repo installation secret account"),
@@ -448,31 +452,34 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     public IRelayCommand<string> SetThemeCommand { get; }
 
-    /// <summary>The interface font id. Code and terminal surfaces keep their dedicated mono face.</summary>
+    /// <summary>The persisted interface font family. Default resolves to the bundled Manrope face.</summary>
     public string FontFamily
     {
-        get => FontCatalog.Resolve(_settings.FontFamily).Id;
+        get => FontCatalog.Normalize(_settings.FontFamily);
         set
         {
-            var resolved = FontCatalog.Resolve(value).Id;
-            if (!string.Equals(resolved, _settings.FontFamily, StringComparison.Ordinal))
+            var normalized = FontCatalog.Normalize(value);
+            if (!string.Equals(normalized, _settings.FontFamily, StringComparison.Ordinal))
             {
-                _settings = _settings with { FontFamily = resolved };
+                _settings = _settings with { FontFamily = normalized };
                 _settingsStore.Save(_settings);
-                ApplyFont(resolved);
+                ApplyFont(normalized);
                 OnPropertyChanged();
-                foreach (var option in Fonts)
-                {
-                    option.Refresh(resolved);
-                }
             }
+
+            FontFamilyInput = FontCatalog.InputValue(normalized);
         }
     }
 
-    public IReadOnlyList<FontOption> Fonts { get; }
-        = [.. FontCatalog.All.Select(font => new FontOption(font.Id, font.Name))];
+    /// <summary>Free-form installed family name shown in Appearance; blank means the Agnes default.</summary>
+    public string FontFamilyInput
+    {
+        get => _fontFamilyInput;
+        set => SetProperty(ref _fontFamilyInput, value);
+    }
 
-    public IRelayCommand<string> SetFontCommand { get; }
+    public IRelayCommand ApplyFontFamilyCommand { get; }
+    public IRelayCommand UseDefaultFontCommand { get; }
 
     /// <summary>Whole-UI zoom (accessibility/density), 0.9–1.3. Applied via a layout transform.</summary>
     public double FontScale
@@ -498,6 +505,39 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool IsScaleLarge => FontScale > 1.05;
     public IRelayCommand<string> SetScaleCommand { get; private set; } = null!;
 
+    /// <summary>Chat-only zoom shared by every session. Keyboard commands move it by one 10% step.</summary>
+    public double ChatFontScale
+    {
+        get => Math.Clamp(_settings.ChatFontScale, 0.8, 1.6);
+        set
+        {
+            var clamped = Math.Clamp(value, 0.8, 1.6);
+            if (Math.Abs(clamped - _settings.ChatFontScale) > 0.001)
+            {
+                _settings = _settings with { ChatFontScale = clamped };
+                _settingsStore.Save(_settings);
+                ApplyChatFontScale(clamped);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ChatFontScaleText));
+            }
+        }
+    }
+
+    public string ChatFontScaleText => $"{ChatFontScale * 100:0}%";
+    public IRelayCommand ResetChatFontScaleCommand { get; }
+
+    /// <inheritdoc />
+    public void AdjustChatFontSize(int direction)
+    {
+        if (direction == 0)
+        {
+            return;
+        }
+
+        var next = Math.Round(ChatFontScale + Math.Sign(direction) * 0.1, 1, MidpointRounding.AwayFromZero);
+        ChatFontScale = next;
+    }
+
     /// <summary>The window title — reflects the active session/project so alt-tab and taskbar read well.</summary>
     [ObservableProperty]
     private string _windowTitle = "Agnes";
@@ -513,8 +553,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// since a flavour has to move Fluent's palette as well as the variant.</summary>
     public static void ApplyTheme(string theme) => Desktop.Themes.ThemeManager.Apply(theme);
 
-    /// <summary>Applies an interface font by its persisted id.</summary>
+    /// <summary>Applies an interface font by its persisted family name.</summary>
     public static void ApplyFont(string fontFamily) => Desktop.Themes.FontManager.Apply(fontFamily);
+
+    /// <summary>Applies the shared chat-only font scale.</summary>
+    public static void ApplyChatFontScale(double scale) => Desktop.Themes.FontManager.ApplyChatScale(scale);
 
     // ---- device management (for the active session's host) ----
 

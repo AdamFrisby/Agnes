@@ -12,6 +12,8 @@
              xmlns:views="using:Agnes.App.Desktop.Views"
              xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
+             x:Name="SessionView"
+             ChatFontScale="{DynamicResource ChatFontScale}"
              Background="{DynamicResource Bg}"
              FontFamily="{DynamicResource UiFont}"
              DragDrop.AllowDrop="True"
@@ -1269,8 +1271,16 @@
                     <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns"
                                   Background="{DynamicResource Line}" IsVisible="{Binding ShowLeftPanel}" />
 
-                    <!-- MIDDLE: chat -->
-                    <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding ShowChat}">
+                    <!-- MIDDLE: chat. The layout-transform root is sized to the inverse of ChatFontScale
+                         in code-behind, so zoom changes wrapping without clipping or resizing side panels. -->
+                    <Grid Grid.Column="2" x:Name="ChatViewport" ClipToBounds="True" IsVisible="{Binding ShowChat}"
+                          km:KeymapBinder.Context="Chat">
+                    <LayoutTransformControl>
+                        <LayoutTransformControl.LayoutTransform>
+                            <ScaleTransform ScaleX="{Binding #SessionView.ChatFontScale}"
+                                            ScaleY="{Binding #SessionView.ChatFontScale}" />
+                        </LayoutTransformControl.LayoutTransform>
+                    <Grid x:Name="ChatScaleRoot" RowDefinitions="Auto,*,Auto,Auto">
 
                         <!-- within-session search -->
                         <Border Grid.Row="0" IsVisible="{Binding IsSearchOpen}" Background="{DynamicResource Panel}"
@@ -2056,6 +2066,8 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
+                    </Grid>
+                    </LayoutTransformControl>
                     </Grid>
 
                     <GridSplitter Grid.Column="3" Width="5" ResizeDirection="Columns"

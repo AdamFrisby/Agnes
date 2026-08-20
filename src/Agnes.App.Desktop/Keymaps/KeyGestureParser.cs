@@ -21,6 +21,8 @@ public static class KeyGestureParser
         ["end"] = Key.End,
         ["delete"] = Key.Delete,
         ["backspace"] = Key.Back,
+        ["plus"] = Key.OemPlus,
+        ["minus"] = Key.OemMinus,
     };
 
     public static bool TryParse(string text, out KeyGesture gesture, out string error)
@@ -103,6 +105,8 @@ public static class KeyGestureParser
             {
                 Key.PageUp => "PageUp",
                 Key.PageDown => "PageDown",
+                Key.OemPlus => "Plus",
+                Key.OemMinus => "Minus",
                 _ => gesture.Key.ToString(),
             };
         parts.Add(key);

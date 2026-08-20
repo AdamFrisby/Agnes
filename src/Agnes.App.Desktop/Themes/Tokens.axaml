@@ -430,6 +430,7 @@
   <FontFamily x:Key="DisplayFont">avares://Agnes.App.Desktop/Assets/Fonts#Space Grotesk</FontFamily>
   <FontFamily x:Key="UiFont">avares://Agnes.App.Desktop/Assets/Fonts#Manrope</FontFamily>
   <FontFamily x:Key="MonoFont">avares://Agnes.App.Desktop/Assets/Fonts#JetBrains Mono</FontFamily>
+  <sys:Double x:Key="ChatFontScale">1</sys:Double>
 
   <!-- Stock controls pick their font/size up from these two. 13px, not the brand's 15px reading
        size: this is a dense multi-pane desktop tool, and its own views are set at 11–13. -->

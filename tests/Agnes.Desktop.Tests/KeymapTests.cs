@@ -17,6 +17,8 @@ public sealed class KeymapTests
     [InlineData("CTRL+1", Key.D1, KeyModifiers.Control, "Ctrl+1")]
     [InlineData("cmd+shift+enter", Key.Enter, KeyModifiers.Meta | KeyModifiers.Shift, "Cmd+Shift+Enter")]
     [InlineData("Option+PageDown", Key.PageDown, KeyModifiers.Alt, "Alt+PageDown")]
+    [InlineData("cmd+plus", Key.OemPlus, KeyModifiers.Meta, "Cmd+Plus")]
+    [InlineData("cmd+minus", Key.OemMinus, KeyModifiers.Meta, "Cmd+Minus")]
     [InlineData("f8", Key.F8, KeyModifiers.None, "F8")]
     public void Gestures_are_case_insensitive_and_normalized(string text, Key key, KeyModifiers modifiers, string display)
     {
@@ -92,6 +94,30 @@ public sealed class KeymapTests
             map.Rules.Where(r => r.Command == AgnesCommand.TabNew).Select(r => KeyGestureParser.Display(r.Gesture)));
     }
 
+    [Fact]
+    public void Chat_font_shortcuts_can_be_replaced_in_the_user_keymap()
+    {
+        const string defaults = """
+            [
+              { "key": "cmd+plus", "command": "agnes.chat.fontSize.increase", "when": "chat" },
+              { "key": "cmd+minus", "command": "agnes.chat.fontSize.decrease", "when": "chat" }
+            ]
+            """;
+        const string user = """
+            [
+              { "key": "alt+up", "command": "agnes.chat.fontSize.increase", "when": "chat" },
+              { "key": "alt+down", "command": "agnes.chat.fontSize.decrease", "when": "chat" }
+            ]
+            """;
+
+        Assert.True(KeymapLoader.TryResolve([("default", defaults), ("user", user)], out var map, out var error), error?.ToString());
+
+        AssertGesture(map, AgnesCommand.ChatFontSizeIncrease, "Alt+Up");
+        AssertGesture(map, AgnesCommand.ChatFontSizeDecrease, "Alt+Down");
+        Assert.DoesNotContain(map.Rules, rule => rule.Command is AgnesCommand.ChatFontSizeIncrease or AgnesCommand.ChatFontSizeDecrease
+            && rule.Gesture.KeyModifiers.HasFlag(KeyModifiers.Meta));
+    }
+
     [Theory]
     [InlineData("noSuchContext", "agnes.tab.new", "context")]
     [InlineData("window && session", "agnes.tab.new", "Boolean")]
@@ -121,11 +147,16 @@ public sealed class KeymapTests
         AssertGesture(macos, AgnesCommand.PaletteOpen, "Cmd+K");
         AssertGesture(macos, AgnesCommand.DashboardOpen, "Cmd+Shift+D");
         AssertGesture(macos, AgnesCommand.SessionFindOpen, "Cmd+F");
+        AssertGesture(macos, AgnesCommand.ChatFontSizeIncrease, "Cmd+Plus");
+        AssertGesture(macos, AgnesCommand.ChatFontSizeDecrease, "Cmd+Minus");
+        Assert.Contains(macos.Rules, r => r.Command == AgnesCommand.ChatFontSizeIncrease
+            && KeyGestureParser.Display(r.Gesture) == "Cmd+Shift+Plus");
         AssertGesture(macos, AgnesCommand.ComposerSend, "Cmd+Enter");
         AssertGesture(macos, AgnesCommand.ComposerSendNow, "Cmd+Shift+Enter");
         Assert.DoesNotContain(macos.Rules, r =>
             (r.Command is AgnesCommand.TabNew or AgnesCommand.TabClose or AgnesCommand.PaletteOpen
-                or AgnesCommand.DashboardOpen or AgnesCommand.SessionFindOpen or AgnesCommand.ComposerSend or AgnesCommand.ComposerSendNow
+                or AgnesCommand.DashboardOpen or AgnesCommand.SessionFindOpen or AgnesCommand.ChatFontSizeIncrease
+                or AgnesCommand.ChatFontSizeDecrease or AgnesCommand.ComposerSend or AgnesCommand.ComposerSendNow
                 || r.Command is >= AgnesCommand.TabPosition1 and <= AgnesCommand.TabPosition9)
             && r.Gesture.KeyModifiers.HasFlag(KeyModifiers.Control));
         for (var position = AgnesCommand.TabPosition1; position <= AgnesCommand.TabPosition9; position++)
@@ -178,6 +209,9 @@ public sealed class KeymapTests
             session|F8|agnes.session.prompt.next
             session|Ctrl+F8|agnes.session.change.next
             session|Ctrl+F7|agnes.session.change.previous
+            chat|Ctrl+Plus|agnes.chat.fontSize.increase
+            chat|Ctrl+Shift+Plus|agnes.chat.fontSize.increase
+            chat|Ctrl+Minus|agnes.chat.fontSize.decrease
             sessionRenameFocus|Enter|agnes.session.rename.commit
             sessionRenameFocus|Escape|agnes.session.rename.cancel
             sessionTagFocus|Enter|agnes.session.tag.add
@@ -321,6 +355,25 @@ public sealed class KeymapTests
         Assert.Equal(CommandCatalogue.All.Count, vm.KeymapGroups.Sum(g => g.Commands.Count));
         Assert.Equal("keymap", vm.SettingsCategory);
         Assert.True(vm.SettingsCategories.Single(category => category.Id == "keymap").IsVisible);
+    }
+
+    [Fact]
+    public void Chat_font_commands_step_a_shared_persisted_scale_and_clamp_at_the_limits()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "agnes-keymap-" + Guid.NewGuid().ToString("N"));
+        using var service = new KeymapService(OneRule, null, Path.Combine(directory, "keymap.json"), watch: false);
+        var vm = NewVm(service, directory);
+        var document = new SessionDocument(vm, ImmediateDispatcher.Instance);
+
+        document.IncreaseChatFontSizeCommand.Execute(null);
+        Assert.Equal(1.1, vm.ChatFontScale);
+        Assert.Equal(1.1, new SettingsStore(Path.Combine(directory, "settings.json")).Load().ChatFontScale);
+
+        for (var i = 0; i < 20; i++) document.IncreaseChatFontSizeCommand.Execute(null);
+        Assert.Equal(1.6, vm.ChatFontScale);
+
+        for (var i = 0; i < 20; i++) document.DecreaseChatFontSizeCommand.Execute(null);
+        Assert.Equal(0.8, vm.ChatFontScale);
     }
 
     [Fact]

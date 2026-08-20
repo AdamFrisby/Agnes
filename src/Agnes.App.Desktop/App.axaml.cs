@@ -69,6 +69,7 @@ public partial class App : Application
 
             MainWindowViewModel.ApplyTheme(viewModel.Theme); // System / Light / Dark from settings
             MainWindowViewModel.ApplyFont(viewModel.FontFamily);
+            MainWindowViewModel.ApplyChatFontScale(viewModel.ChatFontScale);
 
             var window = new MainWindow { DataContext = viewModel };
             window.InstallKeymap(_keymap);

@@ -107,6 +107,9 @@ public interface ITabController
 
     /// <summary>Remembers the working directory a session was opened in, as the next default.</summary>
     void RememberWorkingDirectory(string path);
+
+    /// <summary>Moves the shared chat-only font scale one step up or down.</summary>
+    void AdjustChatFontSize(int direction);
 }
 
 /// <summary>A cross-session search result: a transcript hit plus the tab it lives in.</summary>
@@ -335,21 +338,4 @@ public sealed class ThemeOption(string id, string name) : ObservableObject
 
     /// <summary>Re-evaluates selection against the theme that is now current.</summary>
     public void Refresh(string currentThemeId) => IsSelected = string.Equals(Id, currentThemeId, StringComparison.Ordinal);
-}
-
-/// <summary>One selectable interface-font row in Appearance settings.</summary>
-public sealed class FontOption(string id, string name) : ObservableObject
-{
-    private bool _isSelected;
-
-    public string Id { get; } = id;
-    public string Name { get; } = name;
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        private set => SetProperty(ref _isSelected, value);
-    }
-
-    public void Refresh(string currentFontId) => IsSelected = string.Equals(Id, currentFontId, StringComparison.Ordinal);
 }

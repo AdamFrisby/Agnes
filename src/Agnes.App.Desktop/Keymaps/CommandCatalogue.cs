@@ -26,6 +26,7 @@ public static class CommandCatalogue
     private static readonly KeymapContext[] Window = [KeymapContext.Window];
     private static readonly KeymapContext[] Palette = [KeymapContext.PaletteFocus];
     private static readonly KeymapContext[] Session = [KeymapContext.Session];
+    private static readonly KeymapContext[] Chat = [KeymapContext.Chat];
 
     public static IReadOnlyList<CommandDefinition> All { get; } =
     [
@@ -58,6 +59,8 @@ public static class CommandCatalogue
         D(AgnesCommand.SessionPromptPrevious, "Previous prompt", "Transcript navigation", Session),
         D(AgnesCommand.SessionChangeNext, "Next file change", "Transcript navigation", Session),
         D(AgnesCommand.SessionChangePrevious, "Previous file change", "Transcript navigation", Session),
+        D(AgnesCommand.ChatFontSizeIncrease, "Increase font size in every chat", "Chat appearance", Chat),
+        D(AgnesCommand.ChatFontSizeDecrease, "Decrease font size in every chat", "Chat appearance", Chat),
         D(AgnesCommand.ComposerSend, "Send, or queue behind a running turn", "Writing a prompt", [KeymapContext.ComposerFocus]),
         D(AgnesCommand.ComposerSendNow, "Interrupt the running turn and send now", "Writing a prompt", [KeymapContext.ComposerFocus]),
         D(AgnesCommand.ComposerRecallPrevious, "Recall the previous prompt", "Writing a prompt", [KeymapContext.ComposerFocus]),
@@ -107,6 +110,8 @@ public static class CommandCatalogue
             AgnesCommand.SessionPromptPrevious when session is not null => new(session.PrevPromptCommand),
             AgnesCommand.SessionChangeNext when session is not null => new(session.NextChangeCommand),
             AgnesCommand.SessionChangePrevious when session is not null => new(session.PrevChangeCommand),
+            AgnesCommand.ChatFontSizeIncrease when sessionDocument is not null => new(sessionDocument.IncreaseChatFontSizeCommand),
+            AgnesCommand.ChatFontSizeDecrease when sessionDocument is not null => new(sessionDocument.DecreaseChatFontSizeCommand),
             AgnesCommand.SessionReferenceAdd when session is not null => new(session.AddReferenceCommand),
             AgnesCommand.ComposerSend when session is not null => new(session.SendCommand),
             AgnesCommand.ComposerSendNow when session is not null => new(session.SendNowCommand),
