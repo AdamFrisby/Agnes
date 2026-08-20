@@ -8,7 +8,8 @@
         Title="{Binding WindowTitle}" Width="1180" Height="760"
         MinWidth="720" MinHeight="480"
         Background="{DynamicResource Bg}"
-        FontFamily="{StaticResource UiFont}">
+        FontFamily="{StaticResource UiFont}"
+        Icon="avares://Agnes.App.Desktop/Assets/Brand/Agnes.png">
 
     <Window.KeyBindings>
         <KeyBinding Gesture="Ctrl+T" Command="{Binding NewTabCommand}" />

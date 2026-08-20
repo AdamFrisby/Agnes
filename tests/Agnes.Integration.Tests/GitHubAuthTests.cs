@@ -29,6 +29,8 @@ public class GitHubAuthTests
 
     private sealed class Factory : WebApplicationFactory<Program>
     {
+        private readonly string _devicesFile = Path.Combine(Path.GetTempPath(), $"agnes-github-devices-it-{Guid.NewGuid():n}.json");
+
         protected override IHost CreateHost(IHostBuilder builder)
         {
             builder.ConfigureHostConfiguration(config =>
@@ -38,9 +40,16 @@ public class GitHubAuthTests
                     ["Agnes:Auth:GitHub:Enabled"] = "true",
                     ["Agnes:Auth:GitHub:ClientId"] = "test-client-id",
                     ["Agnes:Auth:GitHub:AllowedUsers:0"] = "alice",
+                    ["Agnes:DevicesFile"] = _devicesFile,
                 }));
             builder.ConfigureServices(s => s.AddSingleton<IGitHubUserLookup>(new FakeLookup()));
             return base.CreateHost(builder);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && File.Exists(_devicesFile)) File.Delete(_devicesFile);
         }
     }
 
