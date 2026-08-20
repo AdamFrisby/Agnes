@@ -53,18 +53,12 @@ public sealed class DesktopBrandingTests
         {
             var app = Assert.IsType<Agnes.App.Desktop.App>(Application.Current);
             var font = FontCatalog.Resolve("JetBrains Mono");
-            var chat = new SessionTabView();
-            var host = new Window { Content = chat };
-            host.Show();
-
             FontManager.Apply("JetBrains Mono");
             FontManager.ApplyChatScale(1.3);
 
             Assert.Equal(font, app.Resources["UiFont"]);
             Assert.Equal(font, app.Resources["ContentControlThemeFontFamily"]);
-            Assert.Equal(1.3, app.Resources["ChatFontScale"]);
-            Assert.Equal(1.3, chat.ChatFontScale);
-            host.Close();
+            Assert.Equal(16.9, Assert.IsType<double>(app.Resources["DialogueFontSize"]), 1);
         }, CancellationToken.None);
     }
 }

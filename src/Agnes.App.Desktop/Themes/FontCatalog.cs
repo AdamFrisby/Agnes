@@ -46,12 +46,16 @@ public static class FontManager
         app.Resources["ContentControlThemeFontFamily"] = family;
     }
 
-    /// <summary>Updates the shared scale resource consumed by every live chat surface.</summary>
+    /// <summary>Updates the font size used only by user/assistant dialogue in every transcript.</summary>
     public static void ApplyChatScale(double scale)
     {
         if (Application.Current is { } app)
         {
-            app.Resources["ChatFontScale"] = scale;
+            app.Resources["DialogueFontSize"] = 13 * scale;
+            app.Resources["DialogueHeading1FontSize"] = 24 * scale;
+            app.Resources["DialogueHeading2FontSize"] = 20 * scale;
+            app.Resources["DialogueHeading3FontSize"] = 17 * scale;
+            app.Resources["DialogueHeading4FontSize"] = 15 * scale;
         }
     }
 }

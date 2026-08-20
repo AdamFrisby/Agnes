@@ -12,8 +12,6 @@
              xmlns:views="using:Agnes.App.Desktop.Views"
              xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
-             x:Name="SessionView"
-             ChatFontScale="{DynamicResource ChatFontScale}"
              Background="{DynamicResource Bg}"
              FontFamily="{DynamicResource UiFont}"
              DragDrop.AllowDrop="True"
@@ -1271,16 +1269,10 @@
                     <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns"
                                   Background="{DynamicResource Line}" IsVisible="{Binding ShowLeftPanel}" />
 
-                    <!-- MIDDLE: chat. The layout-transform root is sized to the inverse of ChatFontScale
-                         in code-behind, so zoom changes wrapping without clipping or resizing side panels. -->
-                    <Grid Grid.Column="2" x:Name="ChatViewport" ClipToBounds="True" IsVisible="{Binding ShowChat}"
-                          km:KeymapBinder.Context="Chat">
-                    <LayoutTransformControl>
-                        <LayoutTransformControl.LayoutTransform>
-                            <ScaleTransform ScaleX="{Binding #SessionView.ChatFontScale}"
-                                            ScaleY="{Binding #SessionView.ChatFontScale}" />
-                        </LayoutTransformControl.LayoutTransform>
-                    <Grid x:Name="ChatScaleRoot" RowDefinitions="Auto,*,Auto,Auto">
+                    <!-- MIDDLE: chat. Chat font-size shortcuts are bound here, but only dialogue bodies
+                         consume DialogueFontSize; composer, tools, cards, and chrome stay at UI scale. -->
+                    <Grid Grid.Column="2" x:Name="ChatViewport" RowDefinitions="Auto,*,Auto,Auto"
+                          IsVisible="{Binding ShowChat}" km:KeymapBinder.Context="Chat">
 
                         <!-- within-session search -->
                         <Border Grid.Row="0" IsVisible="{Binding IsSearchOpen}" Background="{DynamicResource Panel}"
@@ -1411,9 +1403,28 @@
                                                         <!-- The built-in Markdown theme is attached as this control's own styles, so
                                                              it can only be overridden from here — not app-wide. -->
                                                         <StyleInclude Source="avares://Agnes.App.Desktop/Themes/MarkdownStyles.axaml" />
+                                                        <!-- Dialogue zoom is intentionally local to message bodies. The renderer
+                                                             creates CTextBlocks with its own sizes, so inherited FontSize cannot
+                                                             update them; these exact selectors keep body/headings live and scoped. -->
+                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock">
+                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueFontSize}" />
+                                                        </Style>
+                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock.Heading1">
+                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueHeading1FontSize}" />
+                                                        </Style>
+                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock.Heading2">
+                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueHeading2FontSize}" />
+                                                        </Style>
+                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock.Heading3">
+                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueHeading3FontSize}" />
+                                                        </Style>
+                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock.Heading4">
+                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueHeading4FontSize}" />
+                                                        </Style>
                                                     </mdxaml:MarkdownScrollViewer.Styles>
                                                 </mdxaml:MarkdownScrollViewer>
                                                 <SelectableTextBlock Text="{Binding Text}" Classes="thought" IsVisible="{Binding IsThought}"
+                                                                     FontSize="{DynamicResource DialogueFontSize}"
                                                                      TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                             </StackPanel>
                                         </Border>
@@ -2066,8 +2077,6 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
-                    </Grid>
-                    </LayoutTransformControl>
                     </Grid>
 
                     <GridSplitter Grid.Column="3" Width="5" ResizeDirection="Columns"

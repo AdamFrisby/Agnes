@@ -1,7 +1,9 @@
 using Agnes.App.Desktop;
 using Agnes.App.Desktop.Keymaps;
+using Agnes.App.Desktop.Themes;
 using Agnes.App.Desktop.ViewModels;
 using Agnes.App.Desktop.Views;
+using Agnes.Abstractions;
 using Agnes.Client;
 using Agnes.Protocol;
 using Agnes.Ui.Core;
@@ -11,6 +13,8 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.VisualTree;
+using ColorTextBlock.Avalonia;
+using Markdown.Avalonia;
 
 namespace Agnes.Desktop.Tests;
 
@@ -66,7 +70,7 @@ public sealed class KeymapBindingTests
     }
 
     [Fact]
-    public async Task Chat_zoom_reflows_inside_the_middle_column_without_resizing_the_workspace()
+    public async Task Chat_font_size_changes_dialogue_but_not_the_composer_or_workspace()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(KeymapTestApp));
         await session.Dispatch(() =>
@@ -77,15 +81,17 @@ public sealed class KeymapBindingTests
             state.SessionWindow.Show();
 
             var workspace = Assert.IsType<Grid>(state.SessionView.FindControl<Grid>("Workspace"));
-            var viewport = Assert.IsType<Grid>(state.SessionView.FindControl<Grid>("ChatViewport"));
-            var scaleRoot = Assert.IsType<Grid>(state.SessionView.FindControl<Grid>("ChatScaleRoot"));
+            var dialogue = Assert.Single(state.SessionView.GetVisualDescendants().OfType<MarkdownScrollViewer>(),
+                markdown => markdown.Markdown == "A dialogue message");
+            var dialogueBody = Assert.Single(dialogue.GetVisualDescendants().OfType<CTextBlock>());
+            var composer = Assert.IsType<TextBox>(state.SessionView.FindControl<TextBox>("Composer"));
             var workspaceWidth = workspace.Bounds.Width;
+            var composerSize = composer.FontSize;
 
-            state.SessionView.ChatFontScale = 1.2;
+            FontManager.ApplyChatScale(1.2);
 
-            Assert.True(viewport.Bounds.Width > 0);
-            Assert.Equal(viewport.Bounds.Width / 1.2, scaleRoot.Width, 1);
-            Assert.Equal(viewport.Bounds.Height / 1.2, scaleRoot.Height, 1);
+            Assert.Equal(15.6, dialogueBody.FontSize, 1);
+            Assert.Equal(composerSize, composer.FontSize);
             Assert.Equal(workspaceWidth, workspace.Bounds.Width, 1);
             state.SessionWindow.Close();
         }, CancellationToken.None);
@@ -171,6 +177,8 @@ public sealed class KeymapBindingTests
     {
         var view = new SessionView("s1");
         view.ApplySnapshot(new SessionSnapshot(new SessionInfo("s1", "codex", string.Empty, 0), [], 0));
+        view.Apply(new MessageChunkEvent(MessageRole.Assistant, new TextContent("A dialogue message")) { Sequence = 1 });
+        view.Apply(new TurnEndedEvent(StopReason.EndTurn) { Sequence = 2 });
         return new SessionViewModel(new FakeHost(), view, ImmediateDispatcher.Instance, "Codex");
     }
 
