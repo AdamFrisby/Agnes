@@ -6,6 +6,7 @@ using Avalonia.Headless;
 
 namespace Agnes.Desktop.Tests;
 
+[Collection("Avalonia headless")]
 public sealed class DesktopBrandingTests
 {
     [Fact]
