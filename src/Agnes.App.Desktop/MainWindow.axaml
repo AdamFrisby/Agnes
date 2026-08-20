@@ -4,32 +4,14 @@
         xmlns:ic="using:FluentIcons.Avalonia"
         xmlns:icx="using:FluentIcons.Avalonia.Markup"
         xmlns:dc="using:Dock.Avalonia.Controls"
+        xmlns:km="using:Agnes.App.Desktop.Keymaps"
         x:Class="Agnes.App.Desktop.MainWindow"
         Title="{Binding WindowTitle}" Width="1180" Height="760"
         MinWidth="720" MinHeight="480"
         Background="{DynamicResource Bg}"
         FontFamily="{StaticResource UiFont}"
-        Icon="avares://Agnes.App.Desktop/Assets/Brand/Agnes.png">
-
-    <Window.KeyBindings>
-        <KeyBinding Gesture="Ctrl+T" Command="{Binding NewTabCommand}" />
-        <KeyBinding Gesture="Ctrl+W" Command="{Binding CloseActiveTabCommand}" />
-        <KeyBinding Gesture="Ctrl+Tab" Command="{Binding NextTabCommand}" />
-        <KeyBinding Gesture="Ctrl+Shift+Tab" Command="{Binding PrevTabCommand}" />
-        <KeyBinding Gesture="Ctrl+PageDown" Command="{Binding NextTabCommand}" />
-        <KeyBinding Gesture="Ctrl+PageUp" Command="{Binding PrevTabCommand}" />
-        <KeyBinding Gesture="Ctrl+D1" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="1" />
-        <KeyBinding Gesture="Ctrl+D2" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="2" />
-        <KeyBinding Gesture="Ctrl+D3" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="3" />
-        <KeyBinding Gesture="Ctrl+D4" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="4" />
-        <KeyBinding Gesture="Ctrl+D5" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="5" />
-        <KeyBinding Gesture="Ctrl+D6" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="6" />
-        <KeyBinding Gesture="Ctrl+D7" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="7" />
-        <KeyBinding Gesture="Ctrl+D8" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="8" />
-        <KeyBinding Gesture="Ctrl+D9" Command="{Binding ActivateTabByIndexCommand}" CommandParameter="9" />
-        <KeyBinding Gesture="Ctrl+K" Command="{Binding TogglePaletteCommand}" />
-        <KeyBinding Gesture="Ctrl+Shift+D" Command="{Binding OpenDashboardCommand}" />
-    </Window.KeyBindings>
+        Icon="avares://Agnes.App.Desktop/Assets/Brand/Agnes.png"
+        km:KeymapBinder.Context="Window">
 
     <!-- Native menu — shown in the macOS menu bar (inert on Windows/Linux, where the top bar serves). -->
     <NativeMenu.Menu>
@@ -37,8 +19,8 @@
             <NativeMenuItem Header="File">
                 <NativeMenuItem.Menu>
                     <NativeMenu>
-                        <NativeMenuItem Header="New Tab" Gesture="Ctrl+T" Command="{Binding NewTabCommand}" />
-                        <NativeMenuItem Header="Close Tab" Gesture="Ctrl+W" Command="{Binding CloseActiveTabCommand}" />
+                        <NativeMenuItem Header="New Tab" Command="{Binding NewTabCommand}" />
+                        <NativeMenuItem Header="Close Tab" Command="{Binding CloseActiveTabCommand}" />
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -346,10 +328,10 @@
                         </Button.Flyout>
                     </Button>
 
-                    <!-- Dashboard: the optional status-of-everything tab (Ctrl+Shift+D) -->
+                    <!-- Dashboard: the optional status-of-everything tab -->
                     <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Board}" Command="{Binding OpenDashboardCommand}" Padding="10,5" FontSize="12"
                             AutomationProperties.Name="Status dashboard"
-                            ToolTip.Tip="Status of every session, and anything waiting on you (Ctrl+Shift+D)" />
+                            ToolTip.Tip="{Binding DashboardToolTip}" />
 
                     <!-- Search: opens a first-class tab searching every recorded session's transcript -->
                     <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Search}" Command="{Binding OpenSearchCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Search history" />
@@ -413,7 +395,7 @@
 
         <dc:DockControl x:Name="DockRoot" Grid.Row="2" Layout="{Binding Layout}" />
 
-        <!-- Command palette (Ctrl+K): jump to a session or run an action -->
+        <!-- Command palette: jump to a session or run an action -->
         <Border Grid.Row="0" Grid.RowSpan="3" ZIndex="100" IsVisible="{Binding IsPaletteOpen}"
                 Background="{DynamicResource Scrim}">
             <Border Classes="sheet" Width="540" MaxHeight="460" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,90,0,0" Padding="10">
@@ -421,16 +403,8 @@
                     <TextBox x:Name="PaletteBox" Text="{Binding PaletteQuery, Mode=TwoWay}"
                              Watermark="Jump to a session or action…" FontSize="14"
                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
-                             BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8">
-                        <TextBox.KeyBindings>
-                            <!-- Focus stays in the box for typing; Up/Down move the highlighted row and Enter
-                                 runs it, so the palette is fully keyboard-navigable (defect #9). -->
-                            <KeyBinding Gesture="Down" Command="{Binding MovePaletteSelectionCommand}" CommandParameter="down" />
-                            <KeyBinding Gesture="Up" Command="{Binding MovePaletteSelectionCommand}" CommandParameter="up" />
-                            <KeyBinding Gesture="Enter" Command="{Binding RunTopPaletteItemCommand}" />
-                            <KeyBinding Gesture="Escape" Command="{Binding ClosePaletteCommand}" />
-                        </TextBox.KeyBindings>
-                    </TextBox>
+                             BorderBrush="{DynamicResource Line}" CornerRadius="8" Padding="10,8"
+                             km:KeymapBinder.Context="PaletteFocus" />
                     <ListBox MaxHeight="380" ItemsSource="{Binding PaletteItems}"
                              SelectedIndex="{Binding SelectedPaletteIndex, Mode=TwoWay}"
                              Background="Transparent" BorderThickness="0"

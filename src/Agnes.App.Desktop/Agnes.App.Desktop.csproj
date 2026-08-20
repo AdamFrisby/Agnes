@@ -37,6 +37,7 @@
     <!-- Brand fonts (Space Grotesk / Manrope / JetBrains Mono), embedded so typography is identical on
          a bare Linux box and a Mac rather than falling back to whatever the OS happens to ship. -->
     <AvaloniaResource Include="Assets\**" Exclude="Assets\**\*.md" />
+    <EmbeddedResource Include="Assets\Keymaps\*.json" />
     <None Include="Assets\**\*.md" />
   </ItemGroup>
 
