@@ -119,7 +119,30 @@
                         </StackPanel>
 
                         <StackPanel Spacing="6">
-                            <TextBlock Classes="fieldLabel" Text="UI scale" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Interface font" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Used for the interface and transcript. Code and terminal text keep the dedicated monospace font." />
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding Fonts}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding Name}" Classes="seg" Margin="0,0,6,6"
+                                                Classes.on="{Binding IsSelected}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.SetFontCommand}"
+                                                CommandParameter="{Binding Id}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Font size" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Scales the interface with the text so controls and spacing remain proportional." />
+                            </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <Button Content="Small" Command="{Binding SetScaleCommand}" CommandParameter="small" Classes.on="{Binding IsScaleSmall}" Classes="seg" />
                                 <Button Content="Default" Command="{Binding SetScaleCommand}" CommandParameter="default" Classes.on="{Binding IsScaleDefault}" Classes="seg" />

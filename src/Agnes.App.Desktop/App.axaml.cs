@@ -68,6 +68,7 @@ public partial class App : Application
                 settingsStore: settingsStore, keymap: _keymap);
 
             MainWindowViewModel.ApplyTheme(viewModel.Theme); // System / Light / Dark from settings
+            MainWindowViewModel.ApplyFont(viewModel.FontFamily);
 
             var window = new MainWindow { DataContext = viewModel };
             window.InstallKeymap(_keymap);

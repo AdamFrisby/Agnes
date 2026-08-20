@@ -1,4 +1,5 @@
 using Agnes.App.Desktop;
+using Agnes.App.Desktop.Themes;
 using Agnes.App.Desktop.Views;
 using Avalonia;
 using Avalonia.Controls;
@@ -42,6 +43,22 @@ public sealed class DesktopBrandingTests
         Assert.Equal("https://github.com/AdamFrisby/Agnes", DesktopBranding.RepositoryUri.AbsoluteUri.TrimEnd('/'));
         Assert.StartsWith("Version ", DesktopBranding.Version, StringComparison.Ordinal);
         Assert.False(string.IsNullOrWhiteSpace(DesktopBranding.Copyright));
+    }
+
+    [Fact]
+    public async Task Font_manager_updates_the_live_ui_and_fluent_resources()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(BrandingTestApp));
+        await session.Dispatch(() =>
+        {
+            var app = Assert.IsType<Agnes.App.Desktop.App>(Application.Current);
+            var font = FontCatalog.Resolve("JetBrainsMono");
+
+            FontManager.Apply(font.Id);
+
+            Assert.Same(font.Family, app.Resources["UiFont"]);
+            Assert.Same(font.Family, app.Resources["ContentControlThemeFontFamily"]);
+        }, CancellationToken.None);
     }
 }
 

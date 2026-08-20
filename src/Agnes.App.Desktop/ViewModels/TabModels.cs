@@ -336,3 +336,20 @@ public sealed class ThemeOption(string id, string name) : ObservableObject
     /// <summary>Re-evaluates selection against the theme that is now current.</summary>
     public void Refresh(string currentThemeId) => IsSelected = string.Equals(Id, currentThemeId, StringComparison.Ordinal);
 }
+
+/// <summary>One selectable interface-font row in Appearance settings.</summary>
+public sealed class FontOption(string id, string name) : ObservableObject
+{
+    private bool _isSelected;
+
+    public string Id { get; } = id;
+    public string Name { get; } = name;
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        private set => SetProperty(ref _isSelected, value);
+    }
+
+    public void Refresh(string currentFontId) => IsSelected = string.Equals(Id, currentFontId, StringComparison.Ordinal);
+}

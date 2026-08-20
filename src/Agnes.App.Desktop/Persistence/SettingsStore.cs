@@ -11,6 +11,7 @@ public sealed record AppSettings(
     int WindowY = int.MinValue,
     bool WindowMaximized = false,
     string Theme = "System",
+    string FontFamily = "Manrope",
     double FontScale = 1.0,
     string WorkingDirectory = "",
     string McpApproval = "Ask",

@@ -151,6 +151,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             option.Refresh(_settings.Theme);
         }
+        SetFontCommand = new RelayCommand<string>(font => { if (font is not null) { FontFamily = font; } });
+        foreach (var option in Fonts)
+        {
+            option.Refresh(FontFamily);
+        }
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
         RevokeDeviceCommand = new AsyncRelayCommand<DeviceRowVm>(RevokeDeviceAsync);
         ApproveDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: true));
@@ -443,6 +448,32 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     public IRelayCommand<string> SetThemeCommand { get; }
 
+    /// <summary>The interface font id. Code and terminal surfaces keep their dedicated mono face.</summary>
+    public string FontFamily
+    {
+        get => FontCatalog.Resolve(_settings.FontFamily).Id;
+        set
+        {
+            var resolved = FontCatalog.Resolve(value).Id;
+            if (!string.Equals(resolved, _settings.FontFamily, StringComparison.Ordinal))
+            {
+                _settings = _settings with { FontFamily = resolved };
+                _settingsStore.Save(_settings);
+                ApplyFont(resolved);
+                OnPropertyChanged();
+                foreach (var option in Fonts)
+                {
+                    option.Refresh(resolved);
+                }
+            }
+        }
+    }
+
+    public IReadOnlyList<FontOption> Fonts { get; }
+        = [.. FontCatalog.All.Select(font => new FontOption(font.Id, font.Name))];
+
+    public IRelayCommand<string> SetFontCommand { get; }
+
     /// <summary>Whole-UI zoom (accessibility/density), 0.9–1.3. Applied via a layout transform.</summary>
     public double FontScale
     {
@@ -481,6 +512,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// <summary>Applies a theme by id. The catalogue and the swap live in <see cref="Themes.ThemeManager"/>,
     /// since a flavour has to move Fluent's palette as well as the variant.</summary>
     public static void ApplyTheme(string theme) => Desktop.Themes.ThemeManager.Apply(theme);
+
+    /// <summary>Applies an interface font by its persisted id.</summary>
+    public static void ApplyFont(string fontFamily) => Desktop.Themes.FontManager.Apply(fontFamily);
 
     // ---- device management (for the active session's host) ----
 

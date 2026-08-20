@@ -13,7 +13,7 @@
              xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
              Background="{DynamicResource Bg}"
-             FontFamily="{StaticResource UiFont}"
+             FontFamily="{DynamicResource UiFont}"
              DragDrop.AllowDrop="True"
              km:KeymapBinder.Context="Session">
 

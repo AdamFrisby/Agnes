@@ -118,7 +118,7 @@
              render heavy. The uniform-bold chat was really the bundled Inter font (see Program.cs) — this
              just keeps the markdown surface aligned with the UI font. -->
         <Style Selector="ctb|CTextBlock">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontWeight" Value="Normal" />
         </Style>
         <Style Selector="ae|TextEditor">

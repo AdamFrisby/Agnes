@@ -10,7 +10,7 @@
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource Bg}"
-        FontFamily="{StaticResource UiFont}"
+        FontFamily="{DynamicResource UiFont}"
         Icon="avares://Agnes.App.Desktop/Assets/Brand/Agnes.png">
 
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="36,30,36,26">
