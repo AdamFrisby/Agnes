@@ -103,11 +103,11 @@ internal sealed class CodexMap
             _contextWindow = window;
         }
 
-        // Context occupancy is the latest request's complete token count. "total" is cumulative across
-        // the thread and must never drive the meter. Cached input is already included in totalTokens;
-        // adding it again would double-count prompt-cache hits. Older app-servers flattened the latest
-        // request onto tokenUsage, hence the top-level totalTokens fallback.
-        var context = usage.Last?.TotalTokens ?? usage.TotalTokens;
+        // Context occupancy = the prompt-side tokens of the latest turn (fresh input + cached input).
+        // Totals arrive nested under "total" or flattened onto the usage object; prefer the nested form.
+        var input = usage.Total?.InputTokens ?? usage.InputTokens;
+        var cached = usage.Total?.CachedInputTokens ?? usage.CachedInputTokens;
+        long? context = input is null && cached is null ? null : (input ?? 0) + (cached ?? 0);
         var output = usage.Total?.OutputTokens ?? usage.OutputTokens;
 
         if (context is null && output is null)

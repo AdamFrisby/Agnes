@@ -190,7 +190,7 @@
                         <!-- real context-window usage the agent reported (bar only when the window is known) -->
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                     IsVisible="{Binding Usage.HasAnyContext, FallbackValue=false}"
-                                    ToolTip.Tip="Context tokens used out of the current model window reported by the agent">
+                                    ToolTip.Tip="Context tokens used (reported by the agent)">
                             <TextBlock Text="ctx" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
                             <ProgressBar Classes="ctx" Minimum="0" Maximum="100" Value="{Binding Usage.ContextPercent, FallbackValue=0}"
                                          Classes.tight="{Binding Usage.ContextPercent, Converter={StaticResource CtxTight}, FallbackValue=False}"

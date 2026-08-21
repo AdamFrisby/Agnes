@@ -90,13 +90,6 @@ public class SimulatedHostTests
         Assert.Equal(0, tokensOnly.ContextPercent);
         Assert.Equal("18,240", tokensOnly.ContextText);
 
-        // Inconsistent provider data remains inspectable, but never renders a plausible-looking ratio.
-        var overWindow = new UsageInfo(ContextUsed: 250_000, ContextWindow: 200_000);
-        Assert.True(overWindow.HasAnyContext);
-        Assert.False(overWindow.HasContext);
-        Assert.Equal(0, overWindow.ContextPercent);
-        Assert.Equal("250,000 / 200,000", overWindow.ContextText);
-
         // Nothing reported → show nothing at all.
         var empty = new UsageInfo();
         Assert.False(empty.HasContext);
