@@ -48,6 +48,11 @@ public sealed class KeymapBindingTests
                 == (OperatingSystem.IsMacOS() ? "Cmd+Plus" : "Ctrl+Plus"));
             Assert.Contains(chat.KeyBindings, binding => GestureOf(binding)
                 == (OperatingSystem.IsMacOS() ? "Cmd+Minus" : "Ctrl+Minus"));
+            var preview = Assert.IsAssignableFrom<Control>(state.SessionView.FindControl<Control>("PreviewPanel"));
+            Assert.Contains(preview.KeyBindings, binding => GestureOf(binding)
+                == (OperatingSystem.IsMacOS() ? "Cmd+Plus" : "Ctrl+Plus"));
+            Assert.Contains(preview.KeyBindings, binding => GestureOf(binding)
+                == (OperatingSystem.IsMacOS() ? "Cmd+Minus" : "Ctrl+Minus"));
             File.WriteAllText(state.Service.UserPath, """
                 [
                   { "key": "ctrl+t", "command": "-agnes.tab.new", "when": "window" },

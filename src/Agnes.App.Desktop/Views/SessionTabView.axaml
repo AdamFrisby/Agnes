@@ -2065,8 +2065,9 @@
                                   Background="{DynamicResource Line}" IsVisible="{Binding ShowRightPanel}" />
 
                     <!-- RIGHT: full preview (diff viewer or text) -->
-                    <Border Grid.Column="4" IsVisible="{Binding ShowRightPanel}"
-                            Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0">
+                    <Border Grid.Column="4" x:Name="PreviewPanel" IsVisible="{Binding ShowRightPanel}"
+                            Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0"
+                            km:KeymapBinder.Context="Chat">
                         <Grid RowDefinitions="Auto,*">
                             <Border Grid.Row="0" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="14,10">
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
