@@ -7,6 +7,7 @@ using Agnes.Abstractions;
 using Agnes.Client;
 using Agnes.Protocol;
 using Agnes.Ui.Core;
+using Agnes.Ui.Core.Transcript;
 using Agnes.Ui.Core.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
@@ -70,7 +71,7 @@ public sealed class KeymapBindingTests
     }
 
     [Fact]
-    public async Task Chat_font_size_changes_dialogue_but_not_the_composer_or_workspace()
+    public async Task Chat_font_size_changes_conversation_tools_and_preview_but_not_composer_or_workspace()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(KeymapTestApp));
         await session.Dispatch(() =>
@@ -84,6 +85,14 @@ public sealed class KeymapBindingTests
             var dialogue = Assert.Single(state.SessionView.GetVisualDescendants().OfType<MarkdownScrollViewer>(),
                 markdown => markdown.Markdown == "A dialogue message");
             var dialogueBody = Assert.Single(dialogue.GetVisualDescendants().OfType<CTextBlock>());
+            var toolTitle = Assert.Single(state.SessionView.GetVisualDescendants().OfType<SelectableTextBlock>(),
+                text => text.Text == "Inspect plan.md");
+            var document = Assert.IsType<SessionDocument>(state.SessionView.DataContext);
+            var tool = Assert.Single(document.Session!.Items.OfType<ToolCallItem>());
+            document.Session.ShowToolPreviewCommand.Execute(tool);
+            state.SessionWindow.UpdateLayout();
+            var previewBody = Assert.Single(state.SessionView.GetVisualDescendants().OfType<SelectableTextBlock>(),
+                text => text.Text == "Tool output body");
             var composer = Assert.IsType<TextBox>(state.SessionView.FindControl<TextBox>("Composer"));
             var workspaceWidth = workspace.Bounds.Width;
             var composerSize = composer.FontSize;
@@ -91,6 +100,8 @@ public sealed class KeymapBindingTests
             FontManager.ApplyChatScale(1.2);
 
             Assert.Equal(15.6, dialogueBody.FontSize, 1);
+            Assert.Equal(14.4, toolTitle.FontSize, 1);
+            Assert.Equal(15.6, previewBody.FontSize, 1);
             Assert.Equal(composerSize, composer.FontSize);
             Assert.Equal(workspaceWidth, workspace.Bounds.Width, 1);
             state.SessionWindow.Close();
@@ -178,7 +189,9 @@ public sealed class KeymapBindingTests
         var view = new SessionView("s1");
         view.ApplySnapshot(new SessionSnapshot(new SessionInfo("s1", "codex", string.Empty, 0), [], 0));
         view.Apply(new MessageChunkEvent(MessageRole.Assistant, new TextContent("A dialogue message")) { Sequence = 1 });
-        view.Apply(new TurnEndedEvent(StopReason.EndTurn) { Sequence = 2 });
+        view.Apply(new ToolCallEvent("tool-1", "Inspect plan.md", ToolKind.Read, ToolCallStatus.Completed,
+            [new TextContent("Tool output body")]) { Sequence = 2 });
+        view.Apply(new TurnEndedEvent(StopReason.EndTurn) { Sequence = 3 });
         return new SessionViewModel(new FakeHost(), view, ImmediateDispatcher.Instance, "Codex");
     }
 

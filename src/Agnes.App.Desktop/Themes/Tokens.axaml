@@ -430,11 +430,15 @@
   <FontFamily x:Key="DisplayFont">avares://Agnes.App.Desktop/Assets/Fonts#Space Grotesk</FontFamily>
   <FontFamily x:Key="UiFont">avares://Agnes.App.Desktop/Assets/Fonts#Manrope</FontFamily>
   <FontFamily x:Key="MonoFont">avares://Agnes.App.Desktop/Assets/Fonts#JetBrains Mono</FontFamily>
-  <sys:Double x:Key="DialogueFontSize">13</sys:Double>
-  <sys:Double x:Key="DialogueHeading1FontSize">24</sys:Double>
-  <sys:Double x:Key="DialogueHeading2FontSize">20</sys:Double>
-  <sys:Double x:Key="DialogueHeading3FontSize">17</sys:Double>
-  <sys:Double x:Key="DialogueHeading4FontSize">15</sys:Double>
+  <!-- Conversation content keeps its existing size hierarchy while the Appearance chat-size setting
+       scales messages, transcript events, and the preview pane together. -->
+  <sys:Double x:Key="ChatContentFontSize11">11</sys:Double>
+  <sys:Double x:Key="ChatContentFontSize12">12</sys:Double>
+  <sys:Double x:Key="ChatContentFontSize13">13</sys:Double>
+  <sys:Double x:Key="ChatContentFontSize15">15</sys:Double>
+  <sys:Double x:Key="ChatContentFontSize17">17</sys:Double>
+  <sys:Double x:Key="ChatContentFontSize20">20</sys:Double>
+  <sys:Double x:Key="ChatContentFontSize24">24</sys:Double>
 
   <!-- Stock controls pick their font/size up from these two. 13px, not the brand's 15px reading
        size: this is a dense multi-pane desktop tool, and its own views are set at 11–13. -->

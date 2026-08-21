@@ -58,7 +58,8 @@ public sealed class DesktopBrandingTests
 
             Assert.Equal(font, app.Resources["UiFont"]);
             Assert.Equal(font, app.Resources["ContentControlThemeFontFamily"]);
-            Assert.Equal(16.9, Assert.IsType<double>(app.Resources["DialogueFontSize"]), 1);
+            Assert.Equal(16.9, Assert.IsType<double>(app.Resources["ChatContentFontSize13"]), 1);
+            Assert.Equal(14.3, Assert.IsType<double>(app.Resources["ChatContentFontSize11"]), 1);
         }, CancellationToken.None);
     }
 }

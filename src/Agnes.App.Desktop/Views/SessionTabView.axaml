@@ -1269,8 +1269,8 @@
                     <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns"
                                   Background="{DynamicResource Line}" IsVisible="{Binding ShowLeftPanel}" />
 
-                    <!-- MIDDLE: chat. Chat font-size shortcuts are bound here, but only dialogue bodies
-                         consume DialogueFontSize; composer, tools, cards, and chrome stay at UI scale. -->
+                    <!-- MIDDLE: chat. Chat font-size shortcuts are bound here. Conversation content and
+                         its preview consume ChatContentFontSize*; composer and chrome stay at UI scale. -->
                     <Grid Grid.Column="2" x:Name="ChatViewport" RowDefinitions="Auto,*,Auto,Auto"
                           IsVisible="{Binding ShowChat}" km:KeymapBinder.Context="Chat">
 
@@ -1379,7 +1379,7 @@
                                             </Border.ContextFlyout>
                                             <StackPanel>
                                                 <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,3">
-                                                    <TextBlock Grid.Column="0" Text="{Binding Speaker}" FontSize="11"
+                                                    <TextBlock Grid.Column="0" Text="{Binding Speaker}" FontSize="{DynamicResource ChatContentFontSize11}"
                                                                Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
                                                     <!-- Per-message actions; only visible on hover (see Border.msg styles). -->
                                                     <Button Grid.Column="1" Classes="rowmenu" Content="{icx:SymbolIcon Symbol=MoreHorizontal}" Background="Transparent"
@@ -1403,28 +1403,10 @@
                                                         <!-- The built-in Markdown theme is attached as this control's own styles, so
                                                              it can only be overridden from here — not app-wide. -->
                                                         <StyleInclude Source="avares://Agnes.App.Desktop/Themes/MarkdownStyles.axaml" />
-                                                        <!-- Dialogue zoom is intentionally local to message bodies. The renderer
-                                                             creates CTextBlocks with its own sizes, so inherited FontSize cannot
-                                                             update them; these exact selectors keep body/headings live and scoped. -->
-                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock">
-                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueFontSize}" />
-                                                        </Style>
-                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock.Heading1">
-                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueHeading1FontSize}" />
-                                                        </Style>
-                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock.Heading2">
-                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueHeading2FontSize}" />
-                                                        </Style>
-                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock.Heading3">
-                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueHeading3FontSize}" />
-                                                        </Style>
-                                                        <Style Selector=".Markdown_Avalonia_MarkdownViewer ctb|CTextBlock.Heading4">
-                                                            <Setter Property="FontSize" Value="{DynamicResource DialogueHeading4FontSize}" />
-                                                        </Style>
                                                     </mdxaml:MarkdownScrollViewer.Styles>
                                                 </mdxaml:MarkdownScrollViewer>
                                                 <SelectableTextBlock Text="{Binding Text}" Classes="thought" IsVisible="{Binding IsThought}"
-                                                                     FontSize="{DynamicResource DialogueFontSize}"
+                                                                     FontSize="{DynamicResource ChatContentFontSize13}"
                                                                      TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                             </StackPanel>
                                         </Border>
@@ -1447,17 +1429,17 @@
                                                     <ic:SymbolIcon Grid.Column="0" Symbol="ChevronRight" Classes="tone"
                                                                Classes.working="{Binding IsRunning}" Classes.done="{Binding IsDone}"
                                                                Classes.error="{Binding IsFailed}"
-                                                               FontSize="12" VerticalAlignment="Top" />
+                                                               FontSize="{DynamicResource ChatContentFontSize12}" VerticalAlignment="Top" />
                                                     <TextBlock Grid.Column="1" Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Top" />
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" VerticalAlignment="Top" />
                                                     <SelectableTextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Fg}"
-                                                                         FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                                                         FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}"
                                                                          TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                                     <TextBlock Grid.Column="3" Text="{Binding StatusText}" Classes="tone"
                                                                Classes.working="{Binding IsRunning}" Classes.error="{Binding IsFailed}"
-                                                               FontSize="11" VerticalAlignment="Top" IsVisible="{Binding ShowStatus}" />
+                                                               FontSize="{DynamicResource ChatContentFontSize11}" VerticalAlignment="Top" IsVisible="{Binding ShowStatus}" />
                                                     <TextBlock Grid.Column="4" Text="{Binding DurationText}" Foreground="{DynamicResource FgFaint}"
-                                                               FontSize="11" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Top"
+                                                               FontSize="{DynamicResource ChatContentFontSize11}" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Top"
                                                                IsVisible="{Binding HasDuration}" />
                                                 </Grid>
 
@@ -1472,9 +1454,9 @@
                                                                 <Border Classes.add="{Binding IsAdded}" Classes.del="{Binding IsRemoved}">
                                                                     <Grid ColumnDefinitions="14,*">
                                                                         <TextBlock Grid.Column="0" Text="{Binding Marker}" Foreground="{DynamicResource FgDim}"
-                                                                                   FontFamily="{StaticResource MonoFont}" FontSize="11" Padding="4,1,0,1" />
+                                                                                   FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize11}" Padding="4,1,0,1" />
                                                                         <SelectableTextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
-                                                                                             FontFamily="{StaticResource MonoFont}" FontSize="11" Padding="2,1,8,1"
+                                                                                             FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize11}" Padding="2,1,8,1"
                                                                                              TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                                                     </Grid>
                                                                 </Border>
@@ -1485,13 +1467,13 @@
 
                                                 <!-- A larger edit states its size and stays one click away. -->
                                                 <TextBlock Text="{Binding DiffSummary}" Foreground="{DynamicResource FgFaint}"
-                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" Margin="20,0,0,0"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize11}" Margin="20,0,0,0"
                                                            IsVisible="{Binding HasCollapsedDiff}" />
 
                                                 <!-- Shown when "Tool output" is on — but not under an inline
                                                      diff, where it would only repeat the diff's first line. -->
                                                 <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}"
-                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" Margin="20,0,0,0"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize11}" Margin="20,0,0,0"
                                                            TextTrimming="CharacterEllipsis" MaxLines="1">
                                                     <TextBlock.IsVisible>
                                                         <MultiBinding Converter="{x:Static conv:BoolConverters.And}">
@@ -2092,6 +2074,7 @@
                                          it keep their own width, so it grows downward rather than cutting off. -->
                                     <TextBlock Grid.Column="0" Text="{Binding SelectedPreview.Title}" Foreground="{DynamicResource Fg}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
+                                               FontSize="{DynamicResource ChatContentFontSize13}"
                                                TextWrapping="Wrap" Margin="0,0,10,0" MaxHeight="72" />
                                     <Button Classes="chip" Grid.Column="1" Command="{Binding SelectedPreview.ToggleSplitCommand}"
                                             IsVisible="{Binding SelectedPreview.IsDiff}"
@@ -2123,7 +2106,7 @@
                                     BorderThickness="0,0,0,1" Padding="14,8" MaxHeight="180">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <SelectableTextBlock Text="{Binding SelectedPreview.Command}" Foreground="{DynamicResource FgDim}"
-                                                         FontFamily="{StaticResource MonoFont}" FontSize="12" TextWrapping="Wrap"
+                                                         FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" TextWrapping="Wrap"
                                                          ctl:SelectionContextMenu.Enable="True" />
                                 </ScrollViewer>
                             </Border>
@@ -2139,14 +2122,14 @@
                                                 <Grid ColumnDefinitions="40,40,14,*">
                                                     <TextBlock Grid.Column="0" Text="{Binding OldLineText}" TextAlignment="Right"
                                                                Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
-                                                               FontSize="11" Padding="0,1,6,1" />
+                                                               FontSize="{DynamicResource ChatContentFontSize11}" Padding="0,1,6,1" />
                                                     <TextBlock Grid.Column="1" Text="{Binding NewLineText}" TextAlignment="Right"
                                                                Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
-                                                               FontSize="11" Padding="0,1,6,1" />
+                                                               FontSize="{DynamicResource ChatContentFontSize11}" Padding="0,1,6,1" />
                                                     <TextBlock Grid.Column="2" Text="{Binding Marker}" Foreground="{DynamicResource FgDim}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="0,1" />
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="0,1" />
                                                     <TextBlock Grid.Column="3" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="2,1,8,1"
                                                                TextWrapping="Wrap" />
                                                 </Grid>
                                             </Border>
@@ -2167,12 +2150,12 @@
                                                     <Grid ColumnDefinitions="40,*">
                                                         <TextBlock Grid.Column="0" Text="{Binding LeftNo}" TextAlignment="Right"
                                                                    Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
-                                                                   FontSize="11" Padding="0,1,6,1" />
+                                                                   FontSize="{DynamicResource ChatContentFontSize11}" Padding="0,1,6,1" />
                                                         <TextBlock Grid.Column="1" Text="{Binding LeftText}" Foreground="{DynamicResource Fg}"
-                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="2,1,8,1"
                                                                    IsVisible="{Binding !IsHunk}" />
                                                         <TextBlock Grid.Column="1" Text="{Binding HeaderText}" Foreground="{DynamicResource HunkFg}"
-                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="2,1,8,1"
                                                                    IsVisible="{Binding IsHunk}" />
                                                     </Grid>
                                                 </Border>
@@ -2181,9 +2164,9 @@
                                                     <Grid ColumnDefinitions="40,*">
                                                         <TextBlock Grid.Column="0" Text="{Binding RightNo}" TextAlignment="Right"
                                                                    Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
-                                                                   FontSize="11" Padding="0,1,6,1" />
+                                                                   FontSize="{DynamicResource ChatContentFontSize11}" Padding="0,1,6,1" />
                                                         <TextBlock Grid.Column="1" Text="{Binding RightText}" Foreground="{DynamicResource Fg}"
-                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1" />
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="2,1,8,1" />
                                                     </Grid>
                                                 </Border>
                                             </Grid>
@@ -2206,7 +2189,8 @@
                             <ScrollViewer Grid.Row="1" Padding="16" VerticalScrollBarVisibility="Auto"
                                           IsVisible="{Binding SelectedPreview.IsPlainText}">
                                 <SelectableTextBlock Text="{Binding SelectedPreview.Body}" Foreground="{DynamicResource Fg}"
-                                           FontSize="13" TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
+                                           FontSize="{DynamicResource ChatContentFontSize13}" TextWrapping="Wrap"
+                                           ctl:SelectionContextMenu.Enable="True" />
                             </ScrollViewer>
                             </Grid>
                         </Grid>
