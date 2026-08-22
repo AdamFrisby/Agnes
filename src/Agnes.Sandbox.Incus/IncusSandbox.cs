@@ -8,7 +8,7 @@ namespace Agnes.Sandbox.Incus;
 /// run-wrapper); credentials are materialised via <see cref="ExecAsync"/>. Agnes persists the VM:
 /// <see cref="DisposeAsync"/> does NOT delete — only <see cref="DeleteAsync"/> destroys it.
 /// </summary>
-internal sealed class IncusSandbox : ISandbox, IPausableSandbox, IStoppableSandbox
+internal sealed class IncusSandbox : ISandbox, IPausableSandbox, IStoppableSandbox, Agnes.Abstractions.IPortForwardingSandbox
 {
     private readonly IncusOptions _options;
     private readonly IIncusCliRunner _cli;
@@ -36,6 +36,33 @@ internal sealed class IncusSandbox : ISandbox, IPausableSandbox, IStoppableSandb
         agentArgv.AddRange(arguments);
         var argv = IncusCommandBuilder.BuildExec(_options, Id, agentArgv, workingDirectory, asUser: false);
         return (argv[0], argv.Skip(1).ToList());
+    }
+
+    /// <inheritdoc />
+    public async Task<Uri> ForwardPortAsync(int guestPort, CancellationToken cancellationToken = default)
+    {
+        // A free host port is found by binding one and letting it go: Incus needs the number up front, and
+        // racing another listener for it is far less likely than colliding with a hard-coded choice.
+        var hostPort = FreeLoopbackPort();
+        var device = $"agnes-fwd-{guestPort}";
+
+        await _cli.RunCheckedAsync(
+            "add proxy device",
+            IncusCommandBuilder.BuildAddProxyDevice(_options, Id, device, hostPort, guestPort),
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Forwarding 127.0.0.1:{HostPort} to {Instance}:{GuestPort}", hostPort, Id, guestPort);
+        return new Uri($"http://127.0.0.1:{hostPort}");
+    }
+
+    private static int FreeLoopbackPort()
+    {
+        using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+        return port;
     }
 
     public async Task<SandboxExecResult> ExecAsync(SandboxExec exec, CancellationToken cancellationToken = default)

@@ -94,6 +94,23 @@ public interface ISandboxCommand
 }
 
 /// <summary>
+/// A sandbox that can expose one of its guest ports to the host. Optional capability, declared here rather
+/// than in Agnes.Sandbox because the agents that need it (those driven over HTTP instead of stdio) see only
+/// this layer.
+/// </summary>
+/// <remarks>
+/// The alternative — binding the agent's server to the guest's bridge address — would put an unauthenticated
+/// server in front of every other sandbox sharing that bridge. Forwarding keeps it on guest loopback and
+/// lets only the host reach it.
+/// </remarks>
+public interface IPortForwardingSandbox
+{
+    /// <summary>Forwards <paramref name="guestPort"/> (on the guest's loopback) to a host-loopback port and
+    /// returns the address the host should dial. Released when the sandbox is deleted.</summary>
+    Task<Uri> ForwardPortAsync(int guestPort, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// A plugin that knows how to launch and describe one kind of coding agent.
 /// Implementations are typically thin configuration over the generic ACP client.
 /// </summary>

@@ -68,15 +68,14 @@ public sealed class OpenCodeNativeAgent : IAgentAdapter, IModelEnvironmentAdapte
 
     public async Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {
-        if (options.Sandbox is not null)
+        // Sandboxing is the point of Agnes, so this path is first-class: the server runs inside the guest
+        // on its loopback, and the host reaches it through a port forward. Binding the guest's bridge
+        // address instead would expose an unauthenticated server to every other sandbox on that bridge.
+        if (options.Sandbox is not null and not IPortForwardingSandbox)
         {
-            // Deliberately explicit rather than silently degrading: the server binds loopback inside the
-            // guest, and Agnes has no port-forward for it. Driving it from the host would need the guest's
-            // bridge address plumbed through ISandbox, which doesn't exist yet.
             throw new NotSupportedException(
-                "The native OpenCode adapter doesn't support sandboxed sessions yet — its server binds "
-                + "loopback inside the guest and Agnes has no route to it. Use the 'opencode' (ACP) adapter "
-                + "for sandboxed work.");
+                $"The native OpenCode adapter needs a sandbox that can forward a port; "
+                + $"'{options.Sandbox.GetType().Name}' cannot. Use the 'opencode' (ACP) adapter there.");
         }
 
         var logger = _loggerFactory.CreateLogger<OpenCodeNativeAgent>();
@@ -87,12 +86,17 @@ public sealed class OpenCodeNativeAgent : IAgentAdapter, IModelEnvironmentAdapte
         }
 
         var server = await OpenCodeServer.StartAsync(
-            _options.Command, options.WorkingDirectory, env, logger, _options.StartupTimeout, cancellationToken)
-            .ConfigureAwait(false);
+            _options.Command, options.WorkingDirectory, env, logger, _options.StartupTimeout,
+            options.Sandbox, cancellationToken).ConfigureAwait(false);
 
         try
         {
-            var http = new HttpClient { BaseAddress = server.BaseAddress, Timeout = Timeout.InfiniteTimeSpan };
+            // In a sandbox the banner's port is the GUEST's; the host dials the forward instead.
+            var address = options.Sandbox is IPortForwardingSandbox forwarder
+                ? await forwarder.ForwardPortAsync(server.BaseAddress.Port, cancellationToken).ConfigureAwait(false)
+                : server.BaseAddress;
+
+            var http = new HttpClient { BaseAddress = address, Timeout = Timeout.InfiniteTimeSpan };
             var sessionId = await CreateSessionAsync(http, cancellationToken).ConfigureAwait(false);
             var session = new OpenCodeNativeSession(sessionId, http, _loggerFactory.CreateLogger<OpenCodeNativeSession>());
 

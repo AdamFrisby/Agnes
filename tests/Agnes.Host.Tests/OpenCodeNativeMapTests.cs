@@ -153,4 +153,29 @@ public sealed class OpenCodeNativeMapTests
         Assert.All(documented, t => Assert.True(OpenCodeEventMap.IsKnown(t), $"unaccounted event type: {t}"));
         Assert.False(OpenCodeEventMap.IsKnown("session.next.invented.later"));
     }
+
+    // ---- the sandboxed path ----
+
+    /// <summary>A sandbox that can't forward a port — the native adapter must refuse it rather than
+    /// silently starting a server nothing can reach.</summary>
+    private sealed class NoForwardSandbox : ISandboxCommand
+    {
+        public (string Command, IReadOnlyList<string> Arguments) WrapCommand(
+            string command, IReadOnlyList<string> arguments, string workingDirectory)
+            => (command, arguments);
+    }
+
+    [Fact]
+    public async Task A_sandbox_that_cannot_forward_a_port_is_refused_with_a_reason()
+    {
+        var adapter = Agnes.Agents.OpenCode.Native.OpenCodeNativeAgent.Create(
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+
+        var error = await Assert.ThrowsAsync<NotSupportedException>(() => adapter.StartSessionAsync(
+            new AgentSessionOptions { WorkingDirectory = Path.GetTempPath(), Sandbox = new NoForwardSandbox() }));
+
+        // Names the actual constraint and the way out, rather than "not supported".
+        Assert.Contains("forward a port", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ACP", error.Message, StringComparison.Ordinal);
+    }
 }

@@ -207,6 +207,29 @@ internal static class IncusCommandBuilder
     }
 
     /// <summary>Exec a command inside the instance as the given uid/gid.</summary>
+    /// <summary>
+    /// Adds a proxy device forwarding a host-loopback port to the same port on the guest's loopback.
+    /// </summary>
+    /// <remarks>
+    /// Both ends are 127.0.0.1 on purpose: the agent's HTTP server stays unreachable from the bridge (and
+    /// so from every other sandbox on it), and only this host can dial it. The device travels with the
+    /// instance, so deleting the sandbox releases it.
+    /// </remarks>
+    internal static IReadOnlyList<string> BuildAddProxyDevice(
+        IncusOptions o, string instance, string deviceName, int hostPort, int guestPort)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateInstanceName(deviceName);
+        ArgumentOutOfRangeException.ThrowIfLessThan(hostPort, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(hostPort, 65535);
+        ArgumentOutOfRangeException.ThrowIfLessThan(guestPort, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(guestPort, 65535);
+
+        return Prefix(o, "config", "device", "add", instance, deviceName, "proxy",
+            $"listen=tcp:127.0.0.1:{hostPort}",
+            $"connect=tcp:127.0.0.1:{guestPort}");
+    }
+
     internal static IReadOnlyList<string> BuildExec(IncusOptions o, string instance, IReadOnlyList<string> command, string? workingDirectory, bool asUser)
     {
         ArgumentNullException.ThrowIfNull(command);
