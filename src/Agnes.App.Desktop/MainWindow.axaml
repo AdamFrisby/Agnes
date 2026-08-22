@@ -302,7 +302,8 @@
                     <Button Classes="chip" Padding="10,5" FontSize="12"
                             IsVisible="{Binding HasGoals}" AutomationProperties.Name="Goals">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <TextBlock Text="🎯 Goals" VerticalAlignment="Center" />
+                            <ic:SymbolIcon Symbol="TargetArrow" FontSize="14" />
+                            <TextBlock Text="Goals" VerticalAlignment="Center" />
                             <Border Classes="status working" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
                                 <TextBlock Text="{Binding ArmedGoalCount}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </Border>
