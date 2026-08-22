@@ -179,6 +179,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         PauseAutomationCommand = new AsyncRelayCommand<AutomationRow>(PauseAutomationAsync);
         ResumeAutomationCommand = new AsyncRelayCommand<AutomationRow>(ResumeAutomationAsync);
         RunAutomationNowCommand = new AsyncRelayCommand<AutomationRow>(RunAutomationNowAsync);
+        ArmGoalCommand = new AsyncRelayCommand(ArmGoalAsync, () => CanArmGoal);
+        DisarmGoalCommand = new AsyncRelayCommand<GoalRow>(DisarmGoalAsync);
+        RemoveGoalCommand = new AsyncRelayCommand<GoalRow>(RemoveGoalRowAsync);
         RemoveAutomationCommand = new AsyncRelayCommand<AutomationRow>(RemoveAutomationAsync);
         LoadProjectsCommand = new AsyncRelayCommand(LoadProjectsAsync);
         SelectProjectCommand = new RelayCommand<ProjectDto>(SelectProject);
@@ -3366,6 +3369,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         if (added)
         {
             host.InboxRunReceived += run => _dispatcher.Post(() => AddInboxRun(run));
+            // Goals change from the host side too (a nudge spends budget, an agent disarms its own goal),
+            // so the list is refreshed on the broadcast rather than only when the flyout is opened.
+            host.GoalChanged += changed => { _ = RefreshGoalsAsync(); };
+            _ = RefreshGoalsAsync();
             _ = LoadInboxAsync(host);
             // A newly-connected host may already have open approvals — pull them into the unified list.
             _ = Approvals.LoadAsync();
@@ -3459,6 +3466,205 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         public string Schedule => string.Equals(Task.Kind, "cron", StringComparison.OrdinalIgnoreCase)
             ? $"cron {Task.CronExpression}" + (string.IsNullOrWhiteSpace(Task.Timezone) ? "" : $" ({Task.Timezone})")
             : $"every {Task.IntervalSeconds}s";
+    }
+
+    /// <summary>One armed-or-finished goal, with the display text the flyout shows.</summary>
+    public sealed class GoalRow(SessionGoal goal, IAgnesHost host)
+    {
+        public SessionGoal Goal { get; } = goal;
+
+        public IAgnesHost Host { get; } = host;
+
+        public string Id => Goal.Id;
+
+        public string Text => Goal.Goal;
+
+        public bool Armed => Goal.Armed;
+
+        /// <summary>Why it stopped, or how it is currently set up — the one line under the goal text.</summary>
+        public string Detail => Goal.Armed
+            ? $"nudges if idle {Describe(Goal.IdleSeconds)} · {Budget}"
+            : $"stopped: {Goal.DisarmedReason ?? "disarmed"} · {Budget}";
+
+        /// <summary>"used 2 of 5", or "2 nudges (no limit)" when the budget is unlimited.</summary>
+        private string Budget => Goal.MaxProds > 0
+            ? $"used {Goal.ProdsUsed} of {Goal.MaxProds}"
+            : $"{Goal.ProdsUsed} nudge(s), no limit";
+
+        private static string Describe(int seconds) => seconds >= 3600
+            ? $"{seconds / 3600.0:0.#}h"
+            : seconds >= 60 ? $"{seconds / 60}m" : $"{seconds}s";
+    }
+
+    // ---- arming a new goal on the active session ----
+
+    private string _newGoalText = string.Empty;
+    private int _newGoalIdleMinutes = 10;
+    private int _newGoalMaxProds = 5;
+    private bool _newGoalUnlimited;
+
+    /// <summary>What the goal is. Also the only required field — the rest have workable defaults.</summary>
+    public string NewGoalText
+    {
+        get => _newGoalText;
+        set
+        {
+            if (_newGoalText == value)
+            {
+                return;
+            }
+
+            _newGoalText = value;
+            OnPropertyChanged(nameof(NewGoalText));
+            OnPropertyChanged(nameof(CanArmGoal));
+            ArmGoalCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    /// <summary>Idle window in minutes — minutes rather than seconds because a sensible value is 5–60 and
+    /// asking for 600 invites a typo that nudges every ten seconds.</summary>
+    public int NewGoalIdleMinutes
+    {
+        get => _newGoalIdleMinutes;
+        set { _newGoalIdleMinutes = Math.Clamp(value, 1, 24 * 60); OnPropertyChanged(nameof(NewGoalIdleMinutes)); }
+    }
+
+    public int NewGoalMaxProds
+    {
+        get => _newGoalMaxProds;
+        set { _newGoalMaxProds = Math.Clamp(value, 1, 50); OnPropertyChanged(nameof(NewGoalMaxProds)); }
+    }
+
+    /// <summary>Keep nudging until the goal is disarmed. On an agent that stalls often any finite budget is
+    /// spent long before the work is done, and a goal that gives up early is worse than no goal at all.</summary>
+    public bool NewGoalUnlimited
+    {
+        get => _newGoalUnlimited;
+        set
+        {
+            if (_newGoalUnlimited == value)
+            {
+                return;
+            }
+
+            _newGoalUnlimited = value;
+            OnPropertyChanged(nameof(NewGoalUnlimited));
+            OnPropertyChanged(nameof(NewGoalHasLimit));
+        }
+    }
+
+    /// <summary>Inverse of <see cref="NewGoalUnlimited"/> — the numeric field is meaningless without a limit.</summary>
+    public bool NewGoalHasLimit => !_newGoalUnlimited;
+
+    /// <summary>The session a new goal would attach to, or null when no session tab is focused.</summary>
+    private SessionViewModel? ActiveSession
+        => (_factory.DocumentDock?.ActiveDockable as SessionDocument)?.Session;
+
+    /// <summary>Names the target in the form, so it's never ambiguous which session is about to be armed.</summary>
+    public string NewGoalTarget => ActiveSession is { } s ? $"on {s.Title}" : "open a session first";
+
+    public bool CanArmGoal => !string.IsNullOrWhiteSpace(NewGoalText) && ActiveSession?.SessionId is not null;
+
+    public IAsyncRelayCommand ArmGoalCommand { get; }
+
+    private async Task ArmGoalAsync()
+    {
+        if (ActiveSession is not { SessionId: { } sessionId } session || string.IsNullOrWhiteSpace(NewGoalText))
+        {
+            return;
+        }
+
+        try
+        {
+            await session.Host.ArmGoalAsync(new ArmGoalRequest(
+                sessionId, NewGoalText.Trim(), NewGoalIdleMinutes * 60,
+                NewGoalUnlimited ? 0 : NewGoalMaxProds)); // 0 = keep going until disarmed
+            NewGoalText = string.Empty;
+        }
+        catch
+        {
+            // the refresh below reflects whatever actually happened
+        }
+
+        await RefreshGoalsAsync();
+    }
+
+    public System.Collections.ObjectModel.ObservableCollection<GoalRow> Goals { get; } = [];
+    public int ArmedGoalCount => Goals.Count(g => g.Armed);
+    /// <summary>Always true: the chip is the only place a goal can be created, so hiding it when the
+    /// list is empty would make the feature unreachable from a standing start.</summary>
+    public bool HasGoals => true;
+
+    public IAsyncRelayCommand<GoalRow> DisarmGoalCommand { get; }
+    public IAsyncRelayCommand<GoalRow> RemoveGoalCommand { get; }
+
+    private async Task RefreshGoalsAsync()
+    {
+        var rows = new List<GoalRow>();
+        foreach (var host in _inboxHosts.ToArray())
+        {
+            try
+            {
+                foreach (var goal in await host.ListGoalsAsync())
+                {
+                    rows.Add(new GoalRow(goal, host));
+                }
+            }
+            catch
+            {
+                // best-effort, as with automations: a host that can't list contributes none
+            }
+        }
+
+        _dispatcher.Post(() =>
+        {
+            Goals.Clear();
+            foreach (var row in rows)
+            {
+                Goals.Add(row);
+            }
+
+            OnPropertyChanged(nameof(ArmedGoalCount));
+            OnPropertyChanged(nameof(HasGoals));
+        });
+    }
+
+    private async Task DisarmGoalAsync(GoalRow? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await row.Host.DisarmGoalAsync(row.Id, "disarmed from the desktop");
+        }
+        catch
+        {
+            // the refresh below reflects whatever actually happened
+        }
+
+        await RefreshGoalsAsync();
+    }
+
+    private async Task RemoveGoalRowAsync(GoalRow? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await row.Host.RemoveGoalAsync(row.Id);
+        }
+        catch
+        {
+            // as above
+        }
+
+        await RefreshGoalsAsync();
     }
 
     public System.Collections.ObjectModel.ObservableCollection<AutomationRow> ScheduledTasks { get; } = [];

@@ -306,6 +306,19 @@ public interface IAgnesServer
     /// <summary>Completed background runs (newest first).</summary>
     Task<IReadOnlyList<InboxRun>> GetInbox();
 
+    /// <summary>Arms a goal on a session: if it falls idle past the goal's threshold without being disarmed,
+    /// the host nudges it. Supersedes any goal already armed on that session.</summary>
+    Task<SessionGoal> ArmGoal(ArmGoalRequest request);
+
+    /// <summary>Stops a goal nudging, recording why (finished, stuck, cancelled…). Keeps it listed.</summary>
+    Task<SessionGoal?> DisarmGoal(string goalId, string reason);
+
+    /// <summary>Deletes a goal outright, armed or not.</summary>
+    Task RemoveGoal(string goalId);
+
+    /// <summary>Every goal on this host, newest first (armed and disarmed).</summary>
+    Task<IReadOnlyList<SessionGoal>> ListGoals();
+
     /// <summary>Open permission requests across every session the caller is authorized to see that still
     /// need a human, newest first — the cross-session approvals list (notifications/02 tier 1).</summary>
     Task<IReadOnlyList<OpenApproval>> GetOpenApprovals();
@@ -486,6 +499,9 @@ public interface IAgnesClient
 
     /// <summary>A background run completed and landed in the inbox.</summary>
     Task OnInboxRun(InboxRun run);
+
+    /// <summary>A goal was armed, nudged, or disarmed — so every client's goal list stays live.</summary>
+    Task OnGoalChanged(SessionGoal goal);
 
     /// <summary>A session's read state changed (last-viewed sequence + a sticky "marked unread" flag), so
     /// unread indicators stay in sync across a user's devices.</summary>

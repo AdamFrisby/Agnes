@@ -587,6 +587,10 @@ public sealed class SessionViewModel : ObservableObject
     /// reconnect to the same live session by subscribing to (host, sessionId) — the event-sourced
     /// snapshot+tail replays full history, so a phone can pick up exactly where the desktop left off.
     /// </summary>
+    /// <summary>The host this session lives on. Exposed so a shell can act on the session's own host —
+    /// arming a goal, say — instead of guessing which of several connected hosts owns it.</summary>
+    public IAgnesHost Host => _host;
+
     public string HandoffReference => $"{_host.HostUrl}#{SessionId}";
     public ObservableCollection<TranscriptItem> Items => _transcript.Items;
     public PermissionItem? PendingPermission => _transcript.PendingPermission;

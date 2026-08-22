@@ -102,6 +102,7 @@ public class SandboxImageManagerTests : IDisposable
         var mgr = Manager(new FakeImageBuilder());
         Assert.True(mgr.ImageHasAgent("claude-code-native")); // default manifest
         Assert.True(mgr.ImageHasAgent("codex"));
-        Assert.False(mgr.ImageHasAgent("opencode"));          // not baked by default
+        Assert.True(mgr.ImageHasAgent("opencode"));
+        Assert.False(mgr.ImageHasAgent("claude-code"));       // the node-based ACP bridge isn't baked by default
     }
 }

@@ -973,6 +973,42 @@ public sealed record ScheduleTaskRequest(
     string TargetKind = "new",
     string? TargetSessionId = null);
 
+/// <summary>
+/// A standing goal armed on one session: if that session falls <b>idle</b> for longer than
+/// <see cref="IdleSeconds"/> without the goal being disarmed, the host nudges it with <see cref="Goal"/>.
+/// </summary>
+/// <remarks>
+/// Idle-triggered rather than scheduled, which is the whole point: a fixed cadence either interrupts an
+/// agent that is working or waits pointlessly after one has stopped. Here the clock only starts once the
+/// session actually goes quiet, so a long turn is never talked over and a stalled one is picked up quickly.
+///
+/// Every armed goal is bounded twice over — <see cref="MaxProds"/> nudges and an optional
+/// <see cref="ExpiresAt"/> — because an agent that can arm unbounded self-prompting is a runaway: each nudge
+/// costs a full turn. <see cref="DisarmedReason"/> records why a goal stopped (finished, stuck, exhausted,
+/// expired, or cancelled by hand), so a disarmed goal stays visible instead of vanishing.
+/// </remarks>
+public sealed record SessionGoal(
+    string Id,
+    string SessionId,
+    string Goal,
+    int IdleSeconds,
+    int MaxProds,
+    int ProdsUsed,
+    bool Armed,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ExpiresAt = null,
+    DateTimeOffset? LastProddedAt = null,
+    string? DisarmedReason = null);
+
+/// <summary>A request to arm a goal on a session (see <see cref="SessionGoal"/> for field meanings).
+/// <paramref name="ExpiresInSeconds"/> is relative so a caller never has to reason about host clock skew.</summary>
+public sealed record ArmGoalRequest(
+    string SessionId,
+    string Goal,
+    int IdleSeconds,
+    int MaxProds = 5,
+    int? ExpiresInSeconds = null);
+
 /// <summary>A completed background run, collected in the inbox.</summary>
 public sealed record InboxRun(
     string Id,

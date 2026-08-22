@@ -14,6 +14,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 {
     private readonly SessionManager _sessions;
     private readonly ScheduledTaskManager _schedule;
+    private readonly Sessions.SessionGoalManager _goals;
     private readonly HostIdentity _identity;
     private readonly DeviceRegistry _tokens;
     private readonly PluginManagementService _plugins;
@@ -37,7 +38,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly Sharing.PublicLinkStore _publicLinks;
     private readonly Sharing.PublicViewerTracker _publicViewers;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.CollaboratorService collaborators, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers, Git.CheckoutManager checkouts)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, Sessions.SessionGoalManager goals, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.CollaboratorService collaborators, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers, Git.CheckoutManager checkouts)
     {
         _checkouts = checkouts;
         _collaborators = collaborators;
@@ -51,6 +52,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _channels = channels;
         _sessions = sessions;
         _schedule = schedule;
+        _goals = goals;
         _identity = identity;
         _tokens = tokens;
         _plugins = plugins;
@@ -409,6 +411,21 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     public Task<IReadOnlyList<InboxRun>> GetInbox()
         => Task.FromResult(_schedule.Inbox());
+
+    public Task<SessionGoal> ArmGoal(ArmGoalRequest request)
+        => Task.FromResult(_goals.Arm(request, DateTimeOffset.UtcNow));
+
+    public Task<SessionGoal?> DisarmGoal(string goalId, string reason)
+        => Task.FromResult(_goals.Disarm(goalId, string.IsNullOrWhiteSpace(reason) ? "cancelled" : reason));
+
+    public Task RemoveGoal(string goalId)
+    {
+        _goals.Remove(goalId);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<SessionGoal>> ListGoals()
+        => Task.FromResult(_goals.List());
 
     public Task<IReadOnlyList<OpenApproval>> GetOpenApprovals()
         => _sessions.GetOpenApprovalsAsync();

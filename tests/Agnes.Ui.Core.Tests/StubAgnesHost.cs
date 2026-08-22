@@ -18,6 +18,7 @@ public abstract class StubAgnesHost : IAgnesHost
     public event Action<AgnesConnectionState>? StateChanged { add { _ = value; } remove { _ = value; } }
     public event Action<IReadOnlyList<AgentInfo>>? AgentsChanged { add { _ = value; } remove { _ = value; } }
     public event Action<InboxRun>? InboxRunReceived { add { _ = value; } remove { _ = value; } }
+    public event Action<SessionGoal>? GoalChanged { add { _ = value; } remove { _ = value; } }
     public event Action<string, long, bool>? ReadStateChanged { add { _ = value; } remove { _ = value; } }
 
     public virtual Task ConnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

@@ -103,6 +103,7 @@ public class SessionHandoffTests : IDisposable
         sourceAdapter.Sessions[0].OnPrompt = (_, s) =>
         {
             s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("hi there")));
+            s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("done")));
             s.Emit(new TurnEndedEvent(StopReason.EndTurn));
             return Task.FromResult(StopReason.EndTurn);
         };
@@ -126,6 +127,7 @@ public class SessionHandoffTests : IDisposable
         targetAdapter.Sessions[0].OnPrompt = (c, s) =>
         {
             childGot = c;
+            s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("done")));
             s.Emit(new TurnEndedEvent(StopReason.EndTurn));
             return Task.FromResult(StopReason.EndTurn);
         };

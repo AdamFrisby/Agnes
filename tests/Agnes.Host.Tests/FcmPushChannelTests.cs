@@ -161,6 +161,7 @@ public sealed class FcmPushChannelTests
 
         adapter.Session.OnPrompt = (_, s) =>
         {
+            s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("done")));
             s.Emit(new TurnEndedEvent(StopReason.EndTurn));
             return Task.FromResult(StopReason.EndTurn);
         };

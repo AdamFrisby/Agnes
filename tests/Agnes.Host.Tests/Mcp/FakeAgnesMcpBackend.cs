@@ -49,6 +49,32 @@ internal sealed class FakeAgnesMcpBackend : IAgnesMcpBackend
         TranscriptRequest = (sessionId, forwardRawContext);
         return Task.FromResult(Transcript);
     }
+
+    // ---- goals ----
+    public List<ArmGoalRequest> Armed { get; } = [];
+    public List<(string GoalId, string Reason)> Disarmed { get; } = [];
+    public List<SessionGoal> Goals { get; } = [];
+
+    public Task<SessionGoal> ArmGoalAsync(ArmGoalRequest request, CancellationToken cancellationToken = default)
+    {
+        Armed.Add(request);
+        var goal = new SessionGoal(
+            "goal-" + Armed.Count, request.SessionId, request.Goal, request.IdleSeconds,
+            request.MaxProds, 0, true, DateTimeOffset.UnixEpoch);
+        Goals.Add(goal);
+        return Task.FromResult(goal);
+    }
+
+    public Task<SessionGoal?> DisarmGoalAsync(string goalId, string reason, CancellationToken cancellationToken = default)
+    {
+        Disarmed.Add((goalId, reason));
+        var existing = Goals.FirstOrDefault(g => g.Id == goalId);
+        return Task.FromResult<SessionGoal?>(existing is null ? null : existing with { Armed = false, DisarmedReason = reason });
+    }
+
+    public Task<IReadOnlyList<SessionGoal>> ListGoalsAsync(string? sessionId, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<SessionGoal>>(
+            sessionId is { Length: > 0 } id ? [.. Goals.Where(g => g.SessionId == id)] : Goals);
 }
 
 /// <summary>A fixed-token caller source for offline tool tests.</summary>

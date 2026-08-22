@@ -152,6 +152,7 @@ public class LaunchProfilesViewModelTests
         public event Action<AgnesConnectionState>? StateChanged;
         public event Action<IReadOnlyList<AgentInfo>>? AgentsChanged;
         public event Action<InboxRun>? InboxRunReceived;
+        public event Action<SessionGoal>? GoalChanged;
         public event Action<string, long, bool>? ReadStateChanged;
 #pragma warning restore CS0067
 

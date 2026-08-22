@@ -35,6 +35,15 @@ public interface IAgnesMcpBackend
     /// leave the host — see <see cref="TranscriptPrivacyFilter"/>. Only an explicit opt-in includes them.
     /// </summary>
     Task<McpTranscript> ReadSessionTranscriptAsync(string sessionId, bool forwardRawContext, CancellationToken cancellationToken = default);
+
+    /// <summary>Arms a standing goal on a session (see <see cref="Agnes.Protocol.SessionGoal"/>).</summary>
+    Task<SessionGoal> ArmGoalAsync(ArmGoalRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Stops a goal nudging, recording why. Null when the goal id is unknown.</summary>
+    Task<SessionGoal?> DisarmGoalAsync(string goalId, string reason, CancellationToken cancellationToken = default);
+
+    /// <summary>Goals on one session, or every goal when <paramref name="sessionId"/> is null.</summary>
+    Task<IReadOnlyList<SessionGoal>> ListGoalsAsync(string? sessionId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>An open/known session as an MCP client sees it.</summary>

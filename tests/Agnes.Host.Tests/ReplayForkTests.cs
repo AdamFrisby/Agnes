@@ -86,7 +86,7 @@ public class ReplayForkTests : IDisposable
         // The child agent (a fresh session) receives the parent transcript as an invisible seed ahead of the
         // user's first message.
         IReadOnlyList<ContentBlock>? childGot = null;
-        adapter.Sessions[1].OnPrompt = (c, s) => { childGot = c; s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
+        adapter.Sessions[1].OnPrompt = (c, s) => { childGot = c; s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("done"))); s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
         await manager.PromptAsync(result.Info.SessionId, [new TextContent("continue")]);
         await WaitForAsync(() => childGot is not null);
 
@@ -108,7 +108,7 @@ public class ReplayForkTests : IDisposable
             TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance);
 
         var parent = await manager.OpenSessionAsync("scripted", _src, useSandbox: false);
-        adapter.Sessions[0].OnPrompt = (_, s) => { s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
+        adapter.Sessions[0].OnPrompt = (_, s) => { s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("done"))); s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
         await manager.PromptAsync(parent.SessionId, [new TextContent("try this differently")]);
         await WaitForEventAsync(manager, parent.SessionId, e => e.OfType<MessageChunkEvent>().Any(m => m.Role == MessageRole.User));
 

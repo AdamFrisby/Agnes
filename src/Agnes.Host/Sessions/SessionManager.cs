@@ -30,6 +30,12 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly ISandboxProvider? _sandboxes;
     private readonly SessionSecurityOptions _security;
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
+    private readonly AutoContinueOptions _autoContinue;
+    private readonly Mcp.SessionMcpTokens _sessionMcpTokens;
+
+    /// <summary>Where a sandboxed agent reaches Agnes's own MCP endpoint (bridge-local plain HTTP), or null
+    /// when the guest endpoint isn't configured — in which case no agnes server is offered to agents.</summary>
+    private readonly string? _guestMcp;
     private readonly ClaudeTokenRotationPusher? _rotationPusher;
     private readonly McpRegistry? _mcp;
     private readonly bool _mcpStrict;
@@ -114,6 +120,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         _gitConsent.Forget(sessionId); // drop this session's per-repo git consents.
+        _sessionMcpTokens.Revoke(sessionId); // a leaked agent config must not outlive the session it named.
     }
 
     /// <summary>If a just-restarted agent dies again within this window, stop auto-restarting and ask the
@@ -143,7 +150,10 @@ public sealed class SessionManager : IAsyncDisposable
         ICliFallback? cliFallback = null,
         Hosting.PromptLibrary? promptLibrary = null,
         ApprovalGateService? approvals = null,
-        SessionSecurityOptions? security = null)
+        SessionSecurityOptions? security = null,
+        AutoContinueOptions? autoContinue = null,
+        Mcp.SessionMcpTokens? sessionMcpTokens = null,
+        GuestMcpOptions? guestMcp = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -154,6 +164,9 @@ public sealed class SessionManager : IAsyncDisposable
         _logger = loggerFactory.CreateLogger<SessionManager>();
         _sandboxes = sandboxProviders?.All.FirstOrDefault();
         _security = security ?? new SessionSecurityOptions();
+        _autoContinue = autoContinue ?? new AutoContinueOptions();
+        _sessionMcpTokens = sessionMcpTokens ?? new Mcp.SessionMcpTokens();
+        _guestMcp = guestMcp?.Url;
         _credentialProviders = credentialProviders?.ToArray() ?? [];
         _rotationPusher = rotationPusher;
         _mcp = mcp;
@@ -779,7 +792,7 @@ public sealed class SessionManager : IAsyncDisposable
             // (Re-)stamp this session's own credentials + MCP + forward token into the sandbox. Critical
             // for a clone: it inherited the SOURCE session's tokens, which must be overwritten here.
             mcpConfigPath = await ProvisionSandboxContentsAsync(
-                sandbox, sessionId, adapterId, effectiveDirectory, project, skipPermissions, mcpApproval, gitCredentialMode, cancellationToken).ConfigureAwait(false);
+                sandbox, sessionId, adapterId, modelId, effectiveDirectory, project, skipPermissions, mcpApproval, gitCredentialMode, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Session {SessionId} runs in sandbox {SandboxId}", sessionId, sandbox.Id);
         }
         else
@@ -1372,7 +1385,7 @@ public sealed class SessionManager : IAsyncDisposable
             // Re-stamp credentials + MCP + forward token: the guest's /run is tmpfs (lost on a VM
             // cold-start) and re-provisioning is idempotent when the VM was still up.
             mcpConfigPath = await ProvisionSandboxContentsAsync(
-                sandbox, sessionId, record.AdapterId, effectiveDirectory, project,
+                sandbox, sessionId, record.AdapterId, record.ModelId, effectiveDirectory, project,
                 record.SkipPermissions, sandboxRecord?.McpApproval ?? "Ask", sandboxRecord?.GitCredentialMode ?? "Off", cancellationToken).ConfigureAwait(false);
             _sandboxRegistry?.SetState(sessionId, "running", DateTimeOffset.UtcNow);
         }
@@ -1413,7 +1426,7 @@ public sealed class SessionManager : IAsyncDisposable
     {
         var session = new HostSession(
             sessionId, adapterId, workingDirectory, agent, _store, _broadcaster,
-            _loggerFactory.CreateLogger<HostSession>(), _bus);
+            _loggerFactory.CreateLogger<HostSession>(), _bus, _autoContinue);
         if (wireLifecycle)
         {
             session.Faulted = () => _ = RecoverAgentAsync(sessionId);
@@ -1582,6 +1595,12 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
+    /// <summary>Writes a host-originated line into a session's log (and to every client). Public so
+    /// background services — the goal watcher — can report what they did in the place the user is looking,
+    /// rather than only in the host log.</summary>
+    public Task AppendSessionNoticeAsync(string sessionId, string message, CancellationToken cancellationToken = default)
+        => AppendNoticeAsync(sessionId, message);
+
     private async Task AppendNoticeAsync(string sessionId, string message, bool isError = false)
     {
         var stored = await _store.AppendAsync(sessionId, new NoticeEvent(message, isError)).ConfigureAwait(false);
@@ -1719,15 +1738,97 @@ public sealed class SessionManager : IAsyncDisposable
         await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionStoppedEvent(sessionId)).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Adds the environment that pins a sandboxed agent to the session's model, for CLIs that select a model
+    /// through the environment instead of argv (<see cref="IModelEnvironmentAdapter"/>). Argv reaches the
+    /// guest inside the wrapped exec, but environment does not — the run wrapper starts the agent under
+    /// <c>env -i</c>, so anything set on the host <c>incus</c> process is scrubbed. Core stays ignorant of
+    /// which CLI needs this: it asks the adapter and merges whatever comes back.
+    /// </summary>
+    private void AddSandboxModel(string adapterId, string? modelId, string sessionId, Dictionary<string, string> env)
+    {
+        if (_adapters.Find(adapterId) is not IModelEnvironmentAdapter adapter)
+        {
+            return;
+        }
+
+        // Agnes's own MCP endpoint, offered to the agent over the sandbox bridge. The token is minted per
+        // session and IS that session's identity to the tool layer, so the agent needs no session id of its
+        // own — and cannot name another session's.
+        IReadOnlyList<InlineMcpServer> servers = [];
+        if (_guestMcp is { Length: > 0 } guestMcpUrl)
+        {
+            var token = _sessionMcpTokens.Issue(sessionId);
+            servers = [new InlineMcpServer("agnes", guestMcpUrl, $"Bearer {token}")];
+        }
+
+        foreach (var (key, value) in adapter.InlineConfigEnvironment(modelId, servers))
+        {
+            env[key] = value;
+        }
+    }
+
+    /// <summary>
+    /// Checks that the model the session asked for is one the agent can actually reach from inside its
+    /// sandbox, and says so loudly when it isn't. This exists because the failure it catches is silent:
+    /// OpenCode, asked for a model outside its catalogue, streams from a different one without a word, so
+    /// the session runs on a model nobody chose. Best-effort — a probe that can't be run, or returns
+    /// nothing, is treated as "couldn't determine" and says nothing rather than crying wolf.
+    /// </summary>
+    private async Task VerifyModelAvailableAsync(
+        ISandbox sandbox, string sessionId, string adapterId, string? modelId, CancellationToken cancellationToken)
+    {
+        if (modelId is not { Length: > 0 } model
+            || _adapters.Find(adapterId) is not IModelProbeAdapter probe
+            || probe.ProbeArguments is not { Count: > 0 } argv)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await sandbox.ExecAsync(
+                new SandboxExec { Argv = [.. argv], WorkingDirectory = "/work" }, cancellationToken).ConfigureAwait(false);
+            if (!result.Success)
+            {
+                _logger.LogDebug("Model probe for {AdapterId} exited {Code} in sandbox", adapterId, result.ExitCode);
+                return;
+            }
+
+            var available = probe.ParseProbeOutput(result.Stdout);
+            if (available.Count == 0 || available.Any(m => string.Equals(m.Id, model, StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            _logger.LogWarning(
+                "Session {SessionId}: model {ModelId} is not in the sandboxed {AdapterId} catalogue ({Count} available); "
+                + "the agent will silently use one of its own choosing", sessionId, model, adapterId, available.Count);
+            await AppendNoticeAsync(sessionId,
+                $"'{model}' isn't available to {adapterId} inside this sandbox — it can only reach "
+                + $"{available.Count} model(s) there, so it will silently run a different one. This usually means the "
+                + "provider's credentials aren't reaching the sandbox.",
+                isError: true).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Never let a diagnostic stop a session from opening.
+            _logger.LogDebug(ex, "Model availability probe failed for session {SessionId}", sessionId);
+        }
+    }
+
     /// <summary>Materializes a sandbox's credentials + MCP config + git-credential wiring (env + files)
     /// and pushes them in, returning the MCP config path. Shared by open and resume — on resume the VM's
     /// tmpfs was lost when it stopped, so everything is re-materialized.</summary>
     private async Task<string?> ProvisionSandboxContentsAsync(
-        ISandbox sandbox, string sessionId, string adapterId, string effectiveDirectory, Projects.Project? project,
-        bool skipPermissions, string mcpApproval, string gitCredentialMode, CancellationToken cancellationToken)
+        ISandbox sandbox, string sessionId, string adapterId, string? modelId, string effectiveDirectory,
+        Projects.Project? project, bool skipPermissions, string mcpApproval, string gitCredentialMode,
+        CancellationToken cancellationToken)
     {
         var env = new Dictionary<string, string>();
         var files = new List<SandboxCredentialFile>();
+
+        AddSandboxModel(adapterId, modelId, sessionId, env);
 
         var credentialProvider = _credentialProviders.FirstOrDefault(p => p.Handles(adapterId));
         if (credentialProvider is not null)
@@ -1744,11 +1845,15 @@ public sealed class SessionManager : IAsyncDisposable
         var mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, project, effectiveDirectory, env, files);
         await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, project?.CredentialAccount, env, files, cancellationToken).ConfigureAwait(false);
 
-        if (env.Count > 0 || files.Count > 0)
-        {
-            await sandbox.MaterializeCredentialAsync(
-                new SandboxCredential { EnvironmentVariables = env, Files = files }, cancellationToken).ConfigureAwait(false);
-        }
+        // Unconditional: this is a re-stamp, so the guest must end up with exactly what was computed here.
+        // Skipping an empty set would leave a previous provision's variables in place — which is how a
+        // model switched back to the default would keep applying the model it was switched away from.
+        await sandbox.MaterializeCredentialAsync(
+            new SandboxCredential { EnvironmentVariables = env, Files = files }, cancellationToken).ConfigureAwait(false);
+
+        // Only meaningful once the credentials above are in place — that is what decides which models the
+        // agent can see from in there.
+        await VerifyModelAvailableAsync(sandbox, sessionId, adapterId, modelId, cancellationToken).ConfigureAwait(false);
 
         if (credentialProvider is not null)
         {
@@ -1921,6 +2026,22 @@ public sealed class SessionManager : IAsyncDisposable
         // not polled here — polling raced the init line and persisted the placeholder id, which broke
         // --resume. Codex reports its id synchronously at open, so the catalogue is already correct there.
         await session.PromptAsync(content).ConfigureAwait(false);
+    }
+
+    /// <summary>Sends content under the session's <see cref="SendPolicy"/> instead of forcing a turn: if one
+    /// is already running the content queues behind it rather than starting a second concurrent prompt.
+    /// This is the right primitive for anything the host originates on the session's behalf (a goal nudge),
+    /// where the session may legitimately have become busy since the decision to send was taken.</summary>
+    public async Task SubmitAsync(string sessionId, IReadOnlyList<ContentBlock> content)
+    {
+        if (IsReadOnly(sessionId))
+        {
+            await AppendNoticeAsync(sessionId, ReadOnlyRejectionMessage, isError: true).ConfigureAwait(false);
+            return;
+        }
+
+        var session = await EnsureLiveAsync(sessionId).ConfigureAwait(false);
+        await session.SubmitAsync(content).ConfigureAwait(false);
     }
 
     // ---- CLI-fallback terminal (platform/03) ----

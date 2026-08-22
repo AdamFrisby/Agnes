@@ -360,6 +360,18 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Completed background runs (newest first).</summary>
     Task<IReadOnlyList<InboxRun>> GetInboxAsync();
 
+    /// <summary>Arms a standing goal on a session (nudged when it falls idle past the threshold).</summary>
+    Task<SessionGoal> ArmGoalAsync(ArmGoalRequest request) => throw new NotSupportedException();
+
+    /// <summary>Stops a goal nudging, recording why.</summary>
+    Task<SessionGoal?> DisarmGoalAsync(string goalId, string reason) => throw new NotSupportedException();
+
+    /// <summary>Deletes a goal outright.</summary>
+    Task RemoveGoalAsync(string goalId) => Task.CompletedTask;
+
+    /// <summary>Every goal on this host, newest first.</summary>
+    Task<IReadOnlyList<SessionGoal>> ListGoalsAsync() => Task.FromResult<IReadOnlyList<SessionGoal>>([]);
+
     /// <summary>Open permission requests across every session on this host that still need a human, newest
     /// first — the cross-session approvals list (notifications/02 tier 1). Default empty for hosts/fixtures
     /// that don't aggregate approvals.</summary>
@@ -368,6 +380,9 @@ public interface IAgnesHost : IAsyncDisposable
 
     /// <summary>Raised when a background run lands in the inbox.</summary>
     event Action<InboxRun>? InboxRunReceived;
+
+    /// <summary>A goal was armed, nudged or disarmed on this host.</summary>
+    event Action<SessionGoal>? GoalChanged;
 
     /// <summary>A session's read state changed on the host (sessionId, last-viewed sequence, sticky-unread).</summary>
     event Action<string, long, bool>? ReadStateChanged;

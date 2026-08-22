@@ -158,7 +158,9 @@ public sealed class PushNotificationTests
         // device-A is actively viewing this exact session; device-B is not.
         h.Views.MarkViewing("device-A", info.SessionId);
 
-        await EmitAsync(h, info.SessionId, new TurnEndedEvent(StopReason.EndTurn));
+        await EmitAsync(h, info.SessionId,
+            new MessageChunkEvent(MessageRole.Assistant, new TextContent("done")),
+            new TurnEndedEvent(StopReason.EndTurn));
 
         var payload = Assert.Single(channel.Sent);
         Assert.Equal("device-B", payload.DeviceId);
@@ -176,7 +178,9 @@ public sealed class PushNotificationTests
         h.Registrations.Register("device-1", mobile.Id, "token-1");
         h.Registrations.Register("device-2", other.Id, "token-2");
 
-        await EmitAsync(h, info.SessionId, new TurnEndedEvent(StopReason.EndTurn));
+        await EmitAsync(h, info.SessionId,
+            new MessageChunkEvent(MessageRole.Assistant, new TextContent("done")),
+            new TurnEndedEvent(StopReason.EndTurn));
 
         Assert.Equal("device-1", Assert.Single(mobile.Sent).DeviceId);
         Assert.Equal("device-2", Assert.Single(other.Sent).DeviceId);

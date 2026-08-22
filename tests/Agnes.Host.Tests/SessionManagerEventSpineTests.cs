@@ -59,7 +59,7 @@ public class SessionManagerEventSpineTests
         var (manager, adapter, bus) = NewManager();
         await using var _ = manager;
         IReadOnlyList<ContentBlock>? received = null;
-        adapter.Session.OnPrompt = (c, s) => { received = c; s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
+        adapter.Session.OnPrompt = (c, s) => { received = c; s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("done"))); s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
         bus.Intercept(new CancelPrompt());
 
         var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
@@ -76,7 +76,7 @@ public class SessionManagerEventSpineTests
         var (manager, adapter, bus) = NewManager();
         await using var _ = manager;
         IReadOnlyList<ContentBlock>? received = null;
-        adapter.Session.OnPrompt = (c, s) => { received = c; s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
+        adapter.Session.OnPrompt = (c, s) => { received = c; s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("done"))); s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
         bus.Intercept(new RewritePrompt());
 
         var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
@@ -93,7 +93,7 @@ public class SessionManagerEventSpineTests
         var (manager, adapter, _) = NewManager();
         await using var _d = manager;
         IReadOnlyList<ContentBlock>? received = null;
-        adapter.Session.OnPrompt = (c, s) => { received = c; s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
+        adapter.Session.OnPrompt = (c, s) => { received = c; s.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("done"))); s.Emit(new TurnEndedEvent(StopReason.EndTurn)); return Task.FromResult(StopReason.EndTurn); };
 
         var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
         await manager.PromptAsync(info.SessionId, [new TextContent("hello")]);

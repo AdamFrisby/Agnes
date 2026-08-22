@@ -416,6 +416,10 @@ public sealed class SimulatedHost : IAgnesHost
 
     public event Action<InboxRun>? InboxRunReceived;
 
+#pragma warning disable CS0067 // goals aren't simulated; declared so the host contract is satisfied
+    public event Action<SessionGoal>? GoalChanged;
+#pragma warning restore CS0067
+
     public Task<ScheduledTask> ScheduleTaskAsync(ScheduleTaskRequest request)
     {
         var task = new ScheduledTask($"task-{_scheduled.Count + 1}", request.AdapterId, request.WorkingDirectory,

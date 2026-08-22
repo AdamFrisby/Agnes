@@ -11,7 +11,7 @@ public sealed class AgnesMcpToolsTests
     private const string ValidToken = "good-token";
 
     private static AgnesMcpTools Build(FakeAgnesMcpBackend backend, string? presentedToken = ValidToken)
-        => new(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(presentedToken));
+        => new(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(presentedToken), new SessionMcpTokens());
 
     [Fact]
     public void ToolsList_exposes_the_expected_tool_set_with_schemas()
@@ -22,8 +22,8 @@ public sealed class AgnesMcpToolsTests
         Assert.Equal(
             new[]
             {
-                "get_session_status", "list_open_approvals", "list_sessions",
-                "read_session_transcript", "respond_permission", "send_prompt", "set_mode",
+                "arm_goal", "disarm_goal", "get_session_status", "list_goals", "list_open_approvals",
+                "list_sessions", "read_session_transcript", "respond_permission", "send_prompt", "set_mode",
             },
             names);
 
@@ -123,7 +123,7 @@ public sealed class AgnesMcpToolsTests
 
     private static IReadOnlyList<McpServerTool> BuildToolDescriptors()
     {
-        var instance = new AgnesMcpTools(new FakeAgnesMcpBackend(), new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(ValidToken));
+        var instance = new AgnesMcpTools(new FakeAgnesMcpBackend(), new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(ValidToken), new SessionMcpTokens());
         var options = new McpServerToolCreateOptions();
         return typeof(AgnesMcpTools)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance)
@@ -131,4 +131,83 @@ public sealed class AgnesMcpToolsTests
             .Select(m => McpServerTool.Create(m, instance, options))
             .ToArray();
     }
+
+    // ---- a sandboxed agent's session token is NOT a device token ----
+
+    private static (AgnesMcpTools Tools, SessionMcpTokens Tokens, string Token) BuildForSession(
+        FakeAgnesMcpBackend backend, string sessionId)
+    {
+        var tokens = new SessionMcpTokens();
+        var sessionToken = tokens.Issue(sessionId);
+        // Authenticator deliberately rejects it: the ONLY thing vouching for this caller is the session token.
+        var tools = new AgnesMcpTools(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(sessionToken), tokens);
+        return (tools, tokens, sessionToken);
+    }
+
+    [Fact]
+    public async Task A_session_token_cannot_reach_the_cross_session_tools()
+    {
+        // These act across every session on the host. An agent inside one VM must not gain that reach.
+        var (tools, _, _) = BuildForSession(new FakeAgnesMcpBackend(), "s1");
+
+        await Assert.ThrowsAsync<McpUnauthenticatedException>(() => tools.ListSessions());
+        await Assert.ThrowsAsync<McpUnauthenticatedException>(() => tools.SendPrompt("s2", "do something"));
+        await Assert.ThrowsAsync<McpUnauthenticatedException>(() => tools.ReadSessionTranscript("s2", false));
+    }
+
+    [Fact]
+    public async Task A_session_token_arms_a_goal_on_its_own_session_only()
+    {
+        // Even naming another session must not redirect it — the token is the identity, not the argument.
+        var backend = new FakeAgnesMcpBackend();
+        var (tools, _, _) = BuildForSession(backend, "s1");
+
+        await tools.ArmGoal("finish it", idleSeconds: 60, sessionId: "s2-somebody-else");
+
+        Assert.Equal("s1", Assert.Single(backend.Armed).SessionId);
+    }
+
+    [Fact]
+    public async Task A_session_token_cannot_disarm_another_sessions_goal()
+    {
+        var backend = new FakeAgnesMcpBackend();
+        var (otherTools, _, _) = BuildForSession(backend, "s2");
+        var theirGoal = await otherTools.ArmGoal("their goal", idleSeconds: 60);
+
+        var (tools, _, _) = BuildForSession(backend, "s1");
+
+        await Assert.ThrowsAsync<ArgumentException>(() => tools.DisarmGoal(theirGoal.Id, "not mine"));
+    }
+
+    [Fact]
+    public async Task A_session_token_lists_only_its_own_goals()
+    {
+        var backend = new FakeAgnesMcpBackend();
+        var (mine, _, _) = BuildForSession(backend, "s1");
+        var (theirs, _, _) = BuildForSession(backend, "s2");
+        await mine.ArmGoal("mine", idleSeconds: 60);
+        await theirs.ArmGoal("theirs", idleSeconds: 60);
+
+        // "all" is ignored for a session caller — it can't widen its own scope.
+        var listed = await mine.ListGoals(sessionId: "all");
+
+        Assert.All(listed, g => Assert.Equal("s1", g.SessionId));
+    }
+
+    [Fact]
+    public async Task A_device_token_still_reaches_everything_including_other_sessions_goals()
+    {
+        var backend = new FakeAgnesMcpBackend();
+        var tools = Build(backend);
+
+        await tools.ArmGoal("device-armed", idleSeconds: 60, sessionId: "s9");
+
+        Assert.Equal("s9", Assert.Single(backend.Armed).SessionId);
+        await tools.ListSessions(); // no throw: unchanged authority
+    }
+
+    [Fact]
+    public async Task A_device_token_must_name_a_session_since_it_has_none_of_its_own()
+        => await Assert.ThrowsAsync<ArgumentException>(
+            () => Build(new FakeAgnesMcpBackend()).ArmGoal("no target", idleSeconds: 60));
 }

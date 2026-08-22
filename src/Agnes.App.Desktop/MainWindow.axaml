@@ -298,6 +298,87 @@
                         </Button.Flyout>
                     </Button>
 
+                    <!-- Goals: standing "keep going" goals, armed by an agent or from here -->
+                    <Button Classes="chip" Padding="10,5" FontSize="12"
+                            IsVisible="{Binding HasGoals}" AutomationProperties.Name="Goals">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Text="🎯 Goals" VerticalAlignment="Center" />
+                            <Border Classes="status working" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding ArmedGoalCount}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                        <Button.Flyout>
+                            <Flyout Placement="Bottom">
+                                <!-- Width is pinned, not just a minimum: a MinWidth lets a long line in the
+                                     goal box widen the panel past the flyout, which then grows a horizontal
+                                     scrollbar instead of wrapping. -->
+                                <ScrollViewer Width="400" MaxHeight="520"
+                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                  <StackPanel Spacing="8" MaxWidth="380" HorizontalAlignment="Stretch">
+                                    <!-- Arm a new goal on the focused session -->
+                                    <Border Padding="8,6" CornerRadius="6" Background="{DynamicResource PanelAlt}">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="New goal" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding NewGoalTarget}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                            <!-- HorizontalAlignment=Stretch keeps the box at the panel's width
+                                                 however long the text is; wrapping does the rest. -->
+                                            <TextBox Text="{Binding NewGoalText, Mode=TwoWay}" AcceptsReturn="True" MinHeight="62"
+                                                     TextWrapping="Wrap" FontSize="12" HorizontalAlignment="Stretch"
+                                                     MaxHeight="140" VerticalContentAlignment="Top"
+                                                     PlaceholderText="What must be achieved before this session may stop?"
+                                                     AutomationProperties.Name="Goal text" />
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="Nudge if idle (min)" Foreground="{DynamicResource FgDim}" FontSize="10" />
+                                                    <!-- Wide enough for four digits plus the spinner buttons. -->
+                                                    <NumericUpDown Value="{Binding NewGoalIdleMinutes, Mode=TwoWay}" Minimum="1" Maximum="1440"
+                                                                   Increment="5" FormatString="0" Width="150" FontSize="12"
+                                                                   AutomationProperties.Name="Idle minutes" />
+                                                </StackPanel>
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="Max nudges" Foreground="{DynamicResource FgDim}" FontSize="10" />
+                                                    <NumericUpDown Value="{Binding NewGoalMaxProds, Mode=TwoWay}" Minimum="1" Maximum="50"
+                                                                   Increment="1" FormatString="0" Width="150" FontSize="12"
+                                                                   IsEnabled="{Binding NewGoalHasLimit}"
+                                                                   AutomationProperties.Name="Maximum nudges" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <CheckBox IsChecked="{Binding NewGoalUnlimited, Mode=TwoWay}" FontSize="11"
+                                                      Content="Keep nudging until I disarm it (no limit)"
+                                                      AutomationProperties.Name="Unlimited nudges" />
+                                            <Button Content="Arm goal" Classes="primary" FontSize="12" Padding="10,4"
+                                                    HorizontalAlignment="Left" Command="{Binding ArmGoalCommand}"
+                                                    AutomationProperties.Name="Arm goal" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <ItemsControl ItemsSource="{Binding Goals}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="8,6" Margin="0,2" CornerRadius="6" Background="{DynamicResource PanelAlt}">
+                                                    <StackPanel Spacing="4">
+                                                        <TextBlock Text="{Binding Text}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
+                                                                   TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <Button Content="Disarm" FontSize="11" Padding="8,3" IsVisible="{Binding Armed}"
+                                                                    Command="{Binding $parent[ItemsControl].DataContext.DisarmGoalCommand}"
+                                                                    CommandParameter="{Binding}" AutomationProperties.Name="Disarm goal" />
+                                                            <Button Content="Delete" FontSize="11" Padding="8,3"
+                                                                    Command="{Binding $parent[ItemsControl].DataContext.RemoveGoalCommand}"
+                                                                    CommandParameter="{Binding}" AutomationProperties.Name="Delete goal" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                  </StackPanel>
+                                </ScrollViewer>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+
                     <!-- Sessions switcher: state of every open session + attention -->
                     <Button Classes="chip" Padding="10,5" FontSize="12" AutomationProperties.Name="Sessions">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

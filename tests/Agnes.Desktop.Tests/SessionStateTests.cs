@@ -859,7 +859,7 @@ internal sealed class FakeHost : IAgnesHost
     public Task<SandboxStatus?> GetSandboxStatusAsync(string sessionId) => Task.FromResult<SandboxStatus?>(null);
 #pragma warning disable CS0067
     public event Action<InboxRun>? InboxRunReceived;
-#pragma warning restore CS0067
+    public event Action<SessionGoal>? GoalChanged;
 
     public Task<HostInfo> GetHostInfoAsync() => Task.FromResult(new HostInfo("fake", "fake", "1.0"));
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync() => Task.FromResult<IReadOnlyList<AgentInfo>>([]);

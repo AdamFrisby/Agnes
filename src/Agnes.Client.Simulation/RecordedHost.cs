@@ -112,6 +112,9 @@ public sealed class RecordedHost : IAgnesHost
     public Task<IReadOnlyList<InboxRun>> GetInboxAsync() => Task.FromResult<IReadOnlyList<InboxRun>>([]);
 #pragma warning disable CS0067
     public event Action<InboxRun>? InboxRunReceived;
+
+    /// <summary>Goals aren't simulated; declared so the host contract is satisfied.</summary>
+    public event Action<SessionGoal>? GoalChanged;
 #pragma warning restore CS0067
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId) => Task.CompletedTask;
     public Task PauseSandboxAsync(string sessionId) => Task.CompletedTask;

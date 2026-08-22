@@ -96,6 +96,7 @@ public sealed class HostConnection : IAgnesHost
             return Task.CompletedTask;
         });
 
+        _hub.On<SessionGoal>(nameof(IAgnesClient.OnGoalChanged), goal => GoalChanged?.Invoke(goal));
         _hub.On<InboxRun>(nameof(IAgnesClient.OnInboxRun), run =>
         {
             InboxRunReceived?.Invoke(run);
@@ -343,6 +344,18 @@ public sealed class HostConnection : IAgnesHost
     public Task<IReadOnlyList<ScheduledTask>> ListScheduledTasksAsync()
         => _hub.InvokeAsync<IReadOnlyList<ScheduledTask>>(nameof(IAgnesServer.ListScheduledTasks));
 
+    public Task<SessionGoal> ArmGoalAsync(ArmGoalRequest request)
+        => _hub.InvokeAsync<SessionGoal>(nameof(IAgnesServer.ArmGoal), request);
+
+    public Task<SessionGoal?> DisarmGoalAsync(string goalId, string reason)
+        => _hub.InvokeAsync<SessionGoal?>(nameof(IAgnesServer.DisarmGoal), goalId, reason);
+
+    public Task RemoveGoalAsync(string goalId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RemoveGoal), goalId);
+
+    public Task<IReadOnlyList<SessionGoal>> ListGoalsAsync()
+        => _hub.InvokeAsync<IReadOnlyList<SessionGoal>>(nameof(IAgnesServer.ListGoals));
+
     public Task RemoveScheduledTaskAsync(string taskId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RemoveScheduledTask), taskId);
 
@@ -362,6 +375,8 @@ public sealed class HostConnection : IAgnesHost
         => _hub.InvokeAsync<IReadOnlyList<OpenApproval>>(nameof(IAgnesServer.GetOpenApprovals));
 
     public event Action<InboxRun>? InboxRunReceived;
+
+    public event Action<SessionGoal>? GoalChanged;
     public event Action<string, long, bool>? ReadStateChanged;
 
     public Task MarkSessionReadAsync(string sessionId, long sequence)

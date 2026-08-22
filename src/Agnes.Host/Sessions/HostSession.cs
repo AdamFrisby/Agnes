@@ -36,6 +36,12 @@ internal sealed class HostSession : IAsyncDisposable
     private bool _turnActive;
     private SendPolicy _sendPolicy = SendPolicy.QueueInAgent;
 
+    // What the in-flight turn has produced, and how many turns in a row have now stalled. Both are touched
+    // only from the single-threaded event pump (plus the turn start), so they need no lock.
+    private readonly AutoContinueOptions _autoContinue;
+    private TurnProductivity _turn = TurnProductivity.Empty;
+    private int _consecutiveStalls;
+
     public HostSession(
         string sessionId,
         string adapterId,
@@ -44,7 +50,8 @@ internal sealed class HostSession : IAsyncDisposable
         IEventStore store,
         ISessionBroadcaster broadcaster,
         ILogger logger,
-        Agnes.Abstractions.Events.IEventBus? bus = null)
+        Agnes.Abstractions.Events.IEventBus? bus = null,
+        AutoContinueOptions? autoContinue = null)
     {
         SessionId = sessionId;
         AdapterId = adapterId;
@@ -54,6 +61,7 @@ internal sealed class HostSession : IAsyncDisposable
         _broadcaster = broadcaster;
         _logger = logger;
         _bus = bus ?? new Agnes.Abstractions.Events.EventBus();
+        _autoContinue = autoContinue ?? new AutoContinueOptions();
         _pump = Task.Run(PumpAsync);
     }
 
@@ -118,6 +126,8 @@ internal sealed class HostSession : IAsyncDisposable
     /// by <see cref="SubmitAsync"/>, and this is also the auto-send target when a queued message is drained).</summary>
     public async Task PromptAsync(IReadOnlyList<ContentBlock> content)
     {
+        // Claim the turn before the message is logged (StartTurn re-asserts it): between the two there is
+        // otherwise a window where a concurrent Submit sees an idle session and sends instead of queueing.
         lock (_queueGate)
         {
             _turnActive = true;
@@ -133,6 +143,21 @@ internal sealed class HostSession : IAsyncDisposable
             toAgent = [.. seed, .. content];
             _pendingSeed = null;
         }
+
+        StartTurn(toAgent);
+    }
+
+    /// <summary>Drives an agent turn without logging a user message. Split out from
+    /// <see cref="PromptAsync"/> so the host can continue a stalled turn without the transcript claiming the
+    /// person typed the continuation.</summary>
+    private void StartTurn(IReadOnlyList<ContentBlock> toAgent)
+    {
+        lock (_queueGate)
+        {
+            _turnActive = true;
+        }
+
+        _turn = TurnProductivity.Empty;
 
         _ = Task.Run(async () =>
         {
@@ -343,7 +368,9 @@ internal sealed class HostSession : IAsyncDisposable
 
     // Turn just ended: clear the busy flag, and under the default QueueInAgent policy auto-send the head of
     // the queue (seamlessly continuing into the next turn so a concurrent submit can't slip in between).
-    private async Task OnTurnEndedAsync()
+    /// <summary>Drains the next queued message into a new turn, if the policy allows one. Returns whether a
+    /// message was drained — i.e. whether the session has already moved on to the user's next instruction.</summary>
+    private async Task<bool> OnTurnEndedAsync()
     {
         PendingMessage? next;
         lock (_queueGate)
@@ -361,11 +388,59 @@ internal sealed class HostSession : IAsyncDisposable
             }
         }
 
-        if (next is not null)
+        if (next is null)
         {
-            await PublishQueueAsync().ConfigureAwait(false);
-            await PromptAsync(next.Content).ConfigureAwait(false);
+            return false;
         }
+
+        await PublishQueueAsync().ConfigureAwait(false);
+        await PromptAsync(next.Content).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Reacts to a turn that ended having produced nothing actionable. The stall is always reported — that
+    /// is the point, since the agent itself called it a normal completion — and then optionally continued,
+    /// up to <see cref="AutoContinueOptions.MaxAttempts"/> consecutive times.
+    /// </summary>
+    private async Task HandleStalledTurnAsync(TurnEndedEvent turnEnded)
+    {
+        if (_cts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _consecutiveStalls++;
+
+        // The agent's own wire value, when it said something more specific than the narrowed enum.
+        var detail = turnEnded.RawReason is { Length: > 0 } raw && raw != "end_turn"
+            ? $" (the agent reported '{raw}')"
+            : string.Empty;
+
+        var max = _autoContinue.MaxAttempts;
+        if (!_autoContinue.Enabled || max <= 0 || _consecutiveStalls > max)
+        {
+            var giveUp = _autoContinue.Enabled && max > 0
+                ? $" Auto-continue already retried {max} time(s) without progress, so it has stopped."
+                : string.Empty;
+            _logger.LogWarning(
+                "Session {SessionId}: turn produced no message and no tool call{Detail}; not continuing " +
+                "(attempt {Attempt}, cap {Cap}, enabled {Enabled})",
+                SessionId, detail, _consecutiveStalls, max, _autoContinue.Enabled);
+            await AppendAndPublishAsync(new NoticeEvent(
+                $"The agent ended its turn without producing a result{detail}.{giveUp} Send a message to continue.",
+                IsError: true)).ConfigureAwait(false);
+            return;
+        }
+
+        _logger.LogInformation(
+            "Session {SessionId}: turn produced no message and no tool call{Detail}; continuing automatically " +
+            "({Attempt}/{Cap})", SessionId, detail, _consecutiveStalls, max);
+        await AppendAndPublishAsync(new NoticeEvent(
+            $"The agent ended its turn without producing a result{detail} — continuing automatically "
+            + $"(attempt {_consecutiveStalls} of {max}).")).ConfigureAwait(false);
+
+        StartTurn([new TextContent(_autoContinue.Prompt)]);
     }
 
     public Task CancelAsync() => _agent.CancelAsync(_cts.Token);
@@ -392,10 +467,13 @@ internal sealed class HostSession : IAsyncDisposable
         => _agent.AnswerQuestionAsync(requestId, answers, _cts.Token);
 
     /// <summary>
-    /// Surfaces a permission card for a brokered git push and waits for the user's answer (times out to
-    /// a deny so a never-answered push doesn't hang the broker forever). Returns true iff allowed.
+    /// Surfaces a permission card for a brokered git push and waits for the user's answer. A card nobody
+    /// answers times out to a deny, so a never-answered push can't hang the broker — but the result
+    /// distinguishes that from a deliberate "Deny", because the two must not be remembered the same way:
+    /// caching an unanswered card as a refusal locks the repo out for the rest of the session and the user
+    /// is never asked again, so approving afterwards has no effect.
     /// </summary>
-    public async Task<bool> RequestGitPermissionAsync(string host, string? repo)
+    public async Task<GitConsentOutcome> RequestGitPermissionAsync(string host, string? repo)
     {
         var requestId = "gitcred-" + Guid.NewGuid().ToString("n");
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -410,6 +488,7 @@ internal sealed class HostSession : IAsyncDisposable
         await AppendAndPublishAsync(new PermissionRequestedEvent(requestId, string.Empty,
             $"Allow the sandboxed agent to use your GitHub account for {target}? (clone, fetch and push — asked once for this repository)", options)).ConfigureAwait(false);
 
+        var answered = false;
         bool allowed;
         try
         {
@@ -417,15 +496,28 @@ internal sealed class HostSession : IAsyncDisposable
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, _cts.Token);
             await using var registration = linked.Token.Register(() => tcs.TrySetResult(false));
             allowed = await tcs.Task.ConfigureAwait(false);
+            // The card is removed by whoever answers it; still present means nothing answered, so this
+            // result came from the timeout rather than from a person.
+            answered = !_hostPermissions.ContainsKey(requestId);
         }
         finally
         {
             _hostPermissions.TryRemove(requestId, out _);
         }
 
+        var outcome = allowed ? GitConsentOutcome.Allowed
+            : answered ? GitConsentOutcome.Denied
+            : GitConsentOutcome.Unanswered;
+
         await AppendAndPublishAsync(new PermissionResolvedEvent(requestId, allowed ? "allow" : "deny",
-            allowed ? PermissionOutcome.Allowed : PermissionOutcome.Denied)).ConfigureAwait(false);
-        return allowed;
+            outcome switch
+            {
+                GitConsentOutcome.Allowed => PermissionOutcome.Allowed,
+                GitConsentOutcome.Denied => PermissionOutcome.Denied,
+                // Cancelled reads correctly in the transcript: nobody refused, the card simply expired.
+                _ => PermissionOutcome.Cancelled,
+            })).ConfigureAwait(false);
+        return outcome;
     }
 
     private async Task PumpAsync()
@@ -439,12 +531,28 @@ internal sealed class HostSession : IAsyncDisposable
                     AgentSessionStarted?.Invoke(started.AgentSessionId);
                 }
 
+                _turn = _turn.WithEvent(@event);
+
                 await AppendAndPublishAsync(@event).ConfigureAwait(false);
 
-                if (@event is TurnEndedEvent)
+                if (@event is TurnEndedEvent turnEnded)
                 {
+                    // Decide before draining: OnTurnEndedAsync may start the next turn and reset the tally.
+                    var stalled = _turn.IsStall(turnEnded.Reason);
+                    if (!stalled)
+                    {
+                        _consecutiveStalls = 0;
+                    }
+
                     TurnCompleted?.Invoke();
-                    await OnTurnEndedAsync().ConfigureAwait(false);
+
+                    // A queued user message wins over auto-continue — the person has already said what
+                    // should happen next, so resuming the stalled turn would talk over them.
+                    var drained = await OnTurnEndedAsync().ConfigureAwait(false);
+                    if (stalled && !drained)
+                    {
+                        await HandleStalledTurnAsync(turnEnded).ConfigureAwait(false);
+                    }
                 }
                 else if (@event is AgentErrorEvent error)
                 {

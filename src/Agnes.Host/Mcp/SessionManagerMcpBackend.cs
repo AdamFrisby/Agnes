@@ -15,12 +15,23 @@ public sealed class SessionManagerMcpBackend : IAgnesMcpBackend
 {
     private readonly SessionManager _sessions;
     private readonly TranscriptPrivacyFilter _privacy;
+    private readonly SessionGoalManager _goals;
 
-    public SessionManagerMcpBackend(SessionManager sessions, TranscriptPrivacyFilter privacy)
+    public SessionManagerMcpBackend(SessionManager sessions, TranscriptPrivacyFilter privacy, SessionGoalManager goals)
     {
         _sessions = sessions;
         _privacy = privacy;
+        _goals = goals;
     }
+
+    public Task<SessionGoal> ArmGoalAsync(ArmGoalRequest request, CancellationToken cancellationToken = default)
+        => Task.FromResult(_goals.Arm(request, DateTimeOffset.UtcNow));
+
+    public Task<SessionGoal?> DisarmGoalAsync(string goalId, string reason, CancellationToken cancellationToken = default)
+        => Task.FromResult(_goals.Disarm(goalId, string.IsNullOrWhiteSpace(reason) ? "cancelled" : reason));
+
+    public Task<IReadOnlyList<SessionGoal>> ListGoalsAsync(string? sessionId, CancellationToken cancellationToken = default)
+        => Task.FromResult(sessionId is { Length: > 0 } id ? _goals.ListFor(id) : _goals.List());
 
     public async Task<IReadOnlyList<McpSessionSummary>> ListSessionsAsync(CancellationToken cancellationToken = default)
     {
