@@ -222,4 +222,57 @@ public sealed class StalledTurnTests
         Assert.Single(prompts);
         Assert.Empty((await manager.GetSnapshotAsync(info.SessionId, 0)).Events.OfType<NoticeEvent>());
     }
+
+    // ---- liveness: the in-flight tool-call count the watchdog reads ----
+
+    [Fact]
+    public async Task An_unfinished_tool_call_keeps_the_session_looking_busy()
+    {
+        // This is what stops a long subagent run being reported as wedged.
+        var adapter = new ScriptedAgentAdapter();
+        adapter.Session.OnPrompt = (_, session) =>
+        {
+            session.Emit(new ToolCallEvent("call-1", "task", ToolKind.Other, ToolCallStatus.InProgress, []));
+            return Task.FromResult(StopReason.EndTurn); // no turn end emitted: the turn is still open
+        };
+
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(),
+            NullLoggerFactory.Instance);
+        var info = await manager.OpenSessionAsync("scripted", Path.GetTempPath(), useSandbox: false);
+        await manager.PromptAsync(info.SessionId, [new TextContent("go")]);
+
+        await WaitForAsync(async () =>
+            (await manager.GetSnapshotAsync(info.SessionId, 0)).Events.OfType<ToolCallEvent>().Any());
+        await Task.Delay(100);
+
+        var activity = manager.LiveActivity(DateTimeOffset.UtcNow).Single(a => a.SessionId == info.SessionId).Activity;
+        Assert.Equal(1, activity.ToolCallsInFlight);
+        Assert.Equal(LivenessVerdict.Fine, SessionLiveness.Assess(activity with { Quiet = TimeSpan.FromHours(3) }, TimeSpan.FromMinutes(10)));
+    }
+
+    [Fact]
+    public async Task A_completed_tool_call_releases_the_session_to_be_judged_on_silence()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        adapter.Session.OnPrompt = (_, session) =>
+        {
+            session.Emit(new ToolCallEvent("call-1", "bash", ToolKind.Execute, ToolCallStatus.InProgress, []));
+            session.Emit(new ToolCallUpdateEvent("call-1", ToolCallStatus.Completed, null));
+            return Task.FromResult(StopReason.EndTurn);
+        };
+
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(),
+            NullLoggerFactory.Instance);
+        var info = await manager.OpenSessionAsync("scripted", Path.GetTempPath(), useSandbox: false);
+        await manager.PromptAsync(info.SessionId, [new TextContent("go")]);
+
+        await WaitForAsync(async () =>
+            (await manager.GetSnapshotAsync(info.SessionId, 0)).Events.OfType<ToolCallUpdateEvent>().Any());
+        await Task.Delay(100);
+
+        var activity = manager.LiveActivity(DateTimeOffset.UtcNow).Single(a => a.SessionId == info.SessionId).Activity;
+        Assert.Equal(0, activity.ToolCallsInFlight);
+    }
 }

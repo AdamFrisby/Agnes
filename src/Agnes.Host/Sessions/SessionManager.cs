@@ -1595,6 +1595,14 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
+    /// <summary>How each live session looks to the liveness watchdog. Reads the in-memory session handles
+    /// directly rather than the wire summaries: this is host-internal diagnosis, and it needs the tool-call
+    /// and last-event detail the summary deliberately doesn't carry.</summary>
+    internal IReadOnlyList<(string SessionId, SessionActivity Activity)> LiveActivity(DateTimeOffset now)
+        => [.. _sessions.Select(kv => (
+            kv.Key,
+            new SessionActivity(kv.Value.IsTurnActive, kv.Value.ToolCallsInFlight, now - kv.Value.LastEventAt)))];
+
     /// <summary>Writes a host-originated line into a session's log (and to every client). Public so
     /// background services — the goal watcher — can report what they did in the place the user is looking,
     /// rather than only in the host log.</summary>

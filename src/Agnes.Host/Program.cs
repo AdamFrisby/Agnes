@@ -805,6 +805,18 @@ builder.Services.AddSingleton(sp => new SessionGoalManager(
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "session-goals.json")));
 builder.Services.AddHostedService<GoalWatcher>();
 
+// ---- liveness watchdog: say when a turn stops getting anywhere ----
+// Agnes could previously only tell a live agent from a dead one. A process that stays up with its stream
+// open but stops producing looks exactly like one hard at work — forever. This reports (never restarts):
+// a wedged turn may still recover, and throwing away visible work is worse than saying so.
+builder.Services.AddSingleton(new LivenessOptions
+{
+    Enabled = builder.Configuration.GetValue("Agnes:Liveness:Enabled", true),
+    QuietLimit = TimeSpan.FromMinutes(
+        builder.Configuration.GetValue("Agnes:Liveness:QuietMinutes", (int)SessionLiveness.DefaultQuietLimit.TotalMinutes)),
+});
+builder.Services.AddHostedService<LivenessWatchdog>();
+
 // ---- agent adapters (plugins) ----
 builder.Services.AddSingleton<IAgentAdapter>(sp =>
 {

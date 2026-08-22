@@ -42,6 +42,18 @@ internal sealed class HostSession : IAsyncDisposable
     private TurnProductivity _turn = TurnProductivity.Empty;
     private int _consecutiveStalls;
 
+    // Liveness: when this session last emitted anything, and how many tool calls are still outstanding.
+    // Together they separate "working" from "wedged" — a tool call can legitimately run for hours with no
+    // events at all (a subagent), so silence only means something when nothing is outstanding.
+    private long _lastEventTicks = DateTimeOffset.UtcNow.UtcTicks;
+    private int _toolCallsInFlight;
+
+    /// <summary>When this session last emitted an event.</summary>
+    public DateTimeOffset LastEventAt => new(Interlocked.Read(ref _lastEventTicks), TimeSpan.Zero);
+
+    /// <summary>Tool calls started but not yet reported completed or failed.</summary>
+    public int ToolCallsInFlight => Volatile.Read(ref _toolCallsInFlight);
+
     public HostSession(
         string sessionId,
         string adapterId,
@@ -532,6 +544,7 @@ internal sealed class HostSession : IAsyncDisposable
                 }
 
                 _turn = _turn.WithEvent(@event);
+                TrackLiveness(@event);
 
                 await AppendAndPublishAsync(@event).ConfigureAwait(false);
 
@@ -572,6 +585,37 @@ internal sealed class HostSession : IAsyncDisposable
         {
             _logger.LogError(ex, "Event pump failed for session {SessionId}", SessionId);
             SignalFaultIfUnexpected();
+        }
+    }
+
+    /// <summary>Updates the liveness counters from one streamed event. Only the tool-call lifecycle moves
+    /// the in-flight count; every event counts as a sign of life.</summary>
+    private void TrackLiveness(SessionEvent @event)
+    {
+        Interlocked.Exchange(ref _lastEventTicks, DateTimeOffset.UtcNow.UtcTicks);
+
+        switch (@event)
+        {
+            case ToolCallEvent { Status: ToolCallStatus.Pending or ToolCallStatus.InProgress }:
+                Interlocked.Increment(ref _toolCallsInFlight);
+                break;
+
+            // A tool that arrives already finished never counted as outstanding, so nothing to release.
+            case ToolCallUpdateEvent { Status: ToolCallStatus.Completed or ToolCallStatus.Failed }:
+                // Clamp at zero: an agent may report a terminal update for a call we never saw start
+                // (a resumed session replays mid-flight work), and a negative count would read as "idle".
+                if (Volatile.Read(ref _toolCallsInFlight) > 0)
+                {
+                    Interlocked.Decrement(ref _toolCallsInFlight);
+                }
+
+                break;
+
+            case TurnEndedEvent:
+                // A finished turn owns nothing: anything still outstanding was abandoned with it, and
+                // carrying it forward would make the next quiet turn look permanently busy.
+                Interlocked.Exchange(ref _toolCallsInFlight, 0);
+                break;
         }
     }
 
