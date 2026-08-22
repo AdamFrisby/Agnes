@@ -87,7 +87,7 @@ public class ImageBakeTests
     }
 
     [Fact]
-    public void Manifest_defaults_bake_claude_and_codex_with_node_and_core_tools()
+    public void Manifest_defaults_bake_claude_codex_and_opencode_with_node_and_core_tools()
     {
         var m = new SandboxImageManifest();
         Assert.True(m.Node);
@@ -95,6 +95,9 @@ public class ImageBakeTests
         Assert.Contains("build-essential", m.AptPackages);
         Assert.Contains(m.Agents, a => a.AdapterId == "claude-code-native" && a.Source == "copy:claude");
         Assert.Contains(m.Agents, a => a.AdapterId == "codex" && a.Source == "copy:codex");
+        // OpenCode ships a self-contained binary, so it copies like the others rather than
+        // needing an NpmGlobal — a new project gets it without the user knowing to ask.
+        Assert.Contains(m.Agents, a => a.AdapterId == "opencode" && a.Source == "copy:opencode");
     }
 
     [Fact]

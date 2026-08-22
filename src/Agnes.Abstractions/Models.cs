@@ -24,6 +24,49 @@ public interface IModelListingAdapter
     IReadOnlyList<ModelInfo> StaticModels { get; }
 }
 
+/// <summary>
+/// Optional capability an <see cref="IAgentAdapter"/> may implement (checked via
+/// <c>is IModelEnvironmentAdapter</c>) when its CLI selects a model through the <b>environment</b> rather
+/// than argv. Not every CLI takes a <c>--model</c> flag: OpenCode's ACP server takes none at all, and reads
+/// its model from config, which <c>OPENCODE_CONFIG_CONTENT</c> overrides. Agnes needs this as a separate
+/// axis from argv because the two travel differently into a sandbox — argv rides the wrapped
+/// <c>incus exec</c> command, while environment has to be materialized into the guest's agent-env file
+/// (the run wrapper scrubs the host environment with <c>env -i</c>).
+/// </summary>
+public interface IModelEnvironmentAdapter
+{
+    /// <summary>
+    /// The environment that carries this CLI's inline configuration — the model it must use, and any MCP
+    /// servers it should reach. Both travel together because a CLI configured this way has <b>one</b>
+    /// inline-config variable: emitting them separately would have the second overwrite the first.
+    /// Empty when the adapter has no environment-based configuration, so callers can apply it unconditionally.
+    /// </summary>
+    IReadOnlyDictionary<string, string> InlineConfigEnvironment(string? modelId, IReadOnlyList<InlineMcpServer> mcpServers);
+}
+
+/// <summary>An MCP server an agent should reach over HTTP, in the minimal shape an inline config needs.
+/// Deliberately not <c>McpServerInfo</c>: that lives in the wire protocol, and Agnes.Abstractions takes no
+/// dependency on it.</summary>
+public sealed record InlineMcpServer(string Name, string Url, string? AuthorizationHeader = null);
+
+/// <summary>
+/// Optional capability an <see cref="IAgentAdapter"/> may implement to have its model catalogue probed
+/// <b>in the environment the agent actually runs in</b>, rather than wherever the daemon happens to live.
+/// The distinction is not academic: a CLI whose catalogue depends on credentials sees a different set of
+/// models inside a sandbox than on the host, and at least one (OpenCode) responds to being asked for a
+/// model it cannot reach by silently streaming from one it can — so the mismatch has to be detected rather
+/// than trusted. <see cref="ProbeArguments"/> is the argv that prints the catalogue; null means the CLI
+/// can't be asked and no verification is attempted.
+/// </summary>
+public interface IModelProbeAdapter
+{
+    /// <summary>Argv that makes this CLI print the models it can reach, or null when it has no such command.</summary>
+    IReadOnlyList<string>? ProbeArguments { get; }
+
+    /// <summary>Parses that command's stdout into the catalogue.</summary>
+    IReadOnlyList<ModelInfo> ParseProbeOutput(string stdout);
+}
+
 /// <summary>Resolves an adapter's effective model catalog. Pure over its input, so the live-vs-static rule
 /// lives in exactly one place: use the live-probed list when the adapter supplies one, else the static
 /// fallback.</summary>

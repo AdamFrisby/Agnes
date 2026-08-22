@@ -45,6 +45,10 @@ internal static class AcpMap
         _ => ToolCallStatus.Pending,
     };
 
+    /// <summary>Narrows an ACP stop reason to the domain enum. Unknown values fall back to
+    /// <see cref="StopReason.EndTurn"/> so a turn always terminates — but that fallback is indistinguishable
+    /// from a real completion, so callers should check <see cref="IsKnownStopReason"/> and preserve the raw
+    /// string (see <c>TurnEndedEvent.RawReason</c>) rather than let an unrecognised stop pass as success.</summary>
     public static StopReason ToStopReason(string? reason) => reason switch
     {
         "end_turn" => StopReason.EndTurn,
@@ -54,6 +58,11 @@ internal static class AcpMap
         "cancelled" => StopReason.Cancelled,
         _ => StopReason.EndTurn,
     };
+
+    /// <summary>Whether the agent's stop reason is one this protocol version models — i.e. whether
+    /// <see cref="ToStopReason"/> mapped it or silently fell back.</summary>
+    public static bool IsKnownStopReason(string? reason)
+        => reason is "end_turn" or "max_tokens" or "max_turn_requests" or "refusal" or "cancelled";
 
     public static PermissionOptionKind ToOptionKind(string? kind) => kind switch
     {
@@ -108,10 +117,43 @@ internal static class AcpMap
             case "current_mode_update":
                 yield return new ModeChangedEvent(GetString(update, "currentModeId") ?? string.Empty);
                 break;
+            case "usage_update":
+                // OpenCode reports context occupancy and running cost this way. Dropping it (as this
+                // mapper used to) is why an OpenCode session showed no token or cost figures at all
+                // while a native-Claude one showed thousands.
+                yield return new UsageReportedEvent(UsageOf(update));
+                break;
+            case "available_commands_update":
+                // Deliberately not modelled: Agnes drives the agent, so its slash-command menu is noise.
+                yield break;
             default:
-                // available_commands_update and unknown kinds are ignored for now.
                 yield break;
         }
+    }
+
+    /// <summary>Whether this mapper models an update kind. Lets the caller log the ones it doesn't rather
+    /// than dropping them silently — an agent quietly telling us something we never surface is exactly how
+    /// the missing usage figures went unnoticed.</summary>
+    public static bool IsKnownUpdateKind(string? kind)
+        => kind is "agent_message_chunk" or "user_message_chunk" or "agent_thought_chunk"
+            or "tool_call" or "tool_call_update" or "plan" or "current_mode_update"
+            or "usage_update" or "available_commands_update";
+
+    /// <summary>Reads ACP's usage shape: <c>used</c> (context tokens), <c>size</c> (the model's window)
+    /// and <c>cost.amount</c>. Every field is optional and nothing is estimated — an absent number stays
+    /// null rather than becoming a fabricated zero.</summary>
+    private static UsageMetrics UsageOf(JsonElement update)
+    {
+        long? used = update.TryGetProperty("used", out var u) && u.TryGetInt64(out var usedValue) ? usedValue : null;
+        long? size = update.TryGetProperty("size", out var z) && z.TryGetInt64(out var sizeValue) ? sizeValue : null;
+        double? cost = update.TryGetProperty("cost", out var c)
+                       && c.ValueKind == JsonValueKind.Object
+                       && c.TryGetProperty("amount", out var amount)
+                       && amount.TryGetDouble(out var costValue)
+            ? costValue
+            : null;
+
+        return new UsageMetrics(ContextUsed: used, ContextWindow: size, CostUsd: cost);
     }
 
     private static ContentBlock ContentOf(JsonElement update)

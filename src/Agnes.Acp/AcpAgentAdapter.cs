@@ -28,9 +28,23 @@ public sealed record AcpLaunchSpec
     /// to <see cref="Models"/>.</summary>
     public Func<CancellationToken, Task<IReadOnlyList<ModelInfo>?>>? LiveModelProbe { get; init; }
 
+    /// <summary>Argv that makes this CLI print the models it can reach (e.g. <c>["models"]</c>), for probing
+    /// inside the environment the agent runs in. Null means the CLI can't be asked, so no verification.</summary>
+    public IReadOnlyList<string>? ModelProbeArguments { get; init; }
+
+    /// <summary>Parses <see cref="ModelProbeArguments"/> output. Null falls back to an empty catalogue,
+    /// which is treated as "couldn't determine" rather than "no models".</summary>
+    public Func<string, IReadOnlyList<ModelInfo>>? ModelProbeParser { get; init; }
+
     /// <summary>Builds the CLI arguments that select a model id (e.g. <c>--model &lt;id&gt;</c>). Null means
     /// this CLI doesn't take a model flag, so a requested <see cref="AgentSessionOptions.ModelId"/> is ignored.</summary>
     public Func<string, IReadOnlyList<string>>? ModelArguments { get; init; }
+
+    /// <summary>Builds the environment carrying this CLI's inline configuration — model and MCP servers
+    /// together (e.g. OpenCode's <c>OPENCODE_CONFIG_CONTENT</c>). Null means this CLI isn't configured
+    /// through the environment. Independent of the argv hooks: a CLI whose ACP mode takes no model flag sets
+    /// only this one, and Agnes then materializes it into the sandbox rather than appending to a command.</summary>
+    public Func<string?, IReadOnlyList<InlineMcpServer>, IReadOnlyDictionary<string, string>>? InlineConfig { get; init; }
 
     /// <summary>Builds the CLI arguments that inject extra system-prompt text (e.g. Claude Code's
     /// <c>--append-system-prompt &lt;text&gt;</c>). Null means this CLI has no system-prompt flag Agnes knows,
@@ -44,7 +58,7 @@ public sealed record AcpLaunchSpec
 /// it to add an optional capability its CLI supports (e.g. Claude Code adds <see cref="IMcpDiscoveryAdapter"/>)
 /// without re-implementing the ACP launch/session plumbing.
 /// </summary>
-public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
+public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter, IModelEnvironmentAdapter, IModelProbeAdapter
 {
     private readonly AcpLaunchSpec _spec;
     private readonly ILoggerFactory _loggerFactory;
@@ -82,6 +96,27 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
 
         return args;
     }
+
+    /// <summary>The inline-config environment for a launch, or empty when this CLI has no such axis. Pure,
+    /// and shared by the two paths it has to reach: the host process launched here, and the guest agent-env
+    /// file the host materializes for a sandboxed session.</summary>
+    public static IReadOnlyDictionary<string, string> BuildAgentEnvironment(AcpLaunchSpec spec, AgentSessionOptions options)
+        => spec.InlineConfig is { } build
+            ? build(options.ModelId, [])
+            : new Dictionary<string, string>();
+
+    /// <inheritdoc />
+    public IReadOnlyList<string>? ProbeArguments => _spec.ModelProbeArguments;
+
+    /// <inheritdoc />
+    public IReadOnlyList<ModelInfo> ParseProbeOutput(string stdout)
+        => _spec.ModelProbeParser is { } parse ? parse(stdout) : [];
+
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, string> InlineConfigEnvironment(string? modelId, IReadOnlyList<InlineMcpServer> mcpServers)
+        => _spec.InlineConfig is { } build
+            ? build(modelId, mcpServers)
+            : new Dictionary<string, string>();
 
     public async Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {
@@ -135,6 +170,10 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
         }
 
         ApplyEnvironment(startInfo, _spec.Environment);
+        // Model-selection env for the host path. A sandboxed launch scrubs this (the run wrapper's
+        // `env -i`), so there the same variables are materialized into the guest agent-env file instead —
+        // see SessionManager.AddSandboxModel.
+        ApplyEnvironment(startInfo, BuildAgentEnvironment(_spec, options));
         ApplyEnvironment(startInfo, options.Environment);
 
         var process = Process.Start(startInfo)

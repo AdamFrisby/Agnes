@@ -151,8 +151,13 @@ public sealed record QuestionAnsweredEvent(string RequestId) : SessionEvent;
 /// <summary>Raw output from the CLI-fallback terminal attached to this session.</summary>
 public sealed record TerminalOutputEvent(string TerminalId, string Data) : SessionEvent;
 
-/// <summary>An agent turn finished.</summary>
-public sealed record TurnEndedEvent(StopReason Reason) : SessionEvent;
+/// <summary>
+/// An agent turn finished. <see cref="RawReason"/> preserves the adapter's own wire value verbatim, because
+/// <see cref="Reason"/> is a lossy narrowing: an agent may report a reason outside the known set, and without
+/// the raw string an unrecognised stop is indistinguishable from a clean completion after the fact. Null when
+/// the adapter has no wire-level reason (or for events recorded before this was captured).
+/// </summary>
+public sealed record TurnEndedEvent(StopReason Reason, string? RawReason = null) : SessionEvent;
 
 /// <summary>
 /// Real token/cost usage numbers (the single shared shape for usage across the domain event, the wire, and

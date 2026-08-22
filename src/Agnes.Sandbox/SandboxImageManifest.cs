@@ -29,11 +29,13 @@ public sealed record SandboxImageManifest
     /// <summary>Agent CLIs to bake in.</summary>
     public IReadOnlyList<SandboxImageAgent> Agents { get; init; } =
     [
-        // Self-contained ELFs copied from the host (fast, no network). node-based agents (opencode,
-        // the claude-code-acp bridge) are added by the user as NpmGlobals — packaging varies, so we
-        // don't guess names as defaults.
+        // Self-contained ELFs copied from the host (fast, no network). An agent whose binary isn't on
+        // the host PATH is skipped by the bake with a progress note, so listing one costs nothing on a
+        // host that lacks it. The claude-code-acp bridge stays out: it's node-based and its package
+        // name varies, so the user adds it as an NpmGlobal.
         new("claude-code-native", "copy:claude"),
         new("codex", "copy:codex"),
+        new("opencode", "copy:opencode"),
     ];
 
     /// <summary>A short, stable fingerprint of the manifest — changes when a rebuild is warranted.</summary>

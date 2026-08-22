@@ -72,13 +72,12 @@ internal sealed class IncusSandbox : ISandbox, IPausableSandbox, IStoppableSandb
     }
 
     /// <summary>Writes the credential env vars to the root-owned tmpfs env file (NUL-delimited).</summary>
+    /// <summary>Replaces the root-owned env file with exactly what this provision computed. An empty set
+    /// writes an empty file rather than skipping: re-provisioning is a re-stamp, so a variable that is no
+    /// longer set must actually disappear from the guest (e.g. a session switched back to its default model,
+    /// whose model env would otherwise linger and keep overriding it).</summary>
     private async Task WriteAgentEnvAsync(IReadOnlyDictionary<string, string> env, CancellationToken cancellationToken = default)
     {
-        if (env.Count == 0)
-        {
-            return;
-        }
-
         var payload = string.Concat(env.Select(kv => $"{kv.Key}={kv.Value}\0"));
         var argv = IncusCommandBuilder.BuildFilePush(_options, Id, IncusGuest.AgentEnvFile, "0600", 0, 0);
         await _cli.RunCheckedAsync("push agent env", argv, payload, cancellationToken).ConfigureAwait(false);
