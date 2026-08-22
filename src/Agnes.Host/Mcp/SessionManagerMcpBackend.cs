@@ -69,8 +69,12 @@ public sealed class SessionManagerMcpBackend : IAgnesMcpBackend
             entry.SessionId, entry.AdapterId, StatusText(entry.State), entry.CurrentModeId, modes, entry.HeadSequence, entry.OpenApprovals);
     }
 
+    /// <summary>Submits rather than prompts: an MCP caller has no way to know whether a turn is in flight,
+    /// and PromptAsync is the unconditional immediate send — used here it starts a second concurrent
+    /// session/prompt on the same session, which shows up as two turn ends for one turn. Submitting applies
+    /// the session's send policy, so a message arriving mid-turn queues behind it instead.</summary>
     public Task SendPromptAsync(string sessionId, string text, CancellationToken cancellationToken = default)
-        => _sessions.PromptAsync(sessionId, [new TextContent(text)]);
+        => _sessions.SubmitAsync(sessionId, [new TextContent(text)]);
 
     public Task RespondPermissionAsync(string sessionId, string requestId, string optionId, CancellationToken cancellationToken = default)
         => _sessions.RespondPermissionAsync(sessionId, requestId, optionId);
