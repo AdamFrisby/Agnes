@@ -119,9 +119,12 @@ public sealed class HostBook
         _connector = connector;
         _dispatcher = dispatcher;
 
-        // The offline demo host is always present: the app has something to show before you have
-        // anywhere to connect to, which is the difference between "empty app" and "try it now".
+#if DEBUG
+        // Debug only: the app has something to show before you have anywhere to connect to. A shipped
+        // build lists only hosts the user actually paired — a fake one in that list is worse than an
+        // empty list, because it looks like real data.
         _links.Add(new HostLink(DemoHost.Saved, connector, dispatcher));
+#endif
         foreach (var saved in HostRegistry.Load())
         {
             _links.Add(new HostLink(saved, connector, dispatcher));
@@ -170,7 +173,9 @@ public sealed class HostBook
     public Task ConnectAllAsync() => Task.WhenAll(_links.Select(l => l.ConnectAsync()));
 }
 
-/// <summary>The built-in, offline simulated host.</summary>
+/// <summary>The built-in, offline simulated host (Debug builds only — see <see cref="MobileConnector"/>).
+/// <see cref="IsDemo"/> stays compiled in Release so the <c>sim://</c> check still works on any URL that
+/// somehow survives in saved state from a Debug run; it simply never matches anything the app adds.</summary>
 public static class DemoHost
 {
     public const string Url = "sim://demo";

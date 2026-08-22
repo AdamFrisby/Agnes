@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Agnes.App.Mobile.Services;
 using Agnes.Client;
+using Agnes.Protocol;
 using Agnes.Ui.Core;
 using Agnes.Ui.Core.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -123,6 +124,7 @@ public sealed partial class SessionsViewModel : ObservableObject
         });
 
         await _hosts.ConnectAllAsync().ConfigureAwait(false);
+        await DiscoverAsync().ConfigureAwait(false);
         _shell.Dispatcher.Post(RaiseSummary);
 
         // Reattach in parallel — each is an independent snapshot+tail, and a phone waking up wants them
@@ -137,13 +139,80 @@ public sealed partial class SessionsViewModel : ObservableObject
         });
     }
 
-    /// <summary>Reconnects hosts and reattaches anything that isn't live (pull-to-refresh).</summary>
+    /// <summary>Reconnects hosts, picks up any sessions this device hasn't seen, and reattaches anything
+    /// that isn't live (pull-to-refresh).</summary>
     public async Task RefreshAsync()
     {
         await _hosts.ConnectAllAsync().ConfigureAwait(false);
+        await DiscoverAsync().ConfigureAwait(false);
         _shell.Dispatcher.Post(RaiseSummary);
         await Task.WhenAll(All.Where(e => !e.IsLive).ToList().Select(AttachAsync)).ConfigureAwait(false);
         _shell.Dispatcher.Post(() => { Resort(); RaiseSummary(); });
+    }
+
+    /// <summary>
+    /// Adds the sessions each connected host actually has, for any this device doesn't already list.
+    /// </summary>
+    /// <remarks>
+    /// Without this the list is only ever what the phone itself opened: a freshly paired device shows
+    /// nothing at all, however many sessions are running, because its local registry starts empty and no
+    /// other code path ever asks the host. Sessions belong to the host, not to the device that opened them.
+    /// Best-effort per host — one host that can't be listed must not blank out the others.
+    /// </remarks>
+    private async Task DiscoverAsync()
+    {
+        var dismissed = DismissedSessions.Load();
+        foreach (var link in _hosts.Links)
+        {
+            if (link.IsBuiltIn)
+            {
+                continue; // the demo seeds its own session deliberately; don't also enumerate it
+            }
+
+            if (link.Host is not { } host)
+            {
+                continue; // not connected — the next refresh will pick it up
+            }
+
+            IReadOnlyList<SessionSummary> remote;
+            try
+            {
+                remote = await host.ListSessionsAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                continue;
+            }
+
+            var known = All.Select(e => e.SessionId).ToHashSet(StringComparer.Ordinal);
+            var added = remote
+                .Where(r => !known.Contains(r.SessionId) && !dismissed.Contains(r.SessionId))
+                .Select(r => new SavedSession(
+                    link.Name, link.Url, link.Saved.Token, r.SessionId, r.AdapterId,
+                    string.IsNullOrWhiteSpace(r.Title)
+                        ? (string.IsNullOrWhiteSpace(r.WorkingDirectory) ? r.SessionId : r.WorkingDirectory)
+                        : r.Title!,
+                    r.WorkingDirectory))
+                .ToList();
+
+            if (added.Count == 0)
+            {
+                continue;
+            }
+
+            _shell.Dispatcher.Post(() =>
+            {
+                foreach (var saved in added)
+                {
+                    var row = new SessionEntry(saved, link) { IsLoading = true };
+                    row.Changed += _ => Resort();
+                    All.Add(row);
+                }
+
+                Persist(); // remember what we found, so the next cold start is instant
+                Resort();
+            });
+        }
     }
 
     private async Task AttachAsync(SessionEntry entry)
@@ -322,6 +391,7 @@ public sealed partial class SessionsViewModel : ObservableObject
         return entry;
     }
 
+#if DEBUG
     /// <summary>
     /// Seeds a session on the built-in offline host, once, on a first launch with nothing paired.
     ///
@@ -364,6 +434,7 @@ public sealed partial class SessionsViewModel : ObservableObject
             // The demo is a courtesy; a failure here just leaves the normal empty state.
         }
     }
+#endif
 
     /// <summary>Wraps a host + view into a live session (used by the new-session flow).</summary>
     public SessionViewModel Build(IAgnesHost host, SessionView view, string title)
@@ -374,6 +445,8 @@ public sealed partial class SessionsViewModel : ObservableObject
     public void Forget(SessionEntry entry)
     {
         All.Remove(entry);
+        // Sticky: discovery lists what the host has, so without this the next refresh would bring it back.
+        DismissedSessions.Add(entry.SessionId);
         Persist();
         RaiseSummary();
         _shell.Toast($"Removed {entry.Title} from this device", ToastKind.Info);

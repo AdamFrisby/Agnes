@@ -324,12 +324,15 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     {
         await Sessions.RestoreAsync().ConfigureAwait(false);
 
-        // First launch with nothing paired: seed the offline demo so the app has something true to show.
+#if DEBUG
+        // Debug only: first launch with nothing paired seeds the offline demo so there is something to
+        // look at. A shipped build shows an honestly empty list and the pairing prompt instead.
         if (!Settings.DemoSeeded && Sessions.All.Count == 0 && !Hosts.Real.Any())
         {
             UpdateSettings(s => s with { DemoSeeded = true });
             await Sessions.SeedDemoAsync().ConfigureAwait(false);
         }
+#endif
 
         _ = Inbox.RefreshAsync();
     }

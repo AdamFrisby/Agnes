@@ -13,9 +13,22 @@
     <!-- Avalonia/XAML codegen produces warnings we don't want to fail the build (same posture as the
          desktop head). -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- Reflection-heavy (Avalonia bindings + System.Text.Json over the wire contract): don't trim. -->
+    <!--
+      Reflection-heavy (Avalonia bindings + System.Text.Json over the wire contract), so the app's own
+      assemblies are never trimmed: PublishTrimmed stays off, and the link mode below is SdkOnly, which
+      touches only the framework/SDK assemblies and leaves ours (and Avalonia's) whole. Debug links
+      nothing at all, so a developer build is always the un-linked one to compare against when a Release
+      build misbehaves.
+    -->
     <PublishTrimmed>false</PublishTrimmed>
-    <AndroidLinkMode>None</AndroidLinkMode>
+    <AndroidLinkMode Condition="'$(Configuration)' == 'Debug'">None</AndroidLinkMode>
+    <AndroidLinkMode Condition="'$(Configuration)' != 'Debug'">SdkOnly</AndroidLinkMode>
+    <!--
+      One ABI in a shipped build. arm64 is every current Android phone; x86_64 exists for emulators and
+      doubles the APK for a device that will never load it. Debug keeps both so an emulator still works.
+    -->
+    <RuntimeIdentifiers Condition="'$(Configuration)' == 'Debug'">android-arm64;android-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="'$(Configuration)' != 'Debug'">android-arm64</RuntimeIdentifiers>
     <AndroidUseInterpreter>false</AndroidUseInterpreter>
     <!-- AOT requires trimming, which we can't enable while bindings and the wire contract are resolved
          reflectively. Release therefore JITs, like the desktop head. -->
@@ -30,6 +43,18 @@
     -->
     <AndroidEnableMarshalMethods>false</AndroidEnableMarshalMethods>
   </PropertyGroup>
+
+  <!--
+    Belt and braces for SdkOnly linking: keep the assemblies whose members are reached only by name. The
+    wire contract is deserialized polymorphically and the UI binds by string path, so a linker that cannot
+    see a call site would otherwise be right to remove the target.
+  -->
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <TrimmerRootAssembly Include="Agnes.Protocol" />
+    <TrimmerRootAssembly Include="Agnes.Abstractions" />
+    <TrimmerRootAssembly Include="Agnes.Ui.Core" />
+    <TrimmerRootAssembly Include="System.Text.Json" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.0" />
@@ -55,7 +80,10 @@
     <ProjectReference Include="..\Agnes.Abstractions\Agnes.Abstractions.csproj" />
     <ProjectReference Include="..\Agnes.Protocol\Agnes.Protocol.csproj" />
     <ProjectReference Include="..\Agnes.Client\Agnes.Client.csproj" />
-    <ProjectReference Include="..\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
+    <!-- Debug only: the offline demo host is a development affordance, and a release build must not
+         ship a simulated host or its scripted transcripts at all. -->
+    <ProjectReference Include="..\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj"
+                      Condition="'$(Configuration)' == 'Debug'" />
     <ProjectReference Include="..\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
   </ItemGroup>
 

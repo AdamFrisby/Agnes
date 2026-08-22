@@ -52,6 +52,38 @@ public sealed record SavedSession(
     string WorkingDirectory = "",
     bool Pinned = false);
 
+/// <summary>
+/// Sessions this device was told to stop showing. Discovery lists what the <b>host</b> has, so without
+/// this a forgotten session would reappear on the very next refresh and "remove from this device" would
+/// mean nothing. Ids only — the session itself is untouched and still running.
+/// </summary>
+public static class DismissedSessions
+{
+    private const string File = "mobile-dismissed.json";
+
+    public static HashSet<string> Load()
+        => new(JsonStore.Load(File, new List<string>()), StringComparer.Ordinal);
+
+    public static void Add(string sessionId)
+    {
+        var all = Load();
+        if (all.Add(sessionId))
+        {
+            JsonStore.Save(File, all.ToList());
+        }
+    }
+
+    /// <summary>Forgets the dismissal — used when the user deliberately reopens a session.</summary>
+    public static void Remove(string sessionId)
+    {
+        var all = Load();
+        if (all.Remove(sessionId))
+        {
+            JsonStore.Save(File, all.ToList());
+        }
+    }
+}
+
 /// <summary>The device's open sessions, most recent first.</summary>
 public static class SessionRegistry
 {
