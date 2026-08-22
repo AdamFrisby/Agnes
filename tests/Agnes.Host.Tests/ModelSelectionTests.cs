@@ -164,7 +164,8 @@ public sealed class ModelSelectionTests
 
         Assert.DoesNotContain("--model", args);
         Assert.DoesNotContain("opencode-go/glm-5.3", args);
-        Assert.Equal("""{"model":"opencode-go/glm-5.3"}""", env["OPENCODE_CONFIG_CONTENT"]);
+        var overlay = JsonDocument.Parse(env["OPENCODE_CONFIG_CONTENT"]).RootElement;
+        Assert.Equal("opencode-go/glm-5.3", overlay.GetProperty("model").GetString());
     }
 
     [Fact]
@@ -178,12 +179,17 @@ public sealed class ModelSelectionTests
     }
 
     [Fact]
-    public void OpenCode_emits_no_model_environment_when_no_model_selected()
+    public void OpenCode_names_no_model_when_none_is_selected()
     {
         var spec = OpenCodeAgent.CreateLaunchSpec();
         var options = new AgentSessionOptions { WorkingDirectory = Path.GetTempPath() };
 
-        Assert.Empty(AcpAgentAdapter.BuildAgentEnvironment(spec, options));
+        // The overlay still travels — it carries the subagent depth — but naming a model Agnes wasn't asked
+        // for would override whatever default the user's own opencode.json sets.
+        var overlay = JsonDocument.Parse(
+            AcpAgentAdapter.BuildAgentEnvironment(spec, options)["OPENCODE_CONFIG_CONTENT"]).RootElement;
+
+        Assert.False(overlay.TryGetProperty("model", out _));
     }
 
     [Fact]
@@ -193,10 +199,13 @@ public sealed class ModelSelectionTests
         var adapter = OpenCodeAgent.Create(Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
 
         var capability = Assert.IsAssignableFrom<IModelEnvironmentAdapter>(adapter);
-        Assert.Equal(
-            """{"model":"opencode/big-pickle"}""",
-            capability.InlineConfigEnvironment("opencode/big-pickle", [])["OPENCODE_CONFIG_CONTENT"]);
-        Assert.Empty(capability.InlineConfigEnvironment(null, []));
+        var chosen = JsonDocument.Parse(
+            capability.InlineConfigEnvironment("opencode/big-pickle", [])["OPENCODE_CONFIG_CONTENT"]).RootElement;
+        var none = JsonDocument.Parse(
+            capability.InlineConfigEnvironment(null, [])["OPENCODE_CONFIG_CONTENT"]).RootElement;
+
+        Assert.Equal("opencode/big-pickle", chosen.GetProperty("model").GetString());
+        Assert.False(none.TryGetProperty("model", out _));
     }
 
     [Fact]
@@ -218,7 +227,7 @@ public sealed class ModelSelectionTests
             "opencode-go/ox-alpha-free",
             [new InlineMcpServer("agnes", "http://10.99.5.1:5099/mcp-agnes", "Bearer tok")]);
 
-        var overlay = JsonDocument.Parse(Assert.Single(env).Value).RootElement;
+        var overlay = JsonDocument.Parse(env["OPENCODE_CONFIG_CONTENT"]).RootElement;
         Assert.Equal("opencode-go/ox-alpha-free", overlay.GetProperty("model").GetString());
         var agnes = overlay.GetProperty("mcp").GetProperty("agnes");
         Assert.Equal("remote", agnes.GetProperty("type").GetString());
@@ -232,7 +241,7 @@ public sealed class ModelSelectionTests
         // A session with no model pinned must still be told where Agnes is.
         var env = OpenCodeAgent.BuildConfigEnvironment(null, [new InlineMcpServer("agnes", "http://h/mcp-agnes")]);
 
-        var overlay = JsonDocument.Parse(Assert.Single(env).Value).RootElement;
+        var overlay = JsonDocument.Parse(env["OPENCODE_CONFIG_CONTENT"]).RootElement;
         Assert.False(overlay.TryGetProperty("model", out _)); // nothing to say about the model
         Assert.True(overlay.TryGetProperty("mcp", out _));
     }
@@ -240,7 +249,72 @@ public sealed class ModelSelectionTests
     [Fact]
     public void Nothing_to_configure_means_no_overlay_at_all()
     {
-        // Emitting an empty overlay would still override the user's own config with "nothing".
-        Assert.Empty(OpenCodeAgent.BuildConfigEnvironment(null, []));
+        // Emitting an empty overlay would still override the user's own config with "nothing". The
+        // background-subagent flag is a separate capability opt-in and is unaffected.
+        Assert.DoesNotContain("OPENCODE_CONFIG_CONTENT", OpenCodeAgent.BuildConfigEnvironment(null, []).Keys);
+    }
+
+    // ---- background subagents ----
+
+    [Fact]
+    public void The_background_subagent_flag_is_set_by_default()
+    {
+        // Without it OpenCode's task tool refuses background:true, so subagents run strictly one at a
+        // time — 33 task calls with zero overlap in a live session.
+        var env = OpenCodeAgent.BuildConfigEnvironment("p/m", []);
+
+        Assert.Equal("true", env["OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS"]);
+    }
+
+    [Fact]
+    public void The_flag_travels_even_when_there_is_no_model_or_mcp_to_configure()
+    {
+        // It is a capability opt-in, not part of the config overlay, so it must not depend on one.
+        var env = OpenCodeAgent.BuildConfigEnvironment(null, [], backgroundSubagents: true);
+
+        Assert.Equal("true", Assert.Single(env).Value);
+        Assert.DoesNotContain("OPENCODE_CONFIG_CONTENT", env.Keys);
+    }
+
+    [Fact]
+    public void It_can_be_turned_off_without_disturbing_the_config_overlay()
+    {
+        var env = OpenCodeAgent.BuildConfigEnvironment("p/m", [], backgroundSubagents: false);
+
+        Assert.DoesNotContain("OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS", env.Keys);
+        Assert.Contains("OPENCODE_CONFIG_CONTENT", env.Keys);
+    }
+
+    [Fact]
+    public void With_nothing_at_all_to_say_the_environment_is_empty()
+        => Assert.Empty(OpenCodeAgent.BuildConfigEnvironment(null, [], backgroundSubagents: false));
+
+    [Fact]
+    public void Subagent_depth_is_raised_so_subagents_can_split_their_own_work()
+    {
+        // OpenCode defaults to 1: a subagent cannot spawn its own, so every branch funnels back through
+        // the root agent. Raising it is where fan-out actually multiplies.
+        var env = OpenCodeAgent.BuildConfigEnvironment("p/m", [], subagentDepth: 3);
+        var overlay = JsonDocument.Parse(env["OPENCODE_CONFIG_CONTENT"]).RootElement;
+
+        Assert.Equal(3, overlay.GetProperty("subagent_depth").GetInt32());
+    }
+
+    [Fact]
+    public void A_depth_of_one_is_left_unsaid_because_it_is_opencodes_own_default()
+    {
+        var env = OpenCodeAgent.BuildConfigEnvironment(null, [], backgroundSubagents: false, subagentDepth: 1);
+
+        Assert.Empty(env); // nothing worth overriding
+    }
+
+    [Fact]
+    public void Depth_alone_is_enough_to_warrant_an_overlay()
+    {
+        var env = OpenCodeAgent.BuildConfigEnvironment(null, [], backgroundSubagents: false, subagentDepth: 4);
+        var overlay = JsonDocument.Parse(env["OPENCODE_CONFIG_CONTENT"]).RootElement;
+
+        Assert.Equal(4, overlay.GetProperty("subagent_depth").GetInt32());
+        Assert.False(overlay.TryGetProperty("model", out _));
     }
 }

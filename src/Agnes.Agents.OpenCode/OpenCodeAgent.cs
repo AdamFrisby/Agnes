@@ -22,6 +22,16 @@ public sealed record OpenCodeOptions
     /// <summary>Runs <c>opencode models</c> and returns its stdout, or null when the CLI can't be asked.
     /// Injectable so the catalogue parsing is testable without spawning a process; null uses the real CLI.</summary>
     public Func<CancellationToken, Task<string?>>? ModelLister { get; init; }
+
+    /// <summary>How deep subagents may nest. OpenCode defaults to 1, so a subagent cannot spawn its own —
+    /// every branch of the work funnels back through the one root agent. Raising it lets a subagent split
+    /// its own batch, which is where the fan-out actually multiplies.</summary>
+    public int SubagentDepth { get; init; } = 3;
+
+    /// <summary>Let the agent run subagents in the background. Without it OpenCode's task tool blocks until
+    /// each subagent finishes, so subagents run strictly one at a time however many the agent asks for —
+    /// which is what a live session showed: 33 task calls, zero overlap.</summary>
+    public bool BackgroundSubagents { get; init; } = true;
 }
 
 /// <summary>
@@ -32,6 +42,15 @@ public sealed record OpenCodeOptions
 public static class OpenCodeAgent
 {
     public const string AdapterId = "opencode";
+
+    /// <summary>
+    /// Opts the agent into background subagents. OpenCode's task tool refuses <c>background: true</c>
+    /// without it ("Background subagents require OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true"), and with
+    /// it the tool gains that parameter and the guidance telling the model it will be notified on
+    /// completion. It is the difference between subagents that queue and subagents that accumulate.
+    /// Experimental upstream, hence the name — but it is the only way to run many at once.
+    /// </summary>
+    internal const string BackgroundSubagentsVariable = "OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS";
 
     /// <summary>The env var OpenCode reads an inline config from. It is <b>merged</b> over the config files
     /// (verified against v1.18: keys it omits keep their file values), so pinning the model this way leaves
@@ -57,7 +76,8 @@ public static class OpenCodeAgent
     /// only ever states what Agnes actually wants to set.</summary>
     private sealed record InlineConfig(
         [property: JsonPropertyName("model")] string? Model,
-        [property: JsonPropertyName("mcp")] IReadOnlyDictionary<string, RemoteMcp>? Mcp);
+        [property: JsonPropertyName("mcp")] IReadOnlyDictionary<string, RemoteMcp>? Mcp,
+        [property: JsonPropertyName("subagent_depth")] int? SubagentDepth);
 
     private static readonly JsonSerializerOptions OmitNulls =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -69,8 +89,17 @@ public static class OpenCodeAgent
     /// second silently replaced the first.
     /// </summary>
     public static IReadOnlyDictionary<string, string> BuildConfigEnvironment(
-        string? modelId, IReadOnlyList<InlineMcpServer> mcpServers)
+        string? modelId,
+        IReadOnlyList<InlineMcpServer> mcpServers,
+        bool backgroundSubagents = true,
+        int? subagentDepth = null)
     {
+        var env = new Dictionary<string, string>();
+        if (backgroundSubagents)
+        {
+            env[BackgroundSubagentsVariable] = "true";
+        }
+
         var mcp = mcpServers.Count == 0
             ? null
             : mcpServers.ToDictionary(
@@ -81,16 +110,16 @@ public static class OpenCodeAgent
                         : null),
                 StringComparer.Ordinal);
 
+        var depth = subagentDepth is > 1 ? subagentDepth : null; // 1 is OpenCode's own default: say nothing
         var model = string.IsNullOrEmpty(modelId) ? null : modelId;
-        if (model is null && mcp is null)
+        if (model is not null || mcp is not null || depth is not null)
         {
-            return new Dictionary<string, string>(); // nothing to say — leave the CLI's own config alone
+            // Only state an overlay when there is something to say — an empty one would still override
+            // the user's own config with "nothing".
+            env[ConfigContentVariable] = JsonSerializer.Serialize(new InlineConfig(model, mcp, depth), OmitNulls);
         }
 
-        return new Dictionary<string, string>
-        {
-            [ConfigContentVariable] = JsonSerializer.Serialize(new InlineConfig(model, mcp), OmitNulls),
-        };
+        return env;
     }
 
     /// <summary>
@@ -138,7 +167,8 @@ public static class OpenCodeAgent
             // No static catalogue: the model list is per-account, so a stale hard-coded list would offer
             // models the user can't actually reach. Live probe only, degrading to "no picker".
             LiveModelProbe = async ct => ParseModels(await lister(ct).ConfigureAwait(false)),
-            InlineConfig = BuildConfigEnvironment,
+            InlineConfig = (model, mcp) => BuildConfigEnvironment(
+                model, mcp, options.BackgroundSubagents, options.SubagentDepth),
             // The same command, run wherever the agent actually lives. A sandboxed OpenCode without the
             // host's provider key sees only the credential-free models and will quietly substitute one, so
             // the selected model has to be checked against the catalogue the agent itself can see.

@@ -16,6 +16,13 @@ public sealed record OpenCodeNativeOptions
 
     /// <summary>How long to wait for the server to announce its address before giving up.</summary>
     public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Let subagents run in the background rather than one at a time. Same posture as the ACP
+    /// adapter — a session shouldn't fan out differently depending on which protocol drives it.</summary>
+    public bool BackgroundSubagents { get; init; } = true;
+
+    /// <summary>How deep subagents may nest (OpenCode's own default is 1).</summary>
+    public int SubagentDepth { get; init; } = 3;
 }
 
 /// <summary>
@@ -61,7 +68,8 @@ public sealed class OpenCodeNativeAgent : IAgentAdapter, IModelEnvironmentAdapte
         => Task.FromResult<IReadOnlyList<ModelInfo>?>(null);
 
     public IReadOnlyDictionary<string, string> InlineConfigEnvironment(string? modelId, IReadOnlyList<InlineMcpServer> mcpServers)
-        => OpenCodeAgent.BuildConfigEnvironment(modelId, mcpServers);
+        => OpenCodeAgent.BuildConfigEnvironment(
+            modelId, mcpServers, _options.BackgroundSubagents, _options.SubagentDepth);
 
     public static OpenCodeNativeAgent Create(ILoggerFactory loggerFactory, OpenCodeNativeOptions? options = null)
         => new(options ?? new OpenCodeNativeOptions(), loggerFactory);
