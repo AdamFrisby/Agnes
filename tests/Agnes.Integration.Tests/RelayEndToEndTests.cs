@@ -101,6 +101,7 @@ public sealed class RelayEndToEndTests
     {
         private readonly InMemoryRelayHostKey _relayKey = new();
         private readonly RelayServer _relay;
+        private readonly string _devicesFile = Path.Combine(Path.GetTempPath(), $"agnes-relay-devices-{Guid.NewGuid():n}.json");
         private readonly string _certPath = Path.Combine(Path.GetTempPath(), $"agnes-relay-cert-{Guid.NewGuid():n}.pfx");
         private readonly string _keyPath = Path.Combine(Path.GetTempPath(), $"agnes-relay-key-{Guid.NewGuid():n}.pem");
         private readonly SelfSignedHostCertificateProvider _cert;
@@ -144,6 +145,7 @@ public sealed class RelayEndToEndTests
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Agnes:PairingToken"] = Token,
+                    ["Agnes:DevicesFile"] = _devicesFile,
                     ["Agnes:Transport:Relay:Url"] = $"127.0.0.1:{RelayPort}",
                     ["Agnes:Transport:Relay:HostId"] = HostId,
                     ["Agnes:Transport:Relay:CertFile"] = _certPath,
@@ -205,7 +207,7 @@ public sealed class RelayEndToEndTests
             _relay.DisposeAsync().AsTask().GetAwaiter().GetResult();
             _relayKey.Dispose();
             _cert.Dispose();
-            foreach (string path in (string[])[_certPath, _keyPath])
+            foreach (string path in (string[])[_devicesFile, _certPath, _keyPath])
             {
                 if (File.Exists(path))
                 {

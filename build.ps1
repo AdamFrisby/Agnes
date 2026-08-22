@@ -79,6 +79,7 @@ function Bundle-MacOS([string] $dir, [string] $arch) {
     if (Test-Path $app) { Remove-Item -Recurse -Force $app }
     New-Item -ItemType Directory -Force -Path (Join-Path $app 'Contents/MacOS') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $app 'Contents/Resources') | Out-Null
+    Copy-Item (Join-Path $Root 'packaging/macos/Agnes.icns') (Join-Path $app 'Contents/Resources/Agnes.icns')
 
     Get-ChildItem -Path $dir -Exclude 'Agnes.app', 'host' |
         Move-Item -Destination (Join-Path $app 'Contents/MacOS') -Force
@@ -93,6 +94,7 @@ function Bundle-MacOS([string] $dir, [string] $arch) {
   <key>CFBundleIdentifier</key><string>com.multitudal.agnes</string>
   <key>CFBundleExecutable</key><string>Agnes</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>Agnes.icns</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>0.1.0</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>

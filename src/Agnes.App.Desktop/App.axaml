@@ -9,7 +9,8 @@
              xmlns:ctb="using:ColorTextBlock.Avalonia"
              xmlns:sty="using:Avalonia.Styling"
              xmlns:themes="using:Agnes.App.Desktop.Themes"
-             x:Class="Agnes.App.Desktop.App">
+             x:Class="Agnes.App.Desktop.App"
+             Name="{x:Static app:DesktopBranding.ApplicationName}">
 
     <Application.Resources>
         <ResourceDictionary>
@@ -117,7 +118,7 @@
              render heavy. The uniform-bold chat was really the bundled Inter font (see Program.cs) — this
              just keeps the markdown surface aligned with the UI font. -->
         <Style Selector="ctb|CTextBlock">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontWeight" Value="Normal" />
         </Style>
         <Style Selector="ae|TextEditor">

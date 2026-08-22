@@ -14,15 +14,17 @@ namespace Agnes.Integration.Tests;
 public class KeypairAuthEndpointTests : IDisposable
 {
     private readonly string _keysFile = Path.Combine(Path.GetTempPath(), $"agnes-authkeys-it-{Guid.NewGuid():n}");
+    private readonly string _devicesFile = Path.Combine(Path.GetTempPath(), $"agnes-keypair-devices-it-{Guid.NewGuid():n}.json");
     private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
     public void Dispose()
     {
         _key.Dispose();
         if (File.Exists(_keysFile)) File.Delete(_keysFile);
+        if (File.Exists(_devicesFile)) File.Delete(_devicesFile);
     }
 
-    private sealed class Factory(string keysFile) : WebApplicationFactory<Program>
+    private sealed class Factory(string keysFile, string devicesFile) : WebApplicationFactory<Program>
     {
         protected override IHost CreateHost(IHostBuilder builder)
         {
@@ -32,6 +34,7 @@ public class KeypairAuthEndpointTests : IDisposable
                     ["Agnes:Auth:Pairing:Enabled"] = "false",
                     ["Agnes:Auth:Keypair:Enabled"] = "true",
                     ["Agnes:Auth:Keypair:AuthorizedKeysFile"] = keysFile,
+                    ["Agnes:DevicesFile"] = devicesFile,
                 }));
             return base.CreateHost(builder);
         }
@@ -43,7 +46,7 @@ public class KeypairAuthEndpointTests : IDisposable
         var spki = Convert.ToBase64String(_key.ExportSubjectPublicKeyInfo());
         File.WriteAllText(_keysFile, spki + " my-laptop\n");
 
-        using var factory = new Factory(_keysFile);
+        using var factory = new Factory(_keysFile, _devicesFile);
         using var http = factory.CreateClient();
 
         var methods = await http.GetFromJsonAsync<AuthMethods>("/auth/methods");
