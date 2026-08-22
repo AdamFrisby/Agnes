@@ -842,6 +842,16 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
     return OpenCodeAgent.Create(loggerFactory, options);
 });
 
+// OpenCode via its NATIVE HTTP server, offered alongside the ACP adapter — the same both-paths shape
+// Claude Code has. The native surface reports failures and retries the ACP one cannot express, but it is
+// OpenCode's internal API rather than a versioned spec, so ACP stays the default.
+builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.OpenCode.Native.OpenCodeNativeAgent.Create(
+    sp.GetRequiredService<ILoggerFactory>(),
+    new Agnes.Agents.OpenCode.Native.OpenCodeNativeOptions
+    {
+        Command = builder.Configuration["Agnes:OpenCodeNative:Command"] ?? "opencode",
+    }));
+
 // Claude Code via its NATIVE SDK (stream-json), offered alongside the ACP adapter.
 builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Native.ClaudeCodeNative.Create(
     sp.GetRequiredService<ILoggerFactory>(),
