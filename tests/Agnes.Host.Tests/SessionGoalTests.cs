@@ -219,4 +219,32 @@ public sealed class SessionGoalTests
         Assert.Equal(SessionGoalManager.Unlimited, goal.MaxProds);
     }
 
+    // ---- what a nudged session is actually told ----
+
+    [Fact]
+    public void A_nudge_names_the_disarm_tool_and_carries_the_goal_id()
+    {
+        // Without both, disarming is not something the agent can do: disarm_goal takes a goalId it was
+        // never told. A live session answered "complete, disarmed" in prose four times, never called the
+        // tool, and kept being nudged until the budget ran out.
+        var goal = new SessionGoal(
+            "goal-42", "s1", "Finish the migration",
+            IdleSeconds: 600, MaxProds: 5, ProdsUsed: 1, Armed: true, CreatedAt: T0);
+
+        var text = GoalWatcher.NudgeText(goal);
+
+        Assert.Contains("disarm_goal", text, StringComparison.Ordinal);
+        Assert.Contains("goal-42", text, StringComparison.Ordinal);
+        Assert.Contains("Finish the migration", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_nudge_says_plainly_that_replying_is_not_disarming()
+    {
+        // The observed failure was the agent believing an assertion of completeness ended the goal.
+        var text = GoalWatcher.NudgeText(new SessionGoal(
+            "g", "s", "x", IdleSeconds: 60, MaxProds: 3, ProdsUsed: 1, Armed: true, CreatedAt: T0));
+
+        Assert.Contains("does NOT stop the nudges", text, StringComparison.Ordinal);
+    }
 }

@@ -142,10 +142,7 @@ public sealed class GoalWatcher : BackgroundService
             goal.SessionId, goal.IdleSeconds, updated.ProdsUsed,
             updated.MaxProds > SessionGoalManager.Unlimited ? updated.MaxProds.ToString() : "unlimited");
 
-        var text =
-            $"You appear to have stopped without completing this goal:\n\n{goal.Goal}\n\n"
-            + "Continue working towards it. If it is already complete, or you are genuinely blocked and "
-            + "further attempts cannot help, disarm the goal instead of continuing.";
+        var text = NudgeText(updated);
 
         try
         {
@@ -158,6 +155,24 @@ public sealed class GoalWatcher : BackgroundService
             _logger.LogWarning(ex, "Could not nudge session {SessionId} for goal {GoalId}", goal.SessionId, goal.Id);
         }
     }
+
+    /// <summary>
+    /// What a nudged session is actually told.
+    /// </summary>
+    /// <remarks>
+    /// This names <c>disarm_goal</c> and carries the goal id, because asking an agent to "disarm the goal"
+    /// without either is asking for something it has no way to do: the tool takes a goalId it was never
+    /// told, so finding the lever would mean guessing the tool exists and calling list_goals first. A live
+    /// session showed what that costs — the agent answered "complete, disarmed" in prose, never called the
+    /// tool, and went on being nudged until the budget ran out, re-verifying finished work every time.
+    /// </remarks>
+    internal static string NudgeText(SessionGoal goal)
+        => $"You appear to have stopped without completing this goal:\n\n{goal.Goal}\n\n"
+            + "Continue working towards it.\n\n"
+            + "If it is already complete, or you are genuinely blocked in a way further attempts cannot fix, "
+            + $"call the `disarm_goal` tool with goalId `{goal.Id}` and a short reason. "
+            + "Saying you are done in a reply does NOT stop the nudges — only that tool call does, "
+            + "so disarm rather than re-verifying and answering in prose.";
 
     /// <summary>Writes a visible line into the session so a goal ending is never silent.</summary>
     private async Task NoteAsync(SessionGoal goal, string message, CancellationToken cancellationToken)
