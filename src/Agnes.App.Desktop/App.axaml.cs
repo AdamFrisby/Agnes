@@ -1,8 +1,11 @@
 using Agnes.App.Desktop.Persistence;
+using Agnes.App.Desktop.Keymaps;
 using Agnes.App.Desktop.ViewModels;
+using Agnes.App.Desktop.Views;
 using Agnes.Client;
 using Agnes.Client.Simulation;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 
@@ -13,8 +16,42 @@ public partial class App : Application
     // Held for the app's lifetime so the tray icon + its menu aren't garbage-collected. Null when the
     // platform has no usable system tray (the app still runs, just without a tray presence).
     private TrayPresence? _tray;
+    private AboutAgnesWindow? _aboutWindow;
+    private KeymapService? _keymap;
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        NativeMenu.SetMenu(this, DesktopBranding.CreateApplicationMenu(OnAboutAgnes));
+    }
+
+    private void OnAboutAgnes(object? sender, EventArgs e)
+    {
+        if (_aboutWindow is { } existing)
+        {
+            existing.Activate();
+            return;
+        }
+
+        var about = new AboutAgnesWindow();
+        _aboutWindow = about;
+        about.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_aboutWindow, about))
+            {
+                _aboutWindow = null;
+            }
+        };
+
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: { IsVisible: true } owner })
+        {
+            _ = about.ShowDialog(owner);
+        }
+        else
+        {
+            about.Show();
+        }
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -24,12 +61,18 @@ public partial class App : Application
             var recordingsDir = Environment.GetEnvironmentVariable("AGNES_RECORDINGS")
                 ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "recordings");
             IAgnesConnector connector = new RoutingConnector(recordingsDir);
+            var settingsStore = new SettingsStore();
+            _keymap = KeymapService.CreateDefault(settingsStore.FilePath);
             var viewModel = new MainWindowViewModel(
-                connector, new AvaloniaDispatcher(), new SessionStateStore(), new HostRegistryStore());
+                connector, new AvaloniaDispatcher(), new SessionStateStore(), new HostRegistryStore(),
+                settingsStore: settingsStore, keymap: _keymap);
 
             MainWindowViewModel.ApplyTheme(viewModel.Theme); // System / Light / Dark from settings
+            MainWindowViewModel.ApplyFont(viewModel.FontFamily);
+            MainWindowViewModel.ApplyChatFontScale(viewModel.ChatFontScale);
 
             var window = new MainWindow { DataContext = viewModel };
+            window.InstallKeymap(_keymap);
             // In-app toast when focused; native OS notification when the window is in the background.
             // Clicking a toast brings the window forward and jumps to the session + item it came from.
             viewModel.Notifier = new AvaloniaNotifier(
@@ -51,6 +94,7 @@ public partial class App : Application
             window.Closing += (_, _) => SaveWindowGeometry(window, viewModel);
 
             desktop.MainWindow = window;
+            desktop.Exit += (_, _) => _keymap?.Dispose();
 
             // Additive system-tray presence: aggregate session status + jump-to-session, and close-to-tray.
             // Fully guarded — a desktop environment without tray support just gets no tray, no crash.

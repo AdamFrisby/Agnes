@@ -81,5 +81,6 @@ public class OverlayPanelGateTests
         public Task SaveCurrentAsLaunchProfileAsync(SessionDocument doc, string name) => Task.CompletedTask;
         public void ApplyLaunchProfileMcpApproval(string mcpApproval) { }
         public void RememberWorkingDirectory(string path) { }
+        public void AdjustChatFontSize(int direction) { }
     }
 }

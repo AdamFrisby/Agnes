@@ -1,6 +1,7 @@
 using Agnes.App.Desktop;
 using Agnes.App.Desktop.Persistence;
 using Agnes.App.Desktop.ViewModels;
+using Agnes.App.Desktop.Keymaps;
 using Agnes.Client.Simulation;
 using Agnes.Protocol;
 using Agnes.Ui.Core;
@@ -186,38 +187,15 @@ public class SettingsSurfaceTests
         Assert.Equal("Delete for good?", row.DeleteLabel);
     }
 
-    /// <summary>
-    /// The gestures the page used to omit entirely. The list is generated from the catalogue now, so this is a
-    /// regression guard on the catalogue itself rather than on prose in the view.
-    /// </summary>
-    [Theory]
-    [InlineData("Ctrl+Shift+Tab")]
-    [InlineData("Ctrl+PageUp")]
-    [InlineData("Ctrl+1 … Ctrl+9")]
-    [InlineData("Ctrl+Shift+D")]
-    [InlineData("Ctrl+Shift+Enter")]
-    [InlineData("Escape")]
-    public void The_keyboard_catalogue_documents_the_bindings_the_page_used_to_miss(string gesture)
-        => Assert.Contains(
-            gesture,
-            KeyboardShortcuts.Groups.SelectMany(g => g.Shortcuts).Select(s => s.Gesture),
-            StringComparer.Ordinal);
-
     [Fact]
-    public void Every_documented_shortcut_says_what_it_does()
-        => Assert.All(
-            KeyboardShortcuts.Groups.SelectMany(g => g.Shortcuts),
-            s =>
-            {
-                Assert.False(string.IsNullOrWhiteSpace(s.Gesture));
-                Assert.False(string.IsNullOrWhiteSpace(s.Description));
-            });
-
-    [Fact]
-    public void The_search_keywords_cover_what_a_shortcut_does_not_only_the_word_keyboard()
+    public void Every_keymap_command_has_discoverable_typed_metadata()
     {
-        Assert.Contains("palette", KeyboardShortcuts.SearchKeywords, StringComparison.Ordinal);
-        Assert.Contains("interrupts", KeyboardShortcuts.SearchKeywords, StringComparison.Ordinal);
-        Assert.Contains("keyboard", KeyboardShortcuts.SearchKeywords, StringComparison.Ordinal);
+        Assert.Equal(Enum.GetValues<AgnesCommand>().Length, CommandCatalogue.All.Count);
+        Assert.All(CommandCatalogue.All, command =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(command.Id));
+            Assert.False(string.IsNullOrWhiteSpace(command.Description));
+            Assert.NotEmpty(command.Contexts);
+        });
     }
 }

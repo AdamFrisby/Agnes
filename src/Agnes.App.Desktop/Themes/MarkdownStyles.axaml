@@ -35,7 +35,9 @@
   <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.CodeBlock">
     <Setter Property="Background" Value="{DynamicResource CodeBg}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="10,6" />
   </Style>
   <Style Selector=".Markdown_Avalonia_MarkdownViewer TextBlock.CodeBlock">
     <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
@@ -66,6 +68,24 @@
   </Style>
   <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock.Heading4">
     <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+  </Style>
+
+  <!-- Both message bodies and the chat preview include this dictionary. Keep Markdown's own body and
+       heading hierarchy, but let the chat-size preference move the whole conversation surface. -->
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock">
+    <Setter Property="FontSize" Value="{DynamicResource ChatContentFontSize13}" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock.Heading1">
+    <Setter Property="FontSize" Value="{DynamicResource ChatContentFontSize24}" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock.Heading2">
+    <Setter Property="FontSize" Value="{DynamicResource ChatContentFontSize20}" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock.Heading3">
+    <Setter Property="FontSize" Value="{DynamicResource ChatContentFontSize17}" />
+  </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CTextBlock.Heading4">
+    <Setter Property="FontSize" Value="{DynamicResource ChatContentFontSize15}" />
   </Style>
 
   <!-- A quote gets the accent edge; the brand's one-accent-edge move, at hairline weight. -->

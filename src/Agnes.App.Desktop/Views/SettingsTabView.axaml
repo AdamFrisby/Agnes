@@ -4,6 +4,7 @@
              xmlns:sys="using:System"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.SettingsTabView">
 
     <UserControl.Styles>
@@ -118,11 +119,43 @@
                         </StackPanel>
 
                         <StackPanel Spacing="6">
-                            <TextBlock Classes="fieldLabel" Text="UI scale" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Interface font" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Enter the exact name of any installed font family. Leave it blank for the Agnes default (Manrope). Code and terminal text keep the dedicated monospace font." />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="280,Auto,Auto" ColumnSpacing="6" HorizontalAlignment="Left">
+                                <TextBox Grid.Column="0" Text="{Binding FontFamilyInput, Mode=TwoWay}"
+                                         Watermark="Default (Manrope)" Padding="9,5"
+                                         AutomationProperties.Name="Interface font family">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Gesture="Enter" Command="{Binding ApplyFontFamilyCommand}" />
+                                    </TextBox.KeyBindings>
+                                </TextBox>
+                                <Button Grid.Column="1" Content="Apply" Command="{Binding ApplyFontFamilyCommand}" Classes="seg" />
+                                <Button Grid.Column="2" Content="Default" Command="{Binding UseDefaultFontCommand}" Classes="seg" />
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="UI scale" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Scales the interface with the text so controls and spacing remain proportional." />
+                            </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <Button Content="Small" Command="{Binding SetScaleCommand}" CommandParameter="small" Classes.on="{Binding IsScaleSmall}" Classes="seg" />
                                 <Button Content="Default" Command="{Binding SetScaleCommand}" CommandParameter="default" Classes.on="{Binding IsScaleDefault}" Classes="seg" />
                                 <Button Content="Large" Command="{Binding SetScaleCommand}" CommandParameter="large" Classes.on="{Binding IsScaleLarge}" Classes="seg" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Chat font size" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Shared by every chat. Use the configurable Increase/Decrease chat font size commands (Cmd+Plus and Cmd+Minus by default on macOS) while a chat is focused." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{Binding ChatFontScaleText}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" MinWidth="38" />
+                                <Button Content="Reset" Command="{Binding ResetChatFontScaleCommand}" Classes="seg" />
                             </StackPanel>
                         </StackPanel>
 
@@ -132,30 +165,52 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- KEYBOARD (this device). Rendered from KeyboardShortcuts.Groups so the page can't drift
-                         from the bindings, and narrowed by the search box above so you can ask it a question. -->
-                    <StackPanel Spacing="12" IsVisible="{Binding CatKeyboard}">
-                        <TextBlock Classes="sectionTitle" Text="Keyboard shortcuts" />
-                        <TextBlock Classes="scopeNote" TextWrapping="Wrap"
-                                   Text="These are fixed — Agnes doesn't support rebinding yet. Use the search box above to find one by what it does." />
+                    <StackPanel Spacing="12" IsVisible="{Binding CatKeymap}">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Keymap" />
+                            <Button Grid.Column="1" Content="Edit" Command="{Binding EditKeymapCommand}" Classes="seg" />
+                        </Grid>
+                        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Text="{Binding KeymapPath}" FontFamily="{StaticResource MonoFont}" />
+                        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Text="{Binding KeymapStatus}" />
+                        <Border Background="{DynamicResource DangerSoft}" BorderBrush="{DynamicResource Danger}" BorderThickness="1"
+                                CornerRadius="7" Padding="9,6" IsVisible="{Binding HasKeymapDiagnostic}">
+                            <TextBlock Text="{Binding KeymapDiagnostic}" Foreground="{DynamicResource Danger}" TextWrapping="Wrap"
+                                       FontFamily="{StaticResource MonoFont}" FontSize="11" />
+                        </Border>
 
                         <TextBlock Text="Nothing matches that search." Foreground="{DynamicResource FgFaint}" FontSize="11"
-                                   IsVisible="{Binding !HasKeyboardMatches}" />
+                                   IsVisible="{Binding !HasKeymapMatches}" />
 
-                        <ItemsControl ItemsSource="{Binding KeyboardGroups}">
+                        <ItemsControl ItemsSource="{Binding KeymapGroups}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Spacing="4" Margin="0,0,0,12">
                                         <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-                                        <ItemsControl ItemsSource="{Binding Shortcuts}">
+                                        <ItemsControl ItemsSource="{Binding Commands}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid ColumnDefinitions="160,*" Margin="0,2">
-                                                        <TextBlock Grid.Column="0" Text="{Binding Gesture}" Foreground="{DynamicResource Fg}" FontSize="11"
-                                                                   FontFamily="{StaticResource MonoFont}" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding Description}" Foreground="{DynamicResource FgDim}"
-                                                                   FontSize="11" TextWrapping="Wrap" />
-                                                    </Grid>
+                                                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
+                                                            BorderThickness="1" CornerRadius="7" Padding="8,6" Margin="0,3"
+                                                            ClipToBounds="True">
+                                                        <Grid ColumnDefinitions="120,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10">
+                                                            <TextBlock Grid.Column="0" Grid.RowSpan="3" Text="{Binding Gesture}"
+                                                                       Foreground="{DynamicResource Fg}" FontSize="11"
+                                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Grid.Column="1" Grid.Row="0" Text="{Binding Description}"
+                                                                       Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+                                                            <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding CommandId}"
+                                                                       Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                                            <TextBlock Grid.Column="1" Grid.Row="2" Text="{Binding Context}"
+                                                                       Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                                            <Button Grid.Column="2" Grid.RowSpan="3" Content="Copy JSON" Classes="chip"
+                                                                    IsEnabled="{Binding CanCopyJson}" Click="OnCopyKeymapJson"
+                                                                    VerticalAlignment="Center" Padding="8,4" FontSize="10"
+                                                                    ToolTip.Tip="Copy this effective keybinding as a JSON rule" />
+                                                        </Grid>
+                                                    </Border>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
@@ -371,11 +426,8 @@
                         <TextBlock Text="Find more" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                             <TextBox Grid.Column="0" Text="{Binding McpCatalogQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
-                                     Watermark="Search the MCP registries — e.g. postgres, figma, filesystem">
-                                <TextBox.KeyBindings>
-                                    <KeyBinding Gesture="Enter" Command="{Binding SearchMcpCatalogCommand}" />
-                                </TextBox.KeyBindings>
-                            </TextBox>
+                                     Watermark="Search the MCP registries — e.g. postgres, figma, filesystem"
+                                     km:KeymapBinder.Context="SettingsMcpSearchFocus" />
                             <Button Grid.Column="1" Content="Search" Command="{Binding SearchMcpCatalogCommand}" Classes="seg" />
                             <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
                                          IsVisible="{Binding IsSearchingMcpCatalog}"
@@ -681,11 +733,8 @@
                             <StackPanel Spacing="10" IsVisible="{Binding ShowBrowse}">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <!-- Enter searches, so finding a plugin doesn't need a trip to the mouse. -->
-                                    <TextBox Grid.Column="0" Watermark="Search plugins…" Text="{Binding SearchQuery, Mode=TwoWay}">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
+                                    <TextBox Grid.Column="0" Watermark="Search plugins…" Text="{Binding SearchQuery, Mode=TwoWay}"
+                                             km:KeymapBinder.Context="SettingsPluginSearchFocus" />
                                     <Button Grid.Column="1" Margin="8,0,0,0" Content="Search" Command="{Binding SearchCommand}" Classes="seg" />
                                 </Grid>
                                 <ItemsControl ItemsSource="{Binding SearchResults}">
@@ -941,11 +990,8 @@
                             <StackPanel Spacing="8" IsVisible="{Binding HasSkillRegistries}">
                                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                                     <TextBox Grid.Column="0" Text="{Binding SkillQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
-                                             Watermark="Search every skill registry — e.g. pdf, terraform, code review">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Enter" Command="{Binding BrowseRegistryCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
+                                             Watermark="Search every skill registry — e.g. pdf, terraform, code review"
+                                             km:KeymapBinder.Context="SettingsSkillSearchFocus" />
                                     <Button Grid.Column="1" Content="Search" Command="{Binding BrowseRegistryCommand}" Classes="seg" />
                                     <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
                                                  IsVisible="{Binding IsSearchingSkills}"
@@ -1047,12 +1093,8 @@
                                                     <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                IsVisible="{Binding !IsRenaming}" />
                                                     <TextBox Text="{Binding DraftName, Mode=TwoWay}" FontSize="12" Padding="6,3" CornerRadius="6"
-                                                             MaxWidth="260" HorizontalAlignment="Left" IsVisible="{Binding IsRenaming}">
-                                                        <TextBox.KeyBindings>
-                                                            <KeyBinding Gesture="Enter" Command="{Binding $parent[ItemsControl].DataContext.CommitRenameCommand}" CommandParameter="{Binding}" />
-                                                            <KeyBinding Gesture="Escape" Command="{Binding $parent[ItemsControl].DataContext.CancelRenameCommand}" CommandParameter="{Binding}" />
-                                                        </TextBox.KeyBindings>
-                                                    </TextBox>
+                                                             MaxWidth="260" HorizontalAlignment="Left" IsVisible="{Binding IsRenaming}"
+                                                             km:KeymapBinder.Context="SettingsLaunchProfileRenameFocus" />
                                                     <TextBlock Text="{Binding Where}" Foreground="{DynamicResource FgDim}" FontSize="10" TextWrapping="Wrap" />
                                                     <TextBlock Text="{Binding Posture}" Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap" />
                                                 </StackPanel>
