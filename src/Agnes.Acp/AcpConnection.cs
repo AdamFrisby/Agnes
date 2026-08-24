@@ -62,6 +62,35 @@ internal sealed class AcpConnection : IAcpRpc, IAsyncDisposable
         return session;
     }
 
+    /// <summary>
+    /// Resumes a prior conversation by id (<c>session/load</c>). The agent replays the whole conversation as
+    /// <c>session/update</c> notifications before the call returns; the session is deliberately registered
+    /// only <b>after</b> that, so the replay lands on an unknown id and is dropped. Agnes already holds that
+    /// history in its own event log — appending it a second time would duplicate the entire transcript.
+    ///
+    /// <para>Awaiting the response alone is not enough to know the replay is over: the completion resumes on
+    /// the thread pool and can overtake notification handlers still queued on the dispatch pump, so the tail
+    /// of the replay would land on an already-registered session. Flushing the pump first closes that window
+    /// — a race that showed up as the last replayed line, and only under load.</para>
+    /// </summary>
+    public async Task<AcpAgentSession> LoadSessionAsync(string sessionId, string workingDirectory, CancellationToken cancellationToken)
+    {
+        var result = await _rpc.InvokeWithParameterObjectAsync<AcpLoadSessionResult?>(
+            "session/load",
+            new AcpLoadSessionParams { SessionId = sessionId, Cwd = workingDirectory },
+            cancellationToken).ConfigureAwait(false);
+
+        await _dispatch.FlushAsync().ConfigureAwait(false);
+
+        var modes = result?.Modes?.AvailableModes
+            .Select(m => new SessionMode(m.Id, string.IsNullOrEmpty(m.Name) ? m.Id : m.Name))
+            .ToArray();
+        var session = new AcpAgentSession(sessionId, this, _dispatch, _logger, modes, result?.Modes?.CurrentModeId);
+        _sessions[sessionId] = session;
+        _logger.LogInformation("ACP resumed session {SessionId}", sessionId);
+        return session;
+    }
+
     // ---- IAcpRpc: outbound calls made by sessions ----
 
     public Task<AcpPromptResult> PromptAsync(AcpPromptParams parameters, CancellationToken cancellationToken)

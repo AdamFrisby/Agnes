@@ -50,6 +50,22 @@ public sealed record AcpLaunchSpec
     /// <c>--append-system-prompt &lt;text&gt;</c>). Null means this CLI has no system-prompt flag Agnes knows,
     /// so a requested <see cref="AgentSessionOptions.SystemPrompt"/> is ignored.</summary>
     public Func<string, IReadOnlyList<string>>? SystemPromptArguments { get; init; }
+
+    /// <summary>
+    /// Builds the CLI arguments that select the permission model, given
+    /// <see cref="AgentSessionOptions.SkipPermissions"/>. The ACP default is the safe one — the agent asks
+    /// per tool call over <c>session/request_permission</c> and Agnes surfaces it — so most CLIs need no
+    /// flag at all and leave this null. A CLI that only runs unattended behind an explicit blanket-allow
+    /// flag (Copilot's <c>--allow-all-tools</c>) states it here, and it is reached <b>only</b> when the user
+    /// has opted into autonomous operation. Mirrors <c>INativeStreamMapper.PermissionLaunchArguments</c>.
+    /// </summary>
+    public Func<bool, IReadOnlyList<string>>? PermissionArguments { get; init; }
+
+    /// <summary>Builds the CLI arguments that load the Agnes-managed MCP config file at
+    /// <see cref="AgentSessionOptions.McpConfigPath"/> (e.g. Copilot's
+    /// <c>--additional-mcp-config @&lt;path&gt;</c>). Null means this CLI takes no such flag, so a supplied
+    /// path is ignored.</summary>
+    public Func<string, IReadOnlyList<string>>? McpConfigArguments { get; init; }
 }
 
 /// <summary>
@@ -94,6 +110,18 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter, IModelEnviro
             args.AddRange(buildSystem(systemPrompt));
         }
 
+        // The permission model. Asked for unconditionally (not only when skipping) so a CLI that needs a
+        // flag for BOTH stances can state both; the flag for the attended case is the default one.
+        if (spec.PermissionArguments is { } buildPermissions)
+        {
+            args.AddRange(buildPermissions(options.SkipPermissions));
+        }
+
+        if (options.McpConfigPath is { Length: > 0 } mcpConfig && spec.McpConfigArguments is { } buildMcp)
+        {
+            args.AddRange(buildMcp(mcpConfig));
+        }
+
         return args;
     }
 
@@ -129,8 +157,8 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter, IModelEnviro
             lifetime);
         try
         {
-            await connection.InitializeAsync(cancellationToken).ConfigureAwait(false);
-            var session = await connection.NewSessionAsync(options.WorkingDirectory, cancellationToken).ConfigureAwait(false);
+            var init = await connection.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            var session = await OpenSessionAsync(connection, init, options, cancellationToken).ConfigureAwait(false);
             return new ConnectionOwningSession(session, connection);
         }
         catch
@@ -138,6 +166,36 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter, IModelEnviro
             await connection.DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Resumes the agent's prior conversation when one was asked for and the agent says it can
+    /// (<c>agentCapabilities.loadSession</c>), else starts a fresh one. Resuming is best-effort: an agent
+    /// that advertises the capability but rejects this particular id (expired, pruned, or from another
+    /// machine) must still yield a working session, so a failed load falls back to <c>session/new</c> —
+    /// losing the history is bad, failing to open at all is worse.
+    /// </summary>
+    private static async Task<AcpAgentSession> OpenSessionAsync(
+        AcpConnection connection,
+        Wire.AcpInitializeResult init,
+        AgentSessionOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (options.ResumeSessionId is { Length: > 0 } resumeId && init.AgentCapabilities?.LoadSession == true)
+        {
+            try
+            {
+                return await connection.LoadSessionAsync(resumeId, options.WorkingDirectory, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Fall through to a new session; the connection is still healthy (a rejected load is an
+                // ordinary JSON-RPC error response, not a transport fault).
+            }
+        }
+
+        return await connection.NewSessionAsync(options.WorkingDirectory, cancellationToken).ConfigureAwait(false);
     }
 
     private Process StartProcess(AgentSessionOptions options)

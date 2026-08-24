@@ -83,10 +83,22 @@ public sealed class FakeAcpAgent : IAsyncDisposable
 
     private readonly JsonRpc _rpc;
     private readonly Func<FakePromptContext, Task<string>> _onPrompt;
+    private readonly bool _supportsLoadSession;
+    private readonly Func<FakePromptContext, Task>? _onLoad;
 
-    public FakeAcpAgent(Stream duplex, Func<FakePromptContext, Task<string>> onPrompt)
+    /// <param name="supportsLoadSession">What the agent advertises for <c>agentCapabilities.loadSession</c>.
+    /// The client only attempts a resume when this is true, so it is the switch a resume test flips.</param>
+    /// <param name="onLoad">Runs during <c>session/load</c>, before it returns — where a test replays the
+    /// conversation the way a real agent does, to prove the replay isn't appended a second time.</param>
+    public FakeAcpAgent(
+        Stream duplex,
+        Func<FakePromptContext, Task<string>> onPrompt,
+        bool supportsLoadSession = false,
+        Func<FakePromptContext, Task>? onLoad = null)
     {
         _onPrompt = onPrompt;
+        _supportsLoadSession = supportsLoadSession;
+        _onLoad = onLoad;
         var formatter = new SystemTextJsonFormatter { JsonSerializerOptions = Options };
         var handler = new NewLineDelimitedMessageHandler(duplex, duplex, formatter);
         _rpc = new JsonRpc(handler);
@@ -115,13 +127,25 @@ public sealed class FakeAcpAgent : IAsyncDisposable
             protocolVersion = 1,
             agentCapabilities = new
             {
-                loadSession = false,
+                loadSession = agent._supportsLoadSession,
                 promptCapabilities = new { image = false, audio = false, embeddedContext = false },
             },
         };
 
         [JsonRpcMethod("session/new", UseSingleObjectParameterDeserialization = true)]
         public object NewSession(JsonElement _) => new { sessionId = "sess-1" };
+
+        [JsonRpcMethod("session/load", UseSingleObjectParameterDeserialization = true)]
+        public async Task<object> LoadSession(JsonElement request)
+        {
+            var sessionId = request.GetProperty("sessionId").GetString() ?? "sess-1";
+            if (agent._onLoad is { } onLoad)
+            {
+                await onLoad(new FakePromptContext(agent._rpc, sessionId, string.Empty)).ConfigureAwait(false);
+            }
+
+            return new { };
+        }
 
         [JsonRpcMethod("session/prompt", UseSingleObjectParameterDeserialization = true)]
         public async Task<object> Prompt(JsonElement request)

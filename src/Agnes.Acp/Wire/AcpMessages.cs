@@ -87,6 +87,22 @@ internal sealed record AcpSessionMode
     public string Name { get; init; } = string.Empty;
 }
 
+// ---- session/load ----
+
+internal sealed record AcpLoadSessionParams
+{
+    public required string SessionId { get; init; }
+    public required string Cwd { get; init; }
+    public IReadOnlyList<AcpMcpServer> McpServers { get; init; } = [];
+}
+
+/// <summary>Result of <c>session/load</c>. Every field is optional: agents that predate the modes/models
+/// additions answer with an empty object or null, which resolves to "keep whatever the session already had".</summary>
+internal sealed record AcpLoadSessionResult
+{
+    public AcpSessionModeState? Modes { get; init; }
+}
+
 // ---- session/set_mode (notification) ----
 
 internal sealed record AcpSetModeParams
