@@ -21,6 +21,16 @@ public sealed record NativeLaunchSpec
     /// this CLI takes no model flag, so a requested <see cref="AgentSessionOptions.ModelId"/> is ignored.</summary>
     public Func<string, IReadOnlyList<string>>? ModelArguments { get; init; }
 
+    /// <summary>Optional live model probe, for a CLI that can be asked what it can reach
+    /// (see <see cref="IModelListingAdapter.ListModelsAsync"/>). Null means "no live listing" — resolution
+    /// falls back to <see cref="Models"/>.</summary>
+    public Func<CancellationToken, Task<IReadOnlyList<ModelInfo>?>>? LiveModelProbe { get; init; }
+
+    /// <summary>Builds the CLI arguments that resume a prior conversation by id. Defaults to
+    /// <c>--resume &lt;id&gt;</c>, which is what Claude Code takes; a CLI that spells it differently
+    /// (Pi's <c>--session-id &lt;id&gt;</c>) states its own.</summary>
+    public Func<string, IReadOnlyList<string>> ResumeArguments { get; init; } = id => ["--resume", id];
+
     /// <summary>CLI flag that loads an MCP config file (e.g. "--mcp-config"), or null if unsupported.</summary>
     public string? McpConfigFlag { get; init; }
 
@@ -56,16 +66,17 @@ public class NativeStreamAdapter : IAgentAdapter, IModelListingAdapter
 
     public bool IsRecoverableCredentialFault(string errorMessage) => _spec.CredentialFaultClassifier?.Invoke(errorMessage) ?? false;
 
-    // No standard machine-readable model-list call for these CLIs, so ship the static list only.
+    // No standard machine-readable model-list call across these CLIs; a spec that supplies a probe of its
+    // own gets a live catalogue, everything else falls back to the static list.
     public IReadOnlyList<ModelInfo> StaticModels => _spec.Models;
 
     public Task<IReadOnlyList<ModelInfo>?> ListModelsAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<ModelInfo>?>(null);
+        => _spec.LiveModelProbe?.Invoke(ct) ?? Task.FromResult<IReadOnlyList<ModelInfo>?>(null);
 
     public Task<ProviderAuthStatus?> GetAuthStatusAsync(CancellationToken cancellationToken = default)
         => _spec.AuthStatusProbe?.Invoke(cancellationToken) ?? Task.FromResult<ProviderAuthStatus?>(null);
 
-    public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
+    public virtual Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {
         var logger = _loggerFactory.CreateLogger<NativeStreamAdapter>();
         var process = StartProcess(options);
@@ -80,11 +91,10 @@ public class NativeStreamAdapter : IAgentAdapter, IModelListingAdapter
         var baseArgs = new List<string>(_spec.Arguments);
         baseArgs.AddRange(_spec.Mapper.PermissionLaunchArguments(options.SkipPermissions));
 
-        // Resume a prior conversation (e.g. after a host restart) when the CLI supports it.
-        if (!string.IsNullOrEmpty(options.ResumeSessionId))
+        // Resume a prior conversation (e.g. after a host restart), in whichever spelling this CLI takes.
+        if (options.ResumeSessionId is { Length: > 0 } resumeId)
         {
-            baseArgs.Add("--resume");
-            baseArgs.Add(options.ResumeSessionId);
+            baseArgs.AddRange(_spec.ResumeArguments(resumeId));
         }
 
         // Select the model when the CLI takes one (e.g. claude --model <id>). A null/blank id means the

@@ -34,4 +34,18 @@ public interface INativeStreamMapper
     /// or null if the request id isn't a pending question / the CLI has no such mechanism.</summary>
     string? BuildQuestionResponse(string requestId, IReadOnlyList<QuestionAnswer> answers)
         => null;
+
+    /// <summary>
+    /// Lines written to the agent immediately after launch, before any prompt. For a CLI that states its
+    /// session identity only on request (Pi answers <c>get_state</c> with its session id, and emits no
+    /// header line of its own) this is how the adapter learns the id it will later need to resume. Empty by
+    /// default: a CLI that announces itself unprompted needs no handshake.
+    /// </summary>
+    IReadOnlyList<string> Handshake() => [];
+
+    /// <summary>
+    /// Builds the stdin JSON line that aborts the current turn, or null when the CLI has no cancel
+    /// message — in which case cancelling is best-effort and does nothing at the protocol level.
+    /// </summary>
+    string? BuildCancel() => null;
 }
