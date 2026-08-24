@@ -1052,6 +1052,11 @@ public sealed class SessionManager : IAsyncDisposable
     {
         "claude-code-native" => ("claude", ".agnes/mcp.json", true),
         "codex" => ("codex", ".codex/config.toml", false),
+        // Copilot reads Claude's {"mcpServers": …} shape unchanged (verified live against CLI v1.0.78, for
+        // stdio and http entries alike) and loads an extra config with --additional-mcp-config. The file
+        // goes under .agnes/ rather than .copilot/ deliberately: .copilot/mcp-config.json is auto-loaded,
+        // so writing there AND passing the flag would offer every server to the agent twice.
+        "copilot" => ("claude", ".agnes/mcp.json", true),
         _ => null,
     };
 

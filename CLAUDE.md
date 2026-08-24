@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Agnes: a remote interface to coding CLIs. One **host** daemon runs coding agents (Claude Code, OpenCode, Codex) in their **ACP** (Agent Client Protocol) mode; **many clients** (Avalonia desktop, Avalonia Android, Uno web/WASM) connect to it, similar to `claude` in `tmux`+`ssh` but without a fixed character grid — sessions are event-sourced and reflow natively per client. Status: alpha (see `README.md`, `docs/architecture.md`).
+Agnes: a remote interface to coding CLIs. One **host** daemon runs coding agents (Claude Code, OpenCode, Codex, GitHub Copilot CLI, Pi) in their **ACP** (Agent Client Protocol) mode, or over a native stdio protocol where the CLI has no ACP; **many clients** (Avalonia desktop, Avalonia Android, Uno web/WASM) connect to it, similar to `claude` in `tmux`+`ssh` but without a fixed character grid — sessions are event-sourced and reflow natively per client. Status: alpha (see `README.md`, `docs/architecture.md`).
 
 ## Build & test
 
@@ -71,6 +71,8 @@ Every `session/update` from an agent's ACP stream is normalized into a `SessionE
 | `Agnes.Agents.ClaudeCode` / `Agnes.Agents.OpenCode` | Thin plugins over `Agnes.Acp`: launch command/args/env, auth handling, capability quirks. |
 | `Agnes.Agents.Native` | Native stream-json adapter (e.g. `claude --print --input-format stream-json`) for agents driven outside ACP proper. |
 | `Agnes.Agents.Codex` | Codex adapter (native app-server, persistent JSON-RPC over stdio). |
+| `Agnes.Agents.Copilot` | GitHub Copilot CLI plugin over `Agnes.Acp` (`copilot --acp`): permission stance, `--model`, BYOK environment, native MCP discovery. |
+| `Agnes.Agents.Pi` | Pi adapter over `Agnes.Agents.Native` (`pi --mode rpc`). Pi has no ACP and no permission protocol, so attended sessions are refused; its draw is turn-level retry of failed provider calls. |
 | `Agnes.Protocol` | Transport-agnostic host↔client wire contract (DTOs + hub interface: subscribe, send prompt, permission response, terminal I/O, snapshot/tail cursors). Default binding is SignalR but the contract doesn't assume it. |
 | `Agnes.Registries.GitHub` / `Agnes.Registries.SkillsHub` | Skill-registry plugins (`IPromptRegistryProvider`): a GitHub repo of `SKILL.md` bundles (defaults to the official `anthropics/skills`), and the skillshub.wtf index. The GitHub package also holds the shared `GitHubSkillBundles` fetcher, which SkillsHub reuses — the same relationship the agent plugins have with `Agnes.Acp`. |
 | `Agnes.Registries.McpRegistry` | MCP-catalogue plugin (`IMcpCatalogProvider`) over the official registry at `registry.modelcontextprotocol.io`. |

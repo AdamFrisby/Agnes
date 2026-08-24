@@ -865,6 +865,50 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Codex.CodexAppSe
     builder.Configuration.GetSection("Agnes:Codex:Args").Get<string[]>(),
     builder.Configuration.GetValue("Agnes:Codex:EnableUserInput", false)));
 
+// GitHub Copilot CLI, which ships native ACP (`copilot --acp`) — a launch descriptor, no bridge.
+// BYOK is environment-only on Copilot's side, so the provider block is read here and rendered to the
+// COPILOT_PROVIDER_* variables by the adapter; without a base URL it stays inert and Copilot uses
+// GitHub's own model routing.
+builder.Services.AddSingleton<IAgentAdapter>(sp =>
+{
+    var provider = builder.Configuration.GetSection("Agnes:Copilot:Provider");
+    var options = new Agnes.Agents.Copilot.CopilotOptions
+    {
+        Command = builder.Configuration["Agnes:Copilot:Command"] ?? "copilot",
+        Arguments = builder.Configuration.GetSection("Agnes:Copilot:Args").Get<string[]>() ?? ["--acp"],
+        Provider = provider["BaseUrl"] is { Length: > 0 } baseUrl
+            ? new Agnes.Agents.Copilot.CopilotProviderOptions
+            {
+                BaseUrl = baseUrl,
+                Type = provider.GetValue("Type", Agnes.Agents.Copilot.CopilotProviderType.OpenAi),
+                ApiKey = provider["ApiKey"],
+                BearerToken = provider["BearerToken"],
+                WireApi = provider.GetValue("WireApi", Agnes.Agents.Copilot.CopilotWireApi.Completions),
+                Transport = provider.GetValue("Transport", Agnes.Agents.Copilot.CopilotTransport.Http),
+                AzureApiVersion = provider["AzureApiVersion"],
+                Headers = provider.GetSection("Headers").Get<string[]>() ?? [],
+                Model = provider["Model"],
+                ModelId = provider["ModelId"],
+                WireModel = provider["WireModel"],
+                MaxPromptTokens = provider.GetValue<int?>("MaxPromptTokens"),
+                MaxOutputTokens = provider.GetValue<int?>("MaxOutputTokens"),
+            }
+            : null,
+    };
+    return Agnes.Agents.Copilot.CopilotAgent.Create(sp.GetRequiredService<ILoggerFactory>(), options);
+});
+
+// Pi via its RPC mode (`pi --mode rpc`), a bidirectional JSONL protocol — Pi ships no ACP. Chosen for
+// unattended work: Pi retries a failed provider call at the agent-turn level rather than dropping the
+// turn. It has no permission protocol at all, so the adapter refuses an attended session outright.
+builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Pi.PiAgent.Create(
+    sp.GetRequiredService<ILoggerFactory>(),
+    new Agnes.Agents.Pi.PiOptions
+    {
+        Command = builder.Configuration["Agnes:Pi:Command"] ?? "pi",
+        Arguments = builder.Configuration.GetSection("Agnes:Pi:Args").Get<string[]>() ?? ["--mode", "rpc"],
+    }));
+
 // User-configured extra ACP backends (Agnes:CustomBackends): a "bring your own ACP CLI" path so a
 // host operator can point Agnes at any ACP-speaking binary from config alone — no new package. Each
 // valid entry becomes a generic AcpAgentAdapter joining the same registry as the built-ins. Fail-closed

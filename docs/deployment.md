@@ -289,7 +289,8 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 | `Database` | SQLite path for the event log (in-memory if empty). |
 | `Storage:EventStore` | Event-store backend: `sqlite` (default single-node) or `postgres` (optional shared DB). |
 | `Storage:Postgres:ConnectionString` | Npgsql connection string; required when `Storage:EventStore=postgres`. |
-| `ClaudeCode` / `OpenCode` / `ClaudeCodeNative` | Agent launch commands. |
+| `ClaudeCode` / `OpenCode` / `ClaudeCodeNative` / `Codex` / `Copilot` / `Pi` | Agent launch commands. |
+| `Copilot:Provider:*` | Copilot bring-your-own-key provider (`BaseUrl` activates it; also `Type`, `ApiKey`/`BearerToken`, `WireApi`, `Transport`, `AzureApiVersion`, `Headers`, `Model`). Rendered to the `COPILOT_PROVIDER_*` environment, which is the only place Copilot exposes this. |
 | `Sandbox:Provider` | `incus` to run agents in per-session VMs (see [sandbox-live-testing.md](sandbox-live-testing.md)). |
 
 ## Storage topology (event store)
