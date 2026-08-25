@@ -50,6 +50,49 @@ public class AcpSubagentTests
         Assert.Equal("Explore extension spec format", sub.Name);
     }
 
+    /// <summary>
+    /// The roster is a list you scan and flip between, so the row wants the short per-instance handle
+    /// Copilot coins, not the sentence describing the work. Captured from real traffic: a dispatch sent
+    /// name "tmp-file-counter" alongside description "Count files in /tmp".
+    /// </summary>
+    [Fact]
+    public void The_instance_name_labels_the_row_when_the_caller_coined_one()
+    {
+        var launch = AcpSubagentLaunch.TryParse(Json("""
+            {"agent_type":"explore","name":"tmp-file-counter",
+             "description":"Count files in /tmp","prompt":"count them","mode":"sync"}
+            """))!;
+
+        Assert.Equal("tmp-file-counter", launch.Name);
+        Assert.Equal("Count files in /tmp", launch.Description);   // kept, for the row's subtitle
+        Assert.Equal("explore", launch.AgentType);
+    }
+
+    /// <summary>
+    /// Falling back to the class name is why the instance name matters: dispatch twenty explore agents
+    /// and, without it, every row in the roster reads "explore".
+    /// </summary>
+    [Fact]
+    public void Without_a_name_the_description_still_labels_it()
+    {
+        var launch = AcpSubagentLaunch.TryParse(Json("""
+            {"agent_type":"explore","description":"Count files in /tmp","prompt":"count them"}
+            """))!;
+
+        Assert.Equal("Count files in /tmp", launch.Name);
+    }
+
+    /// <summary>An empty name is not a name; it must not win over a usable description.</summary>
+    [Fact]
+    public void An_empty_name_falls_through_rather_than_blanking_the_row()
+    {
+        var launch = AcpSubagentLaunch.TryParse(Json("""
+            {"agent_type":"explore","name":"","description":"Count files in /tmp","prompt":"go"}
+            """))!;
+
+        Assert.Equal("Count files in /tmp", launch.Name);
+    }
+
     [Fact]
     public void The_agent_type_names_it_when_the_caller_described_nothing()
     {

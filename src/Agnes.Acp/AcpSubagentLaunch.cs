@@ -22,14 +22,15 @@ namespace Agnes.Acp;
 /// discarding everywhere except the permission card. This reads them, and does so <b>by shape rather than
 /// by adapter</b>: a call carrying a prompt plus the name of an agent to run it is a delegation whoever
 /// sent it. That is not a guess about one CLI — it is the shared convention. Copilot sends
-/// <c>{agent_type, description, prompt, mode}</c> and Claude's Task tool
+/// <c>{agent_type, name, description, prompt, mode}</c> and Claude's Task tool
 /// <c>{subagent_type, description, prompt}</c>; recognizing the shape means a CLI that adopts it needs no
 /// change here, and <c>Agnes.Acp</c> stays free of any particular agent's name.</para>
 ///
 /// <para>The prompt itself is deliberately not kept. It is the whole brief — often thousands of words —
 /// and nothing downstream shows it; the roster wants a name.</para>
 /// </remarks>
-public sealed record AcpSubagentLaunch(string? AgentType, string? Description, bool IsBackground)
+public sealed record AcpSubagentLaunch(
+    string? AgentType, string? Description, bool IsBackground, string? InstanceName = null)
 {
     // Both spellings of "which agent", and the two fields that make it a dispatch rather than a lookup.
     private static readonly string[] AgentKeys = ["agent_type", "subagent_type", "agentType", "subagentType"];
@@ -65,14 +66,39 @@ public sealed record AcpSubagentLaunch(string? AgentType, string? Description, b
         return new AcpSubagentLaunch(
             agentType,
             First(input, DescriptionKeys),
-            string.Equals(Text(input, "mode"), "background", StringComparison.OrdinalIgnoreCase));
+            string.Equals(Text(input, "mode"), "background", StringComparison.OrdinalIgnoreCase),
+            Text(input, "name"));
     }
 
-    /// <summary>What the roster should call this subagent: the work if the caller described it, else the
-    /// agent that was asked to do it. Never the prompt — that is a brief, not a name.</summary>
-    public string Name => Description is { Length: > 0 } description
-        ? description
-        : AgentType is { Length: > 0 } agent ? agent : "subagent";
+    /// <summary>
+    /// What the roster should call this subagent, in the order a person scanning a list needs.
+    /// </summary>
+    /// <remarks>
+    /// <para><c>name</c> first, when the caller coined one. Copilot sends a short per-instance handle
+    /// beside the description — <c>"tmp-file-counter"</c> for work described as "Count files in /tmp" —
+    /// and that is what a roster wants: distinctive, scannable in a narrow column, and stable for the
+    /// subagent's life. A description is a sentence about the work, so twenty concurrent subagents on
+    /// similar work yield twenty near-identical rows nobody can tell apart.</para>
+    ///
+    /// <para>The agent type is the last resort precisely because it is the <em>class</em>, not the
+    /// instance: dispatch twenty <c>explore</c> agents and every row reads "explore".</para>
+    ///
+    /// <para>Never the prompt — that is a brief, not a name.</para>
+    /// </remarks>
+    public string Name => First(InstanceName, Description, AgentType) ?? "subagent";
+
+    private static string? First(params string?[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (candidate is { Length: > 0 })
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
 
     private static string? First(JsonElement input, string[] keys)
     {
