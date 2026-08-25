@@ -66,6 +66,18 @@ public sealed record AcpLaunchSpec
     /// <c>--additional-mcp-config @&lt;path&gt;</c>). Null means this CLI takes no such flag, so a supplied
     /// path is ignored.</summary>
     public Func<string, IReadOnlyList<string>>? McpConfigArguments { get; init; }
+
+    /// <summary>
+    /// Slash commands to invoke once, immediately after the session opens — for a CLI whose feature is
+    /// reachable only as an in-session command, with no flag and no config key. ACP carries these as an
+    /// ordinary prompt: an agent that supports commands parses a prompt that is a single text block
+    /// beginning with <c>/</c> and runs the command instead of asking the model, which is how Copilot's
+    /// <c>/fleet</c> is reached (it advertises 32 such commands in <c>available_commands_update</c>).
+    ///
+    /// Best-effort by contract: these run before the caller can see the session, so their output is not
+    /// transcript, and a command that fails or hangs must cost the feature, never the session.
+    /// </summary>
+    public IReadOnlyList<string> StartupCommands { get; init; } = [];
 }
 
 /// <summary>
@@ -78,6 +90,10 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter, IModelEnviro
 {
     private readonly AcpLaunchSpec _spec;
     private readonly ILoggerFactory _loggerFactory;
+
+    /// <summary>How long a startup command gets. Generous — these invoke native CLI machinery rather than
+    /// a model turn — but finite, because it runs inside the session open.</summary>
+    private static readonly TimeSpan StartupCommandTimeout = TimeSpan.FromSeconds(30);
 
     public AcpAgentAdapter(AcpLaunchSpec spec, ILoggerFactory loggerFactory)
     {
@@ -159,12 +175,42 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter, IModelEnviro
         {
             var init = await connection.InitializeAsync(cancellationToken).ConfigureAwait(false);
             var session = await OpenSessionAsync(connection, init, options, cancellationToken).ConfigureAwait(false);
+            await RunStartupCommandsAsync(session, cancellationToken).ConfigureAwait(false);
             return new ConnectionOwningSession(session, connection);
         }
         catch
         {
             await connection.DisposeAsync().ConfigureAwait(false);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Runs <see cref="AcpLaunchSpec.StartupCommands"/> against a freshly opened session, bounded and
+    /// swallowed. Bounded because these are sent before the session is handed back, so a command that never
+    /// answers would hang the open itself; swallowed because they enable a feature on top of a session that
+    /// is already working, and trading a working session for an unavailable extra is the wrong way round.
+    /// </summary>
+    private async Task RunStartupCommandsAsync(AcpAgentSession session, CancellationToken cancellationToken)
+    {
+        var logger = _loggerFactory.CreateLogger<AcpAgentAdapter>();
+        foreach (var command in _spec.StartupCommands)
+        {
+            using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            bounded.CancelAfter(StartupCommandTimeout);
+            try
+            {
+                await session.PromptAsync([new TextContent(command)], bounded.Token).ConfigureAwait(false);
+                logger.LogInformation("Ran startup command {Command}", command);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw; // the caller gave up on the whole session, not just this command
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Startup command {Command} did not run; the session continues without it", command);
+            }
         }
     }
 

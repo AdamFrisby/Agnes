@@ -876,6 +876,9 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
     {
         Command = builder.Configuration["Agnes:Copilot:Command"] ?? "copilot",
         Arguments = builder.Configuration.GetSection("Agnes:Copilot:Args").Get<string[]>() ?? ["--acp"],
+        FleetMode = builder.Configuration.GetValue("Agnes:Copilot:FleetMode", false),
+        SubagentNames = builder.Configuration.GetSection("Agnes:Copilot:SubagentNames").Get<string[]>()
+            ?? Agnes.Agents.Copilot.CopilotSubagentSettings.ModelPinningAgents,
         Provider = provider["BaseUrl"] is { Length: > 0 } baseUrl
             ? new Agnes.Agents.Copilot.CopilotProviderOptions
             {

@@ -27,6 +27,21 @@ public sealed record CopilotOptions
     /// </summary>
     public IReadOnlyList<string> SubagentNames { get; init; } = CopilotSubagentSettings.ModelPinningAgents;
 
+    /// <summary>
+    /// Starts each session in Copilot's fleet mode — parallel subagent execution, what its own UI offers as
+    /// "build on autopilot + /fleet". Off by default because it is a real behavioural change: a fleet
+    /// session spends far more, and an operator should choose it.
+    /// </summary>
+    /// <remarks>
+    /// Copilot exposes this <b>only</b> as the in-session <c>/fleet</c> command — there is no launch flag,
+    /// no environment variable, and no settings key, and the ACP mode list it advertises is just Agent /
+    /// Plan / Autopilot. So Agnes turns it on the one way that exists: by invoking the command, which
+    /// Copilot's ACP surface accepts as a prompt (verified against v1.0.80, which advertises <c>fleet</c>
+    /// among 32 commands). Worth pairing with <see cref="SubagentNames"/> under BYOK — a fleet of subagents
+    /// pinned to models the provider does not serve is a fleet that cannot sail.
+    /// </remarks>
+    public bool FleetMode { get; init; }
+
     /// <summary>Performs the model-catalogue handshake and returns the raw <c>session/new</c> response line,
     /// or null when the CLI can't be asked. Injectable so the catalogue parsing is testable without
     /// spawning a process; null uses the real CLI.</summary>
@@ -175,6 +190,7 @@ public static class CopilotAgent
             InlineConfig = (_, _) => BuildProviderEnvironment(options.Provider),
             // Copilot can't be asked to print its catalogue from argv (an unknown --model answers "not
             // available" without listing the alternatives), so there is no in-sandbox verification probe.
+            StartupCommands = options.FleetMode ? ["/fleet"] : [],
         };
     }
 

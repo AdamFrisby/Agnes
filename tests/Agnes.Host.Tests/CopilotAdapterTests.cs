@@ -400,4 +400,25 @@ public sealed class CopilotAdapterTests
 
         Assert.Null(((IModelSettingsAdapter)adapter).RenderSettings(null, "stealth/ox-alpha"));
     }
+
+    // ---- fleet mode: the one lever Copilot gives for it ----
+
+    /// <summary>Copilot exposes fleet mode nowhere but the in-session command — no flag, no environment,
+    /// and its ACP mode list is only Agent/Plan/Autopilot. So the spec carries it as a startup command.</summary>
+    [Fact]
+    public void Fleet_mode_is_reached_by_invoking_copilots_own_command()
+    {
+        var spec = CopilotAgent.CreateLaunchSpec(new CopilotOptions { FleetMode = true });
+        Assert.Equal(["/fleet"], spec.StartupCommands);
+
+        // ...and not by smuggling it onto argv, where Copilot would reject it.
+        var argv = AcpAgentAdapter.BuildAgentArguments(
+            spec, new AgentSessionOptions { WorkingDirectory = Path.GetTempPath() });
+        Assert.DoesNotContain(argv, a => a.Contains("fleet", StringComparison.Ordinal));
+    }
+
+    /// <summary>A fleet session spends far more than a plain one, so it is the operator's choice.</summary>
+    [Fact]
+    public void Fleet_mode_is_off_unless_asked_for()
+        => Assert.Empty(CopilotAgent.CreateLaunchSpec().StartupCommands);
 }
