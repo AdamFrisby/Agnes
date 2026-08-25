@@ -2074,6 +2074,27 @@ if (tokens.PairingEnabled)
     app.Logger.LogInformation("Agnes pairing code: {Code}  — enter this on a new client to pair it.", tokens.PairingCode);
 }
 
+// The fingerprint of the certificate this host serves, printed the way sshd's host key can be inspected.
+// A client meeting a self-signed host for the first time has no pin and therefore cannot complete a
+// handshake at all — so without something to compare against, trust-on-first-use is just trust. Printing it
+// here gives the operator the out-of-band channel: read it off the host's own console, check it against what
+// the client shows, then accept. Not a secret — it is a hash of a certificate handed to anyone who connects.
+{
+    var hostCert = app.Services.GetService<IHostCertificateProvider>();
+    if (PinnedFingerprint2(hostCert) is { Length: > 0 } hostFingerprint)
+    {
+        app.Logger.LogInformation(
+            "Agnes host certificate SHA-256: {Fingerprint}  — a client pairing for the first time must be shown "
+            + "this, and should refuse if what it sees differs.", hostFingerprint);
+    }
+}
+
+// Local mirror of PinnedFingerprint so the startup banner does not depend on declaration order.
+static string? PinnedFingerprint2(IHostCertificateProvider? provider)
+    => provider is null ? null
+        : provider.CaValidatedHostName is { Length: > 0 } ? null
+        : provider.Fingerprint;
+
 if (gitHubAuth.IsUsable)
 {
     app.Logger.LogInformation("GitHub sign-in enabled (client id {ClientId}); allowed: users [{Users}] orgs [{Orgs}].",
