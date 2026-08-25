@@ -87,10 +87,11 @@
                 BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="14,9">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" x:Name="LeftBar" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <!-- Brand lockup: the Agnes gradient tile and the wordmark in the display face. This
-                         is the one place the gradient appears in the chrome. -->
+                    <!-- Brand lockup: the Agnes squid mark and the wordmark in the display face. This is
+                         the one place the brand gradient appears in the chrome — it used to be a bare
+                         gradient tile standing in for a mark that the app already ships on Android. -->
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <Border Width="20" Height="20" CornerRadius="6" Background="{StaticResource GradAgnes}" VerticalAlignment="Center" />
+                        <Image Source="{StaticResource AgnesMark}" Width="22" Height="22" VerticalAlignment="Center" />
                         <TextBlock Text="Agnes" Classes="display" FontSize="15" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
                     </StackPanel>
                 </StackPanel>

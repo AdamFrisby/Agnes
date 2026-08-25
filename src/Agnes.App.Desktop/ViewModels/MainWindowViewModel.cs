@@ -2489,7 +2489,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 CanClose = true,
                 Descriptor = descriptor,
                 HostName = descriptor.HostName,
-                AgentName = descriptor.Title,
+                // The agent slot names the agent, not the folder. Restoring from a saved tab used to put
+                // the session's *title* here, so a reopened OpenCode session introduced itself as "dawn2"
+                // while a freshly-opened one next to it said "opencode" — and nothing ever corrected it,
+                // since reconnecting doesn't revisit this. The descriptor has carried the adapter id all
+                // along.
+                AgentName = descriptor.AdapterId,
                 Pinned = descriptor.Pinned,
             };
             ApplyTags(doc, descriptor.Tags);
@@ -3799,7 +3804,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             CanClose = true,
             Descriptor = descriptor,
             HostName = descriptor.HostName,
-            AgentName = descriptor.Title,
+            AgentName = descriptor.AdapterId, // the agent, not the folder — see RestoreAsync
             Pinned = descriptor.Pinned,
         };
         ApplyTags(doc, descriptor.Tags);

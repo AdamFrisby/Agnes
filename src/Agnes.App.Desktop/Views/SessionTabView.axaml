@@ -45,9 +45,36 @@
         <Style Selector="Border.user">
             <Setter Property="Background" Value="{DynamicResource UserBubble}" />
         </Style>
-        <Style Selector="TextBlock.thought">
+        <!--
+          Reasoning is an aside, not a statement, and it should read as one. It gets the quiet treatment:
+          faint italic a size down, and a bubble stripped back to a left rule instead of a filled card, so
+          a long think never competes with what the agent actually said.
+
+          `:is(TextBlock)` matters. An Avalonia type selector is an EXACT type match, and the element here
+          is a SelectableTextBlock (a TextBlock subclass) — so the plain `TextBlock.thought` this replaces
+          matched nothing at all, and every thought had been rendering in full agent styling.
+        -->
+        <Style Selector=":is(TextBlock).thought">
             <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
             <Setter Property="FontStyle" Value="Italic" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <!-- Bubble geometry lives here, not on the element: a local value in the template would outrank
+             any style, and the thought variant has to be able to override it. -->
+        <Style Selector="Border.msg">
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="Margin" Value="0,6" />
+        </Style>
+        <Style Selector="Border.msg.thought">
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+            <Setter Property="BorderThickness" Value="2,0,0,0" />
+            <Setter Property="Padding" Value="12,3,14,3" />
+            <Setter Property="Margin" Value="3,2,0,2" />
+        </Style>
+        <Style Selector="Border.msg.thought TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
         </Style>
         <!-- Pulsing dot for the "Thinking…" indicator. -->
         <Style Selector="Border.pulse">
@@ -1422,7 +1449,7 @@
                             <ListBox.DataTemplates>
 
                                     <DataTemplate DataType="tr:MessageBubbleItem">
-                                        <Border Classes="msg" Classes.user="{Binding IsUser}" CornerRadius="12" Padding="14,10" Margin="0,6">
+                                        <Border Classes="msg" Classes.user="{Binding IsUser}" Classes.thought="{Binding IsThought}">
                                             <!-- Right-click / long-press anywhere on the bubble → the same per-message
                                                  actions, so touch and mouse reach them without the hover-only ⋯. -->
                                             <Border.ContextFlyout>

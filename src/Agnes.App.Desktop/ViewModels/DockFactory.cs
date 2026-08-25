@@ -45,12 +45,21 @@ public sealed class DockFactory : Factory
     public override void InitLayout(IDockable layout)
     {
         // Enable floating tabs into their own OS windows (drag a tab out, or "Open in new window").
+        // Each detached tab is a real OS window with its own taskbar entry, so each needs the app icon
+        // too — otherwise dragging a tab out produces a window that isn't visibly Agnes.
         HostWindowLocator = new Dictionary<string, Func<IHostWindow?>>
         {
-            [nameof(IDockWindow)] = () => new HostWindow(),
+            [nameof(IDockWindow)] = BrandedHostWindow,
         };
-        DefaultHostWindowLocator = () => new HostWindow();
+        DefaultHostWindowLocator = BrandedHostWindow;
         base.InitLayout(layout);
+    }
+
+    private static IHostWindow BrandedHostWindow()
+    {
+        var window = new HostWindow();
+        BrandIcon.Apply(window);
+        return window;
     }
 
     public override void OnDockableAdded(IDockable? dockable)

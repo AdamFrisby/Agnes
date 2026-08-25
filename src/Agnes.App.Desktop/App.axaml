@@ -20,6 +20,8 @@
                 <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Tokens.axaml" />
                 <!-- The ported Spacegray flavours: colour sets keyed by their own theme variants. -->
                 <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Spacegray.axaml" />
+                <!-- The Agnes squid mark. Theme-independent: it is the brand, not a role. -->
+                <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/BrandMark.axaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- One shared dock content recycler (see the DockControl style below); the factory evicts a

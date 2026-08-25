@@ -23,6 +23,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // No installer registers an icon for Agnes, so a window that sets none shows the window
+        // manager's generic client icon — the X logo, on X11.
+        BrandIcon.Apply(this);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainWindowViewModel vm)

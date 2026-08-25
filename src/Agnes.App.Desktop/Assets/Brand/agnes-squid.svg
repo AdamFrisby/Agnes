@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Agnes">
+  <defs><linearGradient id="a" gradientUnits="userSpaceOnUse" x1="128" y1="20" x2="128" y2="108"><stop offset="0" stop-color="#5940D6"/><stop offset="1" stop-color="#7A4FE8"/></linearGradient><linearGradient id="h" gradientUnits="userSpaceOnUse" x1="84" y1="120" x2="172" y2="178"><stop offset="0" stop-color="#8A55EE"/><stop offset="1" stop-color="#C858C8"/></linearGradient><linearGradient id="t1" gradientUnits="userSpaceOnUse" x1="96" y1="184" x2="96" y2="234"><stop offset="0" stop-color="#B85CE0"/><stop offset="1" stop-color="#D85CB8"/></linearGradient><linearGradient id="t2" gradientUnits="userSpaceOnUse" x1="118" y1="184" x2="118" y2="218"><stop offset="0" stop-color="#D055B0"/><stop offset="1" stop-color="#E85D95"/></linearGradient><linearGradient id="t3" gradientUnits="userSpaceOnUse" x1="140" y1="184" x2="140" y2="240"><stop offset="0" stop-color="#E0558E"/><stop offset="1" stop-color="#F27078"/></linearGradient><linearGradient id="t4" gradientUnits="userSpaceOnUse" x1="162" y1="184" x2="162" y2="232"><stop offset="0" stop-color="#EF6A78"/><stop offset="1" stop-color="#FF8A66"/></linearGradient></defs>
+<path d="M 111.30 38.32 Q 128.00 24.00 144.70 38.32 L 146.30 39.68 Q 163.00 54.00 168.89 75.20 L 172.11 86.80 Q 178.00 108.00 156.00 108.00 L 100.00 108.00 Q 78.00 108.00 83.89 86.80 L 87.11 75.20 Q 93.00 54.00 109.70 39.68 Z" fill="url(#a)"/>
+<path d="M 55.94 76.99 Q 48.00 76.00 53.09 69.82 L 70.91 48.18 Q 76.00 42.00 76.84 49.96 L 79.16 72.04 Q 80.00 80.00 72.06 79.01 Z" fill="#6A48E0"/>
+<path d="M 200.06 76.99 Q 208.00 76.00 202.91 69.82 L 185.09 48.18 Q 180.00 42.00 179.16 49.96 L 176.84 72.04 Q 176.00 80.00 183.94 79.01 Z" fill="#6A48E0"/>
+<path d="M 84.00 138.00 Q 84.00 120.00 102.00 120.00 L 154.00 120.00 Q 172.00 120.00 172.00 138.00 L 172.00 160.00 Q 172.00 178.00 154.00 178.00 L 102.00 178.00 Q 84.00 178.00 84.00 160.00 Z" fill="url(#h)"/>
+<path d="M 96 192 L 96 214 Q 96 226 85 226" fill="none" stroke="url(#t1)" stroke-width="16" stroke-linecap="round"/>
+<path d="M 118 192 L 118 210" fill="none" stroke="url(#t2)" stroke-width="16" stroke-linecap="round"/>
+<path d="M 140 192 L 140 232" fill="none" stroke="url(#t3)" stroke-width="16" stroke-linecap="round"/>
+<path d="M 162 192 L 162 212 Q 162 224 173 224" fill="none" stroke="url(#t4)" stroke-width="16" stroke-linecap="round"/>
+<circle cx="107" cy="129" r="4.5" fill="#FFFFFF"/>
+<circle cx="149" cy="129" r="4.5" fill="#FFFFFF"/>
+<circle cx="107" cy="152" r="11.5" fill="none" stroke="#FFFFFF" stroke-width="6.5"/>
+<circle cx="149" cy="152" r="11.5" fill="none" stroke="#FFFFFF" stroke-width="6.5"/>
+<line x1="119" y1="152" x2="137" y2="152" stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round"/>
+</svg>
