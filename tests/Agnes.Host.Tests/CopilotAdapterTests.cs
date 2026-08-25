@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Agnes.Abstractions;
 using Agnes.Acp;
 using Agnes.Agents.Copilot;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agnes.Host.Tests;
 
@@ -282,5 +284,120 @@ public sealed class CopilotAdapterTests
         Assert.NotNull(login);
         Assert.Equal("copilot", login.Command);
         Assert.Equal(["login"], login.Arguments);
+    }
+
+    // ---- subagent models: what makes subagents reachable at all under BYOK ----
+
+    [Fact]
+    public void Subagent_settings_point_the_model_pinning_agents_at_the_session_model()
+    {
+        var merged = CopilotSubagentSettings.Apply(existing: null, modelId: "stealth/ox-alpha");
+
+        Assert.NotNull(merged);
+        var agents = JsonDocument.Parse(merged).RootElement
+            .GetProperty("subagents").GetProperty("agents");
+        Assert.Equal("stealth/ox-alpha", agents.GetProperty("explore").GetProperty("model").GetString());
+        Assert.Equal("stealth/ox-alpha", agents.GetProperty("task").GetProperty("model").GetString());
+        Assert.Equal("stealth/ox-alpha", agents.GetProperty("research").GetProperty("model").GetString());
+    }
+
+    /// <summary>The file belongs to Copilot and carries settings a person chose. Merging that keeps only
+    /// what it recognises is the same bug as overwriting.</summary>
+    [Fact]
+    public void Merging_keeps_every_setting_it_does_not_own()
+    {
+        const string existing = """
+            {
+              "renderMarkdown": true,
+              "effortLevel": "max",
+              "model": "gpt-5.6-luna",
+              "allowedUrls": ["https://github.com", "https://www.nuget.org"],
+              "subagents": { "maxConcurrency": 8, "agents": { "task": { "effortLevel": "low" } } }
+            }
+            """;
+
+        var merged = CopilotSubagentSettings.Apply(existing, "stealth/ox-alpha");
+
+        Assert.NotNull(merged);
+        var root = JsonDocument.Parse(merged).RootElement;
+        Assert.True(root.GetProperty("renderMarkdown").GetBoolean());
+        Assert.Equal("max", root.GetProperty("effortLevel").GetString());
+        Assert.Equal("gpt-5.6-luna", root.GetProperty("model").GetString());   // the SESSION model travels on argv
+        Assert.Equal(2, root.GetProperty("allowedUrls").GetArrayLength());
+
+        var subagents = root.GetProperty("subagents");
+        Assert.Equal(8, subagents.GetProperty("maxConcurrency").GetInt32());
+
+        var task = subagents.GetProperty("agents").GetProperty("task");
+        Assert.Equal("stealth/ox-alpha", task.GetProperty("model").GetString());
+        Assert.Equal("low", task.GetProperty("effortLevel").GetString());       // sibling keys untouched
+    }
+
+    /// <summary>Null means "leave it alone", which is what keeps a relaunch on an unchanged model from
+    /// rewriting a file it has nothing to say about.</summary>
+    [Fact]
+    public void A_file_that_already_says_this_is_left_alone()
+    {
+        var first = CopilotSubagentSettings.Apply(null, "stealth/ox-alpha");
+        Assert.NotNull(first);
+        Assert.Null(CopilotSubagentSettings.Apply(first, "stealth/ox-alpha"));
+    }
+
+    [Fact]
+    public void Switching_model_rewrites_every_pinned_agent()
+    {
+        var first = CopilotSubagentSettings.Apply(null, "stealth/ox-alpha");
+        var second = CopilotSubagentSettings.Apply(first, "gpt-5.6-sol");
+
+        Assert.NotNull(second);
+        var agents = JsonDocument.Parse(second).RootElement.GetProperty("subagents").GetProperty("agents");
+        foreach (var name in CopilotSubagentSettings.ModelPinningAgents)
+        {
+            Assert.Equal("gpt-5.6-sol", agents.GetProperty(name).GetProperty("model").GetString());
+        }
+    }
+
+    [Fact]
+    public void No_model_selected_writes_nothing()
+        => Assert.Null(CopilotSubagentSettings.Apply(null, modelId: null));
+
+    /// <summary>A syntax error in a hand-edited file must cost the subagent override, not the file.</summary>
+    [Fact]
+    public void Unparseable_settings_are_never_overwritten()
+        => Assert.Null(CopilotSubagentSettings.Apply("{ not json", "stealth/ox-alpha"));
+
+    /// <summary>On a GitHub subscription the pinned ids resolve and were chosen on purpose — a small fast
+    /// model for the cheap agents. Only BYOK turns that choice into "no subagents at all".</summary>
+    [Fact]
+    public void Without_byok_the_settings_file_is_left_alone()
+    {
+        var adapter = CopilotAgent.Create(NullLoggerFactory.Instance);
+        Assert.Null(((IModelSettingsAdapter)adapter).RenderSettings(null, "gpt-5.6-luna"));
+    }
+
+    [Fact]
+    public void With_byok_the_adapter_writes_copilots_own_settings_path()
+    {
+        var adapter = CopilotAgent.Create(NullLoggerFactory.Instance, new CopilotOptions
+        {
+            Provider = new CopilotProviderOptions { BaseUrl = "https://openrouter.ai/api/v1" },
+        });
+
+        var settings = (IModelSettingsAdapter)adapter;
+        Assert.Equal(".copilot/settings.json", settings.SettingsFilePath);
+        Assert.NotNull(settings.RenderSettings(null, "stealth/ox-alpha"));
+    }
+
+    /// <summary>An operator who would rather Agnes did not touch the file says so by naming no agents.</summary>
+    [Fact]
+    public void An_empty_subagent_list_disables_the_rewrite()
+    {
+        var adapter = CopilotAgent.Create(NullLoggerFactory.Instance, new CopilotOptions
+        {
+            Provider = new CopilotProviderOptions { BaseUrl = "https://openrouter.ai/api/v1" },
+            SubagentNames = [],
+        });
+
+        Assert.Null(((IModelSettingsAdapter)adapter).RenderSettings(null, "stealth/ox-alpha"));
     }
 }

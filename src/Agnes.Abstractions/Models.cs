@@ -44,6 +44,36 @@ public interface IModelEnvironmentAdapter
     IReadOnlyDictionary<string, string> InlineConfigEnvironment(string? modelId, IReadOnlyList<InlineMcpServer> mcpServers);
 }
 
+/// <summary>
+/// Optional capability an <see cref="IAgentAdapter"/> may implement (checked via
+/// <c>is IModelSettingsAdapter</c>) when its CLI takes part of its model configuration from a <b>file in
+/// its own home directory</b> — not argv, and not the environment. Copilot is the case that forced this:
+/// its built-in subagents pin models in their shipped definitions, and the only override is a key in
+/// <c>~/.copilot/settings.json</c>, so a session on a BYOK provider can dispatch to no subagent that pins
+/// a model it does not serve.
+///
+/// A third axis is needed for the same reason the environment one was: the three travel differently into a
+/// sandbox. argv rides the wrapped exec, environment is materialized into the guest's agent-env file, and a
+/// settings file has to be written into the guest's home. Because the file already exists and belongs to
+/// the CLI, the adapter is handed what it currently says and returns what it should say — a merge it owns,
+/// rather than a render that would silently discard settings a person chose.
+/// </summary>
+public interface IModelSettingsAdapter
+{
+    /// <summary>Where the file lives, relative to the agent's home directory (e.g.
+    /// <c>.copilot/settings.json</c>). Constant per adapter: the same path on the host and in a guest.</summary>
+    string SettingsFilePath { get; }
+
+    /// <summary>
+    /// What the file should contain for a session running <paramref name="modelId"/>, given
+    /// <paramref name="existingContents"/> (null when the file does not exist yet) — or <c>null</c> for
+    /// "leave it alone", which covers no model selected, nothing this adapter wants to say, and the file
+    /// already saying it. Callers write only a non-null result, so a relaunch that changes nothing touches
+    /// no file.
+    /// </summary>
+    string? RenderSettings(string? existingContents, string? modelId);
+}
+
 /// <summary>An MCP server an agent should reach over HTTP, in the minimal shape an inline config needs.
 /// Deliberately not <c>McpServerInfo</c>: that lives in the wire protocol, and Agnes.Abstractions takes no
 /// dependency on it.</summary>

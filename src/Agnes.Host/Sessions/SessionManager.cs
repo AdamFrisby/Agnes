@@ -798,6 +798,7 @@ public sealed class SessionManager : IAsyncDisposable
         else
         {
             mcpConfigPath = await MaterializeHostMcpAsync(adapterId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
+            await ApplyHostSettingsAsync(adapterId, modelId, cancellationToken).ConfigureAwait(false);
         }
 
         var agent = await adapter.StartSessionAsync(
@@ -1397,6 +1398,7 @@ public sealed class SessionManager : IAsyncDisposable
         else
         {
             mcpConfigPath = await MaterializeHostMcpAsync(record.AdapterId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
+            await ApplyHostSettingsAsync(record.AdapterId, record.ModelId, cancellationToken).ConfigureAwait(false);
         }
 
         var agent = await adapter.StartSessionAsync(
@@ -1782,6 +1784,96 @@ public sealed class SessionManager : IAsyncDisposable
     }
 
     /// <summary>
+    /// Writes the settings file a CLI reads its model configuration from
+    /// (<see cref="IModelSettingsAdapter"/>) into the guest's home, merged over whatever is already there.
+    /// The third model-carriage axis, alongside argv and the environment: a settings file cannot ride the
+    /// wrapped exec and is not scrubbed by <c>env -i</c> — it has to be materialized as a file, which is
+    /// what the credential channel already does.
+    /// </summary>
+    /// <remarks>
+    /// The current contents are read back out of the guest first, because the adapter merges rather than
+    /// renders: the file belongs to the CLI, and a person may have set things in it that a re-stamp must
+    /// not drop. A guest with no such file yet, or a read that fails, is simply "nothing there" — the merge
+    /// handles both. Runs on every provision, so an explicit model switch (which relaunches) rewrites it;
+    /// an adapter that returns null leaves the file untouched, so a relaunch on an unchanged model writes
+    /// nothing at all.
+    /// </remarks>
+    private async Task AddSandboxSettingsAsync(
+        string adapterId, string? modelId, ISandbox sandbox, List<SandboxCredentialFile> files,
+        CancellationToken cancellationToken)
+    {
+        if (_adapters.Find(adapterId) is not IModelSettingsAdapter adapter)
+        {
+            return;
+        }
+
+        string? existing = null;
+        try
+        {
+            var read = await sandbox.ExecAsync(
+                new SandboxExec { Argv = ["sh", "-c", $"cat \"$HOME/{adapter.SettingsFilePath}\" 2>/dev/null"] },
+                cancellationToken).ConfigureAwait(false);
+            existing = read.Success && read.Stdout.Length > 0 ? read.Stdout : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Couldn't read {Path} from the sandbox for {AdapterId}; treating it as absent",
+                adapter.SettingsFilePath, adapterId);
+        }
+
+        if (adapter.RenderSettings(existing, modelId) is not { } contents)
+        {
+            return;
+        }
+
+        files.Add(new SandboxCredentialFile(adapter.SettingsFilePath, contents));
+        _logger.LogInformation("Sandboxed {AdapterId}: pointed {Path} at model {ModelId}",
+            adapterId, adapter.SettingsFilePath, modelId);
+    }
+
+    /// <summary>
+    /// The same, for a session running on the host itself, where the file is simply on disk. Best-effort:
+    /// this is a convenience over the CLI's own configuration, and a session that could not write it still
+    /// runs — just without whatever the settings would have enabled.
+    /// </summary>
+    /// <remarks>
+    /// Unlike the sandboxed case, this file is <b>shared</b> — one home directory, one CLI, however many
+    /// sessions. Two host-local sessions on different models will each point it at their own, and the last
+    /// to launch wins. That is inherent to a CLI that exposes the setting nowhere but a global file; it is
+    /// bounded by the adapter merging narrowly (Copilot rewrites subagent models and nothing else), and the
+    /// sandboxed case — where each session has its own home — does not have it at all.
+    /// </remarks>
+    private async Task ApplyHostSettingsAsync(string adapterId, string? modelId, CancellationToken cancellationToken)
+    {
+        if (_adapters.Find(adapterId) is not IModelSettingsAdapter adapter)
+        {
+            return;
+        }
+
+        try
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var path = Path.Combine(home, adapter.SettingsFilePath);
+            var existing = File.Exists(path)
+                ? await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false)
+                : null;
+
+            if (adapter.RenderSettings(existing, modelId) is not { } contents)
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllTextAsync(path, contents, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("{AdapterId}: pointed {Path} at model {ModelId}", adapterId, path, modelId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Couldn't update the {AdapterId} settings file for model {ModelId}", adapterId, modelId);
+        }
+    }
+
+    /// <summary>
     /// Checks that the model the session asked for is one the agent can actually reach from inside its
     /// sandbox, and says so loudly when it isn't. This exists because the failure it catches is silent:
     /// OpenCode, asked for a model outside its catalogue, streams from a different one without a word, so
@@ -1856,6 +1948,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         var mcpConfigPath = AddSandboxMcp(adapterId, sandbox, sessionId, skipPermissions, mcpApproval, project, effectiveDirectory, env, files);
+        await AddSandboxSettingsAsync(adapterId, modelId, sandbox, files, cancellationToken).ConfigureAwait(false);
         await AddSandboxGitCredentialsAsync(sandbox, sessionId, effectiveDirectory, gitCredentialMode, project?.CredentialAccount, env, files, cancellationToken).ConfigureAwait(false);
 
         // Unconditional: this is a re-stamp, so the guest must end up with exactly what was computed here.

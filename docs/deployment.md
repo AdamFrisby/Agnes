@@ -291,6 +291,7 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 | `Storage:Postgres:ConnectionString` | Npgsql connection string; required when `Storage:EventStore=postgres`. |
 | `ClaudeCode` / `OpenCode` / `ClaudeCodeNative` / `Codex` / `Copilot` / `Pi` | Agent launch commands. |
 | `Copilot:Provider:*` | Copilot bring-your-own-key provider (`BaseUrl` activates it; also `Type`, `ApiKey`/`BearerToken`, `WireApi`, `Transport`, `AzureApiVersion`, `Headers`, `Model`). Rendered to the `COPILOT_PROVIDER_*` environment, which is the only place Copilot exposes this. |
+| `Copilot:SubagentNames` | Which built-in Copilot subagents get pointed at the session's model. Defaults to the ones whose shipped definition pins one (`explore`, `task`, `research`) — under BYOK those ids resolve to nothing, so without this a session can only dispatch to the agents that pin nothing. Agnes merges `subagents.agents.<name>.model` into `~/.copilot/settings.json` at launch and again on every model switch, leaving every other setting in the file alone. Only applied when `Copilot:Provider:BaseUrl` is set; set this to `[]` to leave the file untouched entirely. |
 | `Sandbox:Provider` | `incus` to run agents in per-session VMs (see [sandbox-live-testing.md](sandbox-live-testing.md)). |
 
 ## Storage topology (event store)

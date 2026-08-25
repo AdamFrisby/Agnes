@@ -19,6 +19,14 @@ public sealed record CopilotOptions
     /// <summary>Bring-your-own-key provider configuration, or null to use GitHub's own model routing.</summary>
     public CopilotProviderOptions? Provider { get; init; }
 
+    /// <summary>
+    /// Which built-in subagents get pointed at the session's model. Defaults to the ones whose shipped
+    /// definition pins a model (<c>explore</c>, <c>task</c>, <c>research</c>) — see
+    /// <see cref="CopilotSubagentSettings"/>. Empty disables the rewrite entirely, for an operator who would
+    /// rather Copilot's settings file were left alone.
+    /// </summary>
+    public IReadOnlyList<string> SubagentNames { get; init; } = CopilotSubagentSettings.ModelPinningAgents;
+
     /// <summary>Performs the model-catalogue handshake and returns the raw <c>session/new</c> response line,
     /// or null when the CLI can't be asked. Injectable so the catalogue parsing is testable without
     /// spawning a process; null uses the real CLI.</summary>
@@ -171,7 +179,10 @@ public static class CopilotAgent
     }
 
     public static CopilotAcpAdapter Create(ILoggerFactory loggerFactory, CopilotOptions? options = null)
-        => new(CreateLaunchSpec(options), loggerFactory);
+    {
+        options ??= new CopilotOptions();
+        return new CopilotAcpAdapter(CreateLaunchSpec(options), loggerFactory, options);
+    }
 }
 
 /// <summary>
@@ -179,14 +190,36 @@ public static class CopilotAgent
 /// own — reading the MCP servers its CLI already has configured, and naming its interactive login command
 /// (which Copilot itself advertises in the ACP handshake as the <c>copilot-login</c> auth method).
 /// </summary>
-public sealed class CopilotAcpAdapter : AcpAgentAdapter, IMcpDiscoveryAdapter
+public sealed class CopilotAcpAdapter : AcpAgentAdapter, IMcpDiscoveryAdapter, IModelSettingsAdapter
 {
     private readonly string _command;
+    private readonly CopilotOptions _options;
 
-    public CopilotAcpAdapter(AcpLaunchSpec spec, ILoggerFactory loggerFactory) : base(spec, loggerFactory)
+    public CopilotAcpAdapter(AcpLaunchSpec spec, ILoggerFactory loggerFactory, CopilotOptions? options = null)
+        : base(spec, loggerFactory)
     {
         _command = spec.Command;
+        _options = options ?? new CopilotOptions();
     }
+
+    /// <inheritdoc />
+    public string SettingsFilePath => CopilotSubagentSettings.HomeRelativePath;
+
+    /// <summary>
+    /// Points Copilot's model-pinning subagents at the session's model — but only under BYOK.
+    /// </summary>
+    /// <remarks>
+    /// On a GitHub subscription the pinned ids resolve and were chosen deliberately: <c>explore</c> and
+    /// <c>task</c> run on a small fast model precisely so they stay cheap, and overriding that with
+    /// whatever the session happens to be on would make every subagent as expensive as the main one.
+    /// Under BYOK the same ids resolve to nothing, so the choice is not between two models but between the
+    /// session's model and no subagents at all. That is the whole of the difference, and it is why the
+    /// rewrite is gated rather than unconditional.
+    /// </remarks>
+    public string? RenderSettings(string? existingContents, string? modelId)
+        => _options.Provider?.IsConfigured == true
+            ? CopilotSubagentSettings.Apply(existingContents, modelId, _options.SubagentNames)
+            : null;
 
     public Task<IReadOnlyList<NativeMcpServer>> DetectNativeConfigAsync(string workspaceDirectory, CancellationToken ct = default)
         => CopilotNativeMcpConfig.DetectAsync(workspaceDirectory, ct);
