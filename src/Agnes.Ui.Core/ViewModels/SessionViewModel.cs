@@ -69,6 +69,8 @@ public sealed class SessionViewModel : ObservableObject
     private int _promptCursor = -1;
     private int _changeCursor = -1;
     private bool _showDiscarded;
+    // True only while the constructor rebuilds the transcript from the log — see the replay guard there.
+    private bool _replaying;
     private SendPolicy _sendPolicy = SendPolicy.QueueInAgent;
 
     public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null, Agnes.Abstractions.Events.IEventBus? eventBus = null)
@@ -239,10 +241,27 @@ public sealed class SessionViewModel : ObservableObject
             }
         };
 
-        foreach (var @event in _view.Events)
+        // Rebuilding history is not the same as living through it. Every event in the log runs through the
+        // same Apply, and the acting parts of it — auto-answering a permission from a standing rule, raising
+        // a desktop notification — must not fire for something that happened hours ago. Replaying without
+        // this guard re-answered every still-open request on every reconnect: one host's log had 218
+        // discarded responses against a session that had only ever asked 17 times.
+        _replaying = true;
+        try
         {
-            Apply(@event);
+            foreach (var @event in _view.Events)
+            {
+                Apply(@event);
+            }
         }
+        finally
+        {
+            _replaying = false;
+        }
+
+        // Now decide once, on what is *still* open after the whole history is in — a live request that a
+        // standing rule covers is answered here, rather than sixteen dead ones being answered above.
+        AutoAnswerPendingPermission();
 
         _view.EventAppended += OnEvent;
         _host.StateChanged += OnHostStateChanged;
@@ -1849,12 +1868,13 @@ public sealed class SessionViewModel : ObservableObject
         {
             case PermissionRequestedEvent pr:
                 _permissionTitles[pr.RequestId] = pr.Title;
-                var toolKind = _transcript.PendingPermission?.ToolKind;
-                if (_policy.Decide(_host.HostUrl, toolKind) is bool auto
-                    && PickOption(pr.Options, auto) is { } chosen)
+                if (_replaying)
                 {
-                    // A standing trust rule answers this one; the resolution is still audited.
-                    _ = _host.RespondPermissionAsync(SessionId, pr.RequestId, chosen.OptionId);
+                    break; // history: rebuild the card, don't answer it and don't ring the doorbell
+                }
+
+                if (AutoAnswerPendingPermission())
+                {
                     break;
                 }
 
@@ -1870,7 +1890,12 @@ public sealed class SessionViewModel : ObservableObject
 
             case TurnEndedEvent { Reason: not StopReason.Cancelled }:
                 IsTurnActive = false;
-                NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId, Items.LastOrDefault()?.AnchorId));
+                if (!_replaying)
+                {
+                    // Reconnecting must not announce every turn the session ever finished.
+                    NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId, Items.LastOrDefault()?.AnchorId));
+                }
+
                 DrainQueue();
                 _ = RefreshGitAsync(); // changes likely landed this turn
                 break;
@@ -1883,7 +1908,12 @@ public sealed class SessionViewModel : ObservableObject
                 IsTurnActive = false;
                 _interrupted = true;
                 UpdateBanner();
-                NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId, Items.LastOrDefault()?.AnchorId));
+                if (!_replaying)
+                {
+                    // Likewise: an error from three hours ago is history, not news.
+                    NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId, Items.LastOrDefault()?.AnchorId));
+                }
+
                 break;
 
             case SessionTitleEvent titleEvent when !string.IsNullOrWhiteSpace(titleEvent.Title):
@@ -2423,6 +2453,35 @@ public sealed class SessionViewModel : ObservableObject
         => _transcript.Items.OfType<PermissionItem>().Where(p => p.Expired).Reverse();
 
     public bool HasExpiredApprovals => _transcript.Items.OfType<PermissionItem>().Any(p => p.Expired);
+
+    /// <summary>
+    /// Answers the outstanding request from a standing trust rule, if there is one and it applies. Returns
+    /// whether it did, so the caller knows whether to fall through to notifying a human.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately reads <see cref="PendingPermission"/> rather than taking a request: that property is
+    /// what the answer bar acts on, so this answers exactly what the user would have. It also means a
+    /// request already retired — resolved, or withdrawn because the agent stopped waiting — is not
+    /// answered at all, which is the whole point: a response to a withdrawn request goes nowhere, records
+    /// nothing, and leaves the card on screen looking like the button did not work.
+    /// </remarks>
+    private bool AutoAnswerPendingPermission()
+    {
+        if (PendingPermission is not { } permission || !permission.IsAnswerable)
+        {
+            return false;
+        }
+
+        if (_policy.Decide(_host.HostUrl, permission.ToolKind) is not bool auto
+            || PickOption(permission.Options, auto) is not { } chosen)
+        {
+            return false;
+        }
+
+        // The resolution is still audited — an auto-answer is a decision, and the trail records it as one.
+        _ = _host.RespondPermissionAsync(SessionId, permission.RequestId, chosen.OptionId);
+        return true;
+    }
 
     // Narrowest matching option: prefer "once" over "always".
     private static PermissionOption? PickOption(IReadOnlyList<PermissionOption> options, bool allow)

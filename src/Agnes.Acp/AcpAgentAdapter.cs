@@ -52,14 +52,14 @@ public sealed record AcpLaunchSpec
     public Func<string, IReadOnlyList<string>>? SystemPromptArguments { get; init; }
 
     /// <summary>
-    /// Builds the CLI arguments that select the permission model, given
-    /// <see cref="AgentSessionOptions.SkipPermissions"/>. The ACP default is the safe one — the agent asks
-    /// per tool call over <c>session/request_permission</c> and Agnes surfaces it — so most CLIs need no
-    /// flag at all and leave this null. A CLI that only runs unattended behind an explicit blanket-allow
-    /// flag (Copilot's <c>--allow-all-tools</c>) states it here, and it is reached <b>only</b> when the user
-    /// has opted into autonomous operation. Mirrors <c>INativeStreamMapper.PermissionLaunchArguments</c>.
+    /// Builds the CLI arguments that select the permission model, given the session's
+    /// <see cref="PermissionStance"/>. The ACP default is the safe one — the agent asks per tool call over
+    /// <c>session/request_permission</c> and Agnes surfaces it — so most CLIs need no flag at all and leave
+    /// this null. A CLI that only runs unattended behind an explicit blanket-allow flag (Copilot's
+    /// <c>--allow-all-tools</c>) states it here, and it is reached <b>only</b> when the user has opted into
+    /// autonomous operation. Mirrors <c>INativeStreamMapper.PermissionLaunchArguments</c>.
     /// </summary>
-    public Func<bool, IReadOnlyList<string>>? PermissionArguments { get; init; }
+    public Func<PermissionStance, IReadOnlyList<string>>? PermissionArguments { get; init; }
 
     /// <summary>Builds the CLI arguments that load the Agnes-managed MCP config file at
     /// <see cref="AgentSessionOptions.McpConfigPath"/> (e.g. Copilot's
@@ -114,7 +114,7 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter, IModelEnviro
         // flag for BOTH stances can state both; the flag for the attended case is the default one.
         if (spec.PermissionArguments is { } buildPermissions)
         {
-            args.AddRange(buildPermissions(options.SkipPermissions));
+            args.AddRange(buildPermissions(new PermissionStance(options.SkipPermissions, options.Sandbox is not null)));
         }
 
         if (options.McpConfigPath is { Length: > 0 } mcpConfig && spec.McpConfigArguments is { } buildMcp)

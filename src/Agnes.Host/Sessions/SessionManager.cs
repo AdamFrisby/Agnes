@@ -2609,7 +2609,29 @@ public sealed class SessionManager : IAsyncDisposable
             return; // a plugin blocked the response (the request stays pending)
         }
 
+        // A request the agent stopped waiting for cannot be answered, and forwarding the answer anyway is
+        // worse than useless: the adapter drops it with a log line nobody reads, no resolution is recorded,
+        // and the card keeps its buttons — so the user presses them again. One host's log had 218 of these
+        // discarded responses against a session showing sixteen approvals that could never be cleared.
+        // Record the outcome instead, so every client's card closes and stops inviting the click.
+        if (await IsWithdrawnAsync(sessionId, requestId, CancellationToken.None).ConfigureAwait(false))
+        {
+            var withdrawn = await _store.AppendAsync(
+                sessionId, new PermissionResolvedEvent(requestId, before.OptionId, PermissionOutcome.Cancelled)).ConfigureAwait(false);
+            await _broadcaster.PublishAsync(sessionId, withdrawn).ConfigureAwait(false);
+            return;
+        }
+
         await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).RespondToPermissionAsync(requestId, before.OptionId).ConfigureAwait(false);
+    }
+
+    /// <summary>Whether <paramref name="requestId"/> is a permission request the agent has stopped waiting
+    /// for — see <see cref="PermissionLifecycle"/>. False for a request that is live, already resolved, or
+    /// unknown, so a response only ever diverts when there is positive evidence nothing will receive it.</summary>
+    private async Task<bool> IsWithdrawnAsync(string sessionId, string requestId, CancellationToken cancellationToken)
+    {
+        var events = await _store.ReadSinceAsync(sessionId, 0, cancellationToken).ConfigureAwait(false);
+        return PermissionLifecycle.ExpiredRequests(events).Contains(requestId);
     }
 
     public async Task AnswerQuestionAsync(string sessionId, string requestId, IReadOnlyList<Agnes.Protocol.QuestionAnswerDto> answers)

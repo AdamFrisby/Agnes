@@ -53,8 +53,25 @@ public static class CopilotAgent
     /// filesystem boundary as well is not, and it is exactly the boundary that still matters on an
     /// unsandboxed host.
     /// </summary>
-    public static IReadOnlyList<string> BuildPermissionArguments(bool skipPermissions)
-        => skipPermissions ? ["--allow-all-tools"] : [];
+    /// <remarks>
+    /// <para>Sandboxing changes what the path check is worth. Copilot verifies filesystem access separately
+    /// from its tool prompt, so <c>--allow-all-tools</c> alone leaves it asking "access paths outside
+    /// trusted directories?" — correct on an unsandboxed host, where that check is the only filesystem
+    /// boundary left once the per-tool prompt is waived. Inside a VM it guards nothing the VM does not,
+    /// and it asks constantly: Copilot keeps its own session state (subagent briefs and the like) outside
+    /// the working directory, so ordinary work trips it repeatedly. One live session collected sixteen such
+    /// prompts in an hour, in a session whose whole point was not to be interrupted.</para>
+    ///
+    /// <para><c>--allow-all-urls</c> is still withheld either way: network egress is a different boundary,
+    /// and the sandbox's proxy and credential broker are what govern it.</para>
+    /// </remarks>
+    public static IReadOnlyList<string> BuildPermissionArguments(PermissionStance stance)
+        => (stance.SkipPermissions, stance.Sandboxed) switch
+        {
+            (false, _) => [],
+            (true, false) => ["--allow-all-tools"],
+            (true, true) => ["--allow-all-tools", "--allow-all-paths"],
+        };
 
     /// <summary>Copilot selects a model with <c>--model &lt;id&gt;</c>.</summary>
     public static IReadOnlyList<string> BuildModelArguments(string modelId) => ["--model", modelId];

@@ -25,8 +25,15 @@ public sealed class CopilotAdapterTests
         Assert.Equal(["--acp"], args);
     }
 
+    private sealed class FakeSandbox : ISandboxCommand
+    {
+        public (string Command, IReadOnlyList<string> Arguments) WrapCommand(
+            string command, IReadOnlyList<string> arguments, string workingDirectory)
+            => (command, arguments);
+    }
+
     [Fact]
-    public void Autonomous_session_allows_tools_but_never_paths_or_urls()
+    public void Autonomous_session_on_the_host_allows_tools_but_never_paths_or_urls()
     {
         var spec = CopilotAgent.CreateLaunchSpec();
         var options = new AgentSessionOptions { WorkingDirectory = Path.GetTempPath(), SkipPermissions = true };
@@ -35,11 +42,44 @@ public sealed class CopilotAdapterTests
 
         Assert.Contains("--allow-all-tools", args);
         // --allow-all / --yolo would also disable path verification and URL confirmation. Skipping the
-        // prompt is what the user opted into; discarding the filesystem boundary is not.
+        // prompt is what the user opted into; discarding the filesystem boundary is not — with nothing
+        // else confining the agent, Copilot's own path check is the boundary that remains.
         Assert.DoesNotContain("--allow-all", args);
         Assert.DoesNotContain("--yolo", args);
         Assert.DoesNotContain("--allow-all-paths", args);
         Assert.DoesNotContain("--allow-all-urls", args);
+    }
+
+    [Fact]
+    public void Autonomous_session_in_a_sandbox_also_trusts_paths()
+    {
+        var spec = CopilotAgent.CreateLaunchSpec();
+        var options = new AgentSessionOptions
+        {
+            WorkingDirectory = Path.GetTempPath(),
+            SkipPermissions = true,
+            Sandbox = new FakeSandbox(),
+        };
+
+        var args = AcpAgentAdapter.BuildAgentArguments(spec, options);
+
+        Assert.Contains("--allow-all-tools", args);
+        // The VM is the filesystem boundary here, and Copilot's own path check guards nothing it doesn't —
+        // it only produces prompts. It keeps session state (subagent briefs) outside the working directory,
+        // so ordinary work trips it constantly, in a session explicitly opted out of being interrupted.
+        Assert.Contains("--allow-all-paths", args);
+        // Egress is a different boundary, governed by the sandbox's proxy and credential broker.
+        Assert.DoesNotContain("--allow-all-urls", args);
+    }
+
+    [Fact]
+    public void A_sandbox_alone_does_not_widen_an_attended_session()
+    {
+        var spec = CopilotAgent.CreateLaunchSpec();
+        var options = new AgentSessionOptions { WorkingDirectory = Path.GetTempPath(), Sandbox = new FakeSandbox() };
+
+        // Confinement is not consent: a user who never asked for autonomous operation still gets asked.
+        Assert.Equal(["--acp"], AcpAgentAdapter.BuildAgentArguments(spec, options));
     }
 
     // ---- model + MCP argv ----
