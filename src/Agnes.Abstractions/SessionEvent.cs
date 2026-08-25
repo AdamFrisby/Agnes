@@ -169,12 +169,31 @@ public sealed record TurnEndedEvent(StopReason Reason, string? RawReason = null)
 /// nullable and nothing is estimated or fabricated: <see cref="ContextUsed"/> is the context-window
 /// occupancy the model reported, <see cref="ContextWindow"/> is the model's real window (when known),
 /// <see cref="OutputTokens"/> is tokens produced, and <see cref="CostUsd"/> is the cost the CLI reported.
+///
+/// <para><b>Levels and flows are mixed here, deliberately.</b> <see cref="ContextUsed"/> and
+/// <see cref="ContextWindow"/> describe the window's <em>state</em> at the moment of the report, so a
+/// client keeps the latest and must never add them up. <see cref="InputTokens"/>,
+/// <see cref="CacheReadTokens"/>, <see cref="CacheWriteTokens"/> and <see cref="OutputTokens"/> are what
+/// that one model call <em>consumed</em>, so they accumulate — which is what makes a session total
+/// possible at all, and why summing occupancy instead would have produced a number meaning nothing.</para>
 /// </summary>
 public sealed record UsageMetrics(
     long? ContextUsed = null,
     long? ContextWindow = null,
     long? OutputTokens = null,
-    double? CostUsd = null);
+    double? CostUsd = null,
+    long? InputTokens = null,
+    long? CacheReadTokens = null,
+    long? CacheWriteTokens = null)
+{
+    /// <summary>
+    /// Whether this report breaks its input down by kind. Only some adapters can: Claude's stream
+    /// states fresh, cache-read and cache-written input separately, while ACP's <c>usage_update</c>
+    /// reports occupancy and cost alone. Nothing is inferred to fill the gap — a client shows the
+    /// breakdown where an agent gives one and says nothing where it doesn't.
+    /// </summary>
+    public bool HasTokenBreakdown => InputTokens is not null || CacheReadTokens is not null || CacheWriteTokens is not null;
+}
 
 /// <summary>Real token/cost usage the agent reported (today: the native Claude Code adapter, from the
 /// stream's per-message and result <c>usage</c> blocks). Each event may carry only some fields (context

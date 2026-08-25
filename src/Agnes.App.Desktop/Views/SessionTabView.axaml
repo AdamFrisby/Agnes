@@ -1251,6 +1251,51 @@
                                     </StackPanel>
                                 </StackPanel>
 
+                                <!-- TOKENS: what the session has consumed, as against the context meter in
+                                     the header, which says only how full the window is right now. Three
+                                     windows because the question is usually "is this accelerating", which
+                                     a single lifetime figure can't answer. Absent entirely for an agent
+                                     that reports no breakdown — a table of zeroes would read as a claim. -->
+                                <StackPanel Spacing="4" IsVisible="{Binding HasUsageStats}">
+                                    <Button Command="{Binding ToggleUsageCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
+                                                       IsVisible="{Binding UsageExpanded}" />
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
+                                                       IsVisible="{Binding !UsageExpanded}" />
+                                            <TextBlock Text="TOKENS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding UsageStats.TotalText}" Foreground="{DynamicResource FgFaint}" FontSize="11"
+                                                       FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <StackPanel Spacing="2" IsVisible="{Binding UsageExpanded}">
+                                        <Grid ColumnDefinitions="*,42,42,46" ColumnSpacing="6" Margin="0,2">
+                                            <TextBlock Grid.Column="1" Text="24h" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                       HorizontalAlignment="Right" />
+                                            <TextBlock Grid.Column="2" Text="7d" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                       HorizontalAlignment="Right" />
+                                            <TextBlock Grid.Column="3" Text="all" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                       HorizontalAlignment="Right" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding UsageStats.Rows}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid ColumnDefinitions="*,42,42,46" ColumnSpacing="6" Margin="0,2">
+                                                        <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding DayText}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                                                   FontFamily="{StaticResource MonoFont}" HorizontalAlignment="Right" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding WeekText}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                                                   FontFamily="{StaticResource MonoFont}" HorizontalAlignment="Right" />
+                                                        <TextBlock Grid.Column="3" Text="{Binding LifetimeText}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                                                   FontFamily="{StaticResource MonoFont}" HorizontalAlignment="Right" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </StackPanel>
+
                                 <!-- Audit trail: capabilities granted / denied -->
                                 <StackPanel Spacing="4" IsVisible="{Binding HasApprovals}">
                                     <Button Command="{Binding ToggleApprovalsCommand}" Background="Transparent" BorderThickness="0"

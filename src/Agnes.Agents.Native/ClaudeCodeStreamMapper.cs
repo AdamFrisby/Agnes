@@ -113,9 +113,21 @@ public sealed class ClaudeCodeStreamMapper : INativeStreamMapper
         {
             var context = ContextTokensFrom(usage);
             var output = GetLong(usage, "output_tokens");
+            // The same three keys the occupancy sum is built from, kept apart as well as together: the
+            // sum is what the context meter needs, and the split is what a session total needs, since
+            // fresh input, a cache read and a cache write are neither priced nor rationed alike.
+            var inputTokens = GetLong(usage, "input_tokens");
+            var cacheRead = GetLong(usage, "cache_read_input_tokens");
+            var cacheWrite = GetLong(usage, "cache_creation_input_tokens");
             if (context is not null || output is not null)
             {
-                yield return new UsageReportedEvent(new UsageMetrics(ContextUsed: context, ContextWindow: _contextWindow, OutputTokens: output));
+                yield return new UsageReportedEvent(new UsageMetrics(
+                    ContextUsed: context,
+                    ContextWindow: _contextWindow,
+                    OutputTokens: output,
+                    InputTokens: inputTokens,
+                    CacheReadTokens: cacheRead,
+                    CacheWriteTokens: cacheWrite));
             }
         }
 

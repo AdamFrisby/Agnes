@@ -850,7 +850,18 @@ public sealed class SimulatedHost : IAgnesHost
                 cost = _costUsd;
             }
 
-            Emit(new UsageReportedEvent(new UsageMetrics(ContextUsed: ctx, ContextWindow: Window, CostUsd: cost > 0 ? cost : null)));
+            // A turn's consumption, split the way a real Claude stream splits it: mostly cache reads (the
+            // conversation so far, re-read each call), a little fresh input, a cache write, some output.
+            // Without a breakdown here the token panel would never appear in an offline run or a shot.
+            var consumed = Math.Max(0, contextDelta);
+            Emit(new UsageReportedEvent(new UsageMetrics(
+                ContextUsed: ctx,
+                ContextWindow: Window,
+                OutputTokens: consumed / 6,
+                CostUsd: cost > 0 ? cost : null,
+                InputTokens: consumed / 8,
+                CacheReadTokens: ctx - consumed / 8,
+                CacheWriteTokens: consumed / 4)));
         }
 
         public SessionSnapshot Snapshot()

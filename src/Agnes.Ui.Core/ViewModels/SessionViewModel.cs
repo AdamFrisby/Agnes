@@ -109,6 +109,7 @@ public sealed class SessionViewModel : ObservableObject
         ShowAllToolsCommand = new RelayCommand(() => ShowAllTools = true);
         ToggleCredentialsCommand = new RelayCommand(() => CredentialsExpanded = !CredentialsExpanded);
         ToggleApprovalsCommand = new RelayCommand(() => ApprovalsExpanded = !ApprovalsExpanded);
+        ToggleUsageCommand = new RelayCommand(() => UsageExpanded = !UsageExpanded);
         ToggleMcpCallsCommand = new RelayCommand(() => McpCallsExpanded = !McpCallsExpanded);
         ToggleReviewCommentsCommand = new RelayCommand(() => ReviewCommentsExpanded = !ReviewCommentsExpanded);
         ToggleAgentsCommand = new RelayCommand(() => AgentsExpanded = !AgentsExpanded);
@@ -783,7 +784,7 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasMoreCredentialUses => !ShowAllCredentials && CredentialUses.Count > VisibleCredentialUses.Count();
     public string MoreCredentialsLabel => $"Show all {CredentialUses.Count}";
 
-    public bool HasSidebarContent => HasAgentTitle || Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents || HasReviewComments;
+    public bool HasSidebarContent => HasAgentTitle || Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents || HasReviewComments || HasUsageStats;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
     public bool ShowRightPanel => SelectedPreview is not null;
 
@@ -900,6 +901,19 @@ public sealed class SessionViewModel : ObservableObject
 
     /// <summary>A compact status caption (reported cost), or null when there's nothing real to show.</summary>
     public string? UsageSummary => _usage?.Summary;
+
+    /// <summary>What this session has consumed, by token kind, over the last day/week/its whole life.
+    /// The context meter says how full the window is now; this says what it has cost to get here.</summary>
+    public SessionUsageStats UsageStats { get; } = new();
+
+    /// <summary>Whether any agent has reported a token breakdown — the panel stays away otherwise
+    /// rather than showing zeroes that would read as "this session used nothing".</summary>
+    public bool HasUsageStats => UsageStats.HasBreakdown;
+
+    private bool _usageExpanded = true;
+    public bool UsageExpanded { get => _usageExpanded; set => SetProperty(ref _usageExpanded, value); }
+
+    public System.Windows.Input.ICommand ToggleUsageCommand { get; }
 
     // Running usage figures, each updated only when the agent reports that field (partial events merge).
     private UsageInfo? _usage;
@@ -1889,6 +1903,16 @@ public sealed class SessionViewModel : ObservableObject
                 break;
 
             case UsageReportedEvent u when u.Metrics is { } m:
+                // Consumption is totalled separately from occupancy — see SessionUsageStats for why the
+                // two must not be mixed. The event's own timestamp places it, so a replayed session's
+                // "last 24 hours" means the session's clock, not this client's session start.
+                UsageStats.Add(m, u.Timestamp == default ? DateTimeOffset.Now : u.Timestamp.ToLocalTime());
+                if (UsageStats.HasBreakdown)
+                {
+                    OnPropertyChanged(nameof(HasUsageStats));
+                    RaisePanels();
+                }
+
                 // Merge: each event may carry only some fields (context from a message, cost from the
                 // result), so keep the last real value for any field this event didn't report. Metrics can
                 // be null for events persisted before UsageReportedEvent wrapped a UsageMetrics — those
