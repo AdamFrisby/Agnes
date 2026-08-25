@@ -22,8 +22,14 @@ public abstract class TranscriptItem : ObservableObject
     /// </summary>
     public long Sequence { get; set; }
 
-    /// <summary>Which agent produced this item: null for the main agent, else a subagent id.</summary>
-    public string? AgentId { get; init; }
+    /// <summary>
+    /// Which agent produced this item: null for the main agent, else a subagent id.
+    ///
+    /// <para>Settable, because an adapter can only identify the subagent *after* the fact: OpenCode names
+    /// the task its <c>task</c> call started in that call's result, so the row is built before there is an
+    /// id to file it under.</para>
+    /// </summary>
+    public string? AgentId { get; set; }
 
     /// <summary>When this item's originating event occurred (stamped by the builder). Drives the
     /// scroll-position timestamp hint.</summary>
@@ -75,12 +81,14 @@ public sealed class ToolCallItem : TranscriptItem
     private ToolCallStatus _status;
     private string _detail = string.Empty;
     private DateTimeOffset? _completedAt;
+    private string _title;
+    private ToolKind _kind;
 
     public ToolCallItem(string toolCallId, string title, ToolKind kind, ToolCallStatus status, string? diff = null)
     {
         ToolCallId = toolCallId;
-        Title = title;
-        Kind = kind;
+        _title = title;
+        _kind = kind;
         _status = status;
         Diff = diff;
         DiffLines = diff is null ? [] : DiffParser.Parse(diff);
@@ -89,11 +97,27 @@ public sealed class ToolCallItem : TranscriptItem
 
     public string ToolCallId { get; }
 
-    /// <summary>What the call acts on, verbatim and never abbreviated: the shell command, the path, the
-    /// pattern. Views may trim it to fit a row, but the whole of it is always available here.</summary>
-    public string Title { get; }
+    /// <summary>
+    /// What the call acts on, verbatim and never abbreviated: the shell command, the path, the pattern.
+    /// Views may trim it to fit a row, but the whole of it is always available here.
+    ///
+    /// <para>Settable because some calls only say what they are once their result arrives — a subagent
+    /// launch is named "task" going out and identifies which subagent it started coming back. Re-titling
+    /// is naming, not abbreviating; nothing here ever shortens what the agent sent.</para>
+    /// </summary>
+    public string Title
+    {
+        get => _title;
+        set { if (SetProperty(ref _title, value)) { OnPropertyChanged(nameof(Header)); } }
+    }
 
-    public ToolKind Kind { get; }
+    /// <summary>What sort of call this is. Settable for the same reason as <see cref="Title"/>: the
+    /// result can reveal a call to have been something more specific than its name suggested.</summary>
+    public ToolKind Kind
+    {
+        get => _kind;
+        set { if (SetProperty(ref _kind, value)) { OnPropertyChanged(nameof(Header)); OnPropertyChanged(nameof(KindLabel)); } }
+    }
 
     /// <summary>
     /// The change this call makes, as a unified diff, when it edits a file. Built from the call's input at
@@ -181,6 +205,10 @@ public sealed class ToolCallItem : TranscriptItem
     /// <summary>The tool kind on its own (e.g. "Read"), for the compact single-line row.</summary>
     public string KindLabel => Kind.ToString();
 
+    /// <summary>Whether this call handed work to a subagent — the roster, not the transcript, is where
+    /// it belongs, so a view can treat it differently from an ordinary tool row.</summary>
+    public bool IsSubagent => Kind is ToolKind.Subagent;
+
     public ToolCallStatus Status
     {
         get => _status;
@@ -262,7 +290,11 @@ public sealed class PlanItemView : TranscriptItem
     /// <para>The last completed entry stays because it's the anchor: "finished X, now doing Y" is the
     /// sentence you want, and hiding X leaves Y without a place in the sequence.</para>
     /// </summary>
-    public IReadOnlyList<PlanEntry> VisibleEntries => _showAll ? Entries : Entries.Skip(HiddenCount).ToList();
+    public IReadOnlyList<PlanEntryView> VisibleEntries =>
+        (_showAll ? Entries : Entries.Skip(HiddenCount)).Select(PlanEntryView.Of).ToList();
+
+    /// <summary>Every entry, folded or not — what the transcript's own plan card shows.</summary>
+    public IReadOnlyList<PlanEntryView> EntryViews => Entries.Select(PlanEntryView.Of).ToList();
 
     /// <summary>How many finished entries are folded away. Zero when there's at most one of them, since
     /// a "show 1 more" control costs the reader more than the line it hides.</summary>
@@ -306,6 +338,7 @@ public sealed class PlanItemView : TranscriptItem
     private void RaiseVisible()
     {
         OnPropertyChanged(nameof(VisibleEntries));
+        OnPropertyChanged(nameof(EntryViews));
         OnPropertyChanged(nameof(HiddenCount));
         OnPropertyChanged(nameof(HasHidden));
         OnPropertyChanged(nameof(MoreLabel));

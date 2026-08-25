@@ -20,6 +20,10 @@ public enum ToolKind
     Think,
     Fetch,
     Other,
+
+    /// <summary>Delegating work to a subagent. Appended last on purpose: the kind is persisted in the
+    /// event log by ordinal, so new members go at the end or every stored event shifts meaning.</summary>
+    Subagent,
 }
 
 /// <summary>Lifecycle state of a tool call.</summary>

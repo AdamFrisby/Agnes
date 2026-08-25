@@ -101,7 +101,7 @@ public static class OpenCodeEventMap
         "grep" or "glob" or "list" => ToolKind.Search,
         "bash" => ToolKind.Execute,
         "webfetch" or "websearch" => ToolKind.Fetch,
-        "task" => ToolKind.Think,
+        "task" => ToolKind.Subagent,
         _ => ToolKind.Other,
     };
 

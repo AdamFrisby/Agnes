@@ -44,6 +44,11 @@ public sealed class TranscriptBuilder
     /// <summary>Raised when a subagent is announced (for the session's agent tree).</summary>
     public event Action<SubagentStartedEvent>? SubagentAdded;
 
+    /// <summary>Raised when a subagent reports that it has finished, so the roster can retire its row.
+    /// Separate from the tool call completing: a background subagent's launch call completes in seconds
+    /// while the subagent itself runs for minutes, and only the payload knows which is which.</summary>
+    public event Action<string>? SubagentFinished;
+
     public void Apply(SessionEvent @event)
     {
         var agentId = @event.AgentId;
@@ -87,6 +92,12 @@ public sealed class TranscriptBuilder
                 {
                     SubagentAdded?.Invoke(new SubagentStartedEvent(tc.ToolCallId, SubagentName(tc)));
                 }
+                else if (IsDelegationTool(tc.Title))
+                {
+                    // OpenCode's lowercase "task" tool. It says nothing at call time — the subagent's id
+                    // and state arrive in the result — so remember the call and decide when that lands.
+                    _delegations.Add(tc.ToolCallId);
+                }
 
                 CloseBubble();
                 // The diff comes from the call's INPUT, captured here at the start: the update that
@@ -119,6 +130,11 @@ public sealed class TranscriptBuilder
                 if (u.Content is { } content)
                 {
                     existing.Detail = string.Concat(content.Select(TextOf));
+                }
+
+                if (_delegations.Contains(u.ToolCallId))
+                {
+                    ApplyDelegationResult(existing);
                 }
 
                 break;
@@ -265,6 +281,56 @@ public sealed class TranscriptBuilder
         else
         {
             Plan.Entries = entries;
+        }
+    }
+
+    // ---- delegation to a subagent that reports through its tool result (OpenCode's `task`) ----
+
+    private readonly HashSet<string> _delegations = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _subagentNames = new(StringComparer.Ordinal);
+
+    /// <summary>Tool names that hand work to a subagent rather than doing it. Claude's own are matched
+    /// exactly above (they carry their description in the call); this is the by-shape case.</summary>
+    private static bool IsDelegationTool(string title) => string.Equals(title, "task", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Turns a delegating tool call's result into a subagent the roster can show. Three things change on
+    /// the row itself, all of which were wrong before: it is a Subagent, not a "Think"; it is named after
+    /// the subagent rather than after the tool; and it is still *running* if the payload says so, where
+    /// the transport had already called the launch completed. The envelope is replaced by whatever the
+    /// subagent actually reported, so the transcript stops showing raw markup addressed to the model.
+    /// </summary>
+    private void ApplyDelegationResult(ToolCallItem item)
+    {
+        if (SubagentTaskPayload.TryParse(item.Detail) is not { } task)
+        {
+            return;
+        }
+
+        if (!_subagentNames.TryGetValue(task.TaskId, out var name))
+        {
+            // OpenCode gives a subagent no description of its own — only an opaque id — so the roster
+            // numbers them in the order they appear. The count is derived from the log, which every
+            // client replays identically, so the same subagent is "Subagent 3" on all of them.
+            name = $"Subagent {_subagentNames.Count + 1}";
+            _subagentNames[task.TaskId] = name;
+            SubagentAdded?.Invoke(new SubagentStartedEvent(task.TaskId, name));
+        }
+
+        item.Kind = ToolKind.Subagent;
+        item.Title = name;
+        item.AgentId = task.TaskId;
+        item.Detail = task.Body;
+        item.Status = task.IsRunning ? ToolCallStatus.InProgress : ToolCallStatus.Completed;
+
+        if (task.IsRunning)
+        {
+            // The launch call is over, but the subagent isn't; a duration here would time the dispatch.
+            item.CompletedAt = null;
+        }
+        else
+        {
+            SubagentFinished?.Invoke(task.TaskId);
         }
     }
 

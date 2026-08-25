@@ -108,6 +108,9 @@ public sealed class SessionViewModel : ObservableObject
         ToggleToolsListCommand = new RelayCommand(() => ToolsListExpanded = !ToolsListExpanded);
         ShowAllToolsCommand = new RelayCommand(() => ShowAllTools = true);
         ToggleCredentialsCommand = new RelayCommand(() => CredentialsExpanded = !CredentialsExpanded);
+        ToggleApprovalsCommand = new RelayCommand(() => ApprovalsExpanded = !ApprovalsExpanded);
+        ToggleMcpCallsCommand = new RelayCommand(() => McpCallsExpanded = !McpCallsExpanded);
+        ToggleReviewCommentsCommand = new RelayCommand(() => ReviewCommentsExpanded = !ReviewCommentsExpanded);
         ToggleAgentsCommand = new RelayCommand(() => AgentsExpanded = !AgentsExpanded);
         ShowAllAgentsCommand = new RelayCommand(() => ShowAllAgents = true);
         ShowAllCredentialsCommand = new RelayCommand(() => ShowAllCredentials = true);
@@ -201,6 +204,7 @@ public sealed class SessionViewModel : ObservableObject
         _transcript.SubagentAdded += AddSubagent;
         // The roster (participant panel) consumes the same SubagentAdded pipeline, de-duped independently.
         _transcript.SubagentAdded += Subagents.Add;
+        _transcript.SubagentFinished += FinishSubagent;
         // The ListBox observes Items directly, but the empty-state flag is a computed bool — keep it in
         // sync with the collection so "No messages yet" disappears the moment the first item arrives.
         _transcript.Items.CollectionChanged += (_, e) =>
@@ -554,6 +558,19 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasInactiveAgents => !ShowAllAgents && AgentRows.Any(n => !n.IsMain && !n.IsActive && !n.IsSelected);
     public string MoreAgentsLabel => $"Show all {AgentRows.Count}";
 
+    /// <summary>
+    /// Retires a subagent that reported its own completion. Distinct from <see cref="MarkAgentInactive"/>,
+    /// which infers the end from the launching tool call: that inference is right for Claude, where the
+    /// Task call runs as long as the subagent does, and wrong for a backgrounded one, whose launch returns
+    /// immediately. The row also moves out of the transcript at this point, so re-raise what's displayed.
+    /// </summary>
+    private void FinishSubagent(string subagentId)
+    {
+        MarkAgentInactive(subagentId);
+        OnPropertyChanged(nameof(DisplayItems));
+        OnPropertyChanged(nameof(IsTranscriptEmpty));
+    }
+
     /// <summary>Marks a subagent finished when its Task tool call reaches a terminal status.</summary>
     private void MarkAgentInactive(string? toolCallId)
     {
@@ -677,6 +694,13 @@ public sealed class SessionViewModel : ObservableObject
     public System.Windows.Input.ICommand ToggleToolsListCommand { get; }
     public System.Windows.Input.ICommand ShowAllToolsCommand { get; }
     public System.Windows.Input.ICommand ToggleCredentialsCommand { get; }
+
+    // Every audit-trail section on the sidebar folds. Approvals in particular grows without bound in a
+    // long autonomous session — a hundred "allow the sandboxed agent to…" rows pushed everything else
+    // off the panel, and it was the one list with no way to get them back.
+    public System.Windows.Input.ICommand ToggleApprovalsCommand { get; }
+    public System.Windows.Input.ICommand ToggleMcpCallsCommand { get; }
+    public System.Windows.Input.ICommand ToggleReviewCommentsCommand { get; }
     public System.Windows.Input.ICommand ToggleAgentsCommand { get; }
     public System.Windows.Input.ICommand ShowAllAgentsCommand { get; }
     public System.Windows.Input.ICommand ShowAllCredentialsCommand { get; }
@@ -712,6 +736,15 @@ public sealed class SessionViewModel : ObservableObject
     }
     public bool HasApprovals => Approvals.Count > 0;
     public bool HasMcpCalls => McpCalls.Count > 0;
+
+    private bool _approvalsExpanded = true;
+    public bool ApprovalsExpanded { get => _approvalsExpanded; set => SetProperty(ref _approvalsExpanded, value); }
+
+    private bool _mcpCallsExpanded = true;
+    public bool McpCallsExpanded { get => _mcpCallsExpanded; set => SetProperty(ref _mcpCallsExpanded, value); }
+
+    private bool _reviewCommentsExpanded = true;
+    public bool ReviewCommentsExpanded { get => _reviewCommentsExpanded; set => SetProperty(ref _reviewCommentsExpanded, value); }
 
     /// <summary>Audit trail of brokered git-credential grants/denials for this session.</summary>
     public ObservableCollection<CredentialUseEntry> CredentialUses { get; } = [];
