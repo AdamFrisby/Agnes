@@ -2479,14 +2479,85 @@ public sealed class SessionManager : IAsyncDisposable
         await _broadcaster.PublishReadStateAsync(sessionId, s.ReadCursor, s.StickyUnread).ConfigureAwait(false);
     }
 
-    public async Task CancelAsync(string sessionId)
+    /// <summary>How long an agent gets to honour a cancel before we stop claiming it did.</summary>
+    /// <remarks>
+    /// Generous, because honouring a cancel can mean unwinding a tool call. Finite, because the whole point
+    /// is to stop asserting something we have not observed.
+    /// </remarks>
+    private static readonly TimeSpan CancelAcknowledgementTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Asks the agent to stop, then <b>checks that it did</b> — and says so plainly when it did not.
+    /// </summary>
+    /// <remarks>
+    /// <para>ACP <c>session/cancel</c> is a notification: it has no response, so the transport cannot tell
+    /// "stopped" from "ignored". That is not hypothetical. Copilot's ACP handler gates the entire cancel
+    /// behind its own <c>pendingPrompt</c> flag — when that flag is false the notification is accepted and
+    /// silently discarded, no abort, no error. A fleet of background subagents keeps a session visibly busy
+    /// long after the prompt request resolved, which is exactly when the flag is false. The user pressed
+    /// stop, the UI reported success, and the agent carried on.</para>
+    ///
+    /// <para>So the send is followed by an observation. <see cref="HostSession.IsTurnActive"/> is cleared by
+    /// the agent's own <c>TurnEndedEvent</c>, so waiting on it measures what the agent actually did rather
+    /// than what we asked for. A cancel that goes unhonoured leaves a notice on the session — a wrong
+    /// "stopped" is worse than an honest "it refused", because only one of them tells you to reach for
+    /// <see cref="RestartAgentAsync"/>.</para>
+    ///
+    /// <para>Deliberately does not escalate to a restart on its own: a restart kills in-flight background
+    /// work, and choosing to spend that belongs to whoever is watching, not to a timeout.</para>
+    /// </remarks>
+    /// <returns>True when the turn was observed to end; false when the agent did not stop in time.</returns>
+    public async Task<bool> CancelAsync(string sessionId)
     {
         if (!await _bus.AllowsAsync(new Agnes.Abstractions.Events.BeforeSessionCancelEvent(sessionId)).ConfigureAwait(false))
         {
-            return; // a plugin kept the turn running
+            return false; // a plugin kept the turn running
         }
 
-        await (await EnsureLiveAsync(sessionId).ConfigureAwait(false)).CancelAsync().ConfigureAwait(false);
+        var session = await EnsureLiveAsync(sessionId).ConfigureAwait(false);
+        if (!session.IsTurnActive)
+        {
+            return true; // nothing was running; the cancel is trivially satisfied
+        }
+
+        await session.CancelAsync().ConfigureAwait(false);
+
+        if (await WaitForTurnEndAsync(session, CancelAcknowledgementTimeout).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        _logger.LogWarning(
+            "Session {SessionId}: the agent did not stop within {Timeout}s of session/cancel; " +
+            "it is still running. Restarting the agent is the reliable stop.",
+            sessionId, CancelAcknowledgementTimeout.TotalSeconds);
+
+        await AppendNoticeAsync(
+            sessionId,
+            "The agent didn't stop when asked. It may be running background work that ignores cancel — " +
+            "use \"Restart agent\" to stop it for certain.",
+            isError: true).ConfigureAwait(false);
+
+        return false;
+    }
+
+    /// <summary>
+    /// Waits for the agent's turn to actually end, polling the flag its own TurnEndedEvent clears.
+    /// </summary>
+    private static async Task<bool> WaitForTurnEndAsync(HostSession session, TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (!session.IsTurnActive)
+            {
+                return true;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
+        }
+
+        return !session.IsTurnActive;
     }
 
     public async Task SetModeAsync(string sessionId, string modeId)

@@ -287,6 +287,12 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
             : index.SearchAsync(query, new MemorySearchOptions(options.Limit, options.SessionId));
     }
 
+    /// <summary>
+    /// Asks the agent to stop. The verdict is deliberately not returned on the wire: an agent that refuses
+    /// to stop already announces itself as a session notice, which reaches every attached client rather than
+    /// only the one that pressed the button. Widening the hub contract would buy nothing that the notice
+    /// does not already deliver, and would break every other head that implements it.
+    /// </summary>
     public Task Cancel(string sessionId)
         => _sessions.CancelAsync(sessionId);
 
