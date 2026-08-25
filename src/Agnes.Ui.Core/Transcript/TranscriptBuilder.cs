@@ -54,6 +54,7 @@ public sealed class TranscriptBuilder
         var agentId = @event.AgentId;
         var before = Items.Count;
         ApplyCore(@event, agentId);
+        ExpireWithdrawnPermissions(@event);
         // Stamp every item this event created with its time and its place in the log (one choke point covers
         // all the cases above): the time drives the scroll-position hint, and the sequence is the stable
         // address a shared link uses to point at this moment.
@@ -61,6 +62,59 @@ public sealed class TranscriptBuilder
         {
             Items[i].Timestamp = @event.Timestamp;
             Items[i].Sequence = @event.Sequence;
+        }
+    }
+
+    // Requests asked and not yet resolved: requestId → the tool call each is gating. Kept so an event
+    // that means "nobody is waiting any more" can be matched against them as it arrives — the client
+    // learns a request expired the same way the host does, by inference over the log.
+    private readonly Dictionary<string, string> _openPermissions = new(StringComparer.Ordinal);
+
+    /// <summary>Raised when a request the user could have answered stops being answerable.</summary>
+    public event Action<PermissionItem>? PermissionExpired;
+
+    /// <summary>
+    /// Retires any open request this event withdrew. Runs after the event has been applied, so a tool
+    /// call's own completion is already recorded when it is used to conclude that the agent went ahead.
+    /// </summary>
+    private void ExpireWithdrawnPermissions(SessionEvent @event)
+    {
+        if (_openPermissions.Count == 0 || @event is PermissionRequestedEvent or PermissionResolvedEvent)
+        {
+            return;
+        }
+
+        List<string>? withdrawn = null;
+        foreach (var (requestId, toolCallId) in _openPermissions)
+        {
+            if (PermissionLifecycle.Withdraws(@event, toolCallId))
+            {
+                (withdrawn ??= []).Add(requestId);
+            }
+        }
+
+        if (withdrawn is null)
+        {
+            return;
+        }
+
+        foreach (var requestId in withdrawn)
+        {
+            _openPermissions.Remove(requestId);
+            if (!_permissions.TryGetValue(requestId, out var item) || item.Resolved)
+            {
+                continue;
+            }
+
+            item.Expired = true;
+            item.ResolutionText = "Expired — the agent stopped waiting";
+            if (PendingPermission == item)
+            {
+                PendingPermission = null;
+                PendingPermissionChanged?.Invoke();
+            }
+
+            PermissionExpired?.Invoke(item);
         }
     }
 
@@ -152,6 +206,7 @@ public sealed class TranscriptBuilder
                     pr.RequestId, pr.Title, pr.Options, linkedTool?.Kind, linkedTool?.Title,
                     pr.Detail ?? linkedTool?.Title) { AgentId = agentId };
                 _permissions[pr.RequestId] = permission;
+                _openPermissions[pr.RequestId] = pr.ToolCallId;
                 Items.Add(permission);
                 PendingPermission = permission;
                 PendingPermissionChanged?.Invoke();
@@ -178,7 +233,8 @@ public sealed class TranscriptBuilder
 
             case PermissionResolvedEvent rr when _permissions.TryGetValue(rr.RequestId, out var item):
                 item.Resolved = true;
-                item.ResolutionText = rr.Outcome.ToString();
+                item.ResolutionText = PermissionItem.OutcomeText(rr.Outcome);
+                _openPermissions.Remove(rr.RequestId);
                 if (PendingPermission == item)
                 {
                     PendingPermission = null;

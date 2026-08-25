@@ -1048,7 +1048,18 @@ public sealed record OpenApproval(
     DateTimeOffset RequestedAt,
     OpenApprovalKind Kind = OpenApprovalKind.SessionPermission,
     string? Source = null,
-    IReadOnlyList<string>? Options = null);
+    IReadOnlyList<string>? Options = null,
+    bool Expired = false)
+{
+    /// <summary>
+    /// Whether answering this still does anything. An expired entry is reported rather than dropped —
+    /// what the agent asked for is worth reviewing, and reviewing it is how a standing rule gets set so
+    /// the next one isn't missed — but it must never be counted as work waiting on someone, which is how
+    /// an inbox came to show sixteen approvals that could not be cleared. See
+    /// <see cref="Agnes.Abstractions.PermissionLifecycle"/>.
+    /// </summary>
+    [JsonIgnore] public bool IsActionable => !Expired;
+}
 
 /// <summary>A human's answer to an external attention request, sent from any Agnes client. Answered by
 /// request id alone (there is no session) with the chosen option text.</summary>

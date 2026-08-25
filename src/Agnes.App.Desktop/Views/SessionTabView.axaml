@@ -76,6 +76,15 @@
         <Style Selector="Border.msg.thought TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
         </Style>
+        <!-- A permission card wears the "blocked on you" hue only while it actually blocks you. -->
+        <Style Selector="Border.permission">
+            <Setter Property="Background" Value="{DynamicResource StatusAttentionSoft}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource StatusAttention}" />
+        </Style>
+        <Style Selector="Border.permission.lapsed">
+            <Setter Property="Background" Value="{DynamicResource Panel}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        </Style>
         <!-- Pulsing dot for the "Thinking…" indicator. -->
         <Style Selector="Border.pulse">
             <Style.Animations>
@@ -1701,11 +1710,19 @@
                                     </DataTemplate>
 
                                     <DataTemplate DataType="tr:PermissionItem">
-                                        <Border Margin="0,6" Padding="12,9" CornerRadius="8"
-                                                Background="{DynamicResource StatusAttentionSoft}" BorderBrush="{DynamicResource StatusAttention}" BorderThickness="1">
+                                        <!-- Amber means "blocked on you". An expired request is not blocked on
+                                             anyone — nothing is waiting for an answer — so the card drops out of
+                                             the status hue rather than going on claiming attention it can't use. -->
+                                        <Border Classes="permission" Classes.lapsed="{Binding Expired}"
+                                                Margin="0,6" Padding="12,9" CornerRadius="8" BorderThickness="1">
                                             <StackPanel Spacing="5">
                                                 <TextBlock Text="Permission requested" Foreground="{DynamicResource StatusAttention}"
-                                                           FontWeight="SemiBold" FontSize="12" />
+                                                           FontWeight="SemiBold" FontSize="12" IsVisible="{Binding !Expired}" />
+                                                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding Expired}">
+                                                    <ic:SymbolIcon Symbol="Clock" Foreground="{DynamicResource FgFaint}" FontSize="13" />
+                                                    <TextBlock Text="Permission expired" Foreground="{DynamicResource FgDim}"
+                                                               FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                                </StackPanel>
                                                 <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
 
                                                 <!-- Exactly what is being approved, verbatim and wrapped. This is
@@ -1738,6 +1755,24 @@
                                                            IsVisible="{Binding HasNarrowestHint}" TextWrapping="Wrap" />
                                                 <TextBlock Text="{Binding ResolutionText}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                                            IsVisible="{Binding ResolutionText, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+
+                                                <!-- The only thing still worth doing with a lapsed request: decide
+                                                     the next one like it now, so stepping away doesn't cost a turn
+                                                     again. It cannot grant this request — that one is gone. -->
+                                                <StackPanel Spacing="5" IsVisible="{Binding CanSetStandingRule}" Margin="0,4,0,0">
+                                                    <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                                               Text="Nobody answered in time, so the agent moved on. Decide the next request like this one in advance:" />
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Button Classes="chip" Content="Always allow these"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.AlwaysAllowLikeCommand}"
+                                                                CommandParameter="{Binding}" Cursor="Hand"
+                                                                ToolTip.Tip="Auto-allow future requests of this kind on this host" />
+                                                        <Button Classes="chip" Content="Always deny these"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.AlwaysDenyLikeCommand}"
+                                                                CommandParameter="{Binding}" Cursor="Hand"
+                                                                ToolTip.Tip="Auto-deny future requests of this kind on this host" />
+                                                    </StackPanel>
+                                                </StackPanel>
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>

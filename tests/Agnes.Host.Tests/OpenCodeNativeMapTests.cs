@@ -104,7 +104,9 @@ public sealed class OpenCodeNativeMapTests
     [InlineData("grep", ToolKind.Search)]
     [InlineData("bash", ToolKind.Execute)]
     [InlineData("webfetch", ToolKind.Fetch)]
-    [InlineData("task", ToolKind.Think)]
+    // "task" hands work to a subagent; it is not the agent thinking, and calling it Think put
+    // "Think task" on every delegation row in the transcript.
+    [InlineData("task", ToolKind.Subagent)]
     [InlineData("something-new", ToolKind.Other)]
     public void Tool_names_map_to_kinds(string tool, ToolKind expected)
         => Assert.Equal(expected, OpenCodeEventMap.ToolKindFor(tool));

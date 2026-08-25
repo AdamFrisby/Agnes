@@ -2751,11 +2751,19 @@ public sealed class SessionManager : IAsyncDisposable
                 }
             }
 
+            // Unresolved is not the same as waiting. An agent can stop waiting without saying so — by
+            // running the tool anyway, or by ending the turn — and those requests would otherwise sit in
+            // the inbox forever as work nobody can do. They are still reported, flagged, so a client can
+            // offer them for review; they just stop counting as outstanding.
+            var expired = PermissionLifecycle.ExpiredRequests(events);
+
             foreach (var e in events)
             {
                 if (e is PermissionRequestedEvent p && !resolved.Contains(p.RequestId))
                 {
-                    open.Add(new OpenApproval(sessionId, p.RequestId, p.Title, p.ToolCallId, p.Timestamp));
+                    open.Add(new OpenApproval(
+                        sessionId, p.RequestId, p.Title, p.ToolCallId, p.Timestamp,
+                        Expired: expired.Contains(p.RequestId)));
                 }
             }
         }

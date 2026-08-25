@@ -353,6 +353,7 @@ public sealed class PlanItemView : TranscriptItem
 public sealed class PermissionItem : TranscriptItem
 {
     private bool _resolved;
+    private bool _expired;
     private string? _resolutionText;
 
     public PermissionItem(
@@ -425,14 +426,53 @@ public sealed class PermissionItem : TranscriptItem
     public bool Resolved
     {
         get => _resolved;
-        set => SetProperty(ref _resolved, value);
+        set { if (SetProperty(ref _resolved, value)) { OnPropertyChanged(nameof(IsAnswerable)); } }
     }
+
+    /// <summary>
+    /// The agent stopped waiting before anyone answered — see <see cref="PermissionLifecycle"/>. The card
+    /// keeps its place in the transcript, because what was asked is still worth knowing, but it stops
+    /// offering to answer: those buttons would send a response to a request nothing is listening for.
+    /// </summary>
+    public bool Expired
+    {
+        get => _expired;
+        set
+        {
+            if (SetProperty(ref _expired, value))
+            {
+                OnPropertyChanged(nameof(IsAnswerable));
+                OnPropertyChanged(nameof(CanSetStandingRule));
+            }
+        }
+    }
+
+    /// <summary>Whether answering this request still does anything.</summary>
+    public bool IsAnswerable => !Resolved && !Expired;
+
+    /// <summary>
+    /// Whether to offer "decide this in advance next time". Shown on an expired card, which is exactly
+    /// where the offer is useful: the request went unanswered because nobody was there, and a standing
+    /// rule is the only thing that would have changed that.
+    /// </summary>
+    public bool CanSetStandingRule => Expired && ToolKind is not null;
 
     public string? ResolutionText
     {
         get => _resolutionText;
         set => SetProperty(ref _resolutionText, value);
     }
+
+    /// <summary>
+    /// How a closed request reads. Deliberately not <c>Outcome.ToString()</c>, which put the wire enum on
+    /// screen and — worse for "Cancelled" — said nothing about who cancelled or why the buttons had gone.
+    /// </summary>
+    public static string OutcomeText(PermissionOutcome outcome) => outcome switch
+    {
+        PermissionOutcome.Allowed => "Allowed",
+        PermissionOutcome.Denied => "Denied",
+        _ => "Withdrawn before it was answered",
+    };
 }
 
 /// <summary>A low-key notice (mode change, error, etc.).</summary>

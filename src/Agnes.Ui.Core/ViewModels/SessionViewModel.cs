@@ -100,6 +100,8 @@ public sealed class SessionViewModel : ObservableObject
         AllowCommand = new AsyncRelayCommand(() => RespondAsync(allow: true));
         DenyCommand = new AsyncRelayCommand(() => RespondAsync(allow: false));
         RespondWithCommand = new RelayCommand<PermissionOption>(o => { if (o is not null) { _ = RespondWithAsync(o); } });
+        AlwaysAllowLikeCommand = new RelayCommand<PermissionItem>(p => RememberLike(p, allow: true));
+        AlwaysDenyLikeCommand = new RelayCommand<PermissionItem>(p => RememberLike(p, allow: false));
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; OnPropertyChanged(nameof(ShowLeftPanel)); });
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
         TogglePlanCommand = new RelayCommand(() => PlanExpanded = !PlanExpanded);
@@ -206,6 +208,13 @@ public sealed class SessionViewModel : ObservableObject
         // The roster (participant panel) consumes the same SubagentAdded pipeline, de-duped independently.
         _transcript.SubagentAdded += Subagents.Add;
         _transcript.SubagentFinished += FinishSubagent;
+        // An expired request drops out of "waiting on you" and into "worth reviewing".
+        _transcript.PermissionExpired += _ =>
+        {
+            OnPropertyChanged(nameof(ExpiredApprovals));
+            OnPropertyChanged(nameof(HasExpiredApprovals));
+            RaiseActivity();
+        };
         // The ListBox observes Items directly, but the empty-state flag is a computed bool — keep it in
         // sync with the collection so "No messages yet" disappears the moment the first item arrives.
         _transcript.Items.CollectionChanged += (_, e) =>
@@ -914,6 +923,10 @@ public sealed class SessionViewModel : ObservableObject
     public bool UsageExpanded { get => _usageExpanded; set => SetProperty(ref _usageExpanded, value); }
 
     public System.Windows.Input.ICommand ToggleUsageCommand { get; }
+
+    /// <summary>Decide the next request like this one in advance (offered on an expired card).</summary>
+    public System.Windows.Input.ICommand AlwaysAllowLikeCommand { get; }
+    public System.Windows.Input.ICommand AlwaysDenyLikeCommand { get; }
 
     // Running usage figures, each updated only when the agent reports that field (partial events merge).
     private UsageInfo? _usage;
@@ -2377,6 +2390,39 @@ public sealed class SessionViewModel : ObservableObject
 
         await _host.RespondPermissionAsync(SessionId, permission.RequestId, option.OptionId);
     }
+
+    /// <summary>
+    /// Decides in advance what happens to the next request like this one. Offered on an expired card,
+    /// where it is the only action left worth taking: the request went unanswered because nobody was
+    /// there, and answering it now is impossible — but a standing rule means the next one doesn't wait.
+    /// </summary>
+    /// <remarks>
+    /// The rule is by tool kind and host, the same granularity an "always allow" answer records, and it
+    /// is enforced client-side against future requests only. It cannot retroactively grant anything: the
+    /// expired request is gone, and this deliberately does not try to revive it.
+    /// </remarks>
+    private void RememberLike(PermissionItem? permission, bool allow)
+    {
+        if (permission?.ToolKind is not { } kind)
+        {
+            return;
+        }
+
+        _policy.Remember(_host.HostUrl, kind, allow);
+        StandingRuleSet?.Invoke(permission, allow);
+        OnPropertyChanged(nameof(ExpiredApprovals));
+        OnPropertyChanged(nameof(HasExpiredApprovals));
+    }
+
+    /// <summary>Raised when the user sets a standing rule from an expired card, so a shell can confirm it.</summary>
+    public event Action<PermissionItem, bool>? StandingRuleSet;
+
+    /// <summary>Requests that went unanswered and can no longer be answered — what the user comes back
+    /// to after stepping away. Newest first.</summary>
+    public IEnumerable<PermissionItem> ExpiredApprovals
+        => _transcript.Items.OfType<PermissionItem>().Where(p => p.Expired).Reverse();
+
+    public bool HasExpiredApprovals => _transcript.Items.OfType<PermissionItem>().Any(p => p.Expired);
 
     // Narrowest matching option: prefer "once" over "always".
     private static PermissionOption? PickOption(IReadOnlyList<PermissionOption> options, bool allow)
