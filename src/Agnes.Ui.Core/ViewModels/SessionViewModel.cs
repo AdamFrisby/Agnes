@@ -1850,6 +1850,9 @@ public sealed class SessionViewModel : ObservableObject
             or ToolCallEvent { Status: ToolCallStatus.Pending or ToolCallStatus.InProgress })
         {
             IsTurnActive = true;
+            // The agent is demonstrably working, which retracts any claim that its last turn was
+            // interrupted. See ClearInterrupted.
+            ClearInterrupted();
         }
 
         // A subagent's Task tool call reaching a terminal status means that subagent finished → mark it
@@ -1888,8 +1891,16 @@ public sealed class SessionViewModel : ObservableObject
                 RaisePanels();
                 break;
 
-            case TurnEndedEvent { Reason: not StopReason.Cancelled }:
+            case TurnEndedEvent { Reason: not StopReason.Cancelled } turnEnd:
                 IsTurnActive = false;
+                if (turnEnd.Reason is StopReason.EndTurn)
+                {
+                    // A turn that finished normally settles the question. Refusal is deliberately excluded:
+                    // the native mapper emits AgentError then TurnEnded(Refusal) for the same failure, so
+                    // clearing on any turn end would erase the banner one event after raising it.
+                    ClearInterrupted();
+                }
+
                 if (!_replaying)
                 {
                     // Reconnecting must not announce every turn the session ever finished.
@@ -2009,6 +2020,32 @@ public sealed class SessionViewModel : ObservableObject
         };
 
         RaiseActivity();
+    }
+
+    /// <summary>
+    /// Retracts the "last turn was interrupted" state on evidence that it is no longer true.
+    /// </summary>
+    /// <remarks>
+    /// The flag was raised by an <see cref="AgentErrorEvent"/> and, until this existed, only a human
+    /// clicking Dismiss ever lowered it — so a session that hit a rate limit and then carried on happily
+    /// went on announcing the failure indefinitely, over the top of the agent visibly working. It also
+    /// outlived the session: replaying the log on reconnect re-raised an error from hours earlier and left
+    /// it up, since the recovery that followed said nothing to contradict it.
+    ///
+    /// <para>The evidence is the same signal that already decides a turn is running — a message, a
+    /// thought, a tool call starting — plus a turn ending normally. Deliberately not a passive one like a
+    /// usage report or a host notice: those can arrive around a failure without the agent having recovered
+    /// from it.</para>
+    /// </remarks>
+    private void ClearInterrupted()
+    {
+        if (!_interrupted)
+        {
+            return;
+        }
+
+        _interrupted = false;
+        UpdateBanner();
     }
 
     private void DismissBanner()
