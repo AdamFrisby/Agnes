@@ -98,12 +98,23 @@ internal static class AcpMap
                 yield return new ThoughtChunkEvent(ContentOf(update));
                 break;
             case "tool_call":
+                var toolCallId = GetString(update, "toolCallId") ?? string.Empty;
                 yield return new ToolCallEvent(
-                    GetString(update, "toolCallId") ?? string.Empty,
+                    toolCallId,
                     GetString(update, "title") ?? string.Empty,
                     ToToolKind(GetString(update, "kind")),
                     ToToolStatus(GetString(update, "status")),
                     ToolContentOf(update));
+
+                // A call that dispatched to a subagent also registers in the agent roster, the way the
+                // native Claude adapter's Task tool does — but it can only be recognized from rawInput,
+                // because ACP carries a human-facing title where the tool's name would be. It still
+                // renders as an ordinary tool row: the row is where the subagent's result comes back.
+                if (AcpSubagentLaunch.TryParse(RawInputOf(update)) is { } launch)
+                {
+                    yield return new SubagentStartedEvent(toolCallId, launch.Name);
+                }
+
                 break;
             case "tool_call_update":
                 yield return new ToolCallUpdateEvent(
@@ -169,6 +180,11 @@ internal static class AcpMap
 
         return new TextContent(string.Empty);
     }
+
+    /// <summary>The tool's own arguments, whose schema belongs to the tool and not to us — so it stays as
+    /// JSON at this boundary and is read only by the shape-matchers that know what to look for.</summary>
+    private static JsonElement? RawInputOf(JsonElement update)
+        => update.TryGetProperty("rawInput", out var raw) && raw.ValueKind == JsonValueKind.Object ? raw : null;
 
     private static IReadOnlyList<ContentBlock> ToolContentOf(JsonElement update)
     {

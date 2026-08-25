@@ -49,6 +49,14 @@ public sealed class TranscriptBuilder
     /// while the subagent itself runs for minutes, and only the payload knows which is which.</summary>
     public event Action<string>? SubagentFinished;
 
+    /// <summary>
+    /// Raised when a subagent reports that it is <em>still running</em> even though the call that launched
+    /// it has finished — a background dispatch. Tells the roster to stop inferring the subagent's fate
+    /// from that call's status, which is right for Claude (whose Task call runs as long as the subagent)
+    /// and wrong here, where the launch returns immediately and the work goes on without it.
+    /// </summary>
+    public event Action<string>? SubagentDetached;
+
     public void Apply(SessionEvent @event)
     {
         var agentId = @event.AgentId;
@@ -131,6 +139,10 @@ public sealed class TranscriptBuilder
                 break;
 
             case SubagentStartedEvent sub:
+                // Remember which call announced it, so a second signal about the same call (OpenCode
+                // reports its task id in the *result*, after the ACP boundary has already named it from
+                // rawInput) refreshes that subagent instead of adding a duplicate row.
+                _subagentByToolCall[sub.SubagentId] = sub.SubagentId;
                 SubagentAdded?.Invoke(sub);
                 break;
 
@@ -188,7 +200,7 @@ public sealed class TranscriptBuilder
 
                 if (_delegations.Contains(u.ToolCallId))
                 {
-                    ApplyDelegationResult(existing);
+                    ApplyDelegationResult(existing, u.ToolCallId);
                 }
 
                 break;
@@ -345,6 +357,9 @@ public sealed class TranscriptBuilder
     private readonly HashSet<string> _delegations = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _subagentNames = new(StringComparer.Ordinal);
 
+    // toolCallId → the subagent id already registered for it, from whichever signal arrived first.
+    private readonly Dictionary<string, string> _subagentByToolCall = new(StringComparer.Ordinal);
+
     /// <summary>Tool names that hand work to a subagent rather than doing it. Claude's own are matched
     /// exactly above (they carry their description in the call); this is the by-shape case.</summary>
     private static bool IsDelegationTool(string title) => string.Equals(title, "task", StringComparison.OrdinalIgnoreCase);
@@ -356,10 +371,32 @@ public sealed class TranscriptBuilder
     /// the transport had already called the launch completed. The envelope is replaced by whatever the
     /// subagent actually reported, so the transcript stops showing raw markup addressed to the model.
     /// </summary>
-    private void ApplyDelegationResult(ToolCallItem item)
+    private void ApplyDelegationResult(ToolCallItem item, string toolCallId)
     {
         if (SubagentTaskPayload.TryParse(item.Detail) is not { } task)
         {
+            return;
+        }
+
+        // Already announced from the call's rawInput at the ACP boundary, under a better name than an
+        // opaque id: keep that row and that identity rather than opening a second one for the same work.
+        if (_subagentByToolCall.TryGetValue(toolCallId, out var announced))
+        {
+            _subagentNames[task.TaskId] = announced;
+            item.Kind = ToolKind.Subagent;
+            item.AgentId = announced;
+            item.Detail = task.Body;
+            item.Status = task.IsRunning ? ToolCallStatus.InProgress : ToolCallStatus.Completed;
+            if (task.IsRunning)
+            {
+                item.CompletedAt = null;
+                SubagentDetached?.Invoke(announced);
+            }
+            else
+            {
+                SubagentFinished?.Invoke(announced);
+            }
+
             return;
         }
 
@@ -383,6 +420,7 @@ public sealed class TranscriptBuilder
         {
             // The launch call is over, but the subagent isn't; a duration here would time the dispatch.
             item.CompletedAt = null;
+            SubagentDetached?.Invoke(task.TaskId);
         }
         else
         {

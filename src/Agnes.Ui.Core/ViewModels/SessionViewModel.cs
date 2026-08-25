@@ -210,6 +210,7 @@ public sealed class SessionViewModel : ObservableObject
         // The roster (participant panel) consumes the same SubagentAdded pipeline, de-duped independently.
         _transcript.SubagentAdded += Subagents.Add;
         _transcript.SubagentFinished += FinishSubagent;
+        _transcript.SubagentDetached += id => _detachedSubagents.Add(id);
         // An expired request drops out of "waiting on you" and into "worth reviewing".
         _transcript.PermissionExpired += _ =>
         {
@@ -434,9 +435,20 @@ public sealed class SessionViewModel : ObservableObject
 
             // Main view shows the main agent's items only; subagent output is routed to its own view (select
             // the subagent in the roster) rather than cluttering the primary conversation.
-            return _selectedAgentId is null
-                ? basis.Where(i => i.AgentId is null).ToList()
-                : basis.Where(i => i.AgentId == _selectedAgentId).ToList();
+            if (_selectedAgentId is null)
+            {
+                return basis.Where(i => i.AgentId is null).ToList();
+            }
+
+            // The launching tool call belongs to the subagent's view as well as the parent's — it is where
+            // the work was described and where its result comes back. That matters most where it is *all*
+            // there is: an agent that runs a subagent in the background (Copilot's task tool, OpenCode's)
+            // streams none of its inner work, so a view filtered strictly by AgentId would be empty and
+            // the roster row would look broken.
+            return basis
+                .Where(i => i.AgentId == _selectedAgentId
+                            || (i is Transcript.ToolCallItem tool && tool.ToolCallId == _selectedAgentId))
+                .ToList();
         }
     }
 
@@ -595,15 +607,26 @@ public sealed class SessionViewModel : ObservableObject
     /// </summary>
     private void FinishSubagent(string subagentId)
     {
+        _detachedSubagents.Remove(subagentId); // it reported for itself; the guard has done its job
         MarkAgentInactive(subagentId);
         OnPropertyChanged(nameof(DisplayItems));
         OnPropertyChanged(nameof(IsTranscriptEmpty));
     }
 
-    /// <summary>Marks a subagent finished when its Task tool call reaches a terminal status.</summary>
+    /// <summary>
+    /// Subagents that outlive the call that launched them — a background dispatch. Their fate comes from
+    /// their own reports (<see cref="FinishSubagent"/>), never from that call's status.
+    /// </summary>
+    private readonly HashSet<string> _detachedSubagents = new(StringComparer.Ordinal);
+
+    /// <summary>Marks a subagent finished when its Task tool call reaches a terminal status. Right for an
+    /// adapter whose launch call runs as long as the subagent does (Claude's Task tool); skipped for one
+    /// that dispatched into the background and said so, where the call returns in seconds and the work
+    /// carries on without it.</summary>
     private void MarkAgentInactive(string? toolCallId)
     {
-        if (toolCallId is not null && _agentNodes.TryGetValue(toolCallId, out var node) && node.IsActive)
+        if (toolCallId is not null && !_detachedSubagents.Contains(toolCallId)
+            && _agentNodes.TryGetValue(toolCallId, out var node) && node.IsActive)
         {
             node.IsActive = false;
             RaiseAgentRows();
