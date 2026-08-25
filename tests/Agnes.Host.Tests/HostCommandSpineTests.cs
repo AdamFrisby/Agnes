@@ -18,6 +18,17 @@ public class HostCommandSpineTests
         public Task PublishAsync(string sessionId, SessionEvent @event) => Task.CompletedTask;
     }
 
+    private sealed class CollectingBroadcaster : ISessionBroadcaster
+    {
+        public List<(string SessionId, SessionEvent Event)> Published { get; } = [];
+
+        public Task PublishAsync(string sessionId, SessionEvent @event)
+        {
+            lock (Published) { Published.Add((sessionId, @event)); }
+            return Task.CompletedTask;
+        }
+    }
+
     // A one-off interceptor that cancels the first event of the given type it sees.
     private sealed class Veto<T> : IEventInterceptor<T> where T : CancelableEvent
     {
@@ -53,6 +64,80 @@ public class HostCommandSpineTests
         await manager.CancelAsync(info.SessionId);
 
         Assert.False(cancelled); // the veto kept the turn running
+    }
+
+    /// <summary>
+    /// The defect this guards: ACP session/cancel is a notification with no response, so an agent that
+    /// ignores it is indistinguishable from one that stopped. Copilot gates its whole cancel behind an
+    /// internal pendingPrompt flag and silently discards the notification when it is false — which is the
+    /// state a session is in while background subagents are still running. A user pressed stop, the UI
+    /// reported success, and the agent kept working.
+    /// </summary>
+    [Fact]
+    public async Task A_cancel_the_agent_ignores_is_reported_as_failed_not_as_success()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance)
+        {
+            CancelAcknowledgementTimeout = TimeSpan.FromMilliseconds(200)
+        };
+
+        // The prompt resolves but never emits TurnEndedEvent, exactly as a session does while background
+        // subagents keep running — so the turn stays active and the cancel has nothing to abort.
+        adapter.Session.OnPrompt = (_, _) => Task.FromResult(StopReason.EndTurn);
+
+        var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
+        await manager.PromptAsync(info.SessionId, [new TextContent("go")]);
+
+        var stopped = await manager.CancelAsync(info.SessionId);
+
+        Assert.False(stopped);
+    }
+
+    /// <summary>And the refusal has to reach the user, not just a log file nobody is tailing.</summary>
+    [Fact]
+    public async Task An_ignored_cancel_leaves_a_notice_naming_the_remedy()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        var broadcaster = new CollectingBroadcaster();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), broadcaster, NullLoggerFactory.Instance)
+        {
+            CancelAcknowledgementTimeout = TimeSpan.FromMilliseconds(200)
+        };
+        adapter.Session.OnPrompt = (_, _) => Task.FromResult(StopReason.EndTurn);
+
+        var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
+        await manager.PromptAsync(info.SessionId, [new TextContent("go")]);
+        await manager.CancelAsync(info.SessionId);
+
+        Assert.Contains(broadcaster.Published, p =>
+            p.Event is NoticeEvent { IsError: true } n &&
+            n.Message.Contains("Restart agent", StringComparison.Ordinal));
+    }
+
+    /// <summary>An agent that does stop is still reported as having stopped.</summary>
+    [Fact]
+    public async Task A_cancel_the_agent_honours_reports_success()
+    {
+        var adapter = new ScriptedAgentAdapter();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance)
+        {
+            CancelAcknowledgementTimeout = TimeSpan.FromSeconds(5)
+        };
+        adapter.Session.OnPrompt = (_, _) => Task.FromResult(StopReason.EndTurn);
+        adapter.Session.OnCancel = () =>
+        {
+            adapter.Session.Emit(new TurnEndedEvent(StopReason.Cancelled));
+            return Task.CompletedTask;
+        };
+
+        var info = await manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
+        await manager.PromptAsync(info.SessionId, [new TextContent("go")]);
+
+        Assert.True(await manager.CancelAsync(info.SessionId));
     }
 
     // ---- scheduled tasks ----

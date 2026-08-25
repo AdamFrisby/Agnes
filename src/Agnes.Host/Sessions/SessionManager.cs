@@ -2484,7 +2484,7 @@ public sealed class SessionManager : IAsyncDisposable
     /// Generous, because honouring a cancel can mean unwinding a tool call. Finite, because the whole point
     /// is to stop asserting something we have not observed.
     /// </remarks>
-    private static readonly TimeSpan CancelAcknowledgementTimeout = TimeSpan.FromSeconds(10);
+    public TimeSpan CancelAcknowledgementTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Asks the agent to stop, then <b>checks that it did</b> — and says so plainly when it did not.
