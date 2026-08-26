@@ -20,7 +20,7 @@
        client↔host TLS stays opaque regardless. See .ideas/connectivity/01-relay-and-tunneling.md. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="LettuceEncrypt" Version="1.3.2" />
+    <PackageReference Include="LettuceEncrypt" Version="1.3.3" />
   </ItemGroup>
 
   <!-- The relay's connection-setup wire contract now lives in a shared project so the Agnes host/client
