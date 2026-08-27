@@ -40,7 +40,13 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
         _client.StdoutReceived += OnStdout;
         _client.StreamCompleted += OnStreamCompleted;
+
+        Sections = new CodeyBoxSectionsViewModel(client, toUi);
     }
+
+    /// <summary>Everything the tab shows besides the queue — fleet, supervision, suggestions, releases and
+    /// the orchestrator's own diagnostics. Each loads when first opened rather than up front.</summary>
+    public CodeyBoxSectionsViewModel Sections { get; }
 
     /// <summary>Whether an API key was found. False renders a "configure me" state rather than an error
     /// loop — a machine with no CodeyBox is an ordinary machine, not a broken one.</summary>
@@ -135,7 +141,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
                     Selected = Items.FirstOrDefault(i => i.Id == keep) ?? Selected;
                 }
 
-                QueuePaused = queue?.Paused ?? false;
+                QueuePaused = queue?.IsPaused ?? false;
                 Status = $"{Items.Count} work item(s)" + (QueuePaused ? " · queue paused" : string.Empty);
             }).ConfigureAwait(false);
         }
@@ -216,7 +222,17 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         try
         {
             IsBusy = true;
-            await _client.SetQueuePausedAsync(!QueuePaused, _cts.Token).ConfigureAwait(false);
+            if (QueuePaused)
+            {
+                await _client.ResumeQueueAsync(_cts.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                // The orchestrator requires a reason and rejects an empty one — a paused queue nobody can
+                // explain later is exactly what that rule exists to prevent.
+                await _client.PauseQueueAsync("Paused from Agnes", _cts.Token).ConfigureAwait(false);
+            }
+
             await RefreshAsync().ConfigureAwait(false);
         }
         catch (Exception ex)

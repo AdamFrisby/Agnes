@@ -19,8 +19,13 @@ public class CustomScreenTests
     private static IDocumentDock DocumentDock(MainWindowViewModel vm)
         => (IDocumentDock)vm.Layout.VisibleDockables![0];
 
+    /// <summary>
+    /// A window whose plugin directory is an empty temp folder, not the machine's real one — otherwise
+    /// these assertions depend on whatever the developer running them happens to have installed.
+    /// </summary>
     private static MainWindowViewModel NewVm()
-        => new(new SimulatedConnector(), ImmediateDispatcher.Instance, new SessionStateStore(), new HostRegistryStore());
+        => new(new SimulatedConnector(), ImmediateDispatcher.Instance, new SessionStateStore(), new HostRegistryStore(),
+            clientPluginDirectory: Path.Combine(Path.GetTempPath(), $"agnes-no-plugins-{Guid.NewGuid():n}"));
 
     [Fact]
     public void Opening_a_custom_screen_adds_a_plugin_document_to_the_dock()

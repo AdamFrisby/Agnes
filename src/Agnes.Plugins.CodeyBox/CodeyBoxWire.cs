@@ -1,15 +1,17 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Agnes.Plugins.CodeyBox;
 
-/// <summary>
-/// One work item, as the orchestrator's REST API reports it.
-/// </summary>
-/// <remarks>
-/// A narrow local copy, not CodeyBox's own <c>WorkItem</c>: the coupling between the two products is
-/// REST + JSON and nothing else, and the real model carries a great deal this view never shows. Keeping
-/// only what is rendered means a field moving in CodeyBox breaks a compile here rather than a screen.
-/// </remarks>
+// The orchestrator's REST shapes, as its live API actually returns them — several were confirmed against a
+// running instance rather than read off the server's code, which is how the queue-status shape below was
+// found to be `state`, not the `paused` flag it was first modelled as.
+//
+// Narrow local copies, not CodeyBox's own domain types: the coupling between the two products is REST+JSON
+// and nothing else. Only what is rendered is modelled, so a field moving in CodeyBox breaks a compile here
+// rather than a screen.
+
+/// <summary>One work item in the queue.</summary>
 public sealed record WorkItemRow(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("title")] string Title,
@@ -33,26 +35,161 @@ public sealed record WorkItemRow(
     public bool IsFailed => State is "Failed" or "AuditFailed"
         or "MergeConflictResolutionFailed" or "AbandonedAfterRecoveryAttempts";
 
-    public string Age
+    public string Age => Relative(UpdatedAt);
+
+    internal static string Relative(DateTimeOffset at)
     {
-        get
-        {
-            var elapsed = DateTimeOffset.UtcNow - UpdatedAt;
-            if (elapsed.TotalSeconds < 60) return $"{(int)elapsed.TotalSeconds}s ago";
-            if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes}m ago";
-            if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h ago";
-            return $"{(int)elapsed.TotalDays}d ago";
-        }
+        var elapsed = DateTimeOffset.UtcNow - at;
+        if (elapsed.TotalSeconds < 60) return $"{(int)elapsed.TotalSeconds}s ago";
+        if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes}m ago";
+        if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h ago";
+        return $"{(int)elapsed.TotalDays}d ago";
     }
 }
 
-/// <summary>The queue's own state, separate from any one item's.</summary>
+/// <summary>
+/// The queue's own state. <see cref="State"/> is a string the controller stringifies ("Running" /
+/// "Paused"), <b>not</b> a boolean — and pausing takes a separate endpoint from resuming, each with its
+/// own required body.
+/// </summary>
 public sealed record QueueStatus(
+    [property: JsonPropertyName("state")] string State,
+    [property: JsonPropertyName("pausedAt")] DateTimeOffset? PausedAt,
+    [property: JsonPropertyName("pausedReason")] string? PausedReason)
+{
+    public bool IsPaused => string.Equals(State, "Paused", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>How much the orchestrator is running, and how much is waiting.</summary>
+public sealed record WorkerStatus(
+    [property: JsonPropertyName("maxConcurrent")] int MaxConcurrent,
+    [property: JsonPropertyName("currentlyRunning")] int CurrentlyRunning,
+    [property: JsonPropertyName("queuedCount")] int QueuedCount,
+    [property: JsonPropertyName("lastSpawnAt")] DateTimeOffset? LastSpawnAt);
+
+/// <summary>One project's row in the fleet view, including its budget position.</summary>
+public sealed record FleetProject(
+    [property: JsonPropertyName("projectId")] string ProjectId,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("queuedCount")] int QueuedCount,
+    [property: JsonPropertyName("inFlightCount")] int InFlightCount,
+    [property: JsonPropertyName("currentPhase")] string? CurrentPhase,
+    [property: JsonPropertyName("isPaused")] bool IsPaused,
+    [property: JsonPropertyName("hasRecentFailures")] bool HasRecentFailures,
+    [property: JsonPropertyName("pausedReason")] string? PausedReason,
+    [property: JsonPropertyName("monthlySpendUsd")] decimal MonthlySpendUsd,
+    [property: JsonPropertyName("monthlyBudgetUsd")] decimal? MonthlyBudgetUsd,
+    [property: JsonPropertyName("budgetThresholdState")] string? BudgetThresholdState)
+{
+    public string Spend => MonthlyBudgetUsd is { } budget
+        ? $"${MonthlySpendUsd:0.##} / ${budget:0.##}"
+        : $"${MonthlySpendUsd:0.##}";
+}
+
+/// <summary>An agent (or one instance of it) an operator has paused.</summary>
+public sealed record AgentPause(
+    [property: JsonPropertyName("agent")] string Agent,
+    [property: JsonPropertyName("agentInstanceId")] string? AgentInstanceId,
     [property: JsonPropertyName("paused")] bool Paused,
-    [property: JsonPropertyName("reason")] string? Reason);
+    [property: JsonPropertyName("pausedAt")] DateTimeOffset? PausedAt,
+    [property: JsonPropertyName("pausedReason")] string? PausedReason,
+    [property: JsonPropertyName("pausedBy")] string? PausedBy);
+
+/// <summary>A live agent session the supervision surface can watch and inject into.</summary>
+public sealed record SupervisionSession(
+    [property: JsonPropertyName("sessionId")] string SessionId,
+    [property: JsonPropertyName("workItemId")] string? WorkItemId,
+    [property: JsonPropertyName("agent")] string? Agent,
+    [property: JsonPropertyName("phase")] string? Phase,
+    [property: JsonPropertyName("outputTail")] string? OutputTail);
+
+/// <summary>The supervision listing, which is paged.</summary>
+public sealed record SupervisionSessions(
+    [property: JsonPropertyName("enabled")] bool Enabled,
+    [property: JsonPropertyName("total")] int Total,
+    [property: JsonPropertyName("sessions")] IReadOnlyList<SupervisionSession> Sessions);
+
+/// <summary>The orchestrator's answer to an injection — accepted or not, and why not.</summary>
+public sealed record InjectionReceipt(
+    [property: JsonPropertyName("accepted")] bool Accepted,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("injectionId")] string? InjectionId,
+    [property: JsonPropertyName("error")] string? Error);
+
+/// <summary>A suggestion the auditors raised out of a work item.</summary>
+public sealed record Suggestion(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("sourceWorkItemId")] string? SourceWorkItemId,
+    [property: JsonPropertyName("projectId")] string? ProjectId,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("rationale")] string? Rationale,
+    [property: JsonPropertyName("category")] string? Category,
+    [property: JsonPropertyName("severity")] string? Severity,
+    [property: JsonPropertyName("estimatedEffort")] string? EstimatedEffort,
+    [property: JsonPropertyName("createdAt")] DateTimeOffset CreatedAt,
+    [property: JsonPropertyName("state")] string? State,
+    [property: JsonPropertyName("promotedToWorkItemId")] string? PromotedToWorkItemId)
+{
+    public string Age => WorkItemRow.Relative(CreatedAt);
+}
+
+/// <summary>The suggestions listing, which is paged.</summary>
+public sealed record SuggestionPage(
+    [property: JsonPropertyName("items")] IReadOnlyList<Suggestion> Items,
+    [property: JsonPropertyName("total")] int Total);
+
+/// <summary>A release the orchestrator is assembling.</summary>
+public sealed record Release(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("projectId")] string? ProjectId,
+    [property: JsonPropertyName("title")] string? Title,
+    [property: JsonPropertyName("state")] string? State,
+    [property: JsonPropertyName("createdAt")] DateTimeOffset CreatedAt);
+
+/// <summary>A project the orchestrator runs work for.</summary>
+public sealed record Project(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("repositoryUrl")] string? RepositoryUrl,
+    [property: JsonPropertyName("defaultBaseBranch")] string? DefaultBaseBranch,
+    [property: JsonPropertyName("defaultAgent")] string? DefaultAgent);
+
+/// <summary>A task template that can be queued by name.</summary>
+public sealed record TaskTemplate(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("path")] string? Path,
+    [property: JsonPropertyName("checkCount")] int CheckCount,
+    [property: JsonPropertyName("error")] string? Error);
+
+/// <summary>An orchestrator-side plugin.</summary>
+public sealed record OrchestratorPlugin(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("version")] string? Version,
+    [property: JsonPropertyName("enabled")] bool Enabled);
 
 /// <summary>A chunk of an agent's stdout, as the hub broadcasts it.</summary>
 public sealed record StdoutChunk(
     [property: JsonPropertyName("workItemId")] string WorkItemId,
     [property: JsonPropertyName("phase")] string? Phase,
     [property: JsonPropertyName("chunk")] string Chunk);
+
+/// <summary>What to create a work item from.</summary>
+public sealed record NewWorkItem(
+    [property: JsonPropertyName("projectId")] string ProjectId,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("prompt")] string Prompt,
+    [property: JsonPropertyName("agent")] string? Agent = null,
+    [property: JsonPropertyName("baseBranch")] string? BaseBranch = null);
+
+/// <summary>
+/// A response this plugin passes through without modelling. Used for the orchestrator's diagnostic and
+/// admin surfaces — timings, costs, diffs, capacity, quota, baselines, e2e runs — whose shapes are wide,
+/// instance-specific and, on this host, sometimes unavailable entirely (several answer 503 when their
+/// feature is off). Modelling them would be inventing a contract rather than reading one; the calls are
+/// still typed and named, so nothing about the surface is hidden, only its interior left as JSON.
+/// </summary>
+public sealed record RawJson(JsonDocument Document)
+{
+    public string Text => Document.RootElement.ToString();
+}

@@ -85,8 +85,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SessionStateStore? archiveStore = null,
         SettingsStore? settingsStore = null,
         IPermissionPolicy? policy = null,
-        IOnboardingStore? onboarding = null)
+        IOnboardingStore? onboarding = null,
+        string? clientPluginDirectory = null)
     {
+        _clientPluginDirectory = clientPluginDirectory;
         _connector = connector;
         _dispatcher = dispatcher;
         _tabStore = tabStore;
@@ -2087,9 +2089,19 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
+    /// <summary>
+    /// Where dynamically-loaded client plugins are read from. Injectable so a test is not at the mercy of
+    /// whatever the machine running it happens to have installed — before this was a parameter, installing
+    /// a plugin locally made a test asserting "no plugin screens" fail on that machine and nowhere else.
+    /// </summary>
+    private readonly string? _clientPluginDirectory;
+
+    public static string DefaultClientPluginDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins");
+
     private ClientPluginSet EnsureClientPlugins()
-        => _clientPlugins ??= DesktopClientPlugins.Build(Notifier,
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins"));
+        => _clientPlugins ??= DesktopClientPlugins.Build(
+            Notifier, _clientPluginDirectory ?? DefaultClientPluginDirectory);
 
     /// <summary>Custom screens contributed by client plugins, for the New-tab menu to list and open.</summary>
     public IReadOnlyList<ICustomScreenProvider> CustomScreens => EnsureClientPlugins().CustomScreens;

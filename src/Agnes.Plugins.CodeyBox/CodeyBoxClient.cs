@@ -53,6 +53,281 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public async Task<QueueStatus?> GetQueueStatusAsync(CancellationToken cancellationToken = default)
         => await _http.GetFromJsonAsync<QueueStatus>("queue/status", Json, cancellationToken).ConfigureAwait(false);
 
+    public async Task<WorkerStatus?> GetWorkerStatusAsync(CancellationToken cancellationToken = default)
+        => await _http.GetFromJsonAsync<WorkerStatus>("workers/status", Json, cancellationToken).ConfigureAwait(false);
+
+    public async Task<IReadOnlyList<FleetProject>> GetFleetAsync(CancellationToken cancellationToken = default)
+        => await Get<List<FleetProject>>("fleet/summary", cancellationToken).ConfigureAwait(false) ?? [];
+
+    public Task<RawJson?> GetFleetTransitionHealthAsync(CancellationToken cancellationToken = default)
+        => GetRaw("fleet/transition-health", cancellationToken);
+
+    public async Task<IReadOnlyList<Project>> GetProjectsAsync(CancellationToken cancellationToken = default)
+        => await Get<List<Project>>("projects", cancellationToken).ConfigureAwait(false) ?? [];
+
+    public async Task<IReadOnlyList<TaskTemplate>> GetTemplatesAsync(CancellationToken cancellationToken = default)
+        => await Get<List<TaskTemplate>>("templates", cancellationToken).ConfigureAwait(false) ?? [];
+
+    public async Task<IReadOnlyList<OrchestratorPlugin>> GetPluginsAsync(CancellationToken cancellationToken = default)
+        => await Get<List<OrchestratorPlugin>>("plugins", cancellationToken).ConfigureAwait(false) ?? [];
+
+    // ---- agents ----
+
+    public async Task<IReadOnlyList<AgentPause>> GetPausedAgentsAsync(CancellationToken cancellationToken = default)
+        => await Get<List<AgentPause>>("agents/paused", cancellationToken).ConfigureAwait(false) ?? [];
+
+    public Task PauseAgentAsync(string kind, string reason, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"agents/{kind}/pause", new { reason }, cancellationToken);
+
+    public Task ResumeAgentAsync(string kind, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"agents/{kind}/resume", new { }, cancellationToken);
+
+    public Task PauseAgentInstanceAsync(string kind, string instanceId, string reason, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"agents/{kind}/instances/{instanceId}/pause", new { reason }, cancellationToken);
+
+    public Task ResumeAgentInstanceAsync(string kind, string instanceId, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"agents/{kind}/instances/{instanceId}/resume", new { }, cancellationToken);
+
+    public Task<RawJson?> GetAgentPricingAsync(CancellationToken cancellationToken = default)
+        => GetRaw("agent-pricing", cancellationToken);
+
+    // ---- supervision: watching a live agent, and speaking into it ----
+
+    public async Task<SupervisionSessions?> GetSupervisionSessionsAsync(CancellationToken cancellationToken = default)
+        => await _http.GetFromJsonAsync<SupervisionSessions>(
+            "agent-supervision/sessions", Json, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Sends a message into a running agent's session. The orchestrator answers with a receipt rather than
+    /// a status code alone, because an injection can be legitimately refused — the session may have moved
+    /// on — and that is not the same as the call failing.
+    /// </summary>
+    public async Task<InjectionReceipt?> InjectAsync(string sessionId, string message, string? actor = null, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"agent-supervision/sessions/{sessionId}/injections")
+        {
+            Content = JsonContent.Create(new { message, actor }, options: Json),
+        };
+        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<InjectionReceipt>(Json, cancellationToken).ConfigureAwait(false);
+    }
+
+    // ---- suggestions ----
+
+    public async Task<SuggestionPage?> GetSuggestionsAsync(CancellationToken cancellationToken = default)
+        => await _http.GetFromJsonAsync<SuggestionPage>("suggestions", Json, cancellationToken).ConfigureAwait(false);
+
+    public Task<RawJson?> GetSuggestionAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"suggestions/{id}", cancellationToken);
+
+    public Task PromoteSuggestionAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"suggestions/{id}/promote", new { }, cancellationToken);
+
+    public Task DismissSuggestionAsync(string id, string reason, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Patch, $"suggestions/{id}")
+        {
+            Content = JsonContent.Create(new { state = "Dismissed", dismissReason = reason }, options: Json),
+        }, cancellationToken);
+
+    // ---- releases ----
+
+    public async Task<IReadOnlyList<Release>> GetReleasesAsync(CancellationToken cancellationToken = default)
+        => await Get<List<Release>>("releases", cancellationToken).ConfigureAwait(false) ?? [];
+
+    public Task<RawJson?> GetReleaseAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"releases/{id}", cancellationToken);
+
+    public async Task<IReadOnlyList<WorkItemRow>> GetReleaseWorkItemsAsync(string id, CancellationToken cancellationToken = default)
+        => await Get<List<WorkItemRow>>($"releases/{id}/workitems", cancellationToken).ConfigureAwait(false) ?? [];
+
+    public Task CloseReleaseAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"releases/{id}/close", new { }, cancellationToken);
+
+    public Task ReopenReleaseAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"releases/{id}/reopen", new { }, cancellationToken);
+
+    public Task AbandonReleaseAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"releases/{id}/abandon", new { }, cancellationToken);
+
+    public Task ShipReleaseAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"releases/{id}/release", new { }, cancellationToken);
+
+    // ---- diagnostics ----
+    // Wide, instance-specific, and on some hosts switched off entirely (capacity and quota answer 503 when
+    // their feature is unavailable). Typed as calls, left as JSON inside — see RawJson.
+
+    public Task<RawJson?> GetCapacityAsync(CancellationToken cancellationToken = default)
+        => GetRaw("stats/capacity", cancellationToken);
+
+    public Task<RawJson?> GetQuotaHistoryAsync(CancellationToken cancellationToken = default)
+        => GetRaw("quota/history", cancellationToken);
+
+    public Task<RawJson?> GetQuotaResetAdviceAsync(CancellationToken cancellationToken = default)
+        => GetRaw("quota/reset-advice", cancellationToken);
+
+    public Task<RawJson?> GetQuotaResetCreditsAsync(CancellationToken cancellationToken = default)
+        => GetRaw("quota/reset-credits", cancellationToken);
+
+    public Task<RawJson?> GetQuotaRetryStatusAsync(CancellationToken cancellationToken = default)
+        => GetRaw("admin/quota-retry-status", cancellationToken);
+
+    public Task<RawJson?> GetSandboxLeaksAsync(CancellationToken cancellationToken = default)
+        => GetRaw("admin/sandbox-leaks", cancellationToken);
+
+    public Task<RawJson?> GetSandboxResourceUsageAsync(CancellationToken cancellationToken = default)
+        => GetRaw("admin/sandbox-resource-usage", cancellationToken);
+
+    public Task<RawJson?> GetLeakedSandboxesAsync(CancellationToken cancellationToken = default)
+        => GetRaw("sandboxes/leaked", cancellationToken);
+
+    public Task DisposeLeakedSandboxAsync(string name, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"sandboxes/leaked/{name}/dispose", new { }, cancellationToken);
+
+    public Task<RawJson?> GetBaselinesAsync(CancellationToken cancellationToken = default)
+        => GetRaw("baselines", cancellationToken);
+
+    public Task<RawJson?> GetE2eRunsAsync(CancellationToken cancellationToken = default)
+        => GetRaw("e2eruns", cancellationToken);
+
+    public Task<RawJson?> GetTestCasesAsync(CancellationToken cancellationToken = default)
+        => GetRaw("testcases", cancellationToken);
+
+    public Task<RawJson?> GetWorkersAsync(CancellationToken cancellationToken = default)
+        => GetRaw("workers", cancellationToken);
+
+    // ---- per-work-item detail ----
+
+    public Task<RawJson?> GetWorkItemAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}", cancellationToken);
+
+    public Task<RawJson?> GetTimelineAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/timeline", cancellationToken);
+
+    public Task<RawJson?> GetAgentHistoryAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/agent-history", cancellationToken);
+
+    public Task<RawJson?> GetCostsAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/costs", cancellationToken);
+
+    public Task<RawJson?> GetTimingsAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/timings", cancellationToken);
+
+    public Task<RawJson?> GetDiffAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/diff", cancellationToken);
+
+    public Task<RawJson?> GetQuestionsAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/questions", cancellationToken);
+
+    public Task<RawJson?> GetDependentsAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/dependents", cancellationToken);
+
+    public Task<RawJson?> GetAuditReportsAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/audit-reports", cancellationToken);
+
+    public Task<RawJson?> GetAgentStreamsAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/agent-streams", cancellationToken);
+
+    public Task<RawJson?> GetAttachmentsAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/attachments", cancellationToken);
+
+    // ---- work-item lifecycle ----
+
+    public async Task<string?> CreateWorkItemAsync(NewWorkItem item, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "workitems")
+        {
+            Content = JsonContent.Create(item, options: Json),
+        };
+        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        return document.RootElement.TryGetProperty("id", out var id) ? id.GetString() : null;
+    }
+
+    public Task AbandonAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"workitems/{id}/abandon", new { }, cancellationToken);
+
+    public Task UncancelAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"workitems/{id}/uncancel", new { }, cancellationToken);
+
+    public Task ResumeWorkItemAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"workitems/{id}/resume", new { }, cancellationToken);
+
+    public Task RecoverAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"workitems/{id}/recover", new { }, cancellationToken);
+
+    public Task ReplayAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"workitems/{id}/replay", new { }, cancellationToken);
+
+    public Task SetPriorityAsync(string id, int priority, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Patch, $"workitems/{id}/priority")
+        {
+            Content = JsonContent.Create(new { priority }, options: Json),
+        }, cancellationToken);
+
+    public Task SetPromptAsync(string id, string prompt, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Put, $"workitems/{id}/prompt")
+        {
+            Content = JsonContent.Create(new { prompt }, options: Json),
+        }, cancellationToken);
+
+    public Task AnswerQuestionAsync(string id, string questionId, string answer, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"workitems/{id}/answer", new { questionId, answer }, cancellationToken);
+
+    public Task DismissQuestionAsync(string id, string questionId, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"workitems/{id}/dismiss-question", new { questionId }, cancellationToken);
+
+    public Task ReorderAsync(IReadOnlyList<string> orderedIds, CancellationToken cancellationToken = default)
+        => PostJsonAsync("workitems/reorder", new { ids = orderedIds }, cancellationToken);
+
+    public Task QueueTemplateAsync(string name, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"templates/{name}/queue", new { }, cancellationToken);
+
+    // ---- plumbing ----
+
+    private async Task<T?> Get<T>(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<T>(path, Json, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException)
+        {
+            // A surface the orchestrator has switched off answers 4xx/5xx rather than an empty list; a
+            // panel showing nothing is the honest rendering of that, and better than one showing a stack.
+            return default;
+        }
+    }
+
+    /// <summary>Fetches a body this plugin does not model. Null when the endpoint is unavailable, which on
+    /// a real instance is common — several diagnostic surfaces answer 503 when their feature is off.</summary>
+    private async Task<RawJson?> GetRaw(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(body) ? null : new RawJson(JsonDocument.Parse(body));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    private Task PostJsonAsync(string path, object body, CancellationToken cancellationToken)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(body, options: Json),
+        }, cancellationToken);
+
     /// <summary>The tail of an item's agent output, for the scrollback a live subscription cannot replay.</summary>
     public async Task<string> GetStdoutTailAsync(string workItemId, CancellationToken cancellationToken = default)
     {
@@ -71,14 +346,17 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task PromoteAsync(string workItemId, CancellationToken cancellationToken = default)
         => SendAsync(new HttpRequestMessage(HttpMethod.Post, $"workitems/{workItemId}/promote"), cancellationToken);
 
-    public async Task SetQueuePausedAsync(bool paused, CancellationToken cancellationToken = default)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "queue/pause")
-        {
-            Content = JsonContent.Create(new { paused }, options: Json),
-        };
-        await SendAsync(request, cancellationToken).ConfigureAwait(false);
-    }
+    /// <summary>
+    /// Pauses the queue. The reason is <b>required</b> by the orchestrator — it rejects an empty one, a
+    /// control character, or anything over 500 chars with a 400 — because a paused queue with no recorded
+    /// reason is the thing nobody can explain an hour later.
+    /// </summary>
+    public Task PauseQueueAsync(string reason, CancellationToken cancellationToken = default)
+        => PostJsonAsync("queue/pause", new { reason }, cancellationToken);
+
+    /// <summary>Resumes the queue. Its own endpoint, not a pause with a flag flipped.</summary>
+    public Task ResumeQueueAsync(CancellationToken cancellationToken = default)
+        => PostJsonAsync("queue/resume", new { }, cancellationToken);
 
     private async Task SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
