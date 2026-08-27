@@ -230,6 +230,91 @@
                         <Button Classes="chip" Command="{Binding Session.ToggleTerminalCommand}" IsVisible="{Binding IsLive}"
                                 Content="Terminal" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Open a terminal in the session's working directory" AutomationProperties.Name="Toggle terminal" />
+
+                        <!-- Goals: this session's standing "keep going" goals, armed by an agent or here.
+                             It sits on the tab rather than in the window's top bar because a goal is armed
+                             against one session: from here the target is the tab it is drawn on, where the
+                             window-level version had to infer one from whichever tab held focus. -->
+                        <Button Classes="chip" Padding="9,3" FontSize="11"
+                                IsVisible="{Binding Goals.IsAvailable}" AutomationProperties.Name="Goals"
+                                ToolTip.Tip="Standing goals that nudge this session if it goes idle">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <ic:SymbolIcon Symbol="TargetArrow" FontSize="14" />
+                                <TextBlock Text="Goals" VerticalAlignment="Center" />
+                                <Border Classes="status working" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Goals.ArmedGoalCount}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                </Border>
+                            </StackPanel>
+                            <Button.Flyout>
+                                <Flyout Placement="Bottom">
+                                    <!-- Width is pinned, not just a minimum: a MinWidth lets a long line in the
+                                         goal box widen the panel past the flyout, which then grows a horizontal
+                                         scrollbar instead of wrapping. -->
+                                    <ScrollViewer Width="400" MaxHeight="520"
+                                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                      <StackPanel Spacing="8" MaxWidth="380" HorizontalAlignment="Stretch">
+                                        <!-- Arm a new goal on this tab's session. No target line: the tab is the target. -->
+                                        <Border Padding="8,6" CornerRadius="6" Background="{DynamicResource PanelAlt}">
+                                            <StackPanel Spacing="6">
+                                                <TextBlock Text="New goal" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" />
+                                                <!-- HorizontalAlignment=Stretch keeps the box at the panel's width
+                                                     however long the text is; wrapping does the rest. -->
+                                                <TextBox Text="{Binding Goals.NewGoalText, Mode=TwoWay}" AcceptsReturn="True" MinHeight="62"
+                                                         TextWrapping="Wrap" FontSize="12" HorizontalAlignment="Stretch"
+                                                         MaxHeight="140" VerticalContentAlignment="Top"
+                                                         PlaceholderText="What must be achieved before this session may stop?"
+                                                         AutomationProperties.Name="Goal text" />
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="Nudge if idle (min)" Foreground="{DynamicResource FgDim}" FontSize="10" />
+                                                        <!-- Wide enough for four digits plus the spinner buttons. -->
+                                                        <NumericUpDown Value="{Binding Goals.NewGoalIdleMinutes, Mode=TwoWay}" Minimum="1" Maximum="1440"
+                                                                       Increment="5" FormatString="0" Width="150" FontSize="12"
+                                                                       AutomationProperties.Name="Idle minutes" />
+                                                    </StackPanel>
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="Max nudges" Foreground="{DynamicResource FgDim}" FontSize="10" />
+                                                        <NumericUpDown Value="{Binding Goals.NewGoalMaxProds, Mode=TwoWay}" Minimum="1" Maximum="50"
+                                                                       Increment="1" FormatString="0" Width="150" FontSize="12"
+                                                                       IsEnabled="{Binding Goals.NewGoalHasLimit}"
+                                                                       AutomationProperties.Name="Maximum nudges" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <CheckBox IsChecked="{Binding Goals.NewGoalUnlimited, Mode=TwoWay}" FontSize="11"
+                                                          Content="Keep nudging until I disarm it (no limit)"
+                                                          AutomationProperties.Name="Unlimited nudges" />
+                                                <Button Content="Arm goal" Classes="primary" FontSize="12" Padding="10,4"
+                                                        HorizontalAlignment="Left" Command="{Binding Goals.ArmGoalCommand}"
+                                                        AutomationProperties.Name="Arm goal" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <ItemsControl ItemsSource="{Binding Goals.Goals}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Padding="8,6" Margin="0,2" CornerRadius="6" Background="{DynamicResource PanelAlt}">
+                                                        <StackPanel Spacing="4">
+                                                            <TextBlock Text="{Binding Text}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
+                                                                       TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                <Button Content="Disarm" FontSize="11" Padding="8,3" IsVisible="{Binding Armed}"
+                                                                        Command="{Binding $parent[ItemsControl].DataContext.Goals.DisarmGoalCommand}"
+                                                                        CommandParameter="{Binding}" AutomationProperties.Name="Disarm goal" />
+                                                                <Button Content="Delete" FontSize="11" Padding="8,3"
+                                                                        Command="{Binding $parent[ItemsControl].DataContext.Goals.RemoveGoalCommand}"
+                                                                        CommandParameter="{Binding}" AutomationProperties.Name="Delete goal" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                      </StackPanel>
+                                    </ScrollViewer>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
                         <!-- real context-window usage the agent reported (bar only when the window is known) -->
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                     IsVisible="{Binding Usage.HasAnyContext, FallbackValue=false}"

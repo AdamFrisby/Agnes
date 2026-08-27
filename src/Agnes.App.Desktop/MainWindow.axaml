@@ -144,6 +144,25 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 </ScrollViewer>
+
+                                <!-- The two searches differ in reach, not in kind: the box above matches the
+                                     sessions currently open, this reaches the host's index of every transcript
+                                     it has ever recorded, closed ones included. They used to be separate top-bar
+                                     controls with the same word and the same icon, which read as one feature
+                                     offered twice; as a footer here the narrower search leads to the wider one. -->
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
+                                    <Button Command="{Binding OpenSearchCommand}" HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                            Padding="7,5" CornerRadius="6" Cursor="Hand"
+                                            AutomationProperties.Name="Search all recorded sessions"
+                                            ToolTip.Tip="Full-text search across every session the host has recorded, including closed ones">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <ic:SymbolIcon Symbol="History" Foreground="{DynamicResource FgFaint}" FontSize="14" />
+                                            <TextBlock Text="Search all recorded sessions" Foreground="{DynamicResource FgDim}"
+                                                       FontSize="11" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </Border>
                             </StackPanel>
                         </Flyout>
                     </Button.Flyout>
@@ -299,88 +318,6 @@
                         </Button.Flyout>
                     </Button>
 
-                    <!-- Goals: standing "keep going" goals, armed by an agent or from here -->
-                    <Button Classes="chip" Padding="10,5" FontSize="12"
-                            IsVisible="{Binding HasGoals}" AutomationProperties.Name="Goals">
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <ic:SymbolIcon Symbol="TargetArrow" FontSize="14" />
-                            <TextBlock Text="Goals" VerticalAlignment="Center" />
-                            <Border Classes="status working" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding ArmedGoalCount}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                            </Border>
-                        </StackPanel>
-                        <Button.Flyout>
-                            <Flyout Placement="Bottom">
-                                <!-- Width is pinned, not just a minimum: a MinWidth lets a long line in the
-                                     goal box widen the panel past the flyout, which then grows a horizontal
-                                     scrollbar instead of wrapping. -->
-                                <ScrollViewer Width="400" MaxHeight="520"
-                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                  <StackPanel Spacing="8" MaxWidth="380" HorizontalAlignment="Stretch">
-                                    <!-- Arm a new goal on the focused session -->
-                                    <Border Padding="8,6" CornerRadius="6" Background="{DynamicResource PanelAlt}">
-                                        <StackPanel Spacing="6">
-                                            <TextBlock Text="New goal" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" />
-                                            <TextBlock Text="{Binding NewGoalTarget}" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                            <!-- HorizontalAlignment=Stretch keeps the box at the panel's width
-                                                 however long the text is; wrapping does the rest. -->
-                                            <TextBox Text="{Binding NewGoalText, Mode=TwoWay}" AcceptsReturn="True" MinHeight="62"
-                                                     TextWrapping="Wrap" FontSize="12" HorizontalAlignment="Stretch"
-                                                     MaxHeight="140" VerticalContentAlignment="Top"
-                                                     PlaceholderText="What must be achieved before this session may stop?"
-                                                     AutomationProperties.Name="Goal text" />
-                                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Text="Nudge if idle (min)" Foreground="{DynamicResource FgDim}" FontSize="10" />
-                                                    <!-- Wide enough for four digits plus the spinner buttons. -->
-                                                    <NumericUpDown Value="{Binding NewGoalIdleMinutes, Mode=TwoWay}" Minimum="1" Maximum="1440"
-                                                                   Increment="5" FormatString="0" Width="150" FontSize="12"
-                                                                   AutomationProperties.Name="Idle minutes" />
-                                                </StackPanel>
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Text="Max nudges" Foreground="{DynamicResource FgDim}" FontSize="10" />
-                                                    <NumericUpDown Value="{Binding NewGoalMaxProds, Mode=TwoWay}" Minimum="1" Maximum="50"
-                                                                   Increment="1" FormatString="0" Width="150" FontSize="12"
-                                                                   IsEnabled="{Binding NewGoalHasLimit}"
-                                                                   AutomationProperties.Name="Maximum nudges" />
-                                                </StackPanel>
-                                            </StackPanel>
-                                            <CheckBox IsChecked="{Binding NewGoalUnlimited, Mode=TwoWay}" FontSize="11"
-                                                      Content="Keep nudging until I disarm it (no limit)"
-                                                      AutomationProperties.Name="Unlimited nudges" />
-                                            <Button Content="Arm goal" Classes="primary" FontSize="12" Padding="10,4"
-                                                    HorizontalAlignment="Left" Command="{Binding ArmGoalCommand}"
-                                                    AutomationProperties.Name="Arm goal" />
-                                        </StackPanel>
-                                    </Border>
-
-                                    <ItemsControl ItemsSource="{Binding Goals}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Padding="8,6" Margin="0,2" CornerRadius="6" Background="{DynamicResource PanelAlt}">
-                                                    <StackPanel Spacing="4">
-                                                        <TextBlock Text="{Binding Text}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
-                                                                   TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                                            <Button Content="Disarm" FontSize="11" Padding="8,3" IsVisible="{Binding Armed}"
-                                                                    Command="{Binding $parent[ItemsControl].DataContext.DisarmGoalCommand}"
-                                                                    CommandParameter="{Binding}" AutomationProperties.Name="Disarm goal" />
-                                                            <Button Content="Delete" FontSize="11" Padding="8,3"
-                                                                    Command="{Binding $parent[ItemsControl].DataContext.RemoveGoalCommand}"
-                                                                    CommandParameter="{Binding}" AutomationProperties.Name="Delete goal" />
-                                                        </StackPanel>
-                                                    </StackPanel>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                  </StackPanel>
-                                </ScrollViewer>
-                            </Flyout>
-                        </Button.Flyout>
-                    </Button>
-
                     <!-- Sessions switcher: state of every open session + attention -->
                     <Button Classes="chip" Padding="10,5" FontSize="12" AutomationProperties.Name="Sessions">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -432,9 +369,6 @@
                     <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Board}" Command="{Binding OpenDashboardCommand}" Padding="10,5" FontSize="12"
                             AutomationProperties.Name="Status dashboard"
                             ToolTip.Tip="Status of every session, and anything waiting on you (Ctrl+Shift+D)" />
-
-                    <!-- Search: opens a first-class tab searching every recorded session's transcript -->
-                    <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Search}" Command="{Binding OpenSearchCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Search history" />
 
                     <!-- Settings: opens a first-class, searchable Settings tab -->
                     <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Settings}" Command="{Binding OpenSettingsCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings" />

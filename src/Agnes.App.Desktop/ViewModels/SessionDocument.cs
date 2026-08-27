@@ -21,6 +21,17 @@ public sealed partial class SessionDocument : Document, ITraySession
     private readonly Agnes.Ui.Core.IUiDispatcher _dispatcher;
 
     /// <summary>
+    /// This tab's standing goals. Lives on the tab, not the window: a goal is armed against one session,
+    /// so the control that arms it belongs beside that session rather than in chrome that has to infer
+    /// its target from focus. See <see cref="SessionGoalsViewModel"/>.
+    /// </summary>
+    public SessionGoalsViewModel Goals { get; }
+
+    /// <summary>Keeps <see cref="Goals"/> pointed at whatever session this tab currently holds — including
+    /// none, when the tab is back at the host picker.</summary>
+    partial void OnSessionChanged(SessionViewModel? value) => Goals.Attach(value);
+
+    /// <summary>
     /// The empty-state guidance shown when no host is connected yet. It lives here rather than in the view
     /// because it names the built-in simulated host, which only exists in a development build — and XAML
     /// has no conditional compilation, so a hardcoded string would invite a released client to point the
@@ -44,6 +55,7 @@ public sealed partial class SessionDocument : Document, ITraySession
     {
         _controller = controller;
         _dispatcher = dispatcher;
+        Goals = new SessionGoalsViewModel(dispatcher);
         _workingDirectory = controller.DefaultWorkingDirectory;
         // Disabled until the URL field is more than the "https://" prefill, so Connect can't fire on junk.
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this),
