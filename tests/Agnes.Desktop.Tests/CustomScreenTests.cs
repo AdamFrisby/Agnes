@@ -119,4 +119,28 @@ public class CustomScreenTests
         public void Register(ClientPluginCollector collector)
             => collector.AddViewFactory<Claimed>(_ => new FakeView("claimed"));
     }
+
+    [Fact]
+    public void New_tab_stays_a_plain_button_until_a_plugin_contributes_a_screen()
+    {
+        // A menu offering exactly one choice is a worse button, so the chevron only appears once there is
+        // genuinely more than one kind of tab to open.
+        var vm = NewVm();
+
+        Assert.Empty(vm.CustomScreens);
+        Assert.False(vm.HasTabKinds);
+    }
+
+    [Fact]
+    public void The_new_tab_command_opens_a_plugin_screen_by_provider()
+    {
+        var vm = NewVm();
+        var provider = new FakeScreen("codeybox.queue", "CodeyBox", null, new object());
+
+        vm.OpenCustomScreenCommand.Execute(provider);
+
+        var doc = Assert.Single(DocumentDock(vm).VisibleDockables!.OfType<PluginScreenDocument>());
+        Assert.Equal("codeybox.queue", doc.Id);
+        Assert.Equal("CodeyBox", doc.Title);
+    }
 }

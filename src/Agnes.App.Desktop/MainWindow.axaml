@@ -444,12 +444,66 @@
                             </Flyout>
                         </Button.Flyout>
                     </Button>
-                    <Button Classes="chip" Command="{Binding NewTabCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="New tab">
+                    <!-- New tab. With only Agnes sessions to open it is a plain button; once a plugin
+                         contributes a screen there is more than one kind of tab, so it grows a menu
+                         listing them. The button keeps its primary action either way — clicking it still
+                         opens a session, and the chevron is what offers the rest. -->
+                    <Button Classes="chip" Command="{Binding NewTabCommand}" Padding="10,5" FontSize="12"
+                            IsVisible="{Binding !HasTabKinds}" AutomationProperties.Name="New tab">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="+" FontSize="14" />
                             <TextBlock Text="New tab" />
                         </StackPanel>
                     </Button>
+
+                    <StackPanel Orientation="Horizontal" Spacing="0" IsVisible="{Binding HasTabKinds}">
+                        <Button Classes="chip" Command="{Binding NewTabCommand}" Padding="10,5" FontSize="12"
+                                CornerRadius="6,0,0,6" AutomationProperties.Name="New tab">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="+" FontSize="14" />
+                                <TextBlock Text="New tab" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="chip" Padding="6,5" FontSize="12" CornerRadius="0,6,6,0"
+                                AutomationProperties.Name="Choose what kind of tab to open">
+                            <ic:SymbolIcon Symbol="ChevronDown" FontSize="12" />
+                            <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedRight">
+                                    <StackPanel Width="220" Spacing="2">
+                                        <TextBlock Text="Open a tab" Foreground="{DynamicResource FgFaint}"
+                                                   FontSize="10" FontWeight="SemiBold" Margin="2,2,0,4" />
+                                        <Button Command="{Binding NewTabCommand}" HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Left" Background="Transparent"
+                                                BorderThickness="0" Padding="7,5" CornerRadius="6" Cursor="Hand">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Image Source="{StaticResource AgnesMark}" Width="14" Height="14"
+                                                       VerticalAlignment="Center" />
+                                                <TextBlock Text="Agnes session" Foreground="{DynamicResource Fg}"
+                                                           FontSize="12" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <ItemsControl ItemsSource="{Binding CustomScreens}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Command="{Binding $parent[ItemsControl].DataContext.OpenCustomScreenCommand}"
+                                                            CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Left" Background="Transparent"
+                                                            BorderThickness="0" Padding="7,5" CornerRadius="6" Cursor="Hand">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <ic:SymbolIcon Symbol="PuzzlePiece" FontSize="14"
+                                                                           Foreground="{DynamicResource FgFaint}" />
+                                                            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}"
+                                                                       FontSize="12" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
+                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Border>

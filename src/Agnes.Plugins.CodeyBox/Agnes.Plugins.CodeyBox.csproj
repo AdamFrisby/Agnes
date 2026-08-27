@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- A drop-in client plugin: the output of this project (plus the deps NOT marked Private=false
+         below) is what gets copied into %APPDATA%/Agnes/client-plugins. -->
+    <EnableDefaultAvaloniaItems>true</EnableDefaultAvaloniaItems>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The plugin contract, and the UI framework its view is built from. Both are Private=false: the
+         desktop loader forces `Agnes.Ui.Core` and every `Avalonia*` assembly to resolve from the app's
+         own load context, so shipping copies here would at best waste space and at worst be ignored.
+         Keeping them out of the output is also what makes the drop folder a handful of files. -->
+    <ProjectReference Include="..\Agnes.Ui.Core\Agnes.Ui.Core.csproj" Private="false" ExcludeAssets="runtime" />
+    <PackageReference Include="Avalonia" Version="12.1.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CodeyBox's realtime channel. This one DOES ship with the plugin: nothing of it crosses the
+         plugin boundary, so the load context can isolate it and a version skew with the host cannot
+         break either side. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
+  </ItemGroup>
+
+</Project>

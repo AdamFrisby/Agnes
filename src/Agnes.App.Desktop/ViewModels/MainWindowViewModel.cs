@@ -2091,8 +2091,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         => _clientPlugins ??= DesktopClientPlugins.Build(Notifier,
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins"));
 
-    /// <summary>Custom screens contributed by client plugins, for a menu / command-palette to list and open.</summary>
+    /// <summary>Custom screens contributed by client plugins, for the New-tab menu to list and open.</summary>
     public IReadOnlyList<ICustomScreenProvider> CustomScreens => EnsureClientPlugins().CustomScreens;
+
+    /// <summary>
+    /// Whether more than one kind of tab can be opened — i.e. whether a plugin contributed a screen.
+    /// With none, "New tab" stays a plain button that opens a session, because a menu offering one choice
+    /// is a worse button.
+    /// </summary>
+    public bool HasTabKinds => CustomScreens.Count > 0;
+
+    /// <summary>Opens a plugin screen by the id the New-tab menu carries.</summary>
+    public IRelayCommand<ICustomScreenProvider> OpenCustomScreenCommand =>
+        _openCustomScreen ??= new RelayCommand<ICustomScreenProvider>(p => { if (p is not null) { OpenCustomScreen(p); } });
+
+    private IRelayCommand<ICustomScreenProvider>? _openCustomScreen;
 
     /// <summary>Opens a plugin's custom screen as a dock document — the same way <see cref="OpenSettings"/>
     /// opens Settings, so a plugin screen can replace the conversation view in a tab.</summary>

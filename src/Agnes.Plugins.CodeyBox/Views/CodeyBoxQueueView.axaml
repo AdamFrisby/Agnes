@@ -1,0 +1,84 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Agnes.Plugins.CodeyBox.Views.CodeyBoxQueueView">
+  <!-- Every colour here is a DynamicResource role from the host's theme, never a literal: a plugin that
+       hard-codes hexes stops matching the moment the user switches theme, and Agnes ships several. The
+       role names are the app's own (Bg / Panel / Line / Fg / FgDim / FgFaint / Accent). -->
+  <Grid RowDefinitions="Auto,*" Background="{DynamicResource Bg}">
+
+    <Border Grid.Row="0" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
+            BorderThickness="0,0,0,1" Padding="14,9">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <TextBlock Grid.Column="0" Text="CodeyBox · Work Queue" FontWeight="SemiBold" FontSize="14"
+                   Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11"
+                   Margin="14,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+          <Button Content="{Binding PauseButtonText}" Command="{Binding TogglePauseCommand}"
+                  IsEnabled="{Binding !IsBusy}" Padding="10,4" FontSize="12" />
+          <Button Content="Refresh" Command="{Binding RefreshCommand}" Padding="10,4" FontSize="12" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Unconfigured is a first-class state, not an error: most machines have no CodeyBox at all. -->
+    <TextBlock Grid.Row="1" IsVisible="{Binding !IsConfigured}" Margin="24"
+               Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" MaxWidth="520"
+               Text="No CodeyBox API key found. Run `codeybox configure`, or set CODEYBOX_CLI_API_URL and CODEYBOX_CLI_API_KEY, then reopen this tab." />
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,4,*" IsVisible="{Binding IsConfigured}">
+
+      <ListBox Grid.Column="0" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected, Mode=TwoWay}"
+               Background="Transparent" BorderThickness="0">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,3">
+              <!-- One dot carrying state, so the list scans vertically without reading every row. -->
+              <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                      Margin="0,0,10,0"
+                      Background="{DynamicResource FgFaint}"
+                      IsVisible="{Binding !IsActive}" />
+              <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                      Margin="0,0,10,0"
+                      Background="{DynamicResource Accent}" IsVisible="{Binding IsActive}" />
+              <StackPanel Grid.Column="1" Spacing="1">
+                <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="{Binding ShortId}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                  <TextBlock Text="{Binding State}" Foreground="{DynamicResource FgDim}" FontSize="10" />
+                  <TextBlock Text="{Binding Agent}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                </StackPanel>
+              </StackPanel>
+              <TextBlock Grid.Column="2" Text="{Binding Age}" Foreground="{DynamicResource FgFaint}"
+                         FontSize="10" VerticalAlignment="Center" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <GridSplitter Grid.Column="1" Background="{DynamicResource Line}" />
+
+      <Grid Grid.Column="2" RowDefinitions="Auto,*">
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="10,8"
+                    IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Text="{Binding Selected.Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                     FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="240"
+                     TextTrimming="CharacterEllipsis" />
+          <Button Content="Retry" FontSize="11" Padding="8,3" Command="{Binding RetryCommand}"
+                  CommandParameter="{Binding Selected}" />
+          <Button Content="Promote" FontSize="11" Padding="8,3" Command="{Binding PromoteCommand}"
+                  CommandParameter="{Binding Selected}" />
+          <Button Content="Cancel" FontSize="11" Padding="8,3" Command="{Binding CancelCommand}"
+                  CommandParameter="{Binding Selected}" />
+        </StackPanel>
+
+        <!-- The agent's own output, streamed. Monospaced and selectable because it is terminal text. -->
+        <ScrollViewer Grid.Row="1" x:Name="OutputScroller" Padding="10,0,10,10">
+          <SelectableTextBlock Text="{Binding Output}" FontFamily="monospace" FontSize="11"
+                               Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

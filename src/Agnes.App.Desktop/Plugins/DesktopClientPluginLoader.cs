@@ -20,14 +20,25 @@ public sealed class ClientPluginLoadContext : AssemblyLoadContext
     };
 
     /// <summary>
-    /// Assembly-name prefixes also forced to the default context. Avalonia is here because a plugin that
-    /// supplies a view (<see cref="Agnes.Ui.Core.Plugins.IViewFactory"/>) hands the head a real control:
-    /// if its Avalonia resolved from the plugin's own directory the control would be a <i>different type</i>
-    /// than the one the head renders, and the framework's static state would be duplicated with it. Sharing
-    /// was previously incidental — it happened only when a plugin's build did not copy Avalonia next to its
-    /// DLL — which made whether a plugin view worked a property of its csproj. This makes it a rule.
+    /// Assembly-name prefixes also forced to the default context, because their types cross the plugin
+    /// boundary and so must be the <i>same</i> types on both sides.
     /// </summary>
-    private static readonly string[] SharedAssemblyPrefixes = ["Avalonia"];
+    /// <remarks>
+    /// <para><c>Avalonia</c>: a plugin that supplies a view (<see cref="Agnes.Ui.Core.Plugins.IViewFactory"/>)
+    /// hands the head a real control. Resolved from the plugin's own directory that control would be a
+    /// different type than the one the head renders, with the framework's static state duplicated behind
+    /// it. Sharing used to happen only when a plugin's build did not copy Avalonia beside its DLL, which
+    /// made whether a plugin rendered a property of its csproj rather than of the contract.</para>
+    ///
+    /// <para><c>Agnes.</c>: naming the contract assembly alone was not enough, because the contract does not
+    /// live in one assembly. <c>ClientPlugins.cs</c> spans three — <c>IPluginRegistry</c>, <c>IEventBus</c>,
+    /// <c>IEventBinding</c> and <c>IVoiceProvider</c> come from <c>Agnes.Abstractions</c>, and
+    /// <c>ClientCapabilities</c> from <c>Agnes.Protocol</c> — so a plugin registering an event binding or a
+    /// voice provider is handling types from assemblies that were <i>not</i> shared. Carrying its own copy
+    /// would satisfy the compiler and then fail to match at runtime. Agnes's own assemblies are never a
+    /// plugin's to version, so a copy in the plugin folder is simply ignored.</para>
+    /// </remarks>
+    private static readonly string[] SharedAssemblyPrefixes = ["Avalonia", "Agnes."];
 
     private readonly AssemblyDependencyResolver _resolver;
 
