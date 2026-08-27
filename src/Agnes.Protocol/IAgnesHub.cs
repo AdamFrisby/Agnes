@@ -133,8 +133,9 @@ public interface IAgnesServer
     /// <remarks>
     /// This is a second process, not a view onto the live agent: an agent in ACP mode is a JSON-RPC peer
     /// whose stdin is the protocol channel, with no prompt behind it. The console is what reaches the slash
-    /// commands and one-off actions the protocol never exposes. It is opened with the session and kept, so
-    /// this call usually re-attaches to a console that is already running, with its scrollback intact.
+    /// commands and one-off actions the protocol never exposes. Nothing is spawned until this is called —
+    /// a console is a second agent process — but once running it is kept for the session's lifetime, so a
+    /// later call re-attaches to it with its scrollback intact rather than starting another.
     /// </remarks>
     Task<string?> OpenAgentConsole(string sessionId, int columns, int rows);
 

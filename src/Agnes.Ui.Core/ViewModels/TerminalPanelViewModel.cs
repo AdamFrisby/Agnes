@@ -128,9 +128,9 @@ public sealed class TerminalPanelViewModel : ObservableObject
     /// false when the agent offers no console, leaving the panel hidden and unclaimed.
     /// </summary>
     /// <remarks>
-    /// The host keeps one console per session for its lifetime, so this normally re-attaches to a PTY that
-    /// is already running — the scrollback arrives with the snapshot, because its output was in the session
-    /// log all along, whether or not anyone was looking at it.
+    /// The first call starts the console; the host then keeps one per session for its lifetime, so later
+    /// calls re-attach to the PTY already running. Its output was in the session log all along, so the
+    /// scrollback comes back with it whether or not anyone was watching at the time.
     /// </remarks>
     public async Task<bool> OpenAgentConsoleAsync()
     {

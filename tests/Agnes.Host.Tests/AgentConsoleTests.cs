@@ -101,26 +101,8 @@ public class AgentConsoleTests
         }
     }
 
-    private static async Task WaitForAsync(Func<bool> condition, string because)
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        while (!condition())
-        {
-            try
-            {
-                cts.Token.ThrowIfCancellationRequested();
-            }
-            catch (OperationCanceledException)
-            {
-                Assert.Fail(because);
-            }
-
-            await Task.Delay(10, CancellationToken.None);
-        }
-    }
-
     [Fact]
-    public async Task The_console_starts_with_the_session_rather_than_when_first_looked_at()
+    public async Task Nothing_is_spawned_until_a_console_is_actually_asked_for()
     {
         var fallback = new FakeCliFallback();
         await using var manager = new SessionManager(
@@ -129,13 +111,19 @@ public class AgentConsoleTests
 
         var info = await manager.OpenSessionAsync("console-agent", Path.Combine(Path.GetTempPath(), "console-work"), useSandbox: false);
 
-        // "Always there, just not rendered": the PTY exists from the beginning, with nobody attached.
-        await WaitForAsync(() => !fallback.Opened.IsEmpty, "the console should have been opened with the session");
-        Assert.NotNull(manager.GetAgentConsoleId(info.SessionId));
+        // A console is a whole second agent process. Every session paying for one nobody asked for would be
+        // a poor trade, so opening a session starts nothing.
+        Assert.Empty(fallback.Opened);
+        Assert.Null(manager.GetAgentConsoleId(info.SessionId));
 
+        // Asking is what starts it — and it is the console mode, not the ACP argv the session itself runs.
+        var id = await manager.OpenAgentConsoleAsync(info.SessionId, 120, 30);
+
+        Assert.NotNull(id);
+        Assert.Equal(id, manager.GetAgentConsoleId(info.SessionId));
         var opened = fallback.Opened.Single();
         Assert.Equal("console-agent", opened.Command);
-        Assert.Empty(opened.Arguments); // the console mode, not the ACP argv the session itself runs
+        Assert.Empty(opened.Arguments);
     }
 
     [Fact]
@@ -147,7 +135,6 @@ public class AgentConsoleTests
             NullLoggerFactory.Instance, cliFallback: fallback);
 
         var info = await manager.OpenSessionAsync("console-agent", Path.Combine(Path.GetTempPath(), "console-work"), useSandbox: false);
-        await WaitForAsync(() => !fallback.Opened.IsEmpty, "the console should have been opened with the session");
 
         var first = await manager.OpenAgentConsoleAsync(info.SessionId, 100, 40);
         var second = await manager.OpenAgentConsoleAsync(info.SessionId, 100, 40);
@@ -156,6 +143,7 @@ public class AgentConsoleTests
         // rather than a freshly-spawned CLI.
         Assert.Equal(first, second);
         Assert.Single(fallback.Opened);
+        Assert.NotNull(first);
     }
 
     [Fact]
@@ -183,10 +171,10 @@ public class AgentConsoleTests
             NullLoggerFactory.Instance, TestPluginRegistries.Sandboxes(sandboxes), cliFallback: fallback);
 
         var info = await manager.OpenSessionAsync("console-agent", Path.Combine(Path.GetTempPath(), "console-work"), useSandbox: true);
-        await WaitForAsync(() => !fallback.Opened.IsEmpty, "the console should have been opened with the session");
 
+        await manager.OpenAgentConsoleAsync(info.SessionId, 120, 30);
         await manager.OpenTerminalAsync(info.SessionId, command: null, arguments: null, workingDirectory: null, columns: 80, rows: 24);
-        await WaitForAsync(() => fallback.Opened.Count == 2, "the shell terminal should have been opened");
+        Assert.Equal(2, fallback.Opened.Count);
 
         // Both go through the sandbox's own WrapCommand — the same one the agent launch uses, so there is a
         // single notion of "run this inside the sandbox" rather than two that can drift.

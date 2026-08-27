@@ -510,8 +510,8 @@ public sealed class SessionViewModel : ObservableObject
         _agentConsole ??= new TerminalPanelViewModel(_host, _view, _dispatcher, adoptFromStream: false);
 
     /// <summary>
-    /// Whether the agent console panel is shown. Turning it on attaches to the console the host keeps for
-    /// this session — normally one that is already running, so its scrollback comes back with it.
+    /// Whether the agent console panel is shown. Turning it on is what starts the console the first time —
+    /// nothing runs before that — and re-attaches to it thereafter, scrollback intact.
     /// </summary>
     public bool IsAgentConsoleVisible
     {

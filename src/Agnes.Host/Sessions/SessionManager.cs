@@ -829,7 +829,6 @@ public sealed class SessionManager : IAsyncDisposable
 
         var session = TrackSession(sessionId, adapterId, effectiveDirectory, agent);
         _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
-        StartAgentConsole(sessionId);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
         return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name, CurrentModelId: modelId);
@@ -2246,9 +2245,10 @@ public sealed class SessionManager : IAsyncDisposable
     /// back into the reader.) So the console gives what the protocol cannot: slash commands, config, and
     /// whatever else the CLI exposes only to a human.</para>
     ///
-    /// <para>Idempotent by session. The console is opened once and kept, so the PTY and its scrollback
-    /// outlive any one client's attach — which is what makes it feel like a terminal that was already
-    /// there rather than one that starts when looked at.</para>
+    /// <para>Started on demand, then kept. Nothing is spawned until someone actually asks for a console —
+    /// it is a whole second agent process, which every session paying for unasked would be a poor trade —
+    /// but once running it stays for the session's lifetime, so this call is idempotent and a later attach
+    /// finds the same PTY with its scrollback rather than a fresh one.</para>
     /// </remarks>
     public async Task<string?> OpenAgentConsoleAsync(string sessionId, int columns, int rows, CancellationToken cancellationToken = default)
     {
@@ -2287,39 +2287,6 @@ public sealed class SessionManager : IAsyncDisposable
             fallback, options, session.AppendTerminalOutputAsync, cancellationToken).ConfigureAwait(false);
         _consoleBySession[sessionId] = handle.TerminalId;
         return handle.TerminalId;
-    }
-
-    /// <summary>
-    /// Brings the agent console up alongside a session that has just started, so it is waiting rather than
-    /// starting when someone first looks for it — the PTY exists from the beginning and is simply not
-    /// rendered until a client attaches.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately fire-and-forget and non-fatal. The console is an extra affordance on top of a session
-    /// that already works, so a CLI that won't start interactively (not logged in, no console, a sandbox
-    /// still settling) must cost the session nothing. It also costs a second agent process per session,
-    /// which is the price of having it always there.
-    /// </remarks>
-    private void StartAgentConsole(string sessionId)
-    {
-        // Nothing to start, and nothing to schedule: an agent without a console should not put a background
-        // task on the pool for every session that opens.
-        if (!HasAgentConsole(sessionId))
-        {
-            return;
-        }
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await OpenAgentConsoleAsync(sessionId, 120, 30).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Could not start the agent console for session {SessionId}", sessionId);
-            }
-        });
     }
 
     /// <summary>This session's agent-console terminal id if one is open, else null — so a client that
