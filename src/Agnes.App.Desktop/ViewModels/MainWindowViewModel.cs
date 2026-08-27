@@ -25,7 +25,11 @@ namespace Agnes.App.Desktop.ViewModels;
 /// </summary>
 public sealed partial class MainWindowViewModel : ObservableObject, ITabController
 {
+#if DEBUG
+    // Debug only, as in the Android head: the offline simulated host is a development affordance, and a
+    // shipped client must not list a fabricated host among the user's real ones. See RoutingConnector.
     private static readonly KnownHost SimulatedHost = new("Simulated host", "sim://demo", string.Empty);
+#endif
     private static readonly KnownHost RecordedHost = new("Recorded sessions", "rec://local", string.Empty);
 
     private readonly IAgnesConnector _connector;
@@ -116,7 +120,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         Approvals = new ApprovalsViewModel(SnapshotHosts, _dispatcher);
         Approvals.JumpRequested += JumpToApproval;
 
+#if DEBUG
         _knownHosts.Add(SimulatedHost);
+#endif
         _knownHosts.Add(RecordedHost);
         _knownHosts.AddRange(hostStore.Load());
 
@@ -2611,7 +2617,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     }
 
     public bool IsForgettableHost(string url)
+#if DEBUG
         => url != SimulatedHost.Url && url != RecordedHost.Url;
+#else
+        // The simulated host is not built in here, so a sim:// entry can only be stale state from a Debug
+        // run — which the user should be able to remove rather than being stuck with.
+        => url != RecordedHost.Url;
+#endif
 
     public Task ForgetHostAsync(SessionDocument doc, KnownHost host)
     {

@@ -180,7 +180,11 @@ public static class DemoHost
 {
     public const string Url = "sim://demo";
 
+#if DEBUG
+    /// <summary>The list entry itself, which only a Debug build ever adds — so it is only a Debug build
+    /// that carries the demo host's name.</summary>
     public static SavedHost Saved { get; } = new("Demo (offline)", Url, string.Empty);
+#endif
 
     public static bool IsDemo(string url) => url.StartsWith("sim:", StringComparison.OrdinalIgnoreCase);
 }

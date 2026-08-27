@@ -20,6 +20,20 @@ public sealed partial class SessionDocument : Document, ITraySession
     private readonly ITabController _controller;
     private readonly Agnes.Ui.Core.IUiDispatcher _dispatcher;
 
+    /// <summary>
+    /// The empty-state guidance shown when no host is connected yet. It lives here rather than in the view
+    /// because it names the built-in simulated host, which only exists in a development build — and XAML
+    /// has no conditional compilation, so a hardcoded string would invite a released client to point the
+    /// user at a host that isn't there. See <see cref="RoutingConnector"/>.
+    /// </summary>
+    public string FirstRunHint =>
+        "First time? Start a host (docker compose up, or dotnet run in src/Agnes.Host), "
+        + "then Add host with the pairing code it prints."
+#if DEBUG
+        + " Or try the Simulated host above."
+#endif
+        ;
+
     /// <param name="dispatcher">
     /// Required, not defaulted: everything here that completes off the UI thread posts through it, and a
     /// silent fallback to an inline dispatcher means those updates run on a worker thread, where Avalonia
