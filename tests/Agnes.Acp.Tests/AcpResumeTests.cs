@@ -69,6 +69,47 @@ public class AcpResumeTests
     }
 
     [Fact]
+    public async Task Load_session_reports_the_replay_it_dropped_without_logging_each_update()
+    {
+        // Dropping the replay is correct and already pinned above. What this pins is the COST of saying so.
+        // The drop used to be reported one warning per update, and because every restart replays a
+        // conversation that has only grown, a long-running session turned routine resumes into a
+        // million-line log — 111 MB of it, half of every line the host wrote.
+        var logger = new CapturingLogger();
+        const int ReplayedLines = 16;
+
+        var (clientStream, agentStream) = FakeAcpAgent.CreateTransport();
+        await using var agent = new FakeAcpAgent(
+            agentStream,
+            onPrompt: _ => Task.FromResult("end_turn"),
+            supportsLoadSession: true,
+            onLoad: async ctx =>
+            {
+                for (var i = 0; i < ReplayedLines; i++)
+                {
+                    await ctx.SendAgentMessageAsync($"replayed line {i}");
+                }
+            });
+
+        await using var connection = new AcpConnection(clientStream, clientStream, logger);
+        await connection.InitializeAsync(CancellationToken.None);
+        await connection.LoadSessionAsync("sess-1", "/tmp/work", CancellationToken.None);
+
+        var messages = logger.Messages.ToArray();
+
+        // Not one line per replayed update, at any level: the count must not scale with the conversation.
+        var perUpdate = messages.Count(m => m.Contains("sess-1", StringComparison.Ordinal)
+            && m.Contains("session/update", StringComparison.Ordinal));
+        Assert.True(perUpdate <= 1, $"expected at most one per-update line, saw {perUpdate}");
+        Assert.DoesNotContain(messages, m => m.StartsWith("Warning:", StringComparison.Ordinal));
+
+        // The information is not lost, just aggregated: one line carrying the size of the replay, which is
+        // what actually diagnoses a session being restarted over and over.
+        var summary = Assert.Single(messages, m => m.Contains("resumed session sess-1", StringComparison.Ordinal));
+        Assert.Contains(ReplayedLines.ToString(), summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Initialize_reports_whether_the_agent_can_load_sessions()
     {
         var (clientStream, agentStream) = FakeAcpAgent.CreateTransport();

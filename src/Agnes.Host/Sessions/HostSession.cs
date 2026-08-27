@@ -42,6 +42,11 @@ internal sealed class HostSession : IAsyncDisposable
     private TurnProductivity _turn = TurnProductivity.Empty;
     private int _consecutiveStalls;
 
+    // How many appends in a row have failed. Storage is allowed to hiccup without costing the session its
+    // agent (see TryAppendAndPublishAsync); a run this long means it is broken rather than busy.
+    private int _consecutiveAppendFailures;
+    private const int MaxConsecutiveAppendFailures = 20;
+
     // Liveness: when this session last emitted anything, and how many tool calls are still outstanding.
     // Together they separate "working" from "wedged" — a tool call can legitimately run for hours with no
     // events at all (a subagent), so silence only means something when nothing is outstanding.
@@ -546,7 +551,7 @@ internal sealed class HostSession : IAsyncDisposable
                 _turn = _turn.WithEvent(@event);
                 TrackLiveness(@event);
 
-                await AppendAndPublishAsync(@event).ConfigureAwait(false);
+                await TryAppendAndPublishAsync(@event).ConfigureAwait(false);
 
                 if (@event is TurnEndedEvent turnEnded)
                 {
@@ -631,6 +636,50 @@ internal sealed class HostSession : IAsyncDisposable
         {
             _logger.LogWarning("Agent stream ended unexpectedly for session {SessionId}; signalling fault", SessionId);
             faulted();
+        }
+    }
+
+    /// <summary>
+    /// Persists and publishes one event, absorbing a failure rather than letting it escape the pump.
+    /// </summary>
+    /// <remarks>
+    /// <para>The pump reads the agent's stream in a single loop, so an exception thrown here used to unwind
+    /// out of that loop, trip the catch-all, and signal a fault — which restarts the CLI and resumes it with
+    /// <c>session/load</c>, replaying the entire conversation. A transient SQLite lock lasting milliseconds
+    /// therefore cost a live session its agent and forced a replay proportional to everything said so far.
+    /// That trade is never worth making: the durable log is behind us, the agent is still streaming, and
+    /// dropping one event is a smaller loss than tearing down the session that produces them.</para>
+    ///
+    /// <para>It is not unconditional. A storage layer that has failed <see cref="MaxConsecutiveAppendFailures"/>
+    /// times running is not hiccupping, and carrying on would mean recording nothing while appearing healthy;
+    /// at that point the original behaviour — fault, restart, resume — is the right one, so the exception is
+    /// allowed through. Any success resets the count, so only an unbroken run escalates.</para>
+    /// </remarks>
+    private async Task TryAppendAndPublishAsync(SessionEvent @event)
+    {
+        try
+        {
+            await AppendAndPublishAsync(@event).ConfigureAwait(false);
+            _consecutiveAppendFailures = 0;
+        }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+            // Session disposed mid-append — an intentional stop. Let the pump's own handler see it.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _consecutiveAppendFailures++;
+            _logger.LogError(
+                ex,
+                "Failed to record event for session {SessionId}; dropping it and continuing "
+                + "(consecutive failure {Failures} of {Max})",
+                SessionId, _consecutiveAppendFailures, MaxConsecutiveAppendFailures);
+
+            if (_consecutiveAppendFailures >= MaxConsecutiveAppendFailures)
+            {
+                throw;
+            }
         }
     }
 

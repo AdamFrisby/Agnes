@@ -35,14 +35,10 @@ public sealed class SqliteMemoryIndexProvider : IMemoryIndexProvider
     public SqliteMemoryIndexProvider(string databasePath, IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
     {
         _embeddings = embeddingGenerator;
-        _connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
-        }.ToString();
+        _connectionString = SqliteDatabase.BuildConnectionString(databasePath);
 
         using var connection = Open();
+        SqliteDatabase.ConfigureFile(connection);
         using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -324,10 +320,5 @@ public sealed class SqliteMemoryIndexProvider : IMemoryIndexProvider
         return flattened.Length <= MaxLength ? flattened : flattened[..MaxLength] + "…";
     }
 
-    private SqliteConnection Open()
-    {
-        var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        return connection;
-    }
+    private SqliteConnection Open() => SqliteDatabase.Open(_connectionString);
 }

@@ -19,6 +19,10 @@ internal sealed class AcpConnection : IAcpRpc, IAsyncDisposable
     private readonly JsonRpc _rpc;
     private readonly SerialSynchronizationContext _dispatch = new();
     private readonly ConcurrentDictionary<string, AcpAgentSession> _sessions = new();
+
+    // Updates that arrived for an id we hold no session for, tallied per id. During session/load that is the
+    // expected case and the tally is the whole point: see OnSessionUpdateAsync.
+    private readonly ConcurrentDictionary<string, long> _updatesBeforeRegistration = new();
     private int _disposed;
 
     /// <param name="writer">Stream the client sends requests on (e.g. the agent's stdin).</param>
@@ -87,7 +91,14 @@ internal sealed class AcpConnection : IAcpRpc, IAsyncDisposable
             .ToArray();
         var session = new AcpAgentSession(sessionId, this, _dispatch, _logger, modes, result?.Modes?.CurrentModeId);
         _sessions[sessionId] = session;
-        _logger.LogInformation("ACP resumed session {SessionId}", sessionId);
+
+        // The replay is over and its size is worth one line: it is the cost of this resume, it grows with the
+        // conversation, and a run of ever-larger numbers here is the signature of a session being restarted
+        // repeatedly. Reporting it per-update instead once produced a million warnings in a single log.
+        _updatesBeforeRegistration.TryRemove(sessionId, out var replayed);
+        _logger.LogInformation(
+            "ACP resumed session {SessionId} (discarded {Replayed} replayed update(s) already in the event log)",
+            sessionId, replayed);
         return session;
     }
 
@@ -114,7 +125,17 @@ internal sealed class AcpConnection : IAcpRpc, IAsyncDisposable
             }
             else
             {
-                _logger.LogWarning("session/update for unknown session {SessionId}", note.SessionId);
+                // Not necessarily an error: session/load replays the whole conversation before we register
+                // the session, precisely so the replay lands here and is dropped (see LoadSessionAsync).
+                // Only the first is logged — one line per update turned a routine resume into six figures of
+                // log — and the running tally is reported when the session registers, or on dispose if it
+                // never does, which is the case that would be a real fault.
+                if (_updatesBeforeRegistration.AddOrUpdate(note.SessionId, 1, static (_, n) => n + 1) == 1)
+                {
+                    _logger.LogDebug(
+                        "session/update for unregistered session {SessionId}; dropping (expected during session/load replay)",
+                        note.SessionId);
+                }
             }
         }
         catch (Exception ex)
@@ -146,6 +167,15 @@ internal sealed class AcpConnection : IAcpRpc, IAsyncDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
+        }
+
+        // A tally still standing here was never claimed by a session/load, so those updates were dropped
+        // without the replay explanation covering them. That is worth a warning, once, with the count.
+        foreach (var (sessionId, dropped) in _updatesBeforeRegistration)
+        {
+            _logger.LogWarning(
+                "Dropped {Dropped} update(s) for session {SessionId}, which was never registered on this connection",
+                dropped, sessionId);
         }
 
         foreach (var session in _sessions.Values)
