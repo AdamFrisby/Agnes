@@ -122,27 +122,71 @@
                                 <TextBlock Text="No matches" Foreground="{DynamicResource FgFaint}" FontSize="11"
                                            IsVisible="{Binding !HasGlobalResults}" />
                                 <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding GlobalResults}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button Command="{Binding $parent[ItemsControl].DataContext.SelectGlobalHitCommand}"
-                                                    CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                                    HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                                                    Padding="7,5" CornerRadius="6" Cursor="Hand">
-                                                <StackPanel Spacing="2">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding SessionTitle}" Foreground="{DynamicResource Fg}"
-                                                                   FontSize="11" FontWeight="SemiBold" />
-                                                        <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
-                                                                   FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                <StackPanel Spacing="2">
+                                    <!-- Results are grouped, current tab first. Searching while reading a
+                                         session usually means "find it in this one", so those hits lead and
+                                         the rest follow under a rule rather than being interleaved by dock
+                                         order. Each group's header carries the context, which is why a row
+                                         only names its session in the second group (see GlobalHit). -->
+                                    <TextBlock Text="This session" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                               FontWeight="SemiBold" Margin="2,2,0,2"
+                                               IsVisible="{Binding HasThisSessionResults}" />
+                                    <ItemsControl ItemsSource="{Binding ThisSessionResults}"
+                                                  IsVisible="{Binding HasThisSessionResults}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Command="{Binding $parent[ItemsControl].DataContext.SelectGlobalHitCommand}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                        Padding="7,5" CornerRadius="6" Cursor="Hand">
+                                                    <StackPanel Spacing="2">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding SessionTitle}" Foreground="{DynamicResource Fg}"
+                                                                       FontSize="11" FontWeight="SemiBold"
+                                                                       IsVisible="{Binding ShowSessionTitle}" />
+                                                            <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Snippet}" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding Snippet}" Foreground="{DynamicResource FgDim}" FontSize="11"
-                                                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
-                                            </Button>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- The rule only exists to separate two populated groups; with one group
+                                         it would be a line under nothing. -->
+                                    <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                                            Margin="0,6,0,0" IsVisible="{Binding HasBothResultGroups}" />
+
+                                    <TextBlock Text="Other sessions" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                               FontWeight="SemiBold" Margin="2,6,0,2"
+                                               IsVisible="{Binding HasOtherSessionResults}" />
+                                    <ItemsControl ItemsSource="{Binding OtherSessionResults}"
+                                                  IsVisible="{Binding HasOtherSessionResults}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Command="{Binding $parent[ItemsControl].DataContext.SelectGlobalHitCommand}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                        Padding="7,5" CornerRadius="6" Cursor="Hand">
+                                                    <StackPanel Spacing="2">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding SessionTitle}" Foreground="{DynamicResource Fg}"
+                                                                       FontSize="11" FontWeight="SemiBold"
+                                                                       IsVisible="{Binding ShowSessionTitle}" />
+                                                            <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Snippet}" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
                                 </ScrollViewer>
 
                                 <!-- The two searches differ in reach, not in kind: the box above matches the

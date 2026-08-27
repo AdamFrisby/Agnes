@@ -2287,36 +2287,79 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         set { if (SetProperty(ref _globalSearchQuery, value)) { RunGlobalSearch(); } }
     }
 
-    /// <summary>Matches found across every open session for <see cref="GlobalSearchQuery"/>.</summary>
-    public System.Collections.ObjectModel.ObservableCollection<GlobalHit> GlobalResults { get; } = [];
+    /// <summary>How many hits the flyout will hold, across both groups.</summary>
+    private const int MaxGlobalResults = 100;
 
-    public bool HasGlobalResults => GlobalResults.Count > 0;
+    /// <summary>The tab in front. Search groups its results around it.</summary>
+    private SessionDocument? ActiveTab => _factory.DocumentDock?.ActiveDockable as SessionDocument;
+
+    /// <summary>
+    /// Matches in the tab the user is already looking at. Split out from the rest because it is the far
+    /// likelier target: searching while reading a session usually means "find it in <i>this</i>", and a
+    /// result from it should not have to be picked out of a flat list ordered by tab position.
+    /// </summary>
+    public System.Collections.ObjectModel.ObservableCollection<GlobalHit> ThisSessionResults { get; } = [];
+
+    /// <summary>Matches in every other open session.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<GlobalHit> OtherSessionResults { get; } = [];
+
+    public bool HasThisSessionResults => ThisSessionResults.Count > 0;
+
+    public bool HasOtherSessionResults => OtherSessionResults.Count > 0;
+
+    public bool HasGlobalResults => HasThisSessionResults || HasOtherSessionResults;
+
+    /// <summary>Both groups have something, so the rule between them has content on each side to divide.</summary>
+    public bool HasBothResultGroups => HasThisSessionResults && HasOtherSessionResults;
 
     private void RunGlobalSearch()
     {
-        GlobalResults.Clear();
+        ThisSessionResults.Clear();
+        OtherSessionResults.Clear();
+
         var query = _globalSearchQuery;
         if (!string.IsNullOrWhiteSpace(query))
         {
-            foreach (var doc in OpenTabs())
+            // The active tab is searched first, not merely displayed first: with a shared cap, scanning in
+            // dock order could spend the whole budget on other sessions and leave the one being read with
+            // no results at all.
+            var active = ActiveTab;
+            var tabs = OpenTabs().ToList();
+            var ordered = active is not null && tabs.Contains(active)
+                ? tabs.Where(d => ReferenceEquals(d, active)).Concat(tabs.Where(d => !ReferenceEquals(d, active)))
+                : tabs;
+
+            foreach (var doc in ordered)
             {
                 if (doc.Session is not { } session)
                 {
                     continue;
                 }
 
+                var current = ReferenceEquals(doc, active);
+                var target = current ? ThisSessionResults : OtherSessionResults;
                 foreach (var hit in session.Find(query, doc.Title))
                 {
-                    GlobalResults.Add(new GlobalHit(doc, hit));
-                    if (GlobalResults.Count >= 100)
+                    target.Add(new GlobalHit(doc, hit, current));
+                    if (ThisSessionResults.Count + OtherSessionResults.Count >= MaxGlobalResults)
                     {
                         break;
                     }
                 }
+
+                // Stop scanning tabs too, not just hits within one: the old cap broke the inner loop only,
+                // so a query matching everywhere kept walking every remaining session after it was full.
+                if (ThisSessionResults.Count + OtherSessionResults.Count >= MaxGlobalResults)
+                {
+                    break;
+                }
             }
         }
 
+        OnPropertyChanged(nameof(HasThisSessionResults));
+        OnPropertyChanged(nameof(HasOtherSessionResults));
         OnPropertyChanged(nameof(HasGlobalResults));
+        OnPropertyChanged(nameof(HasBothResultGroups));
     }
 
     private void SelectGlobalHit(GlobalHit? hit)

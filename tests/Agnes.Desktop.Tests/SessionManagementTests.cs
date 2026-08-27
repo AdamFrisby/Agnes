@@ -188,15 +188,18 @@ public class SessionManagementTests
         // Both sessions open with a "Session ready on OpenCode" greeting.
         vm.GlobalSearchQuery = "ready";
 
+        // Results are grouped by whether they're in the tab being read (see GlobalSearchGroupingTests);
+        // what matters here is that the search still reaches every open session between them.
+        var all = vm.ThisSessionResults.Concat(vm.OtherSessionResults).ToList();
         Assert.True(vm.HasGlobalResults);
-        Assert.True(vm.GlobalResults.Count >= 2);
-        Assert.Contains(vm.GlobalResults, r => ReferenceEquals(r.Tab, first));
-        Assert.Contains(vm.GlobalResults, r => ReferenceEquals(r.Tab, second));
+        Assert.True(all.Count >= 2);
+        Assert.Contains(all, r => ReferenceEquals(r.Tab, first));
+        Assert.Contains(all, r => ReferenceEquals(r.Tab, second));
 
         // Jumping to a hit scrolls its session (raised as a deep-link request).
         string? scrolled = null;
         first.Session!.ScrollToRequested += id => scrolled = id;
-        var hit = vm.GlobalResults.First(r => ReferenceEquals(r.Tab, first));
+        var hit = all.First(r => ReferenceEquals(r.Tab, first));
         vm.SelectGlobalHitCommand.Execute(hit);
         Assert.Equal(hit.Hit.AnchorId, scrolled);
 

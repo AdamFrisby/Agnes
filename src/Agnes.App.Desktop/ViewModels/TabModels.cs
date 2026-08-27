@@ -112,14 +112,25 @@ public interface ITabController
 /// <summary>A cross-session search result: a transcript hit plus the tab it lives in.</summary>
 public sealed class GlobalHit
 {
-    public GlobalHit(SessionDocument tab, Agnes.Ui.Core.ViewModels.SearchHit hit)
+    public GlobalHit(SessionDocument tab, Agnes.Ui.Core.ViewModels.SearchHit hit, bool inCurrentTab = false)
     {
         Tab = tab;
         Hit = hit;
+        InCurrentTab = inCurrentTab;
     }
 
     public SessionDocument Tab { get; }
     public Agnes.Ui.Core.ViewModels.SearchHit Hit { get; }
+
+    /// <summary>Whether this hit is in the tab the user is already looking at. Results are grouped on it.</summary>
+    public bool InCurrentTab { get; }
+
+    /// <summary>
+    /// Whether the row should name its session. Only for hits from elsewhere: the "This session" group is
+    /// already headed by the fact, so repeating one title down every row of it is noise, while a hit from
+    /// another tab is useless without knowing which.
+    /// </summary>
+    public bool ShowSessionTitle => !InCurrentTab;
 
     public string SessionTitle => Hit.SessionTitle ?? Tab.Title ?? "session";
     public string Kind => Hit.Kind;
