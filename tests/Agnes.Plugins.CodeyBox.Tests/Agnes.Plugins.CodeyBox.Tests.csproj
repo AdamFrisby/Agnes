@@ -12,6 +12,14 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <!-- The plugin's view is Avalonia, and the bugs it can carry are runtime-only: a compiled XAML file
+         still throws when a CommandParameter reaches a typed command as the wrong type. Rendering it
+         headlessly is what turns "it built" into "it opens". -->
+    <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
+    <!-- The plugin excludes these from its own output (the host supplies them at runtime), so the test
+         project asks for them directly rather than inheriting them transitively. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 
   <ItemGroup>

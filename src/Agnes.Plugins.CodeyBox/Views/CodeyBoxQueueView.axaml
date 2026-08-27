@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:cb="using:Agnes.Plugins.CodeyBox"
              x:Class="Agnes.Plugins.CodeyBox.Views.CodeyBoxQueueView">
   <!-- Every colour here is a DynamicResource role from the host's theme, never a literal: a plugin that
        hard-codes hexes stops matching the moment the user switches theme, and Agnes ships several. The
@@ -9,17 +10,17 @@
     <Border Grid.Row="0" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
             BorderThickness="0,0,0,1" Padding="14,9">
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <TextBlock Grid.Column="0" Text="CodeyBox · Work Queue" FontWeight="SemiBold" FontSize="14"
+        <TextBlock Grid.Column="0" Text="CodeyBox" FontWeight="SemiBold" FontSize="14"
                    Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
         <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11"
                    Margin="14,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-          <Button Content="Queue"       Command="{Binding Sections.ShowCommand}" CommandParameter="Queue"       Padding="8,4" FontSize="11" />
-          <Button Content="Fleet"       Command="{Binding Sections.ShowCommand}" CommandParameter="Fleet"       Padding="8,4" FontSize="11" />
-          <Button Content="Supervision" Command="{Binding Sections.ShowCommand}" CommandParameter="Supervision" Padding="8,4" FontSize="11" />
-          <Button Content="Suggestions" Command="{Binding Sections.ShowCommand}" CommandParameter="Suggestions" Padding="8,4" FontSize="11" />
-          <Button Content="Releases"    Command="{Binding Sections.ShowCommand}" CommandParameter="Releases"    Padding="8,4" FontSize="11" />
-          <Button Content="Diagnostics" Command="{Binding Sections.ShowCommand}" CommandParameter="Diagnostics" Padding="8,4" FontSize="11" />
+          <Button Content="Queue"       Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Queue}"       Padding="8,4" FontSize="11" />
+          <Button Content="Fleet"       Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Fleet}"       Padding="8,4" FontSize="11" />
+          <Button Content="Supervision" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Supervision}" Padding="8,4" FontSize="11" />
+          <Button Content="Suggestions" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Suggestions}" Padding="8,4" FontSize="11" />
+          <Button Content="Releases"    Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Releases}"    Padding="8,4" FontSize="11" />
+          <Button Content="Diagnostics" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Diagnostics}" Padding="8,4" FontSize="11" />
           <Border Width="1" Background="{DynamicResource Line}" Margin="4,2" />
           <Button Content="{Binding PauseButtonText}" Command="{Binding TogglePauseCommand}"
                   IsEnabled="{Binding !IsBusy}" Padding="10,4" FontSize="12"
