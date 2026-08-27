@@ -229,7 +229,22 @@
                                 ToolTip.Tip="Browse the session's working directory" AutomationProperties.Name="Toggle file browser" />
                         <Button Classes="chip" Command="{Binding Session.ToggleTerminalCommand}" IsVisible="{Binding IsLive}"
                                 Content="Terminal" Padding="9,3" FontSize="11"
-                                ToolTip.Tip="Open a terminal in the session's working directory" AutomationProperties.Name="Toggle terminal" />
+                                ToolTip.Tip="Open a shell in the session's working directory" AutomationProperties.Name="Toggle terminal" />
+
+                        <!-- Agent console: the same CLI the session runs, in its interactive mode, for the
+                             slash commands and one-off actions ACP does not carry. Beside Terminal because
+                             they are siblings — that one gives you a shell where the agent lives, this one
+                             gives you the agent itself. -->
+                        <Button Classes="chip" Command="{Binding Session.ToggleAgentConsoleCommand}"
+                                IsVisible="{Binding AgentConsoleAvailable}"
+                                Padding="9,3" FontSize="11"
+                                ToolTip.Tip="Open the agent's own CLI interactively — slash commands and anything else the protocol doesn't expose"
+                                AutomationProperties.Name="Toggle agent console">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <ic:SymbolIcon Symbol="Bot" FontSize="14" />
+                                <TextBlock Text="Console" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
 
                         <!-- Goals: this session's standing "keep going" goals, armed by an agent or here.
                              It sits on the tab rather than in the window's top bar because a goal is armed
@@ -2466,6 +2481,30 @@
                 Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
                 BoxShadow="0 -8 24 -12 #66120C2E">
             <views:TerminalPanelView DataContext="{Binding Session.Terminal}" />
+        </Border>
+
+        <!-- Agent console: same overlay treatment as the terminal above, and the same TerminalPanelView, since
+             it is the same thing underneath — a PTY whose output rides the session event stream. Titled, because
+             two bottom-docked terminals that look identical would be indistinguishable once open. -->
+        <Border Grid.Row="1" VerticalAlignment="Bottom" Height="300"
+                IsVisible="{Binding AgentConsolePanelVisible}"
+                Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                BoxShadow="0 -8 24 -12 #66120C2E">
+            <Grid RowDefinitions="Auto,*">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,6">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <ic:SymbolIcon Symbol="Bot" FontSize="14" Foreground="{DynamicResource FgDim}" />
+                        <TextBlock Text="Agent console" FontWeight="SemiBold" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Fg}" />
+                        <TextBlock Text="a second, interactive run of the same CLI — not the live session"
+                                   Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Button Classes="chip" Grid.Column="1" Content="Hide" Command="{Binding Session.ToggleAgentConsoleCommand}"
+                            Padding="8,2" FontSize="11"
+                            ToolTip.Tip="Hide the console (it keeps running)" />
+                </Grid>
+                <views:TerminalPanelView Grid.Row="1" DataContext="{Binding Session.AgentConsole}" />
+            </Grid>
         </Border>
 
         <!-- Workspace file browser (git-and-files/03): a right-docked, on-demand overlay panel over the LIVE

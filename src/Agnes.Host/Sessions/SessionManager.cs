@@ -829,6 +829,7 @@ public sealed class SessionManager : IAsyncDisposable
 
         var session = TrackSession(sessionId, adapterId, effectiveDirectory, agent);
         _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
+        StartAgentConsole(sessionId);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
         return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name, CurrentModelId: modelId);
@@ -2165,19 +2166,171 @@ public sealed class SessionManager : IAsyncDisposable
         var fallback = session.CliFallback ?? _cliFallback
             ?? throw new InvalidOperationException("This host has no CLI-fallback terminal provider.");
 
-        var options = new TerminalOptions
+        var sandboxed = _sandboxBySession.ContainsKey(sessionId);
+        var options = InSandbox(sessionId, new TerminalOptions
         {
-            Command = string.IsNullOrWhiteSpace(command) ? DefaultShell() : command,
+            // A sandboxed session's shell is the guest's, not this machine's: $SHELL here may well name a
+            // binary the image doesn't carry, and the terminal would open onto an immediate "not found".
+            Command = string.IsNullOrWhiteSpace(command) ? (sandboxed ? GuestShell : DefaultShell()) : command,
             Arguments = arguments ?? [],
-            WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory) ? session.WorkingDirectory : workingDirectory,
+            // Which side of the boundary this path belongs to depends on where the terminal will run, so it
+            // is decided here rather than inferred later: HostSession.WorkingDirectory is always the *host*
+            // directory, even for a sandboxed session, and handing that to the guest names nothing.
+            WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory)
+                ? (sandboxed ? GuestWorkingDirectory : session.WorkingDirectory)
+                : workingDirectory,
             Columns = columns,
             Rows = rows,
-        };
+        });
 
         // Bind streamed output to THIS session's log — the "output rides the session event stream" contract.
         var handle = await OpenFallbackTerminalAsync(fallback, options, session.AppendTerminalOutputAsync, cancellationToken).ConfigureAwait(false);
         return handle.TerminalId;
     }
+
+    /// <summary>The working directory a sandboxed session's own work lives under, inside the guest.</summary>
+    private const string GuestWorkingDirectory = "/work";
+
+    /// <summary>What to open a terminal on inside a sandbox, when the caller named no command.</summary>
+    private const string GuestShell = "bash";
+
+    /// <summary>
+    /// Re-points a terminal invocation into the session's sandbox, when it has one, so a terminal opens
+    /// where the agent actually lives rather than on the host that supervises it.
+    /// </summary>
+    /// <remarks>
+    /// Without this the two disagree about what "here" means: the agent runs in a VM under
+    /// <c>/work</c> while its terminal opened on the host under the project directory — a different
+    /// filesystem, without the agent's config, credentials or CLI. The same
+    /// <see cref="ISandbox.WrapCommand"/> the agent launch uses does the wrapping, so there is one notion of
+    /// "run this inside the sandbox" rather than two that can drift.
+    ///
+    /// <para>No TTY flag is passed. <c>incus exec</c> defaults to <c>--mode auto</c>, which allocates a
+    /// pseudo-terminal exactly when its own stdin is one — and here it is, because the CLI-fallback spawns
+    /// this command inside a PTY. The same call therefore stays non-interactive on the agent's launch path,
+    /// where stdin is a pipe, which is what that path needs.</para>
+    /// </remarks>
+    private TerminalOptions InSandbox(string sessionId, TerminalOptions options)
+    {
+        if (!_sandboxBySession.TryGetValue(sessionId, out var sandbox))
+        {
+            return options;
+        }
+
+        // options.WorkingDirectory is already the *guest* path (the caller decides — see OpenTerminalAsync);
+        // it travels inside the wrapped argv, leaving the host-side process to be given a real host
+        // directory of its own.
+        var (wrapped, wrappedArguments) = sandbox.WrapCommand(
+            options.Command, options.Arguments, options.WorkingDirectory);
+        return options with
+        {
+            Command = wrapped,
+            Arguments = wrappedArguments,
+            WorkingDirectory = Environment.CurrentDirectory,
+        };
+    }
+
+    /// <summary>Terminal id of each session's agent console, once opened. One per session, kept for its
+    /// lifetime, so re-attaching returns the same console with its scrollback rather than a fresh one.</summary>
+    private readonly ConcurrentDictionary<string, string> _consoleBySession = new();
+
+    /// <summary>
+    /// Opens (or returns) this session's <b>agent console</b>: the agent's own CLI, run interactively in a
+    /// PTY, in the same place the agent runs. Null when the adapter offers no console.
+    /// </summary>
+    /// <remarks>
+    /// <para>It is a second process, and necessarily so. The live agent is a JSON-RPC peer whose stdin is
+    /// the protocol channel — it has no prompt behind it, and bytes typed at it are parsed as protocol.
+    /// (Verified against Copilot 1.0.80: <c>printf '/help\n' | copilot --acp</c> answers nothing, and
+    /// hosting that process on a PTY corrupts the stream, since the line discipline echoes every request
+    /// back into the reader.) So the console gives what the protocol cannot: slash commands, config, and
+    /// whatever else the CLI exposes only to a human.</para>
+    ///
+    /// <para>Idempotent by session. The console is opened once and kept, so the PTY and its scrollback
+    /// outlive any one client's attach — which is what makes it feel like a terminal that was already
+    /// there rather than one that starts when looked at.</para>
+    /// </remarks>
+    public async Task<string?> OpenAgentConsoleAsync(string sessionId, int columns, int rows, CancellationToken cancellationToken = default)
+    {
+        if (_consoleBySession.TryGetValue(sessionId, out var existing) && _terminals.ContainsKey(existing))
+        {
+            return existing;
+        }
+
+        // Answered from the catalogue before anything is started: an agent with no console must cost the
+        // session nothing, and EnsureLiveAsync is not a query — it will attach or resume an agent to answer.
+        // Calling it first meant every session open did that work in the background to learn it wasn't needed.
+        if (!_catalog.TryGetValue(sessionId, out var record) ||
+            _adapters.Find(record.AdapterId)?.GetInteractiveConsoleCommand() is not { } console)
+        {
+            return null;
+        }
+
+        var session = await EnsureLiveAsync(sessionId).ConfigureAwait(false);
+        var fallback = session.CliFallback ?? _cliFallback;
+        if (fallback is null)
+        {
+            return null;
+        }
+
+        var sandboxed = _sandboxBySession.ContainsKey(sessionId);
+        var options = InSandbox(sessionId, new TerminalOptions
+        {
+            Command = console.Command,
+            Arguments = console.Arguments,
+            WorkingDirectory = sandboxed ? GuestWorkingDirectory : session.WorkingDirectory,
+            Columns = columns,
+            Rows = rows,
+        });
+
+        var handle = await OpenFallbackTerminalAsync(
+            fallback, options, session.AppendTerminalOutputAsync, cancellationToken).ConfigureAwait(false);
+        _consoleBySession[sessionId] = handle.TerminalId;
+        return handle.TerminalId;
+    }
+
+    /// <summary>
+    /// Brings the agent console up alongside a session that has just started, so it is waiting rather than
+    /// starting when someone first looks for it — the PTY exists from the beginning and is simply not
+    /// rendered until a client attaches.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately fire-and-forget and non-fatal. The console is an extra affordance on top of a session
+    /// that already works, so a CLI that won't start interactively (not logged in, no console, a sandbox
+    /// still settling) must cost the session nothing. It also costs a second agent process per session,
+    /// which is the price of having it always there.
+    /// </remarks>
+    private void StartAgentConsole(string sessionId)
+    {
+        // Nothing to start, and nothing to schedule: an agent without a console should not put a background
+        // task on the pool for every session that opens.
+        if (!HasAgentConsole(sessionId))
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await OpenAgentConsoleAsync(sessionId, 120, 30).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not start the agent console for session {SessionId}", sessionId);
+            }
+        });
+    }
+
+    /// <summary>This session's agent-console terminal id if one is open, else null — so a client that
+    /// reconnects can re-attach to the console already running instead of opening a second one.</summary>
+    public string? GetAgentConsoleId(string sessionId)
+        => _consoleBySession.TryGetValue(sessionId, out var id) && _terminals.ContainsKey(id) ? id : null;
+
+    /// <summary>Whether this session's agent offers a console at all (drives the client's affordance).</summary>
+    public bool HasAgentConsole(string sessionId)
+        => _catalog.TryGetValue(sessionId, out var record)
+           && _adapters.Find(record.AdapterId)?.GetInteractiveConsoleCommand() is not null;
 
     /// <summary>Writes raw input bytes to an open fallback terminal (no-op if the id is unknown/closed).</summary>
     public Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data)

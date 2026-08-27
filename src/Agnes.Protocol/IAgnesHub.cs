@@ -124,6 +124,20 @@ public interface IAgnesServer
     /// <summary>Resizes an open fallback terminal to <paramref name="columns"/> × <paramref name="rows"/>.</summary>
     Task ResizeTerminal(string sessionId, string terminalId, int columns, int rows);
 
+    /// <summary>
+    /// Opens (or re-attaches to) this session's <b>agent console</b> — the agent's own CLI run interactively
+    /// in a PTY, wherever the agent runs — returning its terminal id, or null when the adapter offers none.
+    /// Its output rides the same <see cref="Abstractions.TerminalOutputEvent"/> stream as any other
+    /// terminal, distinguished by that id, and input goes back through <see cref="WriteTerminal"/>.
+    /// </summary>
+    /// <remarks>
+    /// This is a second process, not a view onto the live agent: an agent in ACP mode is a JSON-RPC peer
+    /// whose stdin is the protocol channel, with no prompt behind it. The console is what reaches the slash
+    /// commands and one-off actions the protocol never exposes. It is opened with the session and kept, so
+    /// this call usually re-attaches to a console that is already running, with its scrollback intact.
+    /// </remarks>
+    Task<string?> OpenAgentConsole(string sessionId, int columns, int rows);
+
     /// <summary>Starts a provider CLI's interactive login through the same CLI-fallback terminal path as the
     /// in-session terminal (platform/03 reuse discipline), returning the opened terminal id.</summary>
     Task<string> BeginProviderLogin(string adapterId);

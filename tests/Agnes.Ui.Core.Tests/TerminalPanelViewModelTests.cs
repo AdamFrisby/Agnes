@@ -115,4 +115,64 @@ public class TerminalPanelViewModelTests
         Assert.Equal("output", vm.Output);
         Assert.Equal(TerminalDockLocation.Sidebar, vm.DockLocation);
     }
+
+    [Fact]
+    public async Task A_console_panel_ignores_the_shell_terminal_sharing_its_session()
+    {
+        // A session can carry two PTYs at once — its shell and its agent console — and both write
+        // TerminalOutputEvents into the one session log. A panel that adopted whichever spoke first would
+        // render the other's output and send its keystrokes there.
+        var view = Live();
+        var host = new RecordingTerminalHost { AgentConsoleId = "console-1" };
+        var console = new TerminalPanelViewModel(host, view, ImmediateDispatcher.Instance, adoptFromStream: false);
+
+        // The shell speaks first; the unclaimed console panel must not take its id.
+        view.Apply(Seq(new TerminalOutputEvent("term-shell", "$ ls\n"), 1));
+        Assert.Null(console.ActiveTerminalId);
+        Assert.Equal(string.Empty, console.Output);
+
+        Assert.True(await console.OpenAgentConsoleAsync());
+        Assert.Equal("console-1", console.ActiveTerminalId);
+
+        // Now only its own terminal reaches it.
+        view.Apply(Seq(new TerminalOutputEvent("term-shell", "more shell\n"), 2));
+        view.Apply(Seq(new TerminalOutputEvent("console-1", "> /help\n"), 3));
+        Assert.Equal("> /help\n", console.Output);
+    }
+
+    [Fact]
+    public async Task Attaching_to_a_console_recovers_the_output_it_produced_before_anyone_looked()
+    {
+        // The console is opened with the session and runs whether or not a client is attached, so its
+        // output is already in the log by the time the panel learns which terminal is its own.
+        var view = new SessionView("s1");
+        view.ApplySnapshot(new SessionSnapshot(
+            new SessionInfo("s1", "opencode", string.Empty, 2),
+            [
+                Seq(new TerminalOutputEvent("term-shell", "shell noise"), 1),
+                Seq(new TerminalOutputEvent("console-1", "Copilot ready\n"), 2),
+            ],
+            2));
+
+        var console = new TerminalPanelViewModel(
+            new RecordingTerminalHost { AgentConsoleId = "console-1" }, view, ImmediateDispatcher.Instance,
+            adoptFromStream: false);
+
+        Assert.True(await console.OpenAgentConsoleAsync());
+
+        // Its own scrollback, and none of the shell's.
+        Assert.Equal("Copilot ready\n", console.Output);
+    }
+
+    [Fact]
+    public async Task An_agent_with_no_console_leaves_the_panel_unclaimed()
+    {
+        var console = new TerminalPanelViewModel(
+            new RecordingTerminalHost { AgentConsoleId = null }, Live(), ImmediateDispatcher.Instance,
+            adoptFromStream: false);
+
+        Assert.False(await console.OpenAgentConsoleAsync());
+        Assert.Null(console.ActiveTerminalId);
+        Assert.False(console.IsVisible);
+    }
 }

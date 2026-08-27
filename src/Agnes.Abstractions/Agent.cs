@@ -155,7 +155,30 @@ public interface IAgentAdapter
     /// "Log in" action for this adapter).
     /// </summary>
     ProviderLoginCommand? GetInteractiveLoginCommand() => null;
+
+    /// <summary>
+    /// How to run this CLI as an <b>interactive console</b> — the same executable the ACP session uses, but
+    /// in its normal human-facing mode, so a user can reach the slash commands, config and one-off actions
+    /// the protocol does not expose. Default: <c>null</c> — no console (the client offers no such action).
+    /// </summary>
+    /// <remarks>
+    /// This is necessarily a <i>second</i> process, not a view onto the live one. An agent in ACP mode is a
+    /// JSON-RPC server whose stdin is the protocol channel: it has no prompt to reach, and bytes typed at it
+    /// are parsed as protocol. Verified against Copilot 1.0.80 — <c>printf '/help\n' | copilot --acp</c>
+    /// produces nothing at all, and hosting that process on a PTY instead of pipes actively breaks it, since
+    /// the line discipline echoes each request straight back into the reader and <c>ONLCR</c> rewrites the
+    /// newline framing as CRLF.
+    /// </remarks>
+    AgentConsoleCommand? GetInteractiveConsoleCommand() => null;
 }
+
+/// <summary>
+/// An interactive-console invocation an adapter exposes (see
+/// <see cref="IAgentAdapter.GetInteractiveConsoleCommand"/>), run through the same CLI-fallback terminal
+/// path as the in-session terminal and the login flow. Kept minimal — command plus arguments; the host
+/// supplies the working directory, the sandbox wrapping and the terminal size.
+/// </summary>
+public sealed record AgentConsoleCommand(string Command, IReadOnlyList<string> Arguments);
 
 /// <summary>
 /// An interactive provider-login invocation an adapter exposes, run via the shared CLI-fallback terminal

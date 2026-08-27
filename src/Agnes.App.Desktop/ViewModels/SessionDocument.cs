@@ -626,6 +626,14 @@ public sealed partial class SessionDocument : Document, ITraySession
     /// <see cref="TerminalPanelVisible"/>.</summary>
     public bool FileBrowserPanelVisible => IsLive && Session?.IsFileBrowserVisible == true;
 
+    /// <summary>Whether the agent-console overlay should show — same live-and-toggled gate as
+    /// <see cref="TerminalPanelVisible"/>.</summary>
+    public bool AgentConsolePanelVisible => IsLive && Session?.IsAgentConsoleVisible == true;
+
+    /// <summary>Whether to offer the agent console at all: hidden once the host has said this agent has
+    /// none, rather than leaving a button that quietly does nothing.</summary>
+    public bool AgentConsoleAvailable => IsLive && Session?.AgentConsoleUnavailable != true;
+
     /// <summary>Status bar shows once a host is connected (agent-pick and live stages).</summary>
     public bool ShowStatusBar => Stage != TabStage.PickHost;
 
@@ -638,6 +646,8 @@ public sealed partial class SessionDocument : Document, ITraySession
         OnPropertyChanged(nameof(ShowStatusBar));
         OnPropertyChanged(nameof(TerminalPanelVisible));
         OnPropertyChanged(nameof(FileBrowserPanelVisible));
+        OnPropertyChanged(nameof(AgentConsolePanelVisible));
+        OnPropertyChanged(nameof(AgentConsoleAvailable));
     }
 
     // ---- agent picking: select (highlight) then Start (open) ----
@@ -792,6 +802,14 @@ public sealed partial class SessionDocument : Document, ITraySession
             else if (e.PropertyName is nameof(SessionViewModel.IsFileBrowserVisible))
             {
                 OnPropertyChanged(nameof(FileBrowserPanelVisible));
+            }
+            else if (e.PropertyName is nameof(SessionViewModel.IsAgentConsoleVisible))
+            {
+                OnPropertyChanged(nameof(AgentConsolePanelVisible));
+            }
+            else if (e.PropertyName is nameof(SessionViewModel.AgentConsoleUnavailable))
+            {
+                OnPropertyChanged(nameof(AgentConsoleAvailable));
             }
             else if (e.PropertyName is nameof(SessionViewModel.Usage)
                 or nameof(SessionViewModel.UsageSummary))

@@ -21,6 +21,17 @@ internal sealed class RecordingTerminalHost : IAgnesHost
         return Task.FromResult($"term-{++_opened}");
     }
 
+    /// <summary>The console id this fake hands out, or null to model an agent that offers no console.</summary>
+    public string? AgentConsoleId { get; set; } = "console-1";
+
+    public List<(string SessionId, int Columns, int Rows)> ConsoleOpens { get; } = [];
+
+    public Task<string?> OpenAgentConsoleAsync(string sessionId, int columns = 120, int rows = 30)
+    {
+        ConsoleOpens.Add((sessionId, columns, rows));
+        return Task.FromResult(AgentConsoleId);
+    }
+
     public Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data)
     {
         Writes.Add((sessionId, terminalId, data));

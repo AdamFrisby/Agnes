@@ -261,6 +261,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     public Task ResizeTerminal(string sessionId, string terminalId, int columns, int rows)
         => _sessions.ResizeTerminalAsync(sessionId, terminalId, columns, rows);
 
+    public Task<string?> OpenAgentConsole(string sessionId, int columns, int rows)
+        => _sessions.OpenAgentConsoleAsync(sessionId, columns, rows);
+
     public Task<string> BeginProviderLogin(string adapterId)
         => _sessions.BeginProviderLoginAsync(adapterId);
 

@@ -160,6 +160,15 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Resizes an open fallback terminal. Default no-op.</summary>
     Task ResizeTerminalAsync(string sessionId, string terminalId, int columns, int rows) => Task.CompletedTask;
 
+    /// <summary>
+    /// Opens (or re-attaches to) this session's agent console — the agent's own CLI run interactively in a
+    /// PTY, wherever the agent runs — returning its terminal id, or null when the agent offers none.
+    /// A second process, not a view onto the live agent, whose stdin is the ACP protocol channel.
+    /// Default: null, so a host or fixture without one simply offers no console.
+    /// </summary>
+    Task<string?> OpenAgentConsoleAsync(string sessionId, int columns = 120, int rows = 30)
+        => Task.FromResult<string?>(null);
+
     /// <summary>Starts a provider CLI's interactive login through the same CLI-fallback terminal path as the
     /// in-session terminal, returning the opened terminal id. Default: unsupported.</summary>
     Task<string> BeginProviderLoginAsync(string adapterId)

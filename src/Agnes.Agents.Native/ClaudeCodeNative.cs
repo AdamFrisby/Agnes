@@ -42,6 +42,9 @@ public static class ClaudeCodeNative
         {
             Command = command ?? "claude",
             Arguments = arguments ?? DefaultArguments,
+            // Bare `claude` is the interactive console: the stream-json flags above are what make it a
+            // machine peer. Explicitly empty, not null — null would mean "no console".
+            ConsoleArguments = [],
             Descriptor = Descriptor,
             Mapper = new ClaudeCodeStreamMapper(),
             McpConfigFlag = "--mcp-config",

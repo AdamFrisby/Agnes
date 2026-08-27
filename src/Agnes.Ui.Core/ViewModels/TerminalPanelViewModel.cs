@@ -37,17 +37,27 @@ public sealed class TerminalPanelViewModel : ObservableObject
     private readonly IUiDispatcher _dispatcher;
     private readonly StringBuilder _output = new();
 
+    private readonly bool _adoptFromStream;
+
     private string? _terminalId;
     private TerminalDockLocation _dockLocation = TerminalDockLocation.Bottom;
     private bool _isVisible;
     private int _columns = 120;
     private int _rows = 30;
 
-    public TerminalPanelViewModel(IAgnesHost host, SessionView session, IUiDispatcher? dispatcher = null)
+    /// <param name="adoptFromStream">
+    /// Whether an unclaimed panel should take on the first terminal id it sees in the stream. True for the
+    /// session's shell, so a terminal opened by another client (or the login flow) is picked up. <b>False</b>
+    /// for a panel that owns a specific terminal — a session can now carry two at once (the shell and the
+    /// agent console), and both write <see cref="TerminalOutputEvent"/>s into the one session log, so a
+    /// panel that adopted whichever spoke first would show the other's output and send its keystrokes there.
+    /// </param>
+    public TerminalPanelViewModel(IAgnesHost host, SessionView session, IUiDispatcher? dispatcher = null, bool adoptFromStream = true)
     {
         _host = host;
         _session = session;
         _dispatcher = dispatcher ?? ImmediateDispatcher.Instance;
+        _adoptFromStream = adoptFromStream;
 
         // Replay whatever terminal output the snapshot already carried (scrollback restore), then follow live.
         foreach (var @event in session.Events)
@@ -113,6 +123,50 @@ public sealed class TerminalPanelViewModel : ObservableObject
         IsVisible = true;
     }
 
+    /// <summary>
+    /// Attaches this panel to the session's agent console, opening it if the host has not already. Returns
+    /// false when the agent offers no console, leaving the panel hidden and unclaimed.
+    /// </summary>
+    /// <remarks>
+    /// The host keeps one console per session for its lifetime, so this normally re-attaches to a PTY that
+    /// is already running — the scrollback arrives with the snapshot, because its output was in the session
+    /// log all along, whether or not anyone was looking at it.
+    /// </remarks>
+    public async Task<bool> OpenAgentConsoleAsync()
+    {
+        var id = await _host.OpenAgentConsoleAsync(SessionId, _columns, _rows).ConfigureAwait(false);
+        if (id is null)
+        {
+            return false;
+        }
+
+        SetActiveTerminal(id);
+        ReplayFor(id);
+        IsVisible = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Rebuilds this panel's output from the session's existing events for one terminal id. Needed when the
+    /// panel learns its id late: the console's earlier output already went past <see cref="Apply"/>, which
+    /// discarded it as belonging to another terminal.
+    /// </summary>
+    private void ReplayFor(string terminalId)
+    {
+        _output.Clear();
+        foreach (var @event in _session.Events)
+        {
+            if (@event is TerminalOutputEvent output &&
+                string.Equals(output.TerminalId, terminalId, StringComparison.Ordinal))
+            {
+                _output.Append(output.Data);
+            }
+        }
+
+        OnPropertyChanged(nameof(Output));
+        OutputAppended?.Invoke(string.Empty);
+    }
+
     /// <summary>Sends raw input bytes (a keystroke sequence or paste) to the active terminal. No-op with no
     /// active terminal.</summary>
     public Task SendInputAsync(byte[] data)
@@ -143,8 +197,9 @@ public sealed class TerminalPanelViewModel : ObservableObject
         }
 
         // Adopt the terminal id from the stream, so a terminal opened elsewhere (another client, the login
-        // flow) is picked up without a local OpenAsync.
-        if (_terminalId is null)
+        // flow) is picked up without a local OpenAsync. A panel that owns a named terminal never adopts —
+        // see the constructor: with two terminals in one session, adoption crosses their streams.
+        if (_terminalId is null && _adoptFromStream)
         {
             SetActiveTerminal(output.TerminalId);
         }

@@ -218,6 +218,9 @@ public sealed class HostConnection : IAgnesHost
     public Task<string> OpenTerminalAsync(string sessionId, string? command = null, IReadOnlyList<string>? arguments = null, string? workingDirectory = null, int columns = 120, int rows = 30)
         => _hub.InvokeAsync<string>(nameof(IAgnesServer.OpenTerminal), sessionId, new OpenTerminalRequest(command, arguments, workingDirectory, columns, rows));
 
+    public Task<string?> OpenAgentConsoleAsync(string sessionId, int columns = 120, int rows = 30)
+        => _hub.InvokeAsync<string?>(nameof(IAgnesServer.OpenAgentConsole), sessionId, columns, rows);
+
     public Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data)
         => _hub.InvokeAsync(nameof(IAgnesServer.WriteTerminal), sessionId, terminalId, data);
 

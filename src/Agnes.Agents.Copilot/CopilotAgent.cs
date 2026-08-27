@@ -175,6 +175,9 @@ public static class CopilotAgent
         {
             Command = options.Command,
             Arguments = options.Arguments,
+            // Bare `copilot` is the interactive console: ACP is the flagged mode, so the console is the
+            // command with none of the ACP argv. Explicitly empty, not null — null would mean "no console".
+            ConsoleArguments = [],
             Environment = options.Environment,
             Descriptor = Descriptor,
             // No static catalogue: which models Copilot offers depends on the account's entitlements, and

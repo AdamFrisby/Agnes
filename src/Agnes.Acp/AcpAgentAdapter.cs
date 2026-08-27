@@ -14,6 +14,13 @@ public sealed record AcpLaunchSpec
     /// <summary>Arguments that put the CLI into ACP mode.</summary>
     public IReadOnlyList<string> Arguments { get; init; } = [];
 
+    /// <summary>
+    /// Arguments that run this CLI as a human-facing interactive console instead of an ACP peer — usually
+    /// none, since ACP mode is the flagged one. Null (the default) means this CLI offers no console, which
+    /// is not the same as an empty list: empty means "run it bare".
+    /// </summary>
+    public IReadOnlyList<string>? ConsoleArguments { get; init; }
+
     /// <summary>Extra environment variables for the agent process.</summary>
     public IReadOnlyDictionary<string, string>? Environment { get; init; }
 
@@ -148,6 +155,10 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter, IModelEnviro
         => spec.InlineConfig is { } build
             ? build(options.ModelId, [])
             : new Dictionary<string, string>();
+
+    /// <inheritdoc />
+    public AgentConsoleCommand? GetInteractiveConsoleCommand()
+        => _spec.ConsoleArguments is { } args ? new AgentConsoleCommand(_spec.Command, args) : null;
 
     /// <inheritdoc />
     public IReadOnlyList<string>? ProbeArguments => _spec.ModelProbeArguments;

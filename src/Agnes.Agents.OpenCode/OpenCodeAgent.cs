@@ -162,6 +162,9 @@ public static class OpenCodeAgent
         {
             Command = options.Command,
             Arguments = options.Arguments,
+            // Bare `opencode` is its interactive TUI; `acp` is the flagged mode. Explicitly empty, not null
+            // — null would mean this CLI offers no console at all.
+            ConsoleArguments = [],
             Environment = options.Environment,
             Descriptor = Descriptor,
             // No static catalogue: the model list is per-account, so a stale hard-coded list would offer

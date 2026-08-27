@@ -495,6 +495,75 @@ public sealed class SessionViewModel : ObservableObject
     /// <summary>Shows/hides the terminal panel.</summary>
     public ICommand ToggleTerminalCommand => _toggleTerminal ??= new RelayCommand(() => IsTerminalVisible = !IsTerminalVisible);
 
+    // ---- agent console ----
+    // The agent's own CLI, run interactively in a PTY wherever the agent runs, for the slash commands and
+    // one-off actions ACP never exposes. A sibling of the terminal above, not a replacement: that one is a
+    // shell, this one is the agent. Pinned rather than adopting, because both write TerminalOutputEvents
+    // into the same session log and a panel that adopted whichever spoke first would show the wrong stream.
+    private TerminalPanelViewModel? _agentConsole;
+    private ICommand? _toggleAgentConsole;
+    private bool _isAgentConsoleVisible;
+    private bool _agentConsoleUnavailable;
+
+    /// <summary>The session's agent console, built on first use.</summary>
+    public TerminalPanelViewModel AgentConsole =>
+        _agentConsole ??= new TerminalPanelViewModel(_host, _view, _dispatcher, adoptFromStream: false);
+
+    /// <summary>
+    /// Whether the agent console panel is shown. Turning it on attaches to the console the host keeps for
+    /// this session — normally one that is already running, so its scrollback comes back with it.
+    /// </summary>
+    public bool IsAgentConsoleVisible
+    {
+        get => _isAgentConsoleVisible;
+        set
+        {
+            if (!SetProperty(ref _isAgentConsoleVisible, value))
+            {
+                return;
+            }
+
+            AgentConsole.IsVisible = value;
+            if (value)
+            {
+                _ = AttachAgentConsoleAsync();
+            }
+        }
+    }
+
+    /// <summary>True once the host has told us this agent has no console, so the affordance can stop
+    /// offering something that will not open.</summary>
+    public bool AgentConsoleUnavailable
+    {
+        get => _agentConsoleUnavailable;
+        private set => SetProperty(ref _agentConsoleUnavailable, value);
+    }
+
+    private async Task AttachAgentConsoleAsync()
+    {
+        try
+        {
+            if (!await AgentConsole.OpenAgentConsoleAsync().ConfigureAwait(false))
+            {
+                _dispatcher.Post(() =>
+                {
+                    AgentConsoleUnavailable = true;
+                    IsAgentConsoleVisible = false;
+                });
+            }
+        }
+        catch
+        {
+            // An agent console is an extra on top of a session that already works; failing to attach must
+            // not disturb it. The panel simply stays closed.
+            _dispatcher.Post(() => IsAgentConsoleVisible = false);
+        }
+    }
+
+    /// <summary>Shows/hides the agent console panel.</summary>
+    public ICommand ToggleAgentConsoleCommand =>
+        _toggleAgentConsole ??= new RelayCommand(() => IsAgentConsoleVisible = !IsAgentConsoleVisible);
+
     // ---- file browser (git-and-files/03) ----
     // Built once per session (keyed by this SessionView) and lazily, so a session that never opens the
     // browser pays nothing. Toggling visibility never discards its navigation state.
