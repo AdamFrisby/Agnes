@@ -151,6 +151,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         }
         catch (Exception ex)
         {
+            Diagnostic.Report("refresh", ex);
             await _toUi(() => Status = $"CodeyBox unreachable — {ex.Message}").ConfigureAwait(false);
         }
     }
@@ -188,6 +189,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         }
         catch (Exception ex)
         {
+            Diagnostic.Report($"follow {value.ShortId}", ex);
             await _toUi(() => Status = $"Couldn't follow {value.ShortId} — {ex.Message}").ConfigureAwait(false);
         }
     }

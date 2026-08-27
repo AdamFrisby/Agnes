@@ -153,6 +153,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            Diagnostic.Report($"load {section}", ex);
             await _toUi(() => SectionStatus = $"Couldn't load — {ex.Message}").ConfigureAwait(false);
         }
     }
@@ -216,6 +217,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            Diagnostic.Report("inject", ex);
             await _toUi(() => SectionStatus = $"Inject failed — {ex.Message}").ConfigureAwait(false);
         }
     }
