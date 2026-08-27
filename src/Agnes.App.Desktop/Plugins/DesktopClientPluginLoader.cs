@@ -19,6 +19,16 @@ public sealed class ClientPluginLoadContext : AssemblyLoadContext
         typeof(IClientPluginModule).Assembly.GetName().Name!,
     };
 
+    /// <summary>
+    /// Assembly-name prefixes also forced to the default context. Avalonia is here because a plugin that
+    /// supplies a view (<see cref="Agnes.Ui.Core.Plugins.IViewFactory"/>) hands the head a real control:
+    /// if its Avalonia resolved from the plugin's own directory the control would be a <i>different type</i>
+    /// than the one the head renders, and the framework's static state would be duplicated with it. Sharing
+    /// was previously incidental — it happened only when a plugin's build did not copy Avalonia next to its
+    /// DLL — which made whether a plugin view worked a property of its csproj. This makes it a rule.
+    /// </summary>
+    private static readonly string[] SharedAssemblyPrefixes = ["Avalonia"];
+
     private readonly AssemblyDependencyResolver _resolver;
 
     public ClientPluginLoadContext(string mainAssemblyPath)
@@ -34,9 +44,11 @@ public sealed class ClientPluginLoadContext : AssemblyLoadContext
 
     protected override Assembly? Load(AssemblyName assemblyName)
     {
-        if (assemblyName.Name is not null && SharedAssemblyNames.Contains(assemblyName.Name))
+        if (assemblyName.Name is { } name &&
+            (SharedAssemblyNames.Contains(name) ||
+             SharedAssemblyPrefixes.Any(p => name.StartsWith(p, StringComparison.OrdinalIgnoreCase))))
         {
-            return null; // fall through to the default context — never isolate the client-plugin contract
+            return null; // fall through to the default context — never isolate the contract or the UI framework
         }
 
         var path = _resolver.ResolveAssemblyToPath(assemblyName);

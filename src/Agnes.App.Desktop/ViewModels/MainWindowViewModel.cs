@@ -2107,7 +2107,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             .FirstOrDefault(d => (string?)d.Id == provider.ScreenId);
         if (existing is null)
         {
-            existing = new PluginScreenDocument(provider);
+            existing = new PluginScreenDocument(provider, EnsureClientPlugins().CreateView);
             _factory.AddDockable(dock, existing);
         }
 
