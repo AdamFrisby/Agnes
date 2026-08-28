@@ -1,6 +1,7 @@
 using System.Windows.Input;
 using System.Collections.ObjectModel;
 using System.Text;
+using System.Threading.Channels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -10,9 +11,9 @@ namespace Agnes.Plugins.CodeyBox;
 /// The CodeyBox work queue, and the live agent output of whichever item is selected.
 /// </summary>
 /// <remarks>
-/// Two halves, matching the two things CodeyBox offers over the wire: the queue is polled over REST
-/// (there is no change feed for it), while the selected item's agent output is streamed from the
-/// <c>agent-stdout</c> hub rather than polled, so it arrives as the agent produces it.
+/// Two halves, matching the two things CodeyBox offers over the wire: the queue is read over REST and
+/// kept current from the <c>/workitems/events</c> SSE feed, while the selected item's agent output is
+/// streamed from the <c>agent-stdout</c> hub. Neither is polled.
 ///
 /// <para>Selecting an item pulls its stdout <i>tail</i> first and then follows the live stream. Neither
 /// alone is enough: a subscription only carries what happens next, so without the tail an item that has
@@ -25,7 +26,17 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     private readonly StringBuilder _output = new();
     private readonly CancellationTokenSource _cts = new();
 
+    /// <summary>Item ids the feed says have changed, coalesced before being read back — one transition
+    /// commonly emits several events.</summary>
+    private readonly Channel<CodeyBoxEvent> _pending =
+        Channel.CreateUnbounded<CodeyBoxEvent>(new UnboundedChannelOptions { SingleReader = true });
+
+    /// <summary>How long to keep collecting events before reading the queue back. Long enough to fold a
+    /// burst into one read, short enough that a person does not perceive the delay.</summary>
+    private static readonly TimeSpan CoalesceWindow = TimeSpan.FromMilliseconds(250);
+
     private Task? _poller;
+    private Task? _drainer;
 
     public CodeyBoxQueueViewModel(CodeyBoxClient client, Func<Action, Task> toUi, bool configured = true)
     {
@@ -94,11 +105,11 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         _all.Clear();
         _all.AddRange(items);
 
-        Agents.Clear();
-        foreach (var agent in _all.Select(i => i.Agent).Where(a => a is { Length: > 0 }).Distinct().Order())
-        {
-            Agents.Add(agent!);
-        }
+        // Reconciled: clearing this would drop the open filter dropdown's selection on every update.
+        Reconcile.Apply(
+            Agents,
+            [.. _all.Select(i => i.Agent).Where(a => a is { Length: > 0 }).Distinct().Order()!],
+            a => a);
 
         ApplyView();
     }
@@ -231,19 +242,34 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
         var ordered = view.ToList();
 
-        Items.Clear();
-        foreach (var item in ordered)
-        {
-            Items.Add(item);
-        }
+        // Reconciled, not rebuilt: an unchanged row keeps its container, so the list stays readable
+        // while it updates instead of jumping back to the top. See Reconcile.
+        Reconcile.Apply(Items, ordered, i => i.Id);
 
-        Groups.Clear();
         if (GroupByProject)
         {
+            // Existing groups are updated rather than recreated, so an expanded project stays expanded
+            // and keeps its scroll position across a refresh.
+            var desired = new List<WorkItemGroup>();
             foreach (var group in ordered.GroupBy(i => i.ProjectId ?? "(no project)").OrderBy(g => g.Key))
             {
-                Groups.Add(new WorkItemGroup(group.Key, [.. group]));
+                var existing = Groups.FirstOrDefault(g => g.Project == group.Key);
+                if (existing is not null)
+                {
+                    existing.Update([.. group]);
+                    desired.Add(existing);
+                }
+                else
+                {
+                    desired.Add(new WorkItemGroup(group.Key, [.. group]));
+                }
             }
+
+            Reconcile.Apply(Groups, desired, g => g.Project);
+        }
+        else if (Groups.Count > 0)
+        {
+            Groups.Clear();
         }
 
         OnPropertyChanged(nameof(ViewSummary));
@@ -401,7 +427,86 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     /// than the timeline or the raw detail dump.</summary>
     public bool ShowStory => !IsDetailVisible && !IsTimelineVisible;
 
-    partial void OnIsTimelineVisibleChanged(bool value) => OnPropertyChanged(nameof(ShowStory));
+    // The three views are a segmented control, not three buttons: they change what you are LOOKING at and
+    // mutate nothing, so they must not be rendered like Retry and Promote — and the active one must be
+    // visible, which it was not. The queue filters two panes to the left already work this way; the pane
+    // was teaching one convention and then breaking it.
+    public bool IsOutputView => ShowStory;
+    public bool IsTimelineView => IsTimelineVisible;
+    public bool IsDetailView => IsDetailVisible;
+
+    private void NotifyViewChanged()
+    {
+        OnPropertyChanged(nameof(ShowStory));
+        OnPropertyChanged(nameof(IsOutputView));
+        OnPropertyChanged(nameof(IsTimelineView));
+        OnPropertyChanged(nameof(IsDetailView));
+    }
+
+    /// <summary>
+    /// Whether the task is shown whole. Collapsed by default: the median prompt on this instance is 2,726
+    /// characters, so expanding it by default pushed the live output off the screen.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isTaskExpanded;
+
+    public ICommand ToggleTaskCommand =>
+        _toggleTask ??= new RelayCommand(() => IsTaskExpanded = !IsTaskExpanded);
+
+    private ICommand? _toggleTask;
+
+    public string TaskToggleLabel => IsTaskExpanded ? "Show less" : "Show full task";
+
+    partial void OnIsTaskExpandedChanged(bool value) => OnPropertyChanged(nameof(TaskToggleLabel));
+
+    /// <summary>
+    /// The phase the last failed run died in. The error message itself is short — a median of 17
+    /// characters here — and says what broke without saying where, which is the half an engineer needs to
+    /// know which gate to look at.
+    /// </summary>
+    public string? FailingPhase => Runs.FirstOrDefault(r => r.Failed)?.PhaseLabel;
+
+    public bool HasFailingPhase => !string.IsNullOrEmpty(FailingPhase);
+
+    /// <summary>Opens the merged pull request. 67 items here have one and the pane previously rendered it
+    /// as a number in a text run, so the manager's closing question dead-ended.</summary>
+    public ICommand OpenPrCommand => _openPr ??= new RelayCommand<WorkItemRow>(row =>
+    {
+        if (row?.PrUrl is { Length: > 0 } url)
+        {
+            OpenUrl(url);
+        }
+    });
+
+    private ICommand? _openPr;
+
+    /// <summary>
+    /// Hands a URL to the desktop. Matches how the host opens links; a plugin has no window handle of its
+    /// own to route through, and a failure here must never take the pane down with it.
+    /// </summary>
+    private static void OpenUrl(string url)
+    {
+        // Only http(s). The value comes off the orchestrator's API, which is a boundary: handing an
+        // arbitrary string to the shell would make a stored value in someone else's database into a
+        // command on this machine.
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+            || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+        {
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(parsed.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("open-url", ex);
+        }
+    }
+
+    partial void OnIsTimelineVisibleChanged(bool value) => NotifyViewChanged();
 
     public ICommand ShowTimelineCommand => _showTimeline ??= new RelayCommand(() =>
     {
@@ -435,25 +540,19 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
             await _toUi(() =>
             {
-                Runs.Clear();
-                foreach (var run in runs.OrderByDescending(r => r.StartedAt))
-                {
-                    Runs.Add(run);
-                }
-
-                Phases.Clear();
-                foreach (var phase in phases)
-                {
-                    Phases.Add(phase);
-                }
-
-                AuditIterations.Clear();
-                foreach (var iteration in audits.OrderByDescending(i => i.Iteration))
-                {
-                    AuditIterations.Add(iteration);
-                }
+                // Reconciled so a re-read appends the new run and leaves the rest of the history alone.
+                // A seventy-row history that rebuilds itself is unreadable: the row being read is torn
+                // down and the list snaps back to the top, on every update.
+                Reconcile.Apply(Runs, [.. runs.OrderByDescending(r => r.StartedAt)], r => r.Id);
+                Reconcile.Apply(Phases, [.. phases], p => p.Phase);
+                Reconcile.Apply(
+                    AuditIterations,
+                    [.. audits.OrderByDescending(i => i.Iteration)],
+                    i => (i.Target, i.Iteration));
 
                 TimelineEmpty = Runs.Count == 0;
+                OnPropertyChanged(nameof(FailingPhase));
+                OnPropertyChanged(nameof(HasFailingPhase));
                 OnPropertyChanged(nameof(HasRuns));
                 OnPropertyChanged(nameof(HasAuditIterations));
             }).ConfigureAwait(false);
@@ -469,7 +568,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     [ObservableProperty]
     private bool _isDetailVisible;
 
-    partial void OnIsDetailVisibleChanged(bool value) => OnPropertyChanged(nameof(ShowStory));
+    partial void OnIsDetailVisibleChanged(bool value) => NotifyViewChanged();
 
     /// <summary>The selected item's detail, gathered from the orchestrator's per-item endpoints.</summary>
     [ObservableProperty]
@@ -794,24 +893,99 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             return;
         }
 
-        _poller = Task.Run(PollAsync);
+        _poller = Task.Run(FollowAsync);
+        _drainer = Task.Run(DrainAsync);
     }
 
-    private async Task PollAsync()
+    /// <summary>
+    /// Reads the queue once, then keeps it current from the orchestrator's event feed.
+    ///
+    /// <para>This used to be a five-second poll, which was wrong in the way that matters: it rebuilt the
+    /// list on a timer whether or not anything had changed, so the queue could not be read while it was
+    /// open. The orchestrator publishes every state transition over SSE, so the correct behaviour is to
+    /// refresh when it says something moved and otherwise leave the view completely alone.</para>
+    ///
+    /// <para>Changed items are coalesced over a short window before being read back. A single transition
+    /// commonly emits several events, and the feed replays its buffer on connect, so acting on each one
+    /// individually would mean a burst of requests to describe one change.</para>
+    /// </summary>
+    private async Task FollowAsync()
+    {
+        // Stamped before the read, not after: an event that lands DURING the snapshot must be treated as
+        // new, since the snapshot may have been taken before its effect was committed.
+        var since = DateTimeOffset.UtcNow;
+        await RefreshAsync().ConfigureAwait(false);
+
+        var stream = _client.CreateEventStream();
+        await stream.RunAsync(
+            since,
+            OnFeedEventAsync,
+            async reconnected =>
+            {
+                // A reconnect may have missed more than the buffer holds, so the queue is re-read whole
+                // rather than trusted to be current. The first connection is already covered by the read
+                // above.
+                if (reconnected)
+                {
+                    await RefreshAsync().ConfigureAwait(false);
+                }
+            },
+            _cts.Token).ConfigureAwait(false);
+    }
+
+    private Task OnFeedEventAsync(CodeyBoxEvent evt)
+    {
+        if (evt.IsWorkItem || evt.IsQueue)
+        {
+            _pending.Writer.TryWrite(evt);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Drains coalesced feed events. Waits for the first, then gives the orchestrator a moment to finish
+    /// emitting the rest of the same transition before reading anything back.
+    /// </summary>
+    private async Task DrainAsync()
     {
         while (!_cts.IsCancellationRequested)
         {
-            await RefreshAsync().ConfigureAwait(false);
             try
             {
-                // The queue has no change feed, so it is polled — slowly, because it is a work queue and
-                // not a transcript, and the thing that actually moves second-by-second (agent output)
-                // arrives over the hub instead.
-                await Task.Delay(TimeSpan.FromSeconds(5), _cts.Token).ConfigureAwait(false);
+                if (!await _pending.Reader.WaitToReadAsync(_cts.Token).ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                var touchedSelected = false;
+                while (_pending.Reader.TryRead(out var evt))
+                {
+                    touchedSelected |= evt.WorkItemId is { } id && id == Selected?.Id;
+                }
+
+                await Task.Delay(CoalesceWindow, _cts.Token).ConfigureAwait(false);
+                while (_pending.Reader.TryRead(out var evt))
+                {
+                    touchedSelected |= evt.WorkItemId is { } id && id == Selected?.Id;
+                }
+
+                await RefreshAsync().ConfigureAwait(false);
+
+                // The open item's history only changes when that item does, so it is re-read only then.
+                if (touchedSelected && IsTimelineVisible && Selected is { } selected)
+                {
+                    await LoadTimelineAsync(selected.Id).ConfigureAwait(false);
+                    await LoadQuestionsAsync(selected.Id).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException)
             {
                 return;
+            }
+            catch (Exception ex)
+            {
+                Diagnostic.Report("feed-drain", ex);
             }
         }
     }
@@ -835,11 +1009,10 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             {
                 var keep = Selected?.Id;
 
-                Projects.Clear();
-                foreach (var project in projects)
-                {
-                    Projects.Add(new ProjectChoice(project.Id, project.DisplayName, project.DefaultAgent));
-                }
+                Reconcile.Apply(
+                    Projects,
+                    [.. projects.Select(p => new ProjectChoice(p.Id, p.DisplayName, p.DefaultAgent))],
+                    p => p.Id);
 
                 // Agents come from the queue rather than from configuration, so the filter offers what has
                 // actually run here — six of them on this instance.

@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using System.Collections.ObjectModel;
 
 namespace Agnes.Plugins.CodeyBox;
@@ -44,7 +45,7 @@ public sealed record ProjectChoice(string Id, string DisplayName, string? Defaul
 }
 
 /// <summary>One project's group of work items, when the list is grouped.</summary>
-public sealed class WorkItemGroup(string project, IReadOnlyList<WorkItemRow> items)
+public sealed class WorkItemGroup(string project, IReadOnlyList<WorkItemRow> items) : ObservableObject
 {
     public string Project { get; } = project;
 
@@ -52,4 +53,19 @@ public sealed class WorkItemGroup(string project, IReadOnlyList<WorkItemRow> ite
 
     /// <summary>Named with its count, so a collapsed group still says how much is inside.</summary>
     public string Header => $"{Project}  ({Items.Count})";
+
+    /// <summary>
+    /// Moves this group to a new set of rows in place. Kept as an update rather than a fresh group so
+    /// that a refresh does not collapse an expanded project or scroll it away — the group object is the
+    /// thing the expander's state hangs off, so replacing it discards that state.
+    /// </summary>
+    public void Update(IReadOnlyList<WorkItemRow> rows)
+    {
+        var before = Items.Count;
+        Reconcile.Apply(Items, rows, r => r.Id);
+        if (before != Items.Count)
+        {
+            OnPropertyChanged(nameof(Header));
+        }
+    }
 }

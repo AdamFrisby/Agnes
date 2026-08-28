@@ -41,6 +41,13 @@ public sealed class CodeyBoxClient : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Opens a subscription to the orchestrator's change feed. Built here because this is what holds the
+    /// base address and key, and because a feed reader must not share the pooled request client — it
+    /// holds one connection open indefinitely.
+    /// </summary>
+    internal CodeyBoxEventStream CreateEventStream() => new(_options);
+
     /// <summary>Raised for each chunk of the followed item's agent output.</summary>
     public event Action<StdoutChunk>? StdoutReceived;
 

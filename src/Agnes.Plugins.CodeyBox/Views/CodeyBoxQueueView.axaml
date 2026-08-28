@@ -53,6 +53,49 @@
       <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
     </Style>
 
+    <!-- A labelled fact in the item header. The label is deliberately tiny and faint: it is a signpost
+         read once, while the value under it is what gets scanned. -->
+    <Style Selector="TextBlock.factlabel">
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+    </Style>
+    <Style Selector="TextBlock.factvalue">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="SelectableTextBlock.factvalue">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+
+    <!-- A route out of the pane, or a disclosure. Reads as a link so it is not mistaken for an action
+         that changes the item. -->
+    <Style Selector="Button.linky">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.linky /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- The error box. Neutral by default, because most items carrying an error here were cancelled
+         rather than failed; the danger hue is added back only for a real failure. -->
+    <Style Selector="Border.errorbox">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="9,7" />
+    </Style>
+    <Style Selector="Border.errorbox.failure">
+      <Setter Property="BorderBrush" Value="{DynamicResource Danger}" />
+    </Style>
+
     <!-- Irreversible. Held apart from the routine actions rather than sitting among them. -->
     <Style Selector="Button.destructive">
       <Setter Property="Foreground" Value="{DynamicResource Danger}" />
@@ -291,15 +334,76 @@
       <GridSplitter Grid.Row="1" Grid.Column="1" Background="{DynamicResource Line}" />
 
       <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,*">
-        <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="10,4,10,4"
-                   IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
-          <!-- What this item IS. Pinned, because it is the answer to "which one am I looking at". -->
-        <StackPanel Grid.Row="0" Spacing="3" Margin="10,10,10,4"
+
+        <!-- WHAT THIS IS. Pinned above the scroll region, because it is the answer to "which one am I
+             looking at" and it must not scroll away from the content it describes.
+
+             This block used to be nested INSIDE the action WrapPanel, where its Grid.Row was inert and it
+             wrapped inline with the buttons — the title and the controls were literally the same row of
+             flowing content, which is most of why the pane read as disorganised. -->
+        <StackPanel Grid.Row="0" Spacing="6" Margin="10,10,10,6"
                     IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
           <TextBlock Text="{Binding Selected.Title}" Foreground="{DynamicResource Fg}" FontSize="14"
                      FontWeight="SemiBold" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding Selected.Provenance}" Foreground="{DynamicResource FgFaint}"
-                     FontSize="11" TextWrapping="Wrap" />
+
+          <!-- The facts, labelled and separated rather than concatenated into one grey run-on. The two
+               personas want different ones first: the manager reads cost and PR, the engineer reads agent
+               and branch. A single undifferentiated string made both of them scan for a substring. -->
+          <WrapPanel Orientation="Horizontal">
+            <StackPanel Margin="0,0,18,2">
+              <TextBlock Text="PROJECT" Classes="factlabel" />
+              <TextBlock Text="{Binding Selected.ProjectLabel}" Classes="factvalue" />
+            </StackPanel>
+            <StackPanel Margin="0,0,18,2">
+              <TextBlock Text="AGENT" Classes="factlabel" />
+              <TextBlock Text="{Binding Selected.AgentLabel}" Classes="factvalue" />
+            </StackPanel>
+            <StackPanel Margin="0,0,18,2">
+              <TextBlock Text="PRIORITY" Classes="factlabel" />
+              <TextBlock Text="{Binding Selected.PriorityLabel}" Classes="factvalue" />
+            </StackPanel>
+            <!-- Given weight: it is the manager's number, and it reaches $73 on a single item here. -->
+            <StackPanel Margin="0,0,18,2">
+              <TextBlock Text="COST" Classes="factlabel" />
+              <TextBlock Text="{Binding Selected.CostLabel}" Classes="factvalue" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Margin="0,0,18,2" IsVisible="{Binding Selected.HasBranch, FallbackValue=false}">
+              <TextBlock Text="BRANCH" Classes="factlabel" />
+              <TextBlock Text="{Binding Selected.WorkBranch}" Classes="factvalue" FontFamily="monospace" />
+            </StackPanel>
+            <!-- The way out of the pane. 67 items here have a merged PR and it was previously a number in
+                 a text run, so "did it ship, and where is it" dead-ended. -->
+            <StackPanel Margin="0,0,18,2" IsVisible="{Binding Selected.HasPr, FallbackValue=false}">
+              <TextBlock Text="MERGED" Classes="factlabel" />
+              <Button Classes="linky" Content="{Binding Selected.PrLabel}"
+                      IsEnabled="{Binding Selected.HasPrLink, FallbackValue=false}"
+                      Command="{Binding OpenPrCommand}" CommandParameter="{Binding Selected}"
+                      ToolTip.Tip="Open the pull request" />
+            </StackPanel>
+            <StackPanel Margin="0,0,18,2" IsVisible="{Binding Selected.HasExternalId, FallbackValue=false}">
+              <TextBlock Text="TRACKER" Classes="factlabel" />
+              <TextBlock Text="{Binding Selected.ExternalId}" Classes="factvalue" />
+            </StackPanel>
+            <StackPanel Margin="0,0,0,2">
+              <TextBlock Text="ID" Classes="factlabel" />
+              <SelectableTextBlock Text="{Binding Selected.ShortId}" Classes="factvalue"
+                                   FontFamily="monospace" Foreground="{DynamicResource FgFaint}" />
+            </StackPanel>
+          </WrapPanel>
+
+          <!-- Stopped, but NOT stuck. Without this an item backing off for a provider quota window looks
+               exactly like one that has died, and the operator retries something that was already going
+               to retry itself. 57 items here have been through a quota retry. -->
+          <Border Background="{DynamicResource PanelAlt}" CornerRadius="5" Padding="8,5"
+                  IsVisible="{Binding Selected.IsWaiting, FallbackValue=false}">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <Ellipse Width="7" Height="7" Fill="{DynamicResource Accent}" VerticalAlignment="Center" />
+              <TextBlock Text="Waiting to resume" Foreground="{DynamicResource Fg}" FontSize="11"
+                         FontWeight="SemiBold" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Selected.WaitingSummary}" Foreground="{DynamicResource FgDim}"
+                         FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
         </StackPanel>
 
         <!-- Nothing selected: say so, rather than leaving half the tab blank. -->
@@ -308,39 +412,55 @@
                    HorizontalAlignment="Center" VerticalAlignment="Center"
                    IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNull}}" />
 
-        <!-- The two ordinary moves stay out; recovery hides behind More; the irreversible pair is kept
-               apart and confirmed. Eight equal buttons made abandoning an item look like retrying one. -->
-          <Button Content="Retry" FontSize="11" Padding="8,3" Command="{Binding RetryCommand}"
-                  CommandParameter="{Binding Selected}" />
-          <Button Content="Promote" FontSize="11" Padding="8,3" Command="{Binding PromoteCommand}"
-                  CommandParameter="{Binding Selected}" />
-          <Button Content="More…" FontSize="11" Padding="8,3" Command="{Binding ToggleMoreActionsCommand}"
-                  ToolTip.Tip="Replay, resume, recover, uncancel" />
-          <Border Width="1" Background="{DynamicResource Line}" Margin="4,2" />
-          <!-- Output vs detail: the live stream, or everything the orchestrator knows about this item. -->
-          <Button Content="Output" FontSize="11" Padding="8,3" Command="{Binding ShowOutputCommand}" />
-          <Button Content="Timeline" FontSize="11" Padding="8,3" Command="{Binding ShowTimelineCommand}"
-                  ToolTip.Tip="State changes, agent runs, auditors and audit iterations" />
-          <Button Content="Detail" FontSize="11" Padding="8,3" Command="{Binding ShowDetailCommand}" />
-        </WrapPanel>
+        <!-- Two different classes of control, no longer rendered identically. On the left, things that
+             CHANGE the item; on the right, things that change only what you are looking at. Previously
+             all seven were the same plain button in one flowing row, so "Abandon" and "Timeline" were
+             visually the same kind of thing. -->
+        <Grid Grid.Row="1" Margin="10,0,10,6" ColumnDefinitions="Auto,*,Auto"
+              IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+            <Button Content="Retry" FontSize="11" Padding="8,3" Command="{Binding RetryCommand}"
+                    CommandParameter="{Binding Selected}" />
+            <Button Content="Promote" FontSize="11" Padding="8,3" Command="{Binding PromoteCommand}"
+                    CommandParameter="{Binding Selected}" />
+            <Button Content="More…" FontSize="11" Padding="8,3" Command="{Binding ToggleMoreActionsCommand}"
+                    ToolTip.Tip="Replay, resume, recover, uncancel, cancel, abandon" />
+          </StackPanel>
 
-        <!-- Recovery moves for an item that has gone wrong, and the two that destroy work. -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="10,30,10,0"
-                    IsVisible="{Binding ShowMoreActions}">
-          <Button Content="Replay" FontSize="11" Padding="8,3" Command="{Binding ReplayCommand}"
-                  CommandParameter="{Binding Selected}" />
-          <Button Content="Resume" FontSize="11" Padding="8,3" Command="{Binding ResumeItemCommand}"
-                  CommandParameter="{Binding Selected}" />
-          <Button Content="Recover" FontSize="11" Padding="8,3" Command="{Binding RecoverCommand}"
-                  CommandParameter="{Binding Selected}" />
-          <Button Content="Uncancel" FontSize="11" Padding="8,3" Command="{Binding UncancelCommand}"
-                  CommandParameter="{Binding Selected}" />
-          <Border Width="1" Background="{DynamicResource Line}" Margin="8,2" />
-          <Button Classes="destructive" Content="Cancel" FontSize="11" Padding="8,3"
-                  Command="{Binding CancelCommand}" CommandParameter="{Binding Selected}" />
-          <Button Classes="destructive" Content="Abandon" FontSize="11" Padding="8,3"
-                  Command="{Binding AbandonCommand}" CommandParameter="{Binding Selected}" />
-        </StackPanel>
+          <!-- A view switch, so the active view is visible. It wears the same chip treatment as the queue
+               filters two panes to the left; the pane was teaching that convention and then breaking it. -->
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+            <Button Classes="chip" Classes.on="{Binding IsOutputView}" Content="Output"
+                    Command="{Binding ShowOutputCommand}" />
+            <Button Classes="chip" Classes.on="{Binding IsTimelineView}" Content="Timeline"
+                    Command="{Binding ShowTimelineCommand}"
+                    ToolTip.Tip="Phases, audit findings and every agent run" />
+            <Button Classes="chip" Classes.on="{Binding IsDetailView}" Content="Detail"
+                    Command="{Binding ShowDetailCommand}" />
+          </StackPanel>
+        </Grid>
+
+        <!-- Recovery moves for an item that has gone wrong, and the two that destroy work. Disclosed on
+             request so that eight equal buttons never again make abandoning look like retrying. -->
+        <Border Grid.Row="2" VerticalAlignment="Top" Margin="10,0,10,6" Padding="9,7" CornerRadius="6"
+                Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                IsVisible="{Binding ShowMoreActions}" ZIndex="2">
+          <WrapPanel Orientation="Horizontal">
+            <Button Content="Replay" FontSize="11" Padding="8,3" Margin="0,0,6,0" Command="{Binding ReplayCommand}"
+                    CommandParameter="{Binding Selected}" />
+            <Button Content="Resume" FontSize="11" Padding="8,3" Margin="0,0,6,0" Command="{Binding ResumeItemCommand}"
+                    CommandParameter="{Binding Selected}" />
+            <Button Content="Recover" FontSize="11" Padding="8,3" Margin="0,0,6,0" Command="{Binding RecoverCommand}"
+                    CommandParameter="{Binding Selected}" />
+            <Button Content="Uncancel" FontSize="11" Padding="8,3" Margin="0,0,6,0" Command="{Binding UncancelCommand}"
+                    CommandParameter="{Binding Selected}" />
+            <Border Width="1" Background="{DynamicResource Line}" Margin="6,2" />
+            <Button Classes="destructive" Content="Cancel" FontSize="11" Padding="8,3" Margin="0,0,6,0"
+                    Command="{Binding CancelCommand}" CommandParameter="{Binding Selected}" />
+            <Button Classes="destructive" Content="Abandon" FontSize="11" Padding="8,3"
+                    Command="{Binding AbandonCommand}" CommandParameter="{Binding Selected}" />
+          </WrapPanel>
+        </Border>
 
         <!-- Questions the agent is waiting on. Above the transcript, because an agent blocked on a person
              is the one thing here that should interrupt someone — everything else can be scrolled to. -->
@@ -386,14 +506,29 @@
         <ScrollViewer Grid.Row="2" x:Name="OutputScroller" Padding="10,0,10,10"
                       IsVisible="{Binding ShowStory}">
           <StackPanel Spacing="8">
-            <!-- Why it stopped, first: the engineer's opening question, previously three clicks away. -->
-            <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Danger}"
-                    BorderThickness="1" CornerRadius="6" Padding="9,7"
+            <!-- Why it stopped, first. Titled from the STATE rather than always "Failure": 45 of the 67
+                 items here carrying an error are Cancelled, and heading those in the danger hue overstates
+                 them and devalues the colour on the 22 that genuinely failed. -->
+            <Border Classes="errorbox" Classes.failure="{Binding Selected.ErrorIsFailure, FallbackValue=false}"
                     IsVisible="{Binding Selected.HasError, FallbackValue=false}">
               <StackPanel Spacing="3">
-                <TextBlock Text="Failure" Foreground="{DynamicResource Danger}" FontSize="10" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="{Binding Selected.ErrorTitle}" FontSize="10" FontWeight="SemiBold"
+                             Foreground="{DynamicResource Danger}"
+                             IsVisible="{Binding Selected.ErrorIsFailure, FallbackValue=false}" />
+                  <TextBlock Text="{Binding Selected.ErrorTitle}" FontSize="10" FontWeight="SemiBold"
+                             Foreground="{DynamicResource FgDim}"
+                             IsVisible="{Binding !Selected.ErrorIsFailure, FallbackValue=false}" />
+                  <!-- WHERE it failed, not only what. The message itself has a median length of 17
+                       characters here, so on its own it rarely says which gate to go and look at. -->
+                  <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}"
+                             Text="{Binding FailingPhase, StringFormat='in {0}'}"
+                             IsVisible="{Binding HasFailingPhase}" />
+                </StackPanel>
                 <SelectableTextBlock Text="{Binding Selected.ErrorSummary}" Foreground="{DynamicResource Fg}"
                                      FontSize="11" TextWrapping="Wrap" />
+                <Button Classes="linky" Content="See what the auditors said" HorizontalAlignment="Left"
+                        Command="{Binding ShowTimelineCommand}" />
               </StackPanel>
             </Border>
 
@@ -406,13 +541,9 @@
               </StackPanel>
             </Border>
 
-            <!-- The task itself. Without it the pane never said what the work actually was. -->
-            <StackPanel Spacing="3" IsVisible="{Binding Selected.HasPrompt, FallbackValue=false}">
-              <TextBlock Text="Task" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
-              <SelectableTextBlock Text="{Binding Selected.Prompt}" Foreground="{DynamicResource FgDim}"
-                                   FontSize="11" TextWrapping="Wrap" />
-            </StackPanel>
-
+            <!-- The live output comes BEFORE the task now. The task is static and has a median length of
+                 2,726 characters on this instance; putting it whole above the stream meant scrolling
+                 several screens of unchanging text to reach the only thing that moves. -->
             <StackPanel Spacing="3" IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
               <TextBlock Text="Agent output" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
               <!-- An item that has produced nothing yet is ordinary; blankness alone is not an answer. -->
@@ -421,10 +552,21 @@
               <SelectableTextBlock Text="{Binding Output}" FontFamily="monospace" FontSize="11"
                                    Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
             </StackPanel>
+
+            <!-- The task as the agent received it, collapsed. Still on the pane — it is what the work IS —
+                 but no longer occupying the pane. -->
+            <StackPanel Spacing="3" IsVisible="{Binding Selected.HasPrompt, FallbackValue=false}">
+              <TextBlock Text="Task" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+              <SelectableTextBlock Text="{Binding Selected.PromptPreview}" Foreground="{DynamicResource FgDim}"
+                                   FontSize="11" TextWrapping="Wrap" IsVisible="{Binding !IsTaskExpanded}" />
+              <SelectableTextBlock Text="{Binding Selected.Prompt}" Foreground="{DynamicResource FgDim}"
+                                   FontSize="11" TextWrapping="Wrap" IsVisible="{Binding IsTaskExpanded}" />
+              <Button Classes="linky" Content="{Binding TaskToggleLabel}" HorizontalAlignment="Left"
+                      Command="{Binding ToggleTaskCommand}"
+                      IsVisible="{Binding Selected.PromptIsTruncated, FallbackValue=false}" />
+            </StackPanel>
           </StackPanel>
         </ScrollViewer>
-
-
 
         <!-- How the item got here, out of the orchestrator's DATABASE rather than its logs. The admin UI
              scrapes audit logs for this; those roll daily, and on this instance every scraped timeline was

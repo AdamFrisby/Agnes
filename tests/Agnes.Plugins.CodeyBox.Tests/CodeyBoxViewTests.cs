@@ -19,6 +19,14 @@ namespace Agnes.Plugins.CodeyBox.Tests;
 /// application down rather than merely failing a click. Only attaching the control catches that, so that
 /// is what these do.
 /// </remarks>
+/// <summary>
+/// Avalonia's headless session is process-global, so two classes starting one at the same time deadlock.
+/// Both rendering classes join this collection, which xunit runs serially.
+/// </summary>
+[CollectionDefinition("avalonia-headless", DisableParallelization = true)]
+public sealed class HeadlessCollection;
+
+[Collection("avalonia-headless")]
 public class CodeyBoxViewTests
 {
     /// <summary>A minimal app carrying just enough theme for the control's resource lookups to resolve.</summary>
@@ -202,4 +210,169 @@ public class CodeyBoxViewTests
         Assert.Equal("codeybox-self", vm.NewProject.Id);
         Assert.Contains("codex", vm.NewProjectAgent, StringComparison.Ordinal);
     }
+}
+
+/// <summary>
+/// Renders the item pane with an item actually SELECTED. The tests above render it empty, where every
+/// element of the header, the fact row, the action bar and the failure box is collapsed and its bindings
+/// are never evaluated — which is precisely the blind spot that let a bad CommandParameter reach a user.
+/// </summary>
+[Collection("avalonia-headless")]
+public class ItemPaneRenderTests
+{
+    private sealed class TestApp : Application
+    {
+        public override void Initialize() => Styles.Add(new FluentTheme());
+    }
+
+    public static class TestAppBuilder
+    {
+        public static AppBuilder BuildAvaloniaApp()
+            => AppBuilder.Configure<TestApp>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+    }
+
+    /// <summary>
+    /// Answers every request instantly with a JSON <c>null</c>, which each client getter already coalesces
+    /// to an empty result. Without it, selecting an item sends these tests at a real socket: the reads
+    /// fail asynchronously, after the headless session they belong to has been torn down, and the run
+    /// aborts on the resulting noise. The pane's rendering is what is under test, not its fetching.
+    /// </summary>
+    private sealed class OfflineHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("null", System.Text.Encoding.UTF8, "application/json"),
+            });
+    }
+
+    private static void RenderWith(WorkItemRow row, Action<CodeyBoxQueueViewModel>? arrange = null)
+    {
+        CodeyBoxQueueViewModel? vm = null;
+        try
+        {
+            using var session = HeadlessUnitTestSession.StartNew(typeof(TestAppBuilder));
+            session.Dispatch(() =>
+            {
+                vm = new CodeyBoxQueueViewModel(
+                    new CodeyBoxClient(new CodeyBoxOptions("http://127.0.0.1:1", "k"), new OfflineHandler()),
+                    action => { action(); return Task.CompletedTask; });
+                vm.Load([row]);
+                vm.Filter = QueueFilter.All;
+                vm.Selected = row;
+                arrange?.Invoke(vm);
+
+                var window = new Window { Width = 1280, Height = 800, Content = new CodeyBoxQueueView { DataContext = vm } };
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                window.Close();
+            }, CancellationToken.None).GetAwaiter().GetResult();
+        }
+        finally
+        {
+            // Selecting an item starts following the stdout hub, and that connection reconnects on its
+            // own. Left undisposed, one per test, they keep the test host alive indefinitely — the run
+            // does not fail, it simply never ends.
+            vm?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    private static WorkItemRow Row(
+        string state = "Working",
+        string? lastError = null,
+        string? failureKind = null,
+        string? prompt = "do the thing",
+        int quotaRetryAttempts = 0,
+        int? pr = null,
+        string? cancellationSource = null,
+        IReadOnlyList<string>? dependsOn = null)
+        => new(
+            Id: "3f2b1c00-0000-0000-0000-000000000001",
+            Title: "Make the pane readable",
+            State: state,
+            Agent: "claude",
+            ProjectId: "codeybox-self",
+            QueuePosition: 1,
+            UpdatedAt: DateTimeOffset.UtcNow,
+            LastError: lastError,
+            Prompt: prompt,
+            DependsOn: dependsOn,
+            Priority: 3,
+            CreatedAt: DateTimeOffset.UtcNow.AddHours(-2),
+            DependsOnSatisfied: true,
+            FailureKind: failureKind,
+            MergedPrNumber: pr,
+            MergedPrUrl: pr is null ? null : $"https://github.com/AdamFrisby/CodeyBox/pull/{pr}",
+            WorkBranch: "codeybox/1f98bff9",
+            QuotaRetryAttempts: quotaRetryAttempts,
+            CancellationSource: cancellationSource,
+            RepositoryUrl: "https://github.com/AdamFrisby/CodeyBox.git");
+
+    [Fact]
+    public void Renders_a_running_item() => RenderWith(Row());
+
+    [Fact]
+    public void Renders_a_failed_item_with_its_failure_box()
+        => RenderWith(Row(state: "Failed", lastError: "Incus inventory entries must contain a JSON object property named 'config'.", failureKind: "infrastructure"));
+
+    [Fact]
+    public void Renders_a_cancelled_item_without_claiming_it_failed()
+        => RenderWith(Row(state: "Cancelled", lastError: "superseded", cancellationSource: "operator"));
+
+    [Fact]
+    public void Renders_an_item_waiting_on_quota()
+        => RenderWith(Row(quotaRetryAttempts: 2));
+
+    [Fact]
+    public void Renders_a_merged_item_with_its_pr_link()
+        => RenderWith(Row(state: "Done", pr: 362));
+
+    [Fact]
+    public void Renders_an_item_with_dependencies()
+        => RenderWith(Row(state: "Queued", dependsOn: ["a", "b"]));
+
+    [Fact]
+    public void Renders_a_very_long_task_collapsed_and_expanded()
+    {
+        // The median prompt here is 2,726 characters and the longest is 10,207.
+        var long_ = new string('x', 10_207);
+        RenderWith(Row(prompt: long_));
+        RenderWith(Row(prompt: long_), vm => vm.IsTaskExpanded = true);
+    }
+
+    [Fact]
+    public void Renders_every_view_of_the_pane()
+    {
+        // The view state is set directly rather than through the commands: those also kick off a
+        // background read whose completion would land on Avalonia objects after this headless session has
+        // been torn down. What is under test here is that each view renders, not what fetches it.
+        RenderWith(Row(), vm => vm.IsTimelineVisible = true);
+        RenderWith(Row(), vm => vm.IsDetailVisible = true);
+        RenderWith(Row(), vm => { vm.IsTimelineVisible = false; vm.IsDetailVisible = false; });
+    }
+
+    [Fact]
+    public void The_view_switch_reports_exactly_one_active_view()
+    {
+        // F6: the operator could not tell which of the three views they were in. Whatever the pane is
+        // showing, exactly one chip must read as on.
+        var vm = new CodeyBoxQueueViewModel(
+            new CodeyBoxClient(new CodeyBoxOptions("http://127.0.0.1:1", "k"), new OfflineHandler()),
+            action => { action(); return Task.CompletedTask; });
+
+        Assert.Equal(1, new[] { vm.IsOutputView, vm.IsTimelineView, vm.IsDetailView }.Count(x => x));
+
+        vm.IsTimelineVisible = true;
+        Assert.True(vm.IsTimelineView);
+        Assert.Equal(1, new[] { vm.IsOutputView, vm.IsTimelineView, vm.IsDetailView }.Count(x => x));
+
+        vm.IsTimelineVisible = false;
+        vm.IsDetailVisible = true;
+        Assert.True(vm.IsDetailView);
+        Assert.Equal(1, new[] { vm.IsOutputView, vm.IsTimelineView, vm.IsDetailView }.Count(x => x));
+    }
+
+    [Fact]
+    public void Renders_the_disclosed_recovery_actions()
+        => RenderWith(Row(state: "Failed", lastError: "boom"), vm => vm.ToggleMoreActionsCommand.Execute(null));
 }

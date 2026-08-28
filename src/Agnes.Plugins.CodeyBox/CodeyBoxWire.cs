@@ -35,7 +35,22 @@ public sealed record WorkItemRow(
     [property: JsonPropertyName("mergedPrNumber")] int? MergedPrNumber = null,
     [property: JsonPropertyName("mergedPrUrl")] string? MergedPrUrl = null,
     [property: JsonPropertyName("workBranch")] string? WorkBranch = null,
-    [property: JsonPropertyName("usageTotal")] UsageTotal? UsageTotal = null)
+    [property: JsonPropertyName("usageTotal")] UsageTotal? UsageTotal = null,
+    // Added after the second pane audit. Each of these answers a question the pane was being asked and
+    // could not answer; each is populated on this instance (counts in docs/codeybox-item-pane-audit.md).
+    // Quota retries are why an item can be stopped without being stuck — 57 items here have been through
+    // one. Without them, "waiting for the provider window to reopen" and "wedged" look identical.
+    [property: JsonPropertyName("quotaRetryAttempts")] int QuotaRetryAttempts = 0,
+    [property: JsonPropertyName("quotaResetAt")] DateTimeOffset? QuotaResetAt = null,
+    [property: JsonPropertyName("nextQuotaRetryAt")] DateTimeOffset? NextQuotaRetryAt = null,
+    [property: JsonPropertyName("nextTransientRetryAt")] DateTimeOffset? NextTransientRetryAt = null,
+    [property: JsonPropertyName("transientRetryAttempts")] int TransientRetryAttempts = 0,
+    [property: JsonPropertyName("upstreamPushAttempts")] int UpstreamPushAttempts = 0,
+    // Only 6 of the 50 cancellations here were an operator's. The rest the orchestrator made itself,
+    // which is a materially different fact to report.
+    [property: JsonPropertyName("cancellationSource")] string? CancellationSource = null,
+    [property: JsonPropertyName("externalId")] string? ExternalId = null,
+    [property: JsonPropertyName("repositoryUrl")] string? RepositoryUrl = null)
 {
     /// <summary>The id as CodeyBox's own tools abbreviate it.</summary>
     public string ShortId => Id.Length >= 8 ? Id[..8] : Id;
@@ -66,6 +81,112 @@ public sealed record WorkItemRow(
     public bool HasPrompt => !string.IsNullOrWhiteSpace(Prompt);
 
     public bool HasError => !string.IsNullOrWhiteSpace(LastError) || !string.IsNullOrWhiteSpace(FailureKind);
+
+    /// <summary>
+    /// What to call the box carrying <see cref="ErrorSummary"/>. Not always "Failure": of the 67 items
+    /// here that carry an error, 45 are Cancelled rather than Failed, and only 6 of the 50 cancellations
+    /// were an operator's. Heading all of those "Failure" in the danger hue overstates two-thirds of them
+    /// and spends the colour that is supposed to mean the other third.
+    /// </summary>
+    public string ErrorTitle => State switch
+    {
+        "Cancelled" when CancellationSource is { Length: > 0 } src
+            && src.Equals("operator", StringComparison.OrdinalIgnoreCase) => "Cancelled by an operator",
+        "Cancelled" => "Cancelled by the orchestrator",
+        _ => "Failure",
+    };
+
+    /// <summary>Whether the error box should wear the danger hue, as opposed to reporting a fact about an
+    /// item nobody is being asked to fix.</summary>
+    public bool ErrorIsFailure => State != "Cancelled";
+
+    /// <summary>
+    /// Stopped but not stuck. The orchestrator backs off and resumes on its own for provider quota and
+    /// transient faults; without saying so, an item mid-backoff looks exactly like one that has died, and
+    /// the operator retries something that was already going to retry itself.
+    /// </summary>
+    public bool IsWaiting => !IsTerminal
+        && (QuotaRetryAttempts > 0 || TransientRetryAttempts > 0
+            || NextQuotaRetryAt is not null || NextTransientRetryAt is not null || QuotaResetAt is not null);
+
+    public string WaitingSummary
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (QuotaRetryAttempts > 0)
+            {
+                parts.Add($"{QuotaRetryAttempts} quota retr{(QuotaRetryAttempts == 1 ? "y" : "ies")}");
+            }
+
+            if (TransientRetryAttempts > 0)
+            {
+                parts.Add($"{TransientRetryAttempts} transient retr{(TransientRetryAttempts == 1 ? "y" : "ies")}");
+            }
+
+            // Only ever one resume time is reported, and the soonest is the one that governs.
+            var resume = new[] { NextQuotaRetryAt, NextTransientRetryAt, QuotaResetAt }
+                .Where(t => t is not null)
+                .Select(t => t!.Value)
+                .DefaultIfEmpty()
+                .Min();
+
+            if (resume != default)
+            {
+                parts.Add(resume > DateTimeOffset.UtcNow
+                    ? $"resumes {resume.ToLocalTime():MMM d HH:mm}"
+                    : $"was due {resume.ToLocalTime():MMM d HH:mm}");
+            }
+
+            return parts.Count == 0 ? "Waiting to resume" : string.Join("  ·  ", parts);
+        }
+    }
+
+    /// <summary>
+    /// The first few lines of the task. The full prompt has a median length of 2,726 characters here and
+    /// runs to 10,207, so showing it whole pushed the live output — the only thing on the pane that
+    /// moves — several screens down.
+    /// </summary>
+    public string PromptPreview
+    {
+        get
+        {
+            if (Prompt is not { Length: > 0 } prompt)
+            {
+                return string.Empty;
+            }
+
+            var trimmed = prompt.Trim();
+            return trimmed.Length <= PromptPreviewLength
+                ? trimmed
+                : trimmed[..PromptPreviewLength].TrimEnd() + "…";
+        }
+    }
+
+    private const int PromptPreviewLength = 260;
+
+    /// <summary>Whether there is more task than the preview shows, i.e. whether an expander is warranted.</summary>
+    public bool PromptIsTruncated => (Prompt?.Trim().Length ?? 0) > PromptPreviewLength;
+
+    public bool HasExternalId => !string.IsNullOrWhiteSpace(ExternalId);
+
+    /// <summary>Where the merged PR can be opened, preferring the URL the orchestrator recorded and
+    /// falling back to composing one from the repository.</summary>
+    public string? PrUrl => MergedPrUrl is { Length: > 0 } url
+        ? url
+        : (RepositoryUrl is { Length: > 0 } repo && MergedPrNumber is { } n
+            ? repo.TrimEnd('/').Replace(".git", string.Empty, StringComparison.OrdinalIgnoreCase) + "/pull/" + n
+            : null);
+
+    public bool HasPrLink => PrUrl is { Length: > 0 };
+
+    public string PriorityLabel => Priority.ToString(System.Globalization.CultureInfo.CurrentCulture);
+
+    public string CostLabel => Cost ?? "—";
+
+    public string ProjectLabel => ProjectId is { Length: > 0 } p ? p : "—";
+
+    public string AgentLabel => Agent is { Length: > 0 } a ? a : "—";
 
     /// <summary>The failure in one line: its kind when the orchestrator classified it, then the message.</summary>
     public string ErrorSummary => (FailureKind, LastError) switch
