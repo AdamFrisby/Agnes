@@ -1212,10 +1212,10 @@
                   </StackPanel>
                   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                     <Button Content="Pause" FontSize="11" Padding="8,3"
-                            Command="{Binding $parent[ItemsControl].DataContext.PauseAgentCommand}"
+                            Command="{Binding $parent[ItemsControl].DataContext.Sections.PauseAgentCommand}"
                             CommandParameter="{Binding}" />
                     <Button Content="Resume" FontSize="11" Padding="8,3"
-                            Command="{Binding $parent[ItemsControl].DataContext.ResumeAgentCommand}"
+                            Command="{Binding $parent[ItemsControl].DataContext.Sections.ResumeAgentCommand}"
                             CommandParameter="{Binding}" />
                   </StackPanel>
                 </Grid>
@@ -1338,14 +1338,14 @@
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
                       <Button Content="Open" FontSize="11" Padding="8,3"
-                              Command="{Binding $parent[ItemsControl].DataContext.OpenSuggestionCommand}"
+                              Command="{Binding $parent[ItemsControl].DataContext.Sections.OpenSuggestionCommand}"
                               CommandParameter="{Binding}" />
                       <Button Content="Promote" FontSize="11" Padding="8,3" Classes="accent"
-                              Command="{Binding $parent[ItemsControl].DataContext.PromoteSuggestionCommand}"
+                              Command="{Binding $parent[ItemsControl].DataContext.Sections.PromoteSuggestionCommand}"
                               CommandParameter="{Binding}"
                               ToolTip.Tip="Queue this as real work" />
                       <Button Content="Dismiss" Classes="destructive" FontSize="11" Padding="8,3"
-                              Command="{Binding $parent[ItemsControl].DataContext.DismissSuggestionCommand}"
+                              Command="{Binding $parent[ItemsControl].DataContext.Sections.DismissSuggestionCommand}"
                               CommandParameter="{Binding}" />
                     </StackPanel>
                   </Grid>
@@ -1372,19 +1372,19 @@
                   </StackPanel>
                   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                     <Button Content="Open" FontSize="11" Padding="8,3"
-                            Command="{Binding $parent[ItemsControl].DataContext.OpenReleaseCommand}"
+                            Command="{Binding $parent[ItemsControl].DataContext.Sections.OpenReleaseCommand}"
                             CommandParameter="{Binding}" />
                     <Button Content="Ship" FontSize="11" Padding="8,3"
-                            Command="{Binding $parent[ItemsControl].DataContext.ShipReleaseCommand}"
+                            Command="{Binding $parent[ItemsControl].DataContext.Sections.ShipReleaseCommand}"
                             CommandParameter="{Binding}" />
                     <Button Content="Close" FontSize="11" Padding="8,3"
-                            Command="{Binding $parent[ItemsControl].DataContext.CloseReleaseCommand}"
+                            Command="{Binding $parent[ItemsControl].DataContext.Sections.CloseReleaseCommand}"
                             CommandParameter="{Binding}" />
                     <Button Content="Reopen" FontSize="11" Padding="8,3"
-                            Command="{Binding $parent[ItemsControl].DataContext.ReopenReleaseCommand}"
+                            Command="{Binding $parent[ItemsControl].DataContext.Sections.ReopenReleaseCommand}"
                             CommandParameter="{Binding}" />
                     <Button Content="Abandon" FontSize="11" Padding="8,3"
-                            Command="{Binding $parent[ItemsControl].DataContext.AbandonReleaseCommand}"
+                            Command="{Binding $parent[ItemsControl].DataContext.Sections.AbandonReleaseCommand}"
                             CommandParameter="{Binding}" />
                   </StackPanel>
                 </Grid>
@@ -1400,7 +1400,7 @@
               <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="10,6" Margin="0,2">
                 <StackPanel Orientation="Horizontal" Spacing="10">
                   <Button Content="Queue" FontSize="11" Padding="8,3"
-                          Command="{Binding $parent[ItemsControl].DataContext.QueueTemplateCommand}"
+                          Command="{Binding $parent[ItemsControl].DataContext.Sections.QueueTemplateCommand}"
                           CommandParameter="{Binding}" />
                   <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
                   <TextBlock Text="{Binding CheckCount, StringFormat='{}{0} checks'}" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
@@ -1429,16 +1429,16 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                   <Button Content="Open" FontSize="11" Padding="8,3"
-                          Command="{Binding $parent[ItemsControl].DataContext.OpenProjectCommand}"
+                          Command="{Binding $parent[ItemsControl].DataContext.Sections.OpenProjectCommand}"
                           CommandParameter="{Binding}" />
                   <Button Content="Cut release" FontSize="11" Padding="8,3"
-                          Command="{Binding $parent[ItemsControl].DataContext.CreateProjectReleaseCommand}"
+                          Command="{Binding $parent[ItemsControl].DataContext.Sections.CreateProjectReleaseCommand}"
                           CommandParameter="{Binding}" />
                   <Button Content="Pause queue" FontSize="11" Padding="8,3"
-                          Command="{Binding $parent[ItemsControl].DataContext.PauseProjectCommand}"
+                          Command="{Binding $parent[ItemsControl].DataContext.Sections.PauseProjectCommand}"
                           CommandParameter="{Binding}" />
                   <Button Content="Resume" FontSize="11" Padding="8,3"
-                          Command="{Binding $parent[ItemsControl].DataContext.ResumeProjectCommand}"
+                          Command="{Binding $parent[ItemsControl].DataContext.Sections.ResumeProjectCommand}"
                           CommandParameter="{Binding}" />
                 </StackPanel>
               </Grid>
