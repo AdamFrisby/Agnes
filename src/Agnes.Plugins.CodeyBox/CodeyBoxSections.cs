@@ -17,6 +17,8 @@ public enum CodeyBoxSection
     Suggestions,
     Releases,
     Projects,
+    Testing,
+    Setup,
     Diagnostics,
 }
 
@@ -55,6 +57,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     public ObservableCollection<Release> Releases { get; } = [];
     public ObservableCollection<TaskTemplate> Templates { get; } = [];
     public ObservableCollection<Project> Projects { get; } = [];
+    public ObservableCollection<OrchestratorPlugin> Plugins { get; } = [];
 
     [ObservableProperty]
     private CodeyBoxSection _section = CodeyBoxSection.Queue;
@@ -85,6 +88,8 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     public bool IsSuggestions => Section == CodeyBoxSection.Suggestions;
     public bool IsReleases => Section == CodeyBoxSection.Releases;
     public bool IsProjects => Section == CodeyBoxSection.Projects;
+    public bool IsTesting => Section == CodeyBoxSection.Testing;
+    public bool IsSetup => Section == CodeyBoxSection.Setup;
     public bool IsDiagnostics => Section == CodeyBoxSection.Diagnostics;
 
     public bool CanInject => SelectedSession is not null && !string.IsNullOrWhiteSpace(InjectMessage);
@@ -100,6 +105,111 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     public IAsyncRelayCommand<Release> AbandonReleaseCommand { get; }
     public IAsyncRelayCommand<Release> ShipReleaseCommand { get; }
     public IAsyncRelayCommand<TaskTemplate> QueueTemplateCommand { get; }
+
+    /// <summary>The JSON detail of whichever release, project or suggestion was last opened.</summary>
+    [ObservableProperty]
+    private string _rowDetail = string.Empty;
+
+    /// <summary>How many suggestions the orchestrator counts, which is cheaper than paging them all.</summary>
+    [ObservableProperty]
+    private int _suggestionCount;
+
+    public IAsyncRelayCommand<Release> OpenReleaseCommand => _openRelease ??= new AsyncRelayCommand<Release>(async r =>
+    {
+        if (r is null) { return; }
+        await Show("release", [
+            ("release", await _client.GetReleaseAsync(r.Id).ConfigureAwait(false)),
+            ("audit iterations", await _client.GetReleaseAuditIterationsAsync(r.Id).ConfigureAwait(false)),
+        ]).ConfigureAwait(false);
+
+        var items = await _client.GetReleaseWorkItemsAsync(r.Id).ConfigureAwait(false);
+        await _toUi(() => RowDetail += $"{Environment.NewLine}{Environment.NewLine}── work items: {items.Count}" +
+            string.Concat(items.Select(i => $"{Environment.NewLine}   {i.ShortId}  {i.State,-12} {i.Title}")))
+            .ConfigureAwait(false);
+    });
+
+    public IAsyncRelayCommand<Project> OpenProjectCommand => _openProject ??= new AsyncRelayCommand<Project>(async p =>
+    {
+        if (p is null) { return; }
+        await Show("project", [
+            ("project", await _client.GetProjectAsync(p.Id).ConfigureAwait(false)),
+            ("budget", await _client.GetProjectBudgetAsync(p.Id).ConfigureAwait(false)),
+            ("budget usage", await _client.GetProjectBudgetUsageAsync(p.Id).ConfigureAwait(false)),
+        ]).ConfigureAwait(false);
+    });
+
+    public IAsyncRelayCommand<Suggestion> OpenSuggestionCommand => _openSuggestion ??= new AsyncRelayCommand<Suggestion>(async s =>
+    {
+        if (s is null) { return; }
+        await Show("suggestion", [("suggestion", await _client.GetSuggestionAsync(s.Id).ConfigureAwait(false))])
+            .ConfigureAwait(false);
+    });
+
+    /// <summary>Creates a release, from a JSON body the operator supplies — the request shape is the
+    /// orchestrator's and not one this plugin models.</summary>
+    public IAsyncRelayCommand CreateReleaseCommand => _createRelease ??= new AsyncRelayCommand(
+        () => Create("release", body => _client.CreateReleaseAsync(body), useSetupBody: true));
+
+    public IAsyncRelayCommand<Project> CreateProjectReleaseCommand => _createProjectRelease ??=
+        new AsyncRelayCommand<Project>(async p =>
+        {
+            if (p is null || string.IsNullOrWhiteSpace(SetupBody)) { return; }
+            try
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(SetupBody);
+                var result = await _client.CreateProjectReleaseAsync(p.Id, document.RootElement.Clone()).ConfigureAwait(false);
+                await _toUi(() => RowDetail = Describe("project release", result)).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Diagnostic.Report("project release", ex);
+                await _toUi(() => SectionStatus = $"Couldn't cut the release — {ex.Message}").ConfigureAwait(false);
+            }
+        });
+
+    private IAsyncRelayCommand<Release>? _openRelease;
+    private IAsyncRelayCommand<Project>? _openProject;
+    private IAsyncRelayCommand<Suggestion>? _openSuggestion;
+    private IAsyncRelayCommand? _createRelease;
+    private IAsyncRelayCommand<Project>? _createProjectRelease;
+
+    private Task Show(string label, (string Label, RawJson? Value)[] parts)
+        => _toUi(() => RowDetail = Combine(parts));
+
+    // ---- supervision: follow one session, or the whole fleet ----
+
+    public IAsyncRelayCommand FollowAllSupervisionCommand => _followAll ??= new AsyncRelayCommand(async () =>
+    {
+        try
+        {
+            await _client.FollowAllSupervisionAsync().ConfigureAwait(false);
+            await _toUi(() => SectionStatus = "Following every supervision session.").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("follow all supervision", ex);
+            await _toUi(() => SectionStatus = $"Couldn't follow — {ex.Message}").ConfigureAwait(false);
+        }
+    });
+
+    public IAsyncRelayCommand<SupervisionSession> FollowSessionCommand => _followSession ??=
+        new AsyncRelayCommand<SupervisionSession>(async session =>
+        {
+            if (session is null) { return; }
+            try
+            {
+                await _client.FollowSupervisionSessionAsync(session.SessionId).ConfigureAwait(false);
+                await _toUi(() => SectionStatus = $"Following {session.SessionId}.").ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Diagnostic.Report("follow session", ex);
+                await _toUi(() => SectionStatus = $"Couldn't follow — {ex.Message}").ConfigureAwait(false);
+            }
+        });
+
+    private IAsyncRelayCommand? _followAll;
+    private IAsyncRelayCommand<SupervisionSession>? _followSession;
 
     private async Task ReleaseAction(Release? release, Func<string, CancellationToken, Task> action)
     {
@@ -233,7 +343,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     {
         foreach (var name in new[] { nameof(IsQueue), nameof(IsFleet), nameof(IsSupervision),
                                      nameof(IsSuggestions), nameof(IsReleases), nameof(IsProjects),
-                                     nameof(IsDiagnostics) })
+                                     nameof(IsTesting), nameof(IsSetup), nameof(IsDiagnostics) })
         {
             OnPropertyChanged(name);
         }
@@ -279,7 +389,12 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
                 case CodeyBoxSection.Suggestions:
                     var suggestions = await _client.GetSuggestionsAsync().ConfigureAwait(false);
                     await Fill(Suggestions, (suggestions?.Items ?? []).Take(200).ToArray()).ConfigureAwait(false);
-                    await _toUi(() => SectionStatus = $"{suggestions?.Total ?? 0} suggestion(s)").ConfigureAwait(false);
+                    var count = await _client.GetSuggestionCountAsync().ConfigureAwait(false);
+                    await _toUi(() =>
+                    {
+                        SuggestionCount = count;
+                        SectionStatus = $"{suggestions?.Total ?? count} suggestion(s)";
+                    }).ConfigureAwait(false);
                     break;
 
                 case CodeyBoxSection.Releases:
@@ -289,6 +404,14 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
 
                 case CodeyBoxSection.Projects:
                     await Fill(Projects, await _client.GetProjectsAsync().ConfigureAwait(false)).ConfigureAwait(false);
+                    break;
+
+                case CodeyBoxSection.Testing:
+                    await LoadTestingAsync().ConfigureAwait(false);
+                    break;
+
+                case CodeyBoxSection.Setup:
+                    await LoadSetupAsync().ConfigureAwait(false);
                     break;
 
                 case CodeyBoxSection.Diagnostics:
@@ -348,6 +471,256 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
         ]);
 
         await _toUi(() => Diagnostics = text).ConfigureAwait(false);
+    }
+
+    // ---- testing: end-to-end runs and the cases behind them ----
+
+    /// <summary>The e2e runs and test cases, and the JSON detail of whichever is selected.</summary>
+    [ObservableProperty]
+    private string _testing = string.Empty;
+
+    /// <summary>Ids the operator types to act on one run, batch or case. A plain field rather than a
+    /// selection, because these surfaces are id-addressed and mostly empty on a given instance — a list to
+    /// click is worth building only where there is usually something in it.</summary>
+    [ObservableProperty]
+    private string _testingId = string.Empty;
+
+    /// <summary>The JSON body for creating a run or a case, typed by the operator. These take shapes this
+    /// plugin does not model — see <see cref="RawJson"/> — so it accepts them verbatim rather than
+    /// pretending to a form it cannot validate.</summary>
+    [ObservableProperty]
+    private string _testingBody = string.Empty;
+
+    public IAsyncRelayCommand ShowE2eRunCommand => _showRun ??= new AsyncRelayCommand(
+        () => Detail("e2e run", id => _client.GetE2eRunAsync(id)));
+
+    public IAsyncRelayCommand ShowE2eBatchCommand => _showBatch ??= new AsyncRelayCommand(
+        () => Compose("e2e batch", async id =>
+        [
+            ("batch", await _client.GetE2eBatchAsync(id).ConfigureAwait(false)),
+            ("runs", await _client.GetE2eBatchRunsAsync(id).ConfigureAwait(false)),
+        ]));
+
+    public IAsyncRelayCommand CancelE2eRunCommand => _cancelRun ??= new AsyncRelayCommand(
+        () => Act("cancel e2e run", id => _client.CancelE2eRunAsync(id)));
+
+    public IAsyncRelayCommand CreateE2eRunCommand => _createRun ??= new AsyncRelayCommand(
+        () => Create("e2e run", body => _client.CreateE2eRunAsync(body)));
+
+    public IAsyncRelayCommand CreateE2eRunsCommand => _createRuns ??= new AsyncRelayCommand(
+        () => Create("e2e runs", body => _client.CreateE2eRunsAsync(body)));
+
+    public IAsyncRelayCommand ShowTestCaseCommand => _showCase ??= new AsyncRelayCommand(
+        () => Compose("test case", async id =>
+        [
+            ("case", await _client.GetTestCaseAsync(id).ConfigureAwait(false)),
+            ("runs", await _client.GetTestCaseRunsAsync(id).ConfigureAwait(false)),
+        ]));
+
+    public IAsyncRelayCommand ShowWorkItemTestCasesCommand => _showItemCases ??= new AsyncRelayCommand(
+        () => Detail("work item test cases", id => _client.GetTestCasesForWorkItemAsync(id)));
+
+    public IAsyncRelayCommand CreateTestCaseCommand => _createCase ??= new AsyncRelayCommand(
+        () => Create("test case", body => _client.CreateTestCaseAsync(body)));
+
+    public IAsyncRelayCommand CreateTestCasesCommand => _createCases ??= new AsyncRelayCommand(
+        () => Create("test cases", body => _client.CreateTestCasesAsync(body)));
+
+    public IAsyncRelayCommand UpdateTestCaseCommand => _updateCase ??= new AsyncRelayCommand(async () =>
+    {
+        if (!TryBody(out var body)) { return; }
+        await Act("update test case", id => _client.UpdateTestCaseAsync(id, body)).ConfigureAwait(false);
+    });
+
+    public IAsyncRelayCommand DeleteTestCaseCommand => _deleteCase ??= new AsyncRelayCommand(
+        () => Act("delete test case", id => _client.DeleteTestCaseAsync(id)));
+
+    private IAsyncRelayCommand? _showRun, _showBatch, _cancelRun, _createRun, _createRuns;
+    private IAsyncRelayCommand? _showCase, _showItemCases, _createCase, _createCases, _updateCase, _deleteCase;
+
+    private async Task LoadTestingAsync()
+    {
+        var runs = await _client.GetE2eRunsAsync().ConfigureAwait(false);
+        var cases = await _client.GetTestCasesAsync().ConfigureAwait(false);
+        await _toUi(() => Testing = Combine(("e2e runs", runs), ("test cases", cases))).ConfigureAwait(false);
+    }
+
+    // ---- setup: enrolment and one-off maintenance ----
+
+    [ObservableProperty]
+    private string _setup = string.Empty;
+
+    /// <summary>The JSON body for connecting a GitHub App, or for a bulk template queue.</summary>
+    [ObservableProperty]
+    private string _setupBody = string.Empty;
+
+    /// <summary>The sandbox name to dispose of, from the leak list shown above it.</summary>
+    [ObservableProperty]
+    private string _leakedSandboxName = string.Empty;
+
+    public IAsyncRelayCommand StartGitHubConnectCommand => _startGh ??= new AsyncRelayCommand(async () =>
+    {
+        var started = await _client.StartGitHubAppConnectAsync().ConfigureAwait(false);
+        await _toUi(() => Setup = Describe("github-app/start", started)).ConfigureAwait(false);
+    });
+
+    public IAsyncRelayCommand ConnectGitHubCommand => _connectGh ??= new AsyncRelayCommand(
+        () => Create("github app connect", body => _client.ConnectGitHubAppAsync(body), useSetupBody: true));
+
+    public IAsyncRelayCommand MigrateBaselinesCommand => _migrate ??= new AsyncRelayCommand(async () =>
+    {
+        try
+        {
+            await _client.MigrateBaselinesAsync().ConfigureAwait(false);
+            await _toUi(() => SectionStatus = "Baseline migration requested.").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("migrate baselines", ex);
+            await _toUi(() => SectionStatus = $"Couldn't migrate — {ex.Message}").ConfigureAwait(false);
+        }
+    });
+
+    public IAsyncRelayCommand DisposeSandboxCommand => _disposeSandbox ??= new AsyncRelayCommand(async () =>
+    {
+        if (string.IsNullOrWhiteSpace(LeakedSandboxName)) { return; }
+        try
+        {
+            await _client.DisposeLeakedSandboxAsync(LeakedSandboxName.Trim()).ConfigureAwait(false);
+            await _toUi(() => { SectionStatus = $"Disposed {LeakedSandboxName}."; LeakedSandboxName = string.Empty; })
+                .ConfigureAwait(false);
+            await LoadSetupAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("dispose sandbox", ex);
+            await _toUi(() => SectionStatus = $"Couldn't dispose — {ex.Message}").ConfigureAwait(false);
+        }
+    });
+
+    public IAsyncRelayCommand QueueTemplatesCommand => _queueTemplates ??= new AsyncRelayCommand(
+        () => Create("template batch", body => _client.QueueTemplatesAsync(body), useSetupBody: true));
+
+    private IAsyncRelayCommand? _startGh, _connectGh, _migrate, _disposeSandbox, _queueTemplates;
+
+    private async Task LoadSetupAsync()
+    {
+        var status = await _client.GetGitHubAppStatusAsync().ConfigureAwait(false);
+        var leaked = await _client.GetLeakedSandboxesAsync().ConfigureAwait(false);
+        var images = await _client.GetBaselineImagesAsync().ConfigureAwait(false);
+        await Fill(Plugins, await _client.GetPluginsAsync().ConfigureAwait(false)).ConfigureAwait(false);
+        await _toUi(() => Setup = Combine(
+            ("GitHub App", status), ("leaked sandboxes", leaked), ("baseline images", images))).ConfigureAwait(false);
+    }
+
+    // ---- shared helpers for the id-addressed surfaces ----
+
+    private static string Combine(params (string Label, RawJson? Value)[] parts)
+        => string.Join(Environment.NewLine + Environment.NewLine, parts.Select(p => Describe(p.Label, p.Value)));
+
+    private bool TryBody(out System.Text.Json.JsonElement body)
+    {
+        body = default;
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(
+                string.IsNullOrWhiteSpace(TestingBody) ? SetupBody : TestingBody);
+            body = document.RootElement.Clone();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _ = _toUi(() => SectionStatus = $"That isn't valid JSON — {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task Detail(string label, Func<string, Task<RawJson?>> fetch)
+    {
+        if (string.IsNullOrWhiteSpace(TestingId))
+        {
+            await _toUi(() => SectionStatus = "Enter an id first.").ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            var value = await fetch(TestingId.Trim()).ConfigureAwait(false);
+            await _toUi(() => Testing = Describe(label, value)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report(label, ex);
+            await _toUi(() => SectionStatus = $"Couldn't load {label} — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Like <see cref="Detail"/>, for the ids that answer from more than one endpoint.</summary>
+    private async Task Compose(string label, Func<string, Task<(string Label, RawJson? Value)[]>> fetch)
+    {
+        if (string.IsNullOrWhiteSpace(TestingId))
+        {
+            await _toUi(() => SectionStatus = "Enter an id first.").ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            var parts = await fetch(TestingId.Trim()).ConfigureAwait(false);
+            await _toUi(() => Testing = Combine(parts)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report(label, ex);
+            await _toUi(() => SectionStatus = $"Couldn't load {label} — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    private async Task Act(string label, Func<string, Task> action)
+    {
+        if (string.IsNullOrWhiteSpace(TestingId))
+        {
+            await _toUi(() => SectionStatus = "Enter an id first.").ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await action(TestingId.Trim()).ConfigureAwait(false);
+            await _toUi(() => SectionStatus = $"{label}: done.").ConfigureAwait(false);
+            await LoadTestingAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report(label, ex);
+            await _toUi(() => SectionStatus = $"Couldn't {label} — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    private async Task Create(string label, Func<object, Task<RawJson?>> create, bool useSetupBody = false)
+    {
+        var raw = useSetupBody ? SetupBody : TestingBody;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            await _toUi(() => SectionStatus = "Paste a JSON body first.").ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(raw);
+            var result = await create(document.RootElement.Clone()).ConfigureAwait(false);
+            await _toUi(() =>
+            {
+                SectionStatus = $"{label} created.";
+                if (useSetupBody) { Setup = Describe(label, result); } else { Testing = Describe(label, result); }
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report(label, ex);
+            await _toUi(() => SectionStatus = $"Couldn't create the {label} — {ex.Message}").ConfigureAwait(false);
+        }
     }
 
     private static string Describe(string label, RawJson? value)

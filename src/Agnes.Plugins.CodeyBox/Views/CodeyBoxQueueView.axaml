@@ -21,6 +21,8 @@
           <Button Content="Suggestions" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Suggestions}" Padding="8,4" FontSize="11" />
           <Button Content="Releases"    Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Releases}"    Padding="8,4" FontSize="11" />
           <Button Content="Projects"    Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Projects}"    Padding="8,4" FontSize="11" />
+          <Button Content="Testing"     Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Testing}"     Padding="8,4" FontSize="11" />
+          <Button Content="Setup"       Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Setup}"       Padding="8,4" FontSize="11" />
           <Button Content="Diagnostics" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Diagnostics}" Padding="8,4" FontSize="11" />
           <Border Width="1" Background="{DynamicResource Line}" Margin="4,2" />
           <Button Content="{Binding PauseButtonText}" Command="{Binding TogglePauseCommand}"
@@ -185,6 +187,30 @@
               <Button Content="Update prompt" FontSize="11" Padding="8,3" HorizontalAlignment="Left"
                       Command="{Binding SetPromptCommand}" />
             </StackPanel>
+            <!-- One argument box: an attachment id, target/iteration/auditor, or a stream file name.
+                 They are used one at a time, so three near-empty boxes would read as three features. -->
+            <StackPanel Spacing="4">
+              <TextBox Text="{Binding DetailArgument, Mode=TwoWay}" FontSize="11"
+                       Watermark="attachment id · target/iteration/auditor · stream file" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Content="Attachment" FontSize="11" Padding="8,3" Command="{Binding ShowAttachmentCommand}" />
+                <Button Content="Delete attachment" FontSize="11" Padding="8,3" Command="{Binding DeleteAttachmentCommand}" />
+                <Button Content="Audit report" FontSize="11" Padding="8,3" Command="{Binding ShowAuditReportCommand}" />
+                <Button Content="Stream analysis" FontSize="11" Padding="8,3" Command="{Binding ShowStreamAnalysisCommand}" />
+              </StackPanel>
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+              <TextBox Text="{Binding PatchBody, Mode=TwoWay}" AcceptsReturn="True" MinHeight="48"
+                       TextWrapping="Wrap" FontSize="11"
+                       Watermark="JSON patch — the orchestrator's shape, applied verbatim" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Content="Patch item" FontSize="11" Padding="8,3" Command="{Binding PatchItemCommand}" />
+                <Button Content="Patch external ids" FontSize="11" Padding="8,3" Command="{Binding PatchExternalIdsCommand}" />
+                <Button Content="Reorder queue to this order" FontSize="11" Padding="8,3" Command="{Binding ReorderCommand}" />
+              </StackPanel>
+            </StackPanel>
+
             <SelectableTextBlock Text="{Binding Detail}" FontFamily="monospace" FontSize="11"
                                  Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
           </StackPanel>
@@ -265,8 +291,12 @@
       <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,8,0,0">
         <TextBox Grid.Column="0" Text="{Binding Sections.InjectMessage, Mode=TwoWay}"
                  Watermark="Say something to the selected agent…" FontSize="12" />
-        <Button Grid.Column="1" Content="Inject" Margin="8,0,0,0" Padding="12,5" FontSize="12"
-                Command="{Binding Sections.InjectCommand}" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0">
+          <Button Content="Follow" Padding="10,5" FontSize="12" Command="{Binding Sections.FollowSessionCommand}"
+                  CommandParameter="{Binding Sections.SelectedSession}" />
+          <Button Content="Follow all" Padding="10,5" FontSize="12" Command="{Binding Sections.FollowAllSupervisionCommand}" />
+          <Button Content="Inject" Padding="12,5" FontSize="12" Command="{Binding Sections.InjectCommand}" />
+        </StackPanel>
       </Grid>
     </Grid>
 
@@ -284,6 +314,9 @@
                   </TextBlock>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+                  <Button Content="Open" FontSize="11" Padding="8,3"
+                          Command="{Binding $parent[ItemsControl].DataContext.OpenSuggestionCommand}"
+                          CommandParameter="{Binding}" />
                   <Button Content="Promote" FontSize="11" Padding="8,3"
                           Command="{Binding $parent[ItemsControl].DataContext.PromoteSuggestionCommand}"
                           CommandParameter="{Binding}" />
@@ -312,6 +345,9 @@
                     <TextBlock Text="{Binding State}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                   </StackPanel>
                   <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Button Content="Open" FontSize="11" Padding="8,3"
+                            Command="{Binding $parent[ItemsControl].DataContext.OpenReleaseCommand}"
+                            CommandParameter="{Binding}" />
                     <Button Content="Ship" FontSize="11" Padding="8,3"
                             Command="{Binding $parent[ItemsControl].DataContext.ShipReleaseCommand}"
                             CommandParameter="{Binding}" />
@@ -366,6 +402,12 @@
                              TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                  <Button Content="Open" FontSize="11" Padding="8,3"
+                          Command="{Binding $parent[ItemsControl].DataContext.OpenProjectCommand}"
+                          CommandParameter="{Binding}" />
+                  <Button Content="Cut release" FontSize="11" Padding="8,3"
+                          Command="{Binding $parent[ItemsControl].DataContext.CreateProjectReleaseCommand}"
+                          CommandParameter="{Binding}" />
                   <Button Content="Pause queue" FontSize="11" Padding="8,3"
                           Command="{Binding $parent[ItemsControl].DataContext.PauseProjectCommand}"
                           CommandParameter="{Binding}" />
@@ -379,6 +421,79 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
     </ScrollViewer>
+
+    <!-- Whatever release, project or suggestion was last opened. -->
+    <ScrollViewer Grid.Row="1" Padding="14" IsVisible="{Binding Sections.RowDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                  VerticalAlignment="Bottom" MaxHeight="220" Background="{DynamicResource Panel}">
+      <SelectableTextBlock Text="{Binding Sections.RowDetail}" FontFamily="monospace" FontSize="11"
+                           Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+    </ScrollViewer>
+
+    <!-- Testing: end-to-end runs and the cases behind them. Id-addressed, because on most instances these
+         lists are empty and a box to type in beats a list with nothing in it. -->
+    <Grid Grid.Row="1" IsVisible="{Binding Sections.IsTesting}" RowDefinitions="Auto,Auto,*" Margin="14">
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6">
+        <TextBox Text="{Binding Sections.TestingId, Mode=TwoWay}" Width="240" FontSize="11"
+                 Watermark="run · batch · test case · work item id" />
+        <Button Content="Run" FontSize="11" Padding="8,3" Command="{Binding Sections.ShowE2eRunCommand}" />
+        <Button Content="Batch" FontSize="11" Padding="8,3" Command="{Binding Sections.ShowE2eBatchCommand}" />
+        <Button Content="Case" FontSize="11" Padding="8,3" Command="{Binding Sections.ShowTestCaseCommand}" />
+        <Button Content="Item's cases" FontSize="11" Padding="8,3" Command="{Binding Sections.ShowWorkItemTestCasesCommand}" />
+        <Button Content="Cancel run" FontSize="11" Padding="8,3" Command="{Binding Sections.CancelE2eRunCommand}" />
+        <Button Content="Delete case" FontSize="11" Padding="8,3" Command="{Binding Sections.DeleteTestCaseCommand}" />
+      </StackPanel>
+      <StackPanel Grid.Row="1" Spacing="4" Margin="0,8">
+        <TextBox Text="{Binding Sections.TestingBody, Mode=TwoWay}" AcceptsReturn="True" MinHeight="56"
+                 TextWrapping="Wrap" FontSize="11"
+                 Watermark="JSON body for create / update — the orchestrator's shape, sent verbatim" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <Button Content="Create run" FontSize="11" Padding="8,3" Command="{Binding Sections.CreateE2eRunCommand}" />
+          <Button Content="Create runs" FontSize="11" Padding="8,3" Command="{Binding Sections.CreateE2eRunsCommand}" />
+          <Button Content="Create case" FontSize="11" Padding="8,3" Command="{Binding Sections.CreateTestCaseCommand}" />
+          <Button Content="Create cases" FontSize="11" Padding="8,3" Command="{Binding Sections.CreateTestCasesCommand}" />
+          <Button Content="Update case" FontSize="11" Padding="8,3" Command="{Binding Sections.UpdateTestCaseCommand}" />
+        </StackPanel>
+      </StackPanel>
+      <ScrollViewer Grid.Row="2">
+        <SelectableTextBlock Text="{Binding Sections.Testing}" FontFamily="monospace" FontSize="11"
+                             Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+      </ScrollViewer>
+    </Grid>
+
+    <!-- Setup: enrolment and one-off maintenance. -->
+    <Grid Grid.Row="1" IsVisible="{Binding Sections.IsSetup}" RowDefinitions="Auto,Auto,Auto,*" Margin="14">
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6">
+        <Button Content="Start GitHub App connect" FontSize="11" Padding="8,3" Command="{Binding Sections.StartGitHubConnectCommand}" />
+        <Button Content="Connect" FontSize="11" Padding="8,3" Command="{Binding Sections.ConnectGitHubCommand}" />
+        <Button Content="Migrate baselines" FontSize="11" Padding="8,3" Command="{Binding Sections.MigrateBaselinesCommand}" />
+        <Button Content="Queue template batch" FontSize="11" Padding="8,3" Command="{Binding Sections.QueueTemplatesCommand}" />
+      </StackPanel>
+      <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="0,8">
+        <TextBox Text="{Binding Sections.LeakedSandboxName, Mode=TwoWay}" Width="260" FontSize="11"
+                 Watermark="leaked sandbox name" />
+        <Button Content="Dispose" FontSize="11" Padding="8,3" Command="{Binding Sections.DisposeSandboxCommand}" />
+      </StackPanel>
+      <TextBox Grid.Row="2" Text="{Binding Sections.SetupBody, Mode=TwoWay}" AcceptsReturn="True" MinHeight="56"
+               TextWrapping="Wrap" FontSize="11" Margin="0,0,0,8"
+               Watermark="JSON body — GitHub App connect, template batch, or a new release" />
+      <ScrollViewer Grid.Row="3">
+        <StackPanel Spacing="8">
+          <Button Content="Create release from this body" FontSize="11" Padding="8,3" HorizontalAlignment="Left"
+                  Command="{Binding Sections.CreateReleaseCommand}" />
+          <ItemsControl ItemsSource="{Binding Sections.Plugins}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Foreground="{DynamicResource FgDim}" FontSize="11">
+                  <Run Text="{Binding Name}" /><Run Text=" " /><Run Text="{Binding Version}" />
+                </TextBlock>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <SelectableTextBlock Text="{Binding Sections.Setup}" FontFamily="monospace" FontSize="11"
+                               Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
 
     <!-- The orchestrator's own health surfaces. Several are optional and say so when switched off. -->
     <ScrollViewer Grid.Row="1" IsVisible="{Binding Sections.IsDiagnostics}" Padding="14">

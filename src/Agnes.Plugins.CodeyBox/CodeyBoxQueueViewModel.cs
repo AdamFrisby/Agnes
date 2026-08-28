@@ -202,6 +202,8 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             var parts = new (string Label, RawJson? Value)[]
             {
                 ("work item", await _client.GetWorkItemAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("replays", await _client.GetReplaysAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("budget usage", await _client.GetWorkItemBudgetUsageAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("timeline", await _client.GetTimelineAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("agent history", await _client.GetAgentHistoryAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("costs", await _client.GetCostsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
@@ -320,6 +322,119 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         {
             Diagnostic.Report("set prompt", ex);
             await _toUi(() => Status = $"Couldn't update the prompt — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    // ---- the remaining per-item surfaces, each addressed by something the operator supplies ----
+
+    /// <summary>An attachment id, an auditor name, or an agent-stream file name, depending on which of the
+    /// buttons beside it is pressed. One field rather than three, because they are used one at a time and
+    /// three near-empty boxes would read as three features rather than one lookup.</summary>
+    [ObservableProperty]
+    private string _detailArgument = string.Empty;
+
+    /// <summary>The JSON patch to apply to the selected item, or its external ids.</summary>
+    [ObservableProperty]
+    private string _patchBody = string.Empty;
+
+    public IAsyncRelayCommand ShowAttachmentCommand => _showAttachment ??= new AsyncRelayCommand(async () =>
+    {
+        if (Selected is not { } row || string.IsNullOrWhiteSpace(DetailArgument)) { return; }
+        var value = await _client.GetAttachmentAsync(row.Id, DetailArgument.Trim(), _cts.Token).ConfigureAwait(false);
+        await _toUi(() => Detail = value is null ? "attachment: none" : value.Text).ConfigureAwait(false);
+    });
+
+    public IAsyncRelayCommand DeleteAttachmentCommand => _deleteAttachment ??= new AsyncRelayCommand(async () =>
+    {
+        if (Selected is not { } row || string.IsNullOrWhiteSpace(DetailArgument)) { return; }
+        await Guarded("delete attachment", async () =>
+        {
+            await _client.DeleteAttachmentAsync(row.Id, DetailArgument.Trim(), _cts.Token).ConfigureAwait(false);
+            await LoadDetailAsync(row.Id).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    });
+
+    /// <summary>One auditor's report as written, which is prose rather than a record.</summary>
+    public IAsyncRelayCommand ShowAuditReportCommand => _showAudit ??= new AsyncRelayCommand(async () =>
+    {
+        if (Selected is not { } row || string.IsNullOrWhiteSpace(DetailArgument)) { return; }
+        await Guarded("audit report", async () =>
+        {
+            // "<target>/<iteration>/<auditor>", the way the endpoint addresses one.
+            var parts = DetailArgument.Split('/', 3);
+            if (parts.Length != 3 || !int.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out var iteration))
+            {
+                await _toUi(() => Status = "Audit reports are addressed as target/iteration/auditor.").ConfigureAwait(false);
+                return;
+            }
+
+            var text = await _client.GetAuditReportRawAsync(row.Id, parts[0], iteration, parts[2], _cts.Token)
+                .ConfigureAwait(false);
+            await _toUi(() => Detail = string.IsNullOrWhiteSpace(text) ? "audit report: none" : text).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    });
+
+    public IAsyncRelayCommand ShowStreamAnalysisCommand => _showAnalysis ??= new AsyncRelayCommand(async () =>
+    {
+        if (Selected is not { } row || string.IsNullOrWhiteSpace(DetailArgument)) { return; }
+        var value = await _client.GetAgentStreamAnalysisAsync(row.Id, DetailArgument.Trim(), _cts.Token).ConfigureAwait(false);
+        await _toUi(() => Detail = value is null ? "stream analysis: none" : value.Text).ConfigureAwait(false);
+    });
+
+    public IAsyncRelayCommand PatchItemCommand => _patchItem ??= new AsyncRelayCommand(
+        () => ApplyPatch(false));
+
+    public IAsyncRelayCommand PatchExternalIdsCommand => _patchExternal ??= new AsyncRelayCommand(
+        () => ApplyPatch(true));
+
+    /// <summary>Reorders the queue to the order currently shown, which is what the operator can see and
+    /// therefore the only order they could mean.</summary>
+    public IAsyncRelayCommand ReorderCommand => _reorder ??= new AsyncRelayCommand(async () =>
+        await Guarded("reorder", async () =>
+        {
+            await _client.ReorderAsync([.. Items.Select(i => i.Id)], _cts.Token).ConfigureAwait(false);
+            await RefreshAsync().ConfigureAwait(false);
+        }).ConfigureAwait(false));
+
+    private IAsyncRelayCommand? _showAttachment, _deleteAttachment, _showAudit, _showAnalysis;
+    private IAsyncRelayCommand? _patchItem, _patchExternal, _reorder;
+
+    private async Task ApplyPatch(bool externalIds)
+    {
+        if (Selected is not { } row || string.IsNullOrWhiteSpace(PatchBody))
+        {
+            return;
+        }
+
+        await Guarded(externalIds ? "patch external ids" : "patch work item", async () =>
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(PatchBody);
+            if (externalIds)
+            {
+                var map = document.RootElement.EnumerateObject()
+                    .ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty);
+                await _client.PatchExternalIdsAsync(row.Id, map, _cts.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                await _client.PatchWorkItemAsync(row.Id, document.RootElement.Clone(), _cts.Token).ConfigureAwait(false);
+            }
+
+            await RefreshAsync().ConfigureAwait(false);
+            await _toUi(() => Status = "Applied.").ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    }
+
+    private async Task Guarded(string what, Func<Task> body)
+    {
+        try
+        {
+            await body().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report(what, ex);
+            await _toUi(() => Status = $"Couldn't {what} — {ex.Message}").ConfigureAwait(false);
         }
     }
 

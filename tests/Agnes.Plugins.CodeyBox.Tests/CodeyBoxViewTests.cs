@@ -61,6 +61,8 @@ public class CodeyBoxViewTests
     [InlineData(CodeyBoxSection.Suggestions)]
     [InlineData(CodeyBoxSection.Releases)]
     [InlineData(CodeyBoxSection.Projects)]
+    [InlineData(CodeyBoxSection.Testing)]
+    [InlineData(CodeyBoxSection.Setup)]
     [InlineData(CodeyBoxSection.Diagnostics)]
     public void Every_section_renders_without_throwing(CodeyBoxSection section)
         => Render(vm => vm.Sections.Section = section); // the assertion is that this does not throw
@@ -96,4 +98,9 @@ public class CodeyBoxViewTests
     public void The_detail_pane_renders()
         // Timeline, diff, costs and the rest, plus the priority and prompt editors.
         => Render(vm => vm.IsDetailVisible = true);
+
+    [Fact]
+    public void The_row_detail_pane_renders_when_something_has_been_opened()
+        // Shared by releases, projects and suggestions, and only visible once one has been opened.
+        => Render(vm => vm.Sections.RowDetail = "── release\n{}");
 }
