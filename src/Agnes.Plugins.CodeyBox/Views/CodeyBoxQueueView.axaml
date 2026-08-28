@@ -5,26 +5,92 @@
   <!-- Every colour here is a DynamicResource role from the host's theme, never a literal: a plugin that
        hard-codes hexes stops matching the moment the user switches theme, and Agnes ships several. The
        role names are the app's own (Bg / Panel / Line / Fg / FgDim / FgFaint / Accent). -->
-  <Grid RowDefinitions="Auto,*" Background="{DynamicResource Bg}">
+  <UserControl.Styles>
+    <!-- A destination, not an action. The selected one is filled so the operator can read their location
+         instead of inferring it: the previous header gave nine identical buttons and no current state. -->
+    <Style Selector="Button.nav">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+    <Style Selector="Button.nav.current">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.nav.current /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+    <!-- A group label in the rail. Frequency-ordered: everyday work first, administration last. -->
+    <Style Selector="TextBlock.navgroup">
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="10,12,0,4" />
+    </Style>
+    <!-- Irreversible. Held apart from the routine actions rather than sitting among them. -->
+    <Style Selector="Button.destructive">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid ColumnDefinitions="Auto,*" Background="{DynamicResource Bg}">
+
+    <!-- Destinations live here; actions stay in the pane header. Grouped by how often the operator needs
+         them, so the daily task is not competing with one-off administration. -->
+    <Border Grid.Column="0" Width="168" Background="{DynamicResource Panel}"
+            BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0"
+            IsVisible="{Binding IsConfigured}">
+      <ScrollViewer>
+        <StackPanel Margin="6,10">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="10,0,0,4">
+            <TextBlock Text="CodeyBox" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Fg}" />
+          </StackPanel>
+
+          <TextBlock Classes="navgroup" Text="WORK" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsQueue}" Content="Work queue"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Queue}" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsSuggestions}" Content="Suggestions"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Suggestions}" />
+
+          <TextBlock Classes="navgroup" Text="FLEET" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsFleet}" Content="Fleet"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Fleet}" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsSupervision}" Content="Supervision"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Supervision}" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsProjects}" Content="Projects"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Projects}" />
+
+          <TextBlock Classes="navgroup" Text="ADMIN" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsReleases}" Content="Releases"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Releases}" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsTesting}" Content="Testing"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Testing}" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsSetup}" Content="Setup"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Setup}" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsDiagnostics}" Content="Diagnostics"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Diagnostics}" />
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+  <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" Background="{DynamicResource Bg}">
 
     <Border Grid.Row="0" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
             BorderThickness="0,0,0,1" Padding="14,9">
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <TextBlock Grid.Column="0" Text="CodeyBox" FontWeight="SemiBold" FontSize="14"
+        <TextBlock Grid.Column="0" Text="{Binding Sections.SectionTitle}" FontWeight="SemiBold" FontSize="14"
                    Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
         <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11"
                    Margin="14,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-          <Button Content="Queue"       Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Queue}"       Padding="8,4" FontSize="11" />
-          <Button Content="Fleet"       Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Fleet}"       Padding="8,4" FontSize="11" />
-          <Button Content="Supervision" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Supervision}" Padding="8,4" FontSize="11" />
-          <Button Content="Suggestions" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Suggestions}" Padding="8,4" FontSize="11" />
-          <Button Content="Releases"    Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Releases}"    Padding="8,4" FontSize="11" />
-          <Button Content="Projects"    Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Projects}"    Padding="8,4" FontSize="11" />
-          <Button Content="Testing"     Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Testing}"     Padding="8,4" FontSize="11" />
-          <Button Content="Setup"       Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Setup}"       Padding="8,4" FontSize="11" />
-          <Button Content="Diagnostics" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Diagnostics}" Padding="8,4" FontSize="11" />
-          <Border Width="1" Background="{DynamicResource Line}" Margin="4,2" />
           <Button Content="{Binding PauseButtonText}" Command="{Binding TogglePauseCommand}"
                   IsEnabled="{Binding !IsBusy}" Padding="10,4" FontSize="12"
                   IsVisible="{Binding Sections.IsQueue}" />
@@ -35,12 +101,28 @@
       </Grid>
     </Border>
 
+    <!-- An irreversible action, held until it is confirmed. Named rather than generic, so the operator
+         reads what is about to happen to which item; dismiss is the wider target of the two. -->
+    <Border Grid.Row="1" Margin="14,8" Padding="12,10" CornerRadius="6"
+            Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Danger}" BorderThickness="1"
+            IsVisible="{Binding Confirmation.IsPending}">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Grid.Column="0" Text="{Binding Confirmation.Prompt}" Foreground="{DynamicResource Fg}"
+                   FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+          <Button Content="Keep it" Padding="14,5" FontSize="12" Command="{Binding Confirmation.DismissCommand}" />
+          <Button Classes="destructive" Content="{Binding Confirmation.Verb}" Padding="10,5" FontSize="12"
+                  Command="{Binding Confirmation.ConfirmCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
     <!-- Unconfigured is a first-class state, not an error: most machines have no CodeyBox at all. -->
-    <TextBlock Grid.Row="1" IsVisible="{Binding !IsConfigured}" Margin="24"
+    <TextBlock Grid.Row="2" IsVisible="{Binding !IsConfigured}" Margin="24"
                Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" MaxWidth="520"
                Text="No CodeyBox API key found. Run `codeybox configure`, or set CODEYBOX_CLI_API_URL and CODEYBOX_CLI_API_KEY, then reopen this tab." />
 
-    <Grid Grid.Row="1" ColumnDefinitions="*,4,*">
+    <Grid Grid.Row="2" ColumnDefinitions="*,4,*">
       <Grid.IsVisible>
         <MultiBinding Converter="{x:Static BoolConverters.And}">
           <Binding Path="IsConfigured" />
@@ -96,17 +178,28 @@
       <GridSplitter Grid.Column="1" Background="{DynamicResource Line}" />
 
       <Grid Grid.Column="2" RowDefinitions="Auto,*">
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="10,8"
-                    IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="10,8"
+                   IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
           <TextBlock Text="{Binding Selected.Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                     FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="240"
+                     FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="200" Margin="0,0,8,0"
                      TextTrimming="CharacterEllipsis" />
+          <!-- The two ordinary moves stay out; recovery hides behind More; the irreversible pair is kept
+               apart and confirmed. Eight equal buttons made abandoning an item look like retrying one. -->
           <Button Content="Retry" FontSize="11" Padding="8,3" Command="{Binding RetryCommand}"
                   CommandParameter="{Binding Selected}" />
           <Button Content="Promote" FontSize="11" Padding="8,3" Command="{Binding PromoteCommand}"
                   CommandParameter="{Binding Selected}" />
-          <Button Content="Cancel" FontSize="11" Padding="8,3" Command="{Binding CancelCommand}"
-                  CommandParameter="{Binding Selected}" />
+          <Button Content="More…" FontSize="11" Padding="8,3" Command="{Binding ToggleMoreActionsCommand}"
+                  ToolTip.Tip="Replay, resume, recover, uncancel" />
+          <Border Width="1" Background="{DynamicResource Line}" Margin="4,2" />
+          <!-- Output vs detail: the live stream, or everything the orchestrator knows about this item. -->
+          <Button Content="Output" FontSize="11" Padding="8,3" Command="{Binding ShowOutputCommand}" />
+          <Button Content="Detail" FontSize="11" Padding="8,3" Command="{Binding ShowDetailCommand}" />
+        </WrapPanel>
+
+        <!-- Recovery moves for an item that has gone wrong, and the two that destroy work. -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="10,36,10,0"
+                    IsVisible="{Binding ShowMoreActions}">
           <Button Content="Replay" FontSize="11" Padding="8,3" Command="{Binding ReplayCommand}"
                   CommandParameter="{Binding Selected}" />
           <Button Content="Resume" FontSize="11" Padding="8,3" Command="{Binding ResumeItemCommand}"
@@ -115,12 +208,11 @@
                   CommandParameter="{Binding Selected}" />
           <Button Content="Uncancel" FontSize="11" Padding="8,3" Command="{Binding UncancelCommand}"
                   CommandParameter="{Binding Selected}" />
-          <Button Content="Abandon" FontSize="11" Padding="8,3" Command="{Binding AbandonCommand}"
-                  CommandParameter="{Binding Selected}" />
-          <Border Width="1" Background="{DynamicResource Line}" Margin="4,2" />
-          <!-- Output vs detail: the live stream, or everything the orchestrator knows about this item. -->
-          <Button Content="Output" FontSize="11" Padding="8,3" Command="{Binding ShowOutputCommand}" />
-          <Button Content="Detail" FontSize="11" Padding="8,3" Command="{Binding ShowDetailCommand}" />
+          <Border Width="1" Background="{DynamicResource Line}" Margin="8,2" />
+          <Button Classes="destructive" Content="Cancel" FontSize="11" Padding="8,3"
+                  Command="{Binding CancelCommand}" CommandParameter="{Binding Selected}" />
+          <Button Classes="destructive" Content="Abandon" FontSize="11" Padding="8,3"
+                  Command="{Binding AbandonCommand}" CommandParameter="{Binding Selected}" />
         </StackPanel>
 
         <!-- Questions the agent is waiting on. Above the transcript, because an agent blocked on a person
@@ -219,7 +311,7 @@
     </Grid>
 
     <!-- Fleet: per-project queue depth, spend against budget, and any agent an operator has paused. -->
-    <ScrollViewer Grid.Row="1" IsVisible="{Binding Sections.IsFleet}" Padding="14">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsFleet}" Padding="14">
       <StackPanel Spacing="10">
         <TextBlock Text="Projects" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" FontSize="12" />
         <ItemsControl ItemsSource="{Binding Sections.Fleet}">
@@ -270,7 +362,7 @@
     </ScrollViewer>
 
     <!-- Supervision: live agent sessions, and speaking into one. -->
-    <Grid Grid.Row="1" IsVisible="{Binding Sections.IsSupervision}" RowDefinitions="Auto,*,Auto" Margin="14">
+    <Grid Grid.Row="2" IsVisible="{Binding Sections.IsSupervision}" RowDefinitions="Auto,*,Auto" Margin="14">
       <TextBlock Grid.Row="0" Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" Margin="0,0,0,8"
                  IsVisible="{Binding !Sections.SupervisionEnabled}"
                  Text="Supervision is switched off on this orchestrator, so it reports no sessions. Enable it in CodeyBox to watch and steer running agents from here." />
@@ -301,7 +393,7 @@
     </Grid>
 
     <!-- Suggestions the auditors raised, and promoting one into real work. -->
-    <ScrollViewer Grid.Row="1" IsVisible="{Binding Sections.IsSuggestions}" Padding="14">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsSuggestions}" Padding="14">
       <ItemsControl ItemsSource="{Binding Sections.Suggestions}">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
@@ -332,7 +424,7 @@
     </ScrollViewer>
 
     <!-- Releases, and the templates a new batch of work can be queued from. -->
-    <ScrollViewer Grid.Row="1" IsVisible="{Binding Sections.IsReleases}" Padding="14">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsReleases}" Padding="14">
       <StackPanel Spacing="10">
         <TextBlock Text="Releases" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" FontSize="12" />
         <ItemsControl ItemsSource="{Binding Sections.Releases}">
@@ -387,7 +479,7 @@
     </ScrollViewer>
 
     <!-- Projects: what the orchestrator runs work for, and its per-project queue control. -->
-    <ScrollViewer Grid.Row="1" IsVisible="{Binding Sections.IsProjects}" Padding="14">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsProjects}" Padding="14">
       <ItemsControl ItemsSource="{Binding Sections.Projects}">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
@@ -423,15 +515,28 @@
     </ScrollViewer>
 
     <!-- Whatever release, project or suggestion was last opened. -->
-    <ScrollViewer Grid.Row="1" Padding="14" IsVisible="{Binding Sections.RowDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                  VerticalAlignment="Bottom" MaxHeight="220" Background="{DynamicResource Panel}">
-      <SelectableTextBlock Text="{Binding Sections.RowDetail}" FontFamily="monospace" FontSize="11"
-                           Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
-    </ScrollViewer>
+    <Border Grid.Row="2" VerticalAlignment="Bottom" MaxHeight="240" Background="{DynamicResource Panel}"
+            BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+            IsVisible="{Binding Sections.RowDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+      <Grid RowDefinitions="Auto,*">
+        <!-- Titled and closable: it used to appear over the pane with neither, so there was no marked
+             way back to what it covered. -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,8,10,4">
+          <TextBlock Grid.Column="0" Text="Details" FontWeight="SemiBold" FontSize="12"
+                     Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Content="Close" FontSize="11" Padding="8,3"
+                  Command="{Binding Sections.CloseRowDetailCommand}" />
+        </Grid>
+        <ScrollViewer Grid.Row="1" Padding="14,0,14,12">
+          <SelectableTextBlock Text="{Binding Sections.RowDetail}" FontFamily="monospace" FontSize="11"
+                               Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+        </ScrollViewer>
+      </Grid>
+    </Border>
 
     <!-- Testing: end-to-end runs and the cases behind them. Id-addressed, because on most instances these
          lists are empty and a box to type in beats a list with nothing in it. -->
-    <Grid Grid.Row="1" IsVisible="{Binding Sections.IsTesting}" RowDefinitions="Auto,Auto,*" Margin="14">
+    <Grid Grid.Row="2" IsVisible="{Binding Sections.IsTesting}" RowDefinitions="Auto,Auto,*" Margin="14">
       <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6">
         <TextBox Text="{Binding Sections.TestingId, Mode=TwoWay}" Width="240" FontSize="11"
                  Watermark="run · batch · test case · work item id" />
@@ -461,7 +566,7 @@
     </Grid>
 
     <!-- Setup: enrolment and one-off maintenance. -->
-    <Grid Grid.Row="1" IsVisible="{Binding Sections.IsSetup}" RowDefinitions="Auto,Auto,Auto,*" Margin="14">
+    <Grid Grid.Row="2" IsVisible="{Binding Sections.IsSetup}" RowDefinitions="Auto,Auto,Auto,*" Margin="14">
       <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6">
         <Button Content="Start GitHub App connect" FontSize="11" Padding="8,3" Command="{Binding Sections.StartGitHubConnectCommand}" />
         <Button Content="Connect" FontSize="11" Padding="8,3" Command="{Binding Sections.ConnectGitHubCommand}" />
@@ -496,12 +601,13 @@
     </Grid>
 
     <!-- The orchestrator's own health surfaces. Several are optional and say so when switched off. -->
-    <ScrollViewer Grid.Row="1" IsVisible="{Binding Sections.IsDiagnostics}" Padding="14">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDiagnostics}" Padding="14">
       <SelectableTextBlock Text="{Binding Sections.Diagnostics}" FontFamily="monospace" FontSize="11"
                            Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
     </ScrollViewer>
 
-    <TextBlock Grid.Row="1" Text="{Binding Sections.SectionStatus}" Foreground="{DynamicResource FgFaint}"
+    <TextBlock Grid.Row="2" Text="{Binding Sections.SectionStatus}" Foreground="{DynamicResource FgFaint}"
                FontSize="10" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="14,0,14,6" />
+  </Grid>
   </Grid>
 </UserControl>

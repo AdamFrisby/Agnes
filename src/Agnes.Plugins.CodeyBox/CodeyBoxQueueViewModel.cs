@@ -35,11 +35,12 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         TogglePauseCommand = new AsyncRelayCommand(TogglePauseAsync);
-        CancelCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.CancelAsync));
+        // Irreversible: armed here, executed only after the operator confirms against the named item.
+        CancelCommand = new AsyncRelayCommand<WorkItemRow>(row => Confirm("Cancel", row, _client.CancelAsync));
         RetryCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.RetryAsync));
         PromoteCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.PromoteAsync));
         ReplayCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.ReplayAsync));
-        AbandonCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.AbandonAsync));
+        AbandonCommand = new AsyncRelayCommand<WorkItemRow>(row => Confirm("Abandon", row, _client.AbandonAsync));
         UncancelCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.UncancelAsync));
         ResumeItemCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.ResumeWorkItemAsync));
         RecoverCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.RecoverAsync));
@@ -49,7 +50,21 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         _client.StdoutReceived += OnStdout;
         _client.StreamCompleted += OnStreamCompleted;
 
-        Sections = new CodeyBoxSectionsViewModel(client, toUi);
+        Sections = new CodeyBoxSectionsViewModel(client, toUi, Confirmation);
+    }
+
+    /// <summary>A pending irreversible action, awaiting confirmation. Shared with the sections below, so
+    /// there is one place the operator learns to look before something is destroyed.</summary>
+    public Confirmation Confirmation { get; } = new();
+
+    private Task Confirm(string verb, WorkItemRow? row, Func<string, CancellationToken, Task> action)
+    {
+        if (row is not null)
+        {
+            Confirmation.Ask(verb, row.ShortId, () => Act(row, action));
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>Everything the tab shows besides the queue — fleet, supervision, suggestions, releases and
@@ -85,6 +100,19 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     public IAsyncRelayCommand<WorkItemRow> CancelCommand { get; }
     public IAsyncRelayCommand<WorkItemRow> RetryCommand { get; }
     public IAsyncRelayCommand<WorkItemRow> PromoteCommand { get; }
+    /// <summary>
+    /// Whether the secondary lifecycle actions are shown. Collapsed by default: replay, resume, recover
+    /// and uncancel are recovery moves for an item that has gone wrong, not part of ordinary work, and
+    /// showing all eight at once made retry and abandon look like equivalent choices.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showMoreActions;
+
+    public ICommand ToggleMoreActionsCommand =>
+        _toggleMore ??= new RelayCommand(() => ShowMoreActions = !ShowMoreActions);
+
+    private ICommand? _toggleMore;
+
     public IAsyncRelayCommand<WorkItemRow> ReplayCommand { get; }
     public IAsyncRelayCommand<WorkItemRow> AbandonCommand { get; }
     public IAsyncRelayCommand<WorkItemRow> UncancelCommand { get; }
@@ -347,11 +375,13 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     public IAsyncRelayCommand DeleteAttachmentCommand => _deleteAttachment ??= new AsyncRelayCommand(async () =>
     {
         if (Selected is not { } row || string.IsNullOrWhiteSpace(DetailArgument)) { return; }
-        await Guarded("delete attachment", async () =>
+        var attachment = DetailArgument.Trim();
+        Confirmation.Ask("Delete attachment", attachment, () => Guarded("delete attachment", async () =>
         {
-            await _client.DeleteAttachmentAsync(row.Id, DetailArgument.Trim(), _cts.Token).ConfigureAwait(false);
+            await _client.DeleteAttachmentAsync(row.Id, attachment, _cts.Token).ConfigureAwait(false);
             await LoadDetailAsync(row.Id).ConfigureAwait(false);
-        }).ConfigureAwait(false);
+        }));
+        await Task.CompletedTask.ConfigureAwait(false);
     });
 
     /// <summary>One auditor's report as written, which is prose rather than a record.</summary>

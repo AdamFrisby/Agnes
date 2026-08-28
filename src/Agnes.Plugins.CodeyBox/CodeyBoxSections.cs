@@ -33,10 +33,13 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     private readonly Func<Action, Task> _toUi;
     private readonly HashSet<CodeyBoxSection> _loaded = [];
 
-    public CodeyBoxSectionsViewModel(CodeyBoxClient client, Func<Action, Task> toUi)
+    private readonly Confirmation _confirmation;
+
+    public CodeyBoxSectionsViewModel(CodeyBoxClient client, Func<Action, Task> toUi, Confirmation? confirmation = null)
     {
         _client = client;
         _toUi = toUi;
+        _confirmation = confirmation ?? new Confirmation();
         InjectCommand = new AsyncRelayCommand(InjectAsync, () => CanInject);
         PromoteSuggestionCommand = new AsyncRelayCommand<Suggestion>(PromoteSuggestionAsync);
         ResumeAgentCommand = new AsyncRelayCommand<AgentPause>(ResumeAgentAsync);
@@ -45,7 +48,15 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
         DismissSuggestionCommand = new AsyncRelayCommand<Suggestion>(DismissSuggestionAsync);
         CloseReleaseCommand = new AsyncRelayCommand<Release>(r => ReleaseAction(r, _client.CloseReleaseAsync));
         ReopenReleaseCommand = new AsyncRelayCommand<Release>(r => ReleaseAction(r, _client.ReopenReleaseAsync));
-        AbandonReleaseCommand = new AsyncRelayCommand<Release>(r => ReleaseAction(r, _client.AbandonReleaseAsync));
+        AbandonReleaseCommand = new AsyncRelayCommand<Release>(r =>
+        {
+            if (r is not null)
+            {
+                _confirmation.Ask("Abandon release", r.Title ?? r.Id, () => ReleaseAction(r, _client.AbandonReleaseAsync));
+            }
+
+            return Task.CompletedTask;
+        });
         ShipReleaseCommand = new AsyncRelayCommand<Release>(r => ReleaseAction(r, _client.ShipReleaseAsync));
         QueueTemplateCommand = new AsyncRelayCommand<TaskTemplate>(QueueTemplateAsync);
     }
@@ -81,6 +92,21 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     private bool _supervisionEnabled = true;
+
+    /// <summary>The current section's name, used as the pane title so the operator can always read where
+    /// they are rather than having to spot which of nine buttons looks pressed.</summary>
+    public string SectionTitle => Section switch
+    {
+        CodeyBoxSection.Queue => "Work queue",
+        CodeyBoxSection.Suggestions => "Suggestions",
+        CodeyBoxSection.Fleet => "Fleet",
+        CodeyBoxSection.Supervision => "Supervision",
+        CodeyBoxSection.Releases => "Releases",
+        CodeyBoxSection.Projects => "Projects",
+        CodeyBoxSection.Testing => "Testing",
+        CodeyBoxSection.Setup => "Setup",
+        _ => "Diagnostics",
+    };
 
     public bool IsQueue => Section == CodeyBoxSection.Queue;
     public bool IsFleet => Section == CodeyBoxSection.Fleet;
@@ -172,6 +198,11 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     private IAsyncRelayCommand<Suggestion>? _openSuggestion;
     private IAsyncRelayCommand? _createRelease;
     private IAsyncRelayCommand<Project>? _createProjectRelease;
+
+    public IRelayCommand CloseRowDetailCommand =>
+        _closeRowDetail ??= new RelayCommand(() => RowDetail = string.Empty);
+
+    private IRelayCommand? _closeRowDetail;
 
     private Task Show(string label, (string Label, RawJson? Value)[] parts)
         => _toUi(() => RowDetail = Combine(parts));
@@ -343,7 +374,8 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     {
         foreach (var name in new[] { nameof(IsQueue), nameof(IsFleet), nameof(IsSupervision),
                                      nameof(IsSuggestions), nameof(IsReleases), nameof(IsProjects),
-                                     nameof(IsTesting), nameof(IsSetup), nameof(IsDiagnostics) })
+                                     nameof(IsTesting), nameof(IsSetup), nameof(IsDiagnostics),
+                                     nameof(SectionTitle) })
         {
             OnPropertyChanged(name);
         }
@@ -532,8 +564,16 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
         await Act("update test case", id => _client.UpdateTestCaseAsync(id, body)).ConfigureAwait(false);
     });
 
-    public IAsyncRelayCommand DeleteTestCaseCommand => _deleteCase ??= new AsyncRelayCommand(
-        () => Act("delete test case", id => _client.DeleteTestCaseAsync(id)));
+    public IAsyncRelayCommand DeleteTestCaseCommand => _deleteCase ??= new AsyncRelayCommand(() =>
+    {
+        if (!string.IsNullOrWhiteSpace(TestingId))
+        {
+            _confirmation.Ask("Delete test case", TestingId.Trim(),
+                () => Act("delete test case", id => _client.DeleteTestCaseAsync(id)));
+        }
+
+        return Task.CompletedTask;
+    });
 
     private IAsyncRelayCommand? _showRun, _showBatch, _cancelRun, _createRun, _createRuns;
     private IAsyncRelayCommand? _showCase, _showItemCases, _createCase, _createCases, _updateCase, _deleteCase;
@@ -584,18 +624,23 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     public IAsyncRelayCommand DisposeSandboxCommand => _disposeSandbox ??= new AsyncRelayCommand(async () =>
     {
         if (string.IsNullOrWhiteSpace(LeakedSandboxName)) { return; }
-        try
+        var name = LeakedSandboxName.Trim();
+        _confirmation.Ask("Dispose sandbox", name, async () =>
         {
-            await _client.DisposeLeakedSandboxAsync(LeakedSandboxName.Trim()).ConfigureAwait(false);
-            await _toUi(() => { SectionStatus = $"Disposed {LeakedSandboxName}."; LeakedSandboxName = string.Empty; })
-                .ConfigureAwait(false);
-            await LoadSetupAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            Diagnostic.Report("dispose sandbox", ex);
-            await _toUi(() => SectionStatus = $"Couldn't dispose — {ex.Message}").ConfigureAwait(false);
-        }
+            try
+            {
+                await _client.DisposeLeakedSandboxAsync(name).ConfigureAwait(false);
+                await _toUi(() => { SectionStatus = $"Disposed {name}."; LeakedSandboxName = string.Empty; })
+                    .ConfigureAwait(false);
+                await LoadSetupAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Diagnostic.Report("dispose sandbox", ex);
+                await _toUi(() => SectionStatus = $"Couldn't dispose — {ex.Message}").ConfigureAwait(false);
+            }
+        });
+        await Task.CompletedTask.ConfigureAwait(false);
     });
 
     public IAsyncRelayCommand QueueTemplatesCommand => _queueTemplates ??= new AsyncRelayCommand(

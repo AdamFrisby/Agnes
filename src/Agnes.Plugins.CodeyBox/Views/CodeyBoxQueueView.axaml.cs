@@ -38,7 +38,20 @@ public partial class CodeyBoxQueueView : UserControl
     // read something is not yanked away by the next chunk.
     private void OnOutputAppended(string _)
     {
-        if (this.FindControl<ScrollViewer>("OutputScroller") is not { } scroller)
+        // Output can arrive before this control is attached — a session selected while the tab is being
+        // built streams immediately — and looking a name up outside a name scope throws rather than
+        // returning null. Resolved defensively so a chunk arriving early cannot take the pane down.
+        ScrollViewer? scroller;
+        try
+        {
+            scroller = this.FindControl<ScrollViewer>("OutputScroller");
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        if (scroller is null)
         {
             return;
         }

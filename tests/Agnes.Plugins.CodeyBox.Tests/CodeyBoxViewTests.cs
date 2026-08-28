@@ -103,4 +103,64 @@ public class CodeyBoxViewTests
     public void The_row_detail_pane_renders_when_something_has_been_opened()
         // Shared by releases, projects and suggestions, and only visible once one has been opened.
         => Render(vm => vm.Sections.RowDetail = "── release\n{}");
+
+    [Fact]
+    public void The_confirmation_bar_renders_when_something_irreversible_is_armed()
+        => Render(vm => vm.Confirmation.Ask("Abandon", "43c8ec28", () => Task.CompletedTask));
+
+    [Fact]
+    public void The_secondary_action_row_renders_when_expanded()
+        // Replay, resume, recover, uncancel and the two destructive ones, hidden until asked for.
+        => Render(vm => vm.ShowMoreActions = true);
+
+    [Fact]
+    public void An_irreversible_action_does_not_run_until_it_is_confirmed()
+    {
+        // The point of the bar: arming must not act. Cancel and abandon used to fire on the first click,
+        // from a row where they looked exactly like retry.
+        var ran = false;
+        var confirmation = new Confirmation();
+
+        confirmation.Ask("Abandon", "43c8ec28", () => { ran = true; return Task.CompletedTask; });
+
+        Assert.True(confirmation.IsPending);
+        Assert.False(ran);
+        Assert.Contains("43c8ec28", confirmation.Prompt, StringComparison.Ordinal);
+        Assert.Contains("cannot be undone", confirmation.Prompt, StringComparison.OrdinalIgnoreCase);
+
+        confirmation.ConfirmCommand.Execute(null);
+        Assert.True(ran);
+        Assert.False(confirmation.IsPending);
+    }
+
+    [Fact]
+    public void Dismissing_a_confirmation_discards_the_action()
+    {
+        var ran = false;
+        var confirmation = new Confirmation();
+        confirmation.Ask("Cancel", "b7b3e663", () => { ran = true; return Task.CompletedTask; });
+
+        confirmation.DismissCommand.Execute(null);
+
+        Assert.False(confirmation.IsPending);
+        Assert.False(ran);
+
+        // And a later confirm cannot resurrect what was dismissed.
+        confirmation.ConfirmCommand.Execute(null);
+        Assert.False(ran);
+    }
+
+    [Fact]
+    public void The_current_section_is_named_rather_than_only_highlighted()
+    {
+        // The rail shows which destination is current; the pane title says it in words, so location does
+        // not depend on spotting which of nine buttons looks pressed.
+        var vm = NewViewModel();
+
+        vm.Sections.Section = CodeyBoxSection.Supervision;
+        Assert.Equal("Supervision", vm.Sections.SectionTitle);
+
+        vm.Sections.Section = CodeyBoxSection.Queue;
+        Assert.Equal("Work queue", vm.Sections.SectionTitle);
+    }
 }
