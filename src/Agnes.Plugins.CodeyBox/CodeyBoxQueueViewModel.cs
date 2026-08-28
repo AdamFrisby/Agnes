@@ -75,7 +75,186 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     /// loop — a machine with no CodeyBox is an ordinary machine, not a broken one.</summary>
     public bool IsConfigured { get; }
 
+    /// <summary>Everything the orchestrator returned. The screen shows a slice of it — see
+    /// <see cref="ApplyView"/>.</summary>
+    private readonly List<WorkItemRow> _all = [];
+
+    /// <summary>
+    /// The items currently on screen, after search, filter and sort. Derived — to put items <i>into</i>
+    /// the queue use <see cref="Load"/>, or writing here would be overwritten by the next view change.
+    /// </summary>
     public ObservableCollection<WorkItemRow> Items { get; } = [];
+
+    /// <summary>
+    /// Replaces the queue's contents and re-derives what is on screen. The one way in, so the filter
+    /// always has the whole set to narrow and the counts can say what is being hidden.
+    /// </summary>
+    public void Load(IEnumerable<WorkItemRow> items)
+    {
+        _all.Clear();
+        _all.AddRange(items);
+
+        Agents.Clear();
+        foreach (var agent in _all.Select(i => i.Agent).Where(a => a is { Length: > 0 }).Distinct().Order())
+        {
+            Agents.Add(agent!);
+        }
+
+        ApplyView();
+    }
+
+    /// <summary>The same items grouped by project, for when one queue serves several repositories.</summary>
+    public ObservableCollection<WorkItemGroup> Groups { get; } = [];
+
+    /// <summary>Projects, for the filter and for the new-item picker.</summary>
+    public ObservableCollection<ProjectChoice> Projects { get; } = [];
+
+    /// <summary>Agents seen in the queue, for the filter. Read from the items rather than configured, so
+    /// it lists what has actually run here.</summary>
+    public ObservableCollection<string> Agents { get; } = [];
+
+    [ObservableProperty]
+    private string _search = string.Empty;
+
+    [ObservableProperty]
+    private QueueFilter _filter = QueueFilter.NeedsAttention;
+
+    [ObservableProperty]
+    private QueueSort _sort = QueueSort.Priority;
+
+    [ObservableProperty]
+    private string? _projectFilter;
+
+    [ObservableProperty]
+    private string? _agentFilter;
+
+    [ObservableProperty]
+    private bool _groupByProject;
+
+    /// <summary>How many items need a person, regardless of the current filter — the number worth knowing
+    /// even while looking at something else.</summary>
+    public int AttentionCount => _all.Count(i => i.NeedsAttention);
+
+    public bool HasAttention => AttentionCount > 0;
+
+    /// <summary>What the current slice is showing, against the whole, so a filter can never silently hide
+    /// the rest of the queue.</summary>
+    public string ViewSummary => _all.Count == 0
+        ? string.Empty
+        : $"{Items.Count} of {_all.Count}" + (AttentionCount > 0 ? $"  ·  {AttentionCount} need attention" : string.Empty);
+
+    public bool IsFilterNeedsAttention => Filter == QueueFilter.NeedsAttention;
+    public bool IsFilterActive => Filter == QueueFilter.Active;
+    public bool IsFilterDone => Filter == QueueFilter.Done;
+    public bool IsFilterCancelled => Filter == QueueFilter.Cancelled;
+    public bool IsFilterAll => Filter == QueueFilter.All;
+
+    public IRelayCommand<QueueFilter> SetFilterCommand =>
+        _setFilter ??= new RelayCommand<QueueFilter>(f => Filter = f);
+
+    public IRelayCommand<QueueSort> SetSortCommand =>
+        _setSort ??= new RelayCommand<QueueSort>(sort => Sort = sort);
+
+    public IRelayCommand ToggleGroupCommand =>
+        _toggleGroup ??= new RelayCommand(() => GroupByProject = !GroupByProject);
+
+    /// <summary>Selects a row from the grouped list, which uses buttons rather than a ListBox.</summary>
+    public IRelayCommand<WorkItemRow> SelectCommand =>
+        _select ??= new RelayCommand<WorkItemRow>(row => { if (row is not null) { Selected = row; } });
+
+    private IRelayCommand<WorkItemRow>? _select;
+
+    public IRelayCommand ClearFiltersCommand => _clearFilters ??= new RelayCommand(() =>
+    {
+        Search = string.Empty;
+        ProjectFilter = null;
+        AgentFilter = null;
+        Filter = QueueFilter.NeedsAttention;
+    });
+
+    private IRelayCommand<QueueFilter>? _setFilter;
+    private IRelayCommand<QueueSort>? _setSort;
+    private IRelayCommand? _toggleGroup;
+    private IRelayCommand? _clearFilters;
+
+    partial void OnSearchChanged(string value) => ApplyView();
+    partial void OnFilterChanged(QueueFilter value) => ApplyView();
+    partial void OnSortChanged(QueueSort value) => ApplyView();
+    partial void OnProjectFilterChanged(string? value) => ApplyView();
+    partial void OnAgentFilterChanged(string? value) => ApplyView();
+    partial void OnGroupByProjectChanged(bool value) => ApplyView();
+
+    /// <summary>
+    /// Narrows the whole queue down to what is on screen. Search matches title, id and work branch —
+    /// the three things someone actually has to hand when looking for an item they remember.
+    /// </summary>
+    private void ApplyView()
+    {
+        IEnumerable<WorkItemRow> view = _all;
+
+        view = Filter switch
+        {
+            QueueFilter.NeedsAttention => view.Where(i => i.NeedsAttention),
+            QueueFilter.Active => view.Where(i => i.IsActive),
+            QueueFilter.Done => view.Where(i => i.State == "Done"),
+            QueueFilter.Cancelled => view.Where(i => i.State == "Cancelled"),
+            _ => view,
+        };
+
+        if (ProjectFilter is { Length: > 0 } project)
+        {
+            view = view.Where(i => i.ProjectId == project);
+        }
+
+        if (AgentFilter is { Length: > 0 } agent)
+        {
+            view = view.Where(i => i.Agent == agent);
+        }
+
+        if (Search is { Length: > 0 } search)
+        {
+            view = view.Where(i =>
+                i.Title.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                i.Id.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                (i.WorkBranch?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        view = Sort switch
+        {
+            // Highest priority first: the orchestrator works the queue in that order, so it is the
+            // ordering that predicts what happens next rather than merely describing what happened.
+            QueueSort.Priority => view.OrderByDescending(i => i.Priority).ThenBy(i => i.QueuePosition),
+            QueueSort.Recent => view.OrderByDescending(i => i.UpdatedAt),
+            QueueSort.Oldest => view.OrderBy(i => i.CreatedAt),
+            _ => view.OrderByDescending(i => i.UsageTotal?.CostUsd ?? 0m),
+        };
+
+        var ordered = view.ToList();
+
+        Items.Clear();
+        foreach (var item in ordered)
+        {
+            Items.Add(item);
+        }
+
+        Groups.Clear();
+        if (GroupByProject)
+        {
+            foreach (var group in ordered.GroupBy(i => i.ProjectId ?? "(no project)").OrderBy(g => g.Key))
+            {
+                Groups.Add(new WorkItemGroup(group.Key, [.. group]));
+            }
+        }
+
+        OnPropertyChanged(nameof(ViewSummary));
+        OnPropertyChanged(nameof(AttentionCount));
+        OnPropertyChanged(nameof(HasAttention));
+        foreach (var name in new[] { nameof(IsFilterNeedsAttention), nameof(IsFilterActive),
+                                     nameof(IsFilterDone), nameof(IsFilterCancelled), nameof(IsFilterAll) })
+        {
+            OnPropertyChanged(name);
+        }
+    }
 
     [ObservableProperty]
     private WorkItemRow? _selected;
@@ -262,8 +441,21 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     [ObservableProperty]
     private string _newPrompt = string.Empty;
 
+    /// <summary>
+    /// The project a new item goes to, chosen from the list rather than typed. The form used to require
+    /// the id exactly ("codeybox-self"), which is knowledge the interface already had and the person did
+    /// not — a memory test standing between them and queueing work.
+    /// </summary>
     [ObservableProperty]
-    private string _newProjectId = string.Empty;
+    private ProjectChoice? _newProject;
+
+    /// <summary>The agent that project will use unless something overrides it, shown so the choice is not
+    /// invisible at the moment it is made.</summary>
+    public string NewProjectAgent => NewProject?.DefaultAgent is { Length: > 0 } agent
+        ? $"runs on {agent} by default"
+        : string.Empty;
+
+    partial void OnNewProjectChanged(ProjectChoice? value) => OnPropertyChanged(nameof(NewProjectAgent));
 
     [ObservableProperty]
     private bool _isCreating;
@@ -274,7 +466,13 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     [ObservableProperty]
     private string _promptEdit = string.Empty;
 
-    public ICommand ToggleCreateCommand => _toggleCreate ??= new RelayCommand(() => IsCreating = !IsCreating);
+    public ICommand ToggleCreateCommand => _toggleCreate ??= new RelayCommand(() =>
+    {
+        IsCreating = !IsCreating;
+        // Preselect: the project being filtered on if there is one, else the busiest. Either beats an
+        // empty picker, and both are better than asking for an id from memory.
+        NewProject ??= Projects.FirstOrDefault(p => p.Id == ProjectFilter) ?? Projects.FirstOrDefault();
+    });
     private ICommand? _toggleCreate;
 
     public IAsyncRelayCommand CreateCommand => _create ??= new AsyncRelayCommand(CreateAsync);
@@ -288,8 +486,8 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
     private async Task CreateAsync()
     {
-        if (string.IsNullOrWhiteSpace(NewTitle) || string.IsNullOrWhiteSpace(NewPrompt) ||
-            string.IsNullOrWhiteSpace(NewProjectId))
+        if (NewProject is not { } project || string.IsNullOrWhiteSpace(NewTitle) ||
+            string.IsNullOrWhiteSpace(NewPrompt))
         {
             await _toUi(() => Status = "A new work item needs a project, a title and a prompt.").ConfigureAwait(false);
             return;
@@ -298,7 +496,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         try
         {
             var id = await _client.CreateWorkItemAsync(
-                new NewWorkItem(NewProjectId.Trim(), NewTitle.Trim(), NewPrompt.Trim()), _cts.Token).ConfigureAwait(false);
+                new NewWorkItem(project.Id, NewTitle.Trim(), NewPrompt.Trim()), _cts.Token).ConfigureAwait(false);
             await _toUi(() =>
             {
                 Status = id is null ? "Created." : $"Created {id[..Math.Min(8, id.Length)]}.";
@@ -530,14 +728,21 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             var items = await _client.ListWorkItemsAsync(_cts.Token).ConfigureAwait(false);
             var queue = await _client.GetQueueStatusAsync(_cts.Token).ConfigureAwait(false);
 
+            var projects = await _client.GetProjectsAsync(_cts.Token).ConfigureAwait(false);
+
             await _toUi(() =>
             {
                 var keep = Selected?.Id;
-                Items.Clear();
-                foreach (var item in items.OrderBy(i => i.IsTerminal).ThenBy(i => i.QueuePosition))
+
+                Projects.Clear();
+                foreach (var project in projects)
                 {
-                    Items.Add(item);
+                    Projects.Add(new ProjectChoice(project.Id, project.DisplayName, project.DefaultAgent));
                 }
+
+                // Agents come from the queue rather than from configuration, so the filter offers what has
+                // actually run here — six of them on this instance.
+                Load(items);
 
                 // Re-point at the same item across a refresh: the rows are fresh records, so holding the
                 // old instance would silently deselect on every poll.
@@ -547,7 +752,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
                 }
 
                 QueuePaused = queue?.IsPaused ?? false;
-                Status = $"{Items.Count} work item(s)" + (QueuePaused ? " · queue paused" : string.Empty);
+                Status = QueuePaused ? "Queue paused" : string.Empty;
             }).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

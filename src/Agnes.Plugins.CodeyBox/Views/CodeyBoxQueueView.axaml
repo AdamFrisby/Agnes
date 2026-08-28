@@ -35,6 +35,24 @@
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Margin" Value="10,12,0,4" />
     </Style>
+    <!-- A slice of the queue. The active one is filled, so the list is never narrowed invisibly. -->
+    <Style Selector="Button.chip">
+      <Setter Property="Padding" Value="9,4" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    </Style>
+    <Style Selector="Button.chip.on">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="Button.chip.on /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+
     <!-- Irreversible. Held apart from the routine actions rather than sitting among them. -->
     <Style Selector="Button.destructive">
       <Setter Property="Foreground" Value="{DynamicResource Danger}" />
@@ -122,7 +140,7 @@
                Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" MaxWidth="520"
                Text="No CodeyBox API key found. Run `codeybox configure`, or set CODEYBOX_CLI_API_URL and CODEYBOX_CLI_API_KEY, then reopen this tab." />
 
-    <Grid Grid.Row="2" ColumnDefinitions="*,4,*">
+    <Grid Grid.Row="2" ColumnDefinitions="*,4,*" RowDefinitions="Auto,*">
       <Grid.IsVisible>
         <MultiBinding Converter="{x:Static BoolConverters.And}">
           <Binding Path="IsConfigured" />
@@ -130,12 +148,61 @@
         </MultiBinding>
       </Grid.IsVisible>
 
-      <Border Grid.Column="0" VerticalAlignment="Top" ZIndex="1" Margin="8" Padding="10,8" CornerRadius="6"
+      <!-- Finding the item you mean, before anything else. A real queue here holds 404 items of which
+           only ~30 are actionable, so the default slice is the actionable one and the count states what
+           is being hidden. -->
+      <StackPanel Grid.Row="0" Grid.Column="0" Spacing="6" Margin="8,8,8,4">
+        <TextBox Text="{Binding Search, Mode=TwoWay}" FontSize="12"
+                 Watermark="Search title, id or branch…" />
+        <WrapPanel Orientation="Horizontal">
+          <Button Classes="chip" Classes.on="{Binding IsFilterNeedsAttention}" Content="Needs attention"
+                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.NeedsAttention}"
+                  Margin="0,0,4,4" />
+          <Button Classes="chip" Classes.on="{Binding IsFilterActive}" Content="Running"
+                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.Active}"
+                  Margin="0,0,4,4" />
+          <Button Classes="chip" Classes.on="{Binding IsFilterDone}" Content="Done"
+                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.Done}"
+                  Margin="0,0,4,4" />
+          <Button Classes="chip" Classes.on="{Binding IsFilterCancelled}" Content="Cancelled"
+                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.Cancelled}"
+                  Margin="0,0,4,4" />
+          <Button Classes="chip" Classes.on="{Binding IsFilterAll}" Content="All"
+                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.All}"
+                  Margin="0,0,4,4" />
+        </WrapPanel>
+        <WrapPanel Orientation="Horizontal">
+          <ComboBox ItemsSource="{Binding Projects}" SelectedValue="{Binding ProjectFilter, Mode=TwoWay}"
+                    SelectedValueBinding="{Binding Id}" DisplayMemberBinding="{Binding DisplayName}"
+                    PlaceholderText="All projects" FontSize="11" MinWidth="150" Margin="0,0,6,4" />
+          <ComboBox ItemsSource="{Binding Agents}" SelectedItem="{Binding AgentFilter, Mode=TwoWay}"
+                    PlaceholderText="All agents" FontSize="11" MinWidth="110" Margin="0,0,6,4" />
+          <Button Classes="chip" Classes.on="{Binding GroupByProject}" Content="Group by project"
+                  Command="{Binding ToggleGroupCommand}" Margin="0,0,6,4" />
+          <Button Classes="chip" Content="Clear" Command="{Binding ClearFiltersCommand}" Margin="0,0,6,4" />
+        </WrapPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="{Binding ViewSummary}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                     VerticalAlignment="Center" />
+          <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
+          <Button Classes="chip" Content="Priority" Command="{Binding SetSortCommand}"
+                  CommandParameter="{x:Static cb:QueueSort.Priority}" Padding="6,2" />
+          <Button Classes="chip" Content="Recent" Command="{Binding SetSortCommand}"
+                  CommandParameter="{x:Static cb:QueueSort.Recent}" Padding="6,2" />
+          <Button Classes="chip" Content="Cost" Command="{Binding SetSortCommand}"
+                  CommandParameter="{x:Static cb:QueueSort.Cost}" Padding="6,2" />
+        </StackPanel>
+      </StackPanel>
+
+      <Border Grid.Row="1" Grid.Column="0" VerticalAlignment="Top" ZIndex="1" Margin="8" Padding="10,8" CornerRadius="6"
               Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
               IsVisible="{Binding IsCreating}">
         <StackPanel Spacing="6">
           <TextBlock Text="New work item" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource Fg}" />
-          <TextBox Text="{Binding NewProjectId, Mode=TwoWay}" Watermark="Project id" FontSize="12" />
+          <ComboBox ItemsSource="{Binding Projects}" SelectedItem="{Binding NewProject, Mode=TwoWay}"
+                    DisplayMemberBinding="{Binding Label}" PlaceholderText="Choose a project"
+                    HorizontalAlignment="Stretch" FontSize="12" />
+          <TextBlock Text="{Binding NewProjectAgent}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
           <TextBox Text="{Binding NewTitle, Mode=TwoWay}" Watermark="Title" FontSize="12" />
           <TextBox Text="{Binding NewPrompt, Mode=TwoWay}" Watermark="What should the agent do?"
                    AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" FontSize="12" />
@@ -146,7 +213,9 @@
         </StackPanel>
       </Border>
 
-      <ListBox Grid.Column="0" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected, Mode=TwoWay}"
+      <ListBox Grid.Row="1" Grid.Column="0" ItemsSource="{Binding Items}"
+               SelectedItem="{Binding Selected, Mode=TwoWay}"
+               IsVisible="{Binding !GroupByProject}"
                Background="Transparent" BorderThickness="0">
         <ListBox.ItemTemplate>
           <DataTemplate>
@@ -160,13 +229,18 @@
                       Margin="0,0,10,0"
                       Background="{DynamicResource Accent}" IsVisible="{Binding IsActive}" />
               <StackPanel Grid.Column="1" Spacing="1">
-                <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                           TextTrimming="CharacterEllipsis" />
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <TextBlock Text="{Binding ShortId}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-                  <TextBlock Text="{Binding State}" Foreground="{DynamicResource FgDim}" FontSize="10" />
-                  <TextBlock Text="{Binding Agent}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                             TextTrimming="CharacterEllipsis" />
+                  <!-- A dependency that is not satisfied is why an item sits still; it belongs on the row
+                       rather than three clicks away in the detail pane. -->
+                  <Border Background="{DynamicResource PanelAlt}" CornerRadius="8" Padding="6,0"
+                          IsVisible="{Binding IsBlockedByDependency}" VerticalAlignment="Center">
+                    <TextBlock Text="blocked" Foreground="{DynamicResource Danger}" FontSize="9" />
+                  </Border>
                 </StackPanel>
+                <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                           TextTrimming="CharacterEllipsis" />
               </StackPanel>
               <TextBlock Grid.Column="2" Text="{Binding Age}" Foreground="{DynamicResource FgFaint}"
                          FontSize="10" VerticalAlignment="Center" />
@@ -175,9 +249,48 @@
         </ListBox.ItemTemplate>
       </ListBox>
 
-      <GridSplitter Grid.Column="1" Background="{DynamicResource Line}" />
+      <!-- Grouped by project, for a queue serving several repositories at once — this one serves three. -->
+      <ScrollViewer Grid.Row="1" Grid.Column="0" IsVisible="{Binding GroupByProject}">
+        <ItemsControl ItemsSource="{Binding Groups}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Margin="0,0,0,8">
+                <TextBlock Text="{Binding Header}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                           FontWeight="SemiBold" Margin="10,6,0,2" />
+                <ItemsControl ItemsSource="{Binding Items}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Command="{Binding $parent[ItemsControl].DataContext.SelectCommand}"
+                              CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                              Padding="10,4" Cursor="Hand">
+                        <StackPanel Spacing="1">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                       TextTrimming="CharacterEllipsis" />
+                            <!-- Same signal as the flat list: grouping must not cost the one badge that
+                                 explains why an item is sitting still. -->
+                            <Border Background="{DynamicResource PanelAlt}" CornerRadius="8" Padding="6,0"
+                                    IsVisible="{Binding IsBlockedByDependency}" VerticalAlignment="Center">
+                              <TextBlock Text="blocked" Foreground="{DynamicResource Danger}" FontSize="9" />
+                            </Border>
+                          </StackPanel>
+                          <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                     TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
 
-      <Grid Grid.Column="2" RowDefinitions="Auto,*">
+      <GridSplitter Grid.Row="1" Grid.Column="1" Background="{DynamicResource Line}" />
+
+      <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,*">
         <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="10,8"
                    IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
           <TextBlock Text="{Binding Selected.Title}" Foreground="{DynamicResource Fg}" FontSize="12"

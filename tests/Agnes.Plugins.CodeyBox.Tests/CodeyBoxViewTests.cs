@@ -163,4 +163,43 @@ public class CodeyBoxViewTests
         vm.Sections.Section = CodeyBoxSection.Queue;
         Assert.Equal("Work queue", vm.Sections.SectionTitle);
     }
+
+    /// <summary>A queue shaped like the live one: mostly finished, a little actionable.</summary>
+    private static void Seed(CodeyBoxQueueViewModel vm)
+    {
+        static WorkItemRow Make(string id, string title, string state, string agent, string project, int priority, bool depsOk = true)
+            => new(id, title, state, agent, project, 0, DateTimeOffset.UtcNow, null,
+                   priority, DateTimeOffset.UtcNow.AddDays(-1), depsOk);
+
+        vm.Load(
+        [
+            Make("aaaa1111", "Fix quota detection", "Failed", "claude", "codeybox-self", 55),
+            Make("bbbb2222", "Circuit breaker", "Queued", "codex", "codeybox-self", 13),
+            Make("cccc3333", "Landed change", "Done", "claude", "jobtrack-cli", 90),
+            Make("dddd4444", "Waiting on a dependency", "Queued", "codex", "jobtrack-self", 5, depsOk: false),
+        ]);
+    }
+
+    [Fact]
+    public void The_queue_pane_renders_with_its_controls()
+        => Render(Seed);
+
+    [Fact]
+    public void Grouping_by_project_renders()
+        => Render(vm => { Seed(vm); vm.GroupByProject = true; });
+
+    [Fact]
+    public void The_create_form_offers_projects_rather_than_asking_for_an_id()
+    {
+        // The form used to require the project id typed exactly — knowledge the interface already had.
+        var vm = NewViewModel();
+        vm.Projects.Add(new ProjectChoice("codeybox-self", "CodeyBox (self-modify)", "codex"));
+
+        vm.ToggleCreateCommand.Execute(null);
+
+        Assert.True(vm.IsCreating);
+        Assert.NotNull(vm.NewProject);
+        Assert.Equal("codeybox-self", vm.NewProject.Id);
+        Assert.Contains("codex", vm.NewProjectAgent, StringComparison.Ordinal);
+    }
 }

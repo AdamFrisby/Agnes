@@ -20,7 +20,18 @@ public sealed record WorkItemRow(
     [property: JsonPropertyName("projectId")] string? ProjectId,
     [property: JsonPropertyName("queuePosition")] long QueuePosition,
     [property: JsonPropertyName("updatedAt")] DateTimeOffset UpdatedAt,
-    [property: JsonPropertyName("lastError")] string? LastError)
+    [property: JsonPropertyName("lastError")] string? LastError,
+    // Added after reading what a real queue holds: 404 items across three projects and six agents, 82 of
+    // them with dependencies, one costing $73. None of that was modelled, so neither persona could answer
+    // their first question without opening items one at a time.
+    [property: JsonPropertyName("priority")] int Priority = 0,
+    [property: JsonPropertyName("createdAt")] DateTimeOffset CreatedAt = default,
+    [property: JsonPropertyName("dependsOnSatisfied")] bool DependsOnSatisfied = true,
+    [property: JsonPropertyName("failureKind")] string? FailureKind = null,
+    [property: JsonPropertyName("mergedPrNumber")] int? MergedPrNumber = null,
+    [property: JsonPropertyName("mergedPrUrl")] string? MergedPrUrl = null,
+    [property: JsonPropertyName("workBranch")] string? WorkBranch = null,
+    [property: JsonPropertyName("usageTotal")] UsageTotal? UsageTotal = null)
 {
     /// <summary>The id as CodeyBox's own tools abbreviate it.</summary>
     public string ShortId => Id.Length >= 8 ? Id[..8] : Id;
@@ -37,6 +48,37 @@ public sealed record WorkItemRow(
 
     public string Age => Relative(UpdatedAt);
 
+    /// <summary>
+    /// Whether this item is waiting on a person or on a fix — the small fraction of a real queue that is
+    /// actionable. On the instance this was designed against, 372 of 404 items were finished history.
+    /// </summary>
+    public bool NeedsAttention => IsFailed || State == "Queued" || !DependsOnSatisfied;
+
+    /// <summary>What this item has cost, when the orchestrator has totalled it.</summary>
+    public string? Cost => UsageTotal is { CostUsd: > 0 } u ? $"${u.CostUsd:0.00}" : null;
+
+    public bool IsBlockedByDependency => !DependsOnSatisfied;
+
+    public bool HasPr => MergedPrNumber is > 0;
+
+    public string PrLabel => MergedPrNumber is { } n ? $"#{n}" : string.Empty;
+
+    /// <summary>The one line under the title. Fixed order, so the eye learns where to look rather than
+    /// re-reading each row.</summary>
+    public string Summary
+    {
+        get
+        {
+            var parts = new List<string> { ShortId, State };
+            if (Agent is { Length: > 0 }) { parts.Add(Agent); }
+            if (ProjectId is { Length: > 0 }) { parts.Add(ProjectId); }
+            if (Priority != 0) { parts.Add($"p{Priority}"); }
+            if (Cost is { } cost) { parts.Add(cost); }
+            if (HasPr) { parts.Add(PrLabel); }
+            return string.Join("  ·  ", parts);
+        }
+    }
+
     internal static string Relative(DateTimeOffset at)
     {
         var elapsed = DateTimeOffset.UtcNow - at;
@@ -46,6 +88,13 @@ public sealed record WorkItemRow(
         return $"{(int)elapsed.TotalDays}d ago";
     }
 }
+
+/// <summary>What an item has spent. Cost is the field an operator actually reads; the token counts are
+/// there because the orchestrator reports them and they explain the cost.</summary>
+public sealed record UsageTotal(
+    [property: JsonPropertyName("costUsd")] decimal CostUsd,
+    [property: JsonPropertyName("tokensInput")] long TokensInput,
+    [property: JsonPropertyName("tokensOutput")] long TokensOutput);
 
 /// <summary>
 /// The queue's own state. <see cref="State"/> is a string the controller stringifies ("Running" /
