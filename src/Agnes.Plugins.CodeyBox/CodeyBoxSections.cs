@@ -64,11 +64,125 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     public ObservableCollection<FleetProject> Fleet { get; } = [];
     public ObservableCollection<AgentPause> PausedAgents { get; } = [];
     public ObservableCollection<SupervisionSession> Sessions { get; } = [];
+    /// <summary>The slice on screen. Held separately from <see cref="_allSuggestions"/> so narrowing costs
+    /// no round trip — all 162 arrive in one response.</summary>
     public ObservableCollection<Suggestion> Suggestions { get; } = [];
+
+    private readonly List<Suggestion> _allSuggestions = [];
+
+    public ObservableCollection<string> SuggestionCategories { get; } = [];
+
+    [ObservableProperty]
+    private SuggestionFilter _suggestionFilter = SuggestionFilter.Important;
+
+    [ObservableProperty]
+    private SuggestionSort _suggestionSort = SuggestionSort.Severity;
+
+    [ObservableProperty]
+    private string _suggestionSearch = string.Empty;
+
+    [ObservableProperty]
+    private string? _suggestionCategory;
+
+    partial void OnSuggestionFilterChanged(SuggestionFilter value) => ApplySuggestions();
+    partial void OnSuggestionSortChanged(SuggestionSort value) => ApplySuggestions();
+    partial void OnSuggestionSearchChanged(string value) => ApplySuggestions();
+    partial void OnSuggestionCategoryChanged(string? value) => ApplySuggestions();
+
+    public bool IsSuggestionFilterImportant => SuggestionFilter == SuggestionFilter.Important;
+    public bool IsSuggestionFilterQuickWins => SuggestionFilter == SuggestionFilter.QuickWins;
+    public bool IsSuggestionFilterAll => SuggestionFilter == SuggestionFilter.All;
+    public bool IsSuggestionSortSeverity => SuggestionSort == SuggestionSort.Severity;
+    public bool IsSuggestionSortEffort => SuggestionSort == SuggestionSort.Effort;
+    public bool IsSuggestionSortNewest => SuggestionSort == SuggestionSort.Newest;
+
+    public IRelayCommand<SuggestionFilter> SetSuggestionFilterCommand =>
+        _setSuggestionFilter ??= new RelayCommand<SuggestionFilter>(f => SuggestionFilter = f);
+
+    private IRelayCommand<SuggestionFilter>? _setSuggestionFilter;
+
+    public IRelayCommand<SuggestionSort> SetSuggestionSortCommand =>
+        _setSuggestionSort ??= new RelayCommand<SuggestionSort>(x => SuggestionSort = x);
+
+    private IRelayCommand<SuggestionSort>? _setSuggestionSort;
+
+    public IRelayCommand ClearSuggestionFiltersCommand => _clearSuggestionFilters ??= new RelayCommand(() =>
+    {
+        SuggestionSearch = string.Empty;
+        SuggestionCategory = null;
+        SuggestionFilter = SuggestionFilter.All;
+    });
+
+    private IRelayCommand? _clearSuggestionFilters;
+
+    /// <summary>What the current slice shows against the whole, so a filter can never silently hide the
+    /// rest of the backlog.</summary>
+    public string SuggestionSummary => _allSuggestions.Count == 0
+        ? string.Empty
+        : $"{Suggestions.Count} of {_allSuggestions.Count}" +
+          (ImportantSuggestionCount > 0 ? $"  ·  {ImportantSuggestionCount} important" : string.Empty);
+
+    public int ImportantSuggestionCount => _allSuggestions.Count(s => s.IsImportant);
+
+    private void ApplySuggestions()
+    {
+        var view = SuggestionView.Apply(
+            _allSuggestions, SuggestionFilter, SuggestionSort, SuggestionSearch, SuggestionCategory);
+
+        Reconcile.Apply(Suggestions, view, s => s.Id);
+
+        foreach (var name in new[]
+                 {
+                     nameof(SuggestionSummary), nameof(ImportantSuggestionCount),
+                     nameof(IsSuggestionFilterImportant), nameof(IsSuggestionFilterQuickWins),
+                     nameof(IsSuggestionFilterAll), nameof(IsSuggestionSortSeverity),
+                     nameof(IsSuggestionSortEffort), nameof(IsSuggestionSortNewest),
+                 })
+        {
+            OnPropertyChanged(name);
+        }
+    }
     public ObservableCollection<Release> Releases { get; } = [];
     public ObservableCollection<TaskTemplate> Templates { get; } = [];
     public ObservableCollection<Project> Projects { get; } = [];
     public ObservableCollection<OrchestratorPlugin> Plugins { get; } = [];
+
+    /// <summary>
+    /// What each destination has behind it, shown in the rail.
+    ///
+    /// <para>The rail sells nine destinations as equals. On this instance four of them have nothing at
+    /// all: supervision is switched off at the orchestrator, there are no releases, no test cases and no
+    /// e2e runs. Without a badge the operator pays a click and a load to find that out, and pays it again
+    /// next week because there was nothing to remember. A count is cheap; a wasted click is not.</para>
+    ///
+    /// <para>These are populated as each section loads, so a badge means "when last looked at" rather than
+    /// "right now" — which is why an unvisited section shows nothing rather than a zero it cannot justify.</para>
+    /// </summary>
+    private readonly Dictionary<CodeyBoxSection, string> _badges = [];
+
+    public string SuggestionsBadge => Badge(CodeyBoxSection.Suggestions);
+    public string FleetBadge => Badge(CodeyBoxSection.Fleet);
+    public string SupervisionBadge => Badge(CodeyBoxSection.Supervision);
+    public string ProjectsBadge => Badge(CodeyBoxSection.Projects);
+    public string ReleasesBadge => Badge(CodeyBoxSection.Releases);
+    public string TestingBadge => Badge(CodeyBoxSection.Testing);
+
+    private string Badge(CodeyBoxSection section) => _badges.TryGetValue(section, out var b) ? b : string.Empty;
+
+    private void SetBadge(CodeyBoxSection section, string text)
+    {
+        _badges[section] = text;
+        OnPropertyChanged(nameof(SuggestionsBadge));
+        OnPropertyChanged(nameof(FleetBadge));
+        OnPropertyChanged(nameof(SupervisionBadge));
+        OnPropertyChanged(nameof(ProjectsBadge));
+        OnPropertyChanged(nameof(ReleasesBadge));
+        OnPropertyChanged(nameof(TestingBadge));
+    }
+
+    /// <summary>"empty" and "off" are different answers and are worth distinguishing: one may fill up
+    /// tomorrow, the other needs an orchestrator setting changed.</summary>
+    private static string Count(int n) => n == 0 ? "empty" : n.ToString(System.Globalization.CultureInfo.CurrentCulture);
 
     [ObservableProperty]
     private CodeyBoxSection _section = CodeyBoxSection.Queue;
@@ -410,32 +524,50 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
                     var paused = await _client.GetPausedAgentsAsync().ConfigureAwait(false);
                     await Fill(Fleet, fleet).ConfigureAwait(false);
                     await Fill(PausedAgents, paused).ConfigureAwait(false);
+                    await _toUi(() => SetBadge(CodeyBoxSection.Fleet, Count(fleet.Count))).ConfigureAwait(false);
                     break;
 
                 case CodeyBoxSection.Supervision:
                     var sessions = await _client.GetSupervisionSessionsAsync().ConfigureAwait(false);
-                    await _toUi(() => SupervisionEnabled = sessions?.Enabled ?? false).ConfigureAwait(false);
                     await Fill(Sessions, sessions?.Sessions ?? []).ConfigureAwait(false);
+                    await _toUi(() =>
+                    {
+                        SupervisionEnabled = sessions?.Enabled ?? false;
+                        SetBadge(CodeyBoxSection.Supervision,
+                            SupervisionEnabled ? Count(sessions?.Sessions.Count ?? 0) : "off");
+                    }).ConfigureAwait(false);
                     break;
 
                 case CodeyBoxSection.Suggestions:
                     var suggestions = await _client.GetSuggestionsAsync().ConfigureAwait(false);
-                    await Fill(Suggestions, (suggestions?.Items ?? []).Take(200).ToArray()).ConfigureAwait(false);
                     var count = await _client.GetSuggestionCountAsync().ConfigureAwait(false);
                     await _toUi(() =>
                     {
+                        _allSuggestions.Clear();
+                        _allSuggestions.AddRange(suggestions?.Items ?? []);
+                        Reconcile.Apply(SuggestionCategories, SuggestionView.Categories(_allSuggestions), c => c);
+                        ApplySuggestions();
                         SuggestionCount = count;
+                        // The important count, not the total: 162 is a number, 13 is a decision.
+                        SetBadge(CodeyBoxSection.Suggestions,
+                            ImportantSuggestionCount > 0
+                                ? $"{ImportantSuggestionCount}!"
+                                : Count(_allSuggestions.Count));
                         SectionStatus = $"{suggestions?.Total ?? count} suggestion(s)";
                     }).ConfigureAwait(false);
                     break;
 
                 case CodeyBoxSection.Releases:
-                    await Fill(Releases, await _client.GetReleasesAsync().ConfigureAwait(false)).ConfigureAwait(false);
+                    var releases = await _client.GetReleasesAsync().ConfigureAwait(false);
+                    await Fill(Releases, releases).ConfigureAwait(false);
                     await Fill(Templates, await _client.GetTemplatesAsync().ConfigureAwait(false)).ConfigureAwait(false);
+                    await _toUi(() => SetBadge(CodeyBoxSection.Releases, Count(releases.Count))).ConfigureAwait(false);
                     break;
 
                 case CodeyBoxSection.Projects:
-                    await Fill(Projects, await _client.GetProjectsAsync().ConfigureAwait(false)).ConfigureAwait(false);
+                    var projectList = await _client.GetProjectsAsync().ConfigureAwait(false);
+                    await Fill(Projects, projectList).ConfigureAwait(false);
+                    await _toUi(() => SetBadge(CodeyBoxSection.Projects, Count(projectList.Count))).ConfigureAwait(false);
                     break;
 
                 case CodeyBoxSection.Testing:
@@ -463,9 +595,37 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     /// when their feature is off, and a null reads as "unavailable here" rather than an error, because on a
     /// given instance that is simply the truth.
     /// </summary>
+    /// <summary>Per-agent quota headroom — the first thing to look at when the queue stops moving.</summary>
+    public ObservableCollection<QuotaProbe> Quota { get; } = [];
+
+    public bool HasQuota => Quota.Count > 0;
+
+    [ObservableProperty]
+    private Concurrency? _concurrency;
+
+    public bool HasConcurrency => Concurrency is not null;
+
+    partial void OnConcurrencyChanged(Concurrency? value) => OnPropertyChanged(nameof(HasConcurrency));
+
     private async Task LoadDiagnosticsAsync()
     {
         var workers = await _client.GetWorkerStatusAsync().ConfigureAwait(false);
+
+        // Two surfaces are lifted out of the raw dump and given a shape, because they answer the question
+        // the section is actually opened for — "why is nothing dispatching" — and reading that answer out
+        // of the eleventh of twenty JSON blobs is not reading it. Only probes that reported a number are
+        // shown: the rest would draw at 0% and read as exhausted rather than unmeasured.
+        var probes = await _client.GetQuotaProbesAsync().ConfigureAwait(false);
+        var concurrency = await _client.GetConcurrencyAsync().ConfigureAwait(false);
+        await _toUi(() =>
+        {
+            Reconcile.Apply(
+                Quota,
+                [.. probes.Where(p => p.IsKnown).OrderBy(p => p.Available)],
+                p => p.Label);
+            Concurrency = concurrency;
+            OnPropertyChanged(nameof(HasQuota));
+        }).ConfigureAwait(false);
 
         // Every remaining read-only surface the orchestrator offers, gathered in one place rather than
         // given a screen each: they are diagnostics, consulted when something is wrong, and most of them

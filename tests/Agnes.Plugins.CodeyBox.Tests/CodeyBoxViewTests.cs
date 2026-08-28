@@ -405,3 +405,108 @@ public class ItemPaneRenderTests
     public void Renders_the_disclosed_recovery_actions()
         => RenderWith(Row(state: "Failed", lastError: "boom"), vm => vm.ToggleMoreActionsCommand.Execute(null));
 }
+
+/// <summary>
+/// Renders each non-queue section with content in it. The existing section test renders them EMPTY, which
+/// is the state four of them are permanently in on this host — so it exercised almost none of their
+/// bindings. These populate first.
+/// </summary>
+[Collection("avalonia-headless")]
+public class SectionContentRenderTests
+{
+    private sealed class TestApp : Application
+    {
+        public override void Initialize() => Styles.Add(new FluentTheme());
+    }
+
+    public static class TestAppBuilder
+    {
+        public static AppBuilder BuildAvaloniaApp()
+            => AppBuilder.Configure<TestApp>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+    }
+
+    private sealed class OfflineHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("null", System.Text.Encoding.UTF8, "application/json"),
+            });
+    }
+
+    private static void Render(CodeyBoxSection section, Action<CodeyBoxQueueViewModel> arrange)
+    {
+        CodeyBoxQueueViewModel? vm = null;
+        try
+        {
+            using var session = HeadlessUnitTestSession.StartNew(typeof(TestAppBuilder));
+            session.Dispatch(() =>
+            {
+                vm = new CodeyBoxQueueViewModel(
+                    new CodeyBoxClient(new CodeyBoxOptions("http://127.0.0.1:1", "k"), new OfflineHandler()),
+                    action => { action(); return Task.CompletedTask; });
+                vm.Sections.Section = section;
+                arrange(vm);
+
+                var window = new Window { Width = 1280, Height = 800, Content = new CodeyBoxQueueView { DataContext = vm } };
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                window.Close();
+            }, CancellationToken.None).GetAwaiter().GetResult();
+        }
+        finally
+        {
+            vm?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    [Fact]
+    public void Renders_suggestions_with_a_populated_backlog()
+        => Render(CodeyBoxSection.Suggestions, vm =>
+        {
+            vm.Sections.Suggestions.Add(new Suggestion(
+                "1", "src", "codeybox-self", "Fix the sandbox leak",
+                "The Incus provider leaks a volume per failed launch.",
+                "security", "important", "medium", DateTimeOffset.UtcNow, "open", null,
+                ["src/Sandbox/Incus.cs", "src/Sandbox/Broker.cs"]));
+            vm.Sections.SuggestionCategories.Add("security");
+        });
+
+    [Fact]
+    public void Renders_fleet_with_budgets_and_outcome_strips()
+        => Render(CodeyBoxSection.Fleet, vm =>
+        {
+            // One project inside budget, one over it — both bar paths.
+            vm.Sections.Fleet.Add(new FleetProject(
+                "codeybox-self", "CodeyBox", 3, 1, "work", false, false, null, 40m, 100m, "ok",
+                ["Done", "Done", "Failed", "Cancelled", "Done"]));
+            vm.Sections.Fleet.Add(new FleetProject(
+                "jobtrack", "JobTrack", 0, 0, null, true, true, "paused by operator", 180m, 100m, "over",
+                ["Failed", "Failed"]));
+        });
+
+    [Fact]
+    public void Renders_diagnostics_with_quota_and_capacity_promoted()
+        => Render(CodeyBoxSection.Diagnostics, vm =>
+        {
+            vm.Sections.Concurrency = new Concurrency(3, 3, new Dictionary<string, int> { ["claude"] = 3 });
+            // One healthy, one nearly exhausted — the low path is the one that colours.
+            vm.Sections.Quota.Add(new QuotaProbe(
+                "codex", "gpt-5.6-sol", "Subscription", false, null, true, 0,
+                new QuotaSnapshot(55, true, DateTimeOffset.UtcNow.AddHours(6))));
+            vm.Sections.Quota.Add(new QuotaProbe(
+                "claude", "claude-opus-5", "Subscription", false, null, false, 12,
+                new QuotaSnapshot(4, true, DateTimeOffset.UtcNow.AddHours(2))));
+        });
+
+    [Fact]
+    public void Renders_projects_and_releases_with_content()
+    {
+        Render(CodeyBoxSection.Projects, vm => vm.Sections.Projects.Add(new Project(
+            "codeybox-self", "CodeyBox", "https://github.com/AdamFrisby/CodeyBox.git", "main", "codex", 25,
+            ["security", "architecture"])));
+
+        Render(CodeyBoxSection.Releases, vm =>
+            vm.Sections.Templates.Add(new TaskTemplate("asvs5", "templates/asvs5.json", 104, null)));
+    }
+}

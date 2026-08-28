@@ -8,6 +8,15 @@
   <UserControl.Styles>
     <!-- A destination, not an action. The selected one is filled so the operator can read their location
          instead of inferring it: the previous header gave nine identical buttons and no current state. -->
+    <!-- What a destination has behind it, shown in the rail rather than discovered by clicking. Four of
+         the nine sections are empty on this host and the rail sold them as equals. -->
+    <Style Selector="TextBlock.badge">
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="6,0,0,0" />
+    </Style>
+
     <Style Selector="Button.nav">
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Left" />
@@ -118,22 +127,52 @@
           <TextBlock Classes="navgroup" Text="WORK" />
           <Button Classes="nav" Classes.current="{Binding Sections.IsQueue}" Content="Work queue"
                   Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Queue}" />
-          <Button Classes="nav" Classes.current="{Binding Sections.IsSuggestions}" Content="Suggestions"
-                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Suggestions}" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsSuggestions}"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Suggestions}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Suggestions" VerticalAlignment="Center" />
+              <TextBlock Classes="badge" Text="{Binding Sections.SuggestionsBadge}" />
+            </StackPanel>
+          </Button>
 
           <TextBlock Classes="navgroup" Text="FLEET" />
-          <Button Classes="nav" Classes.current="{Binding Sections.IsFleet}" Content="Fleet"
-                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Fleet}" />
-          <Button Classes="nav" Classes.current="{Binding Sections.IsSupervision}" Content="Supervision"
-                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Supervision}" />
-          <Button Classes="nav" Classes.current="{Binding Sections.IsProjects}" Content="Projects"
-                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Projects}" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsFleet}"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Fleet}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Fleet" VerticalAlignment="Center" />
+              <TextBlock Classes="badge" Text="{Binding Sections.FleetBadge}" />
+            </StackPanel>
+          </Button>
+          <Button Classes="nav" Classes.current="{Binding Sections.IsSupervision}"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Supervision}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Supervision" VerticalAlignment="Center" />
+              <TextBlock Classes="badge" Text="{Binding Sections.SupervisionBadge}" />
+            </StackPanel>
+          </Button>
+          <Button Classes="nav" Classes.current="{Binding Sections.IsProjects}"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Projects}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Projects" VerticalAlignment="Center" />
+              <TextBlock Classes="badge" Text="{Binding Sections.ProjectsBadge}" />
+            </StackPanel>
+          </Button>
 
           <TextBlock Classes="navgroup" Text="ADMIN" />
-          <Button Classes="nav" Classes.current="{Binding Sections.IsReleases}" Content="Releases"
-                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Releases}" />
-          <Button Classes="nav" Classes.current="{Binding Sections.IsTesting}" Content="Testing"
-                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Testing}" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsReleases}"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Releases}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Releases" VerticalAlignment="Center" />
+              <TextBlock Classes="badge" Text="{Binding Sections.ReleasesBadge}" />
+            </StackPanel>
+          </Button>
+          <Button Classes="nav" Classes.current="{Binding Sections.IsTesting}"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Testing}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Testing" VerticalAlignment="Center" />
+              <TextBlock Classes="badge" Text="{Binding Sections.TestingBadge}" />
+            </StackPanel>
+          </Button>
           <Button Classes="nav" Classes.current="{Binding Sections.IsSetup}" Content="Setup"
                   Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Setup}" />
           <Button Classes="nav" Classes.current="{Binding Sections.IsDiagnostics}" Content="Diagnostics"
@@ -1004,35 +1043,104 @@
     </Grid>
 
     <!-- Suggestions the auditors raised, and promoting one into real work. -->
-    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsSuggestions}" Padding="14">
-      <ItemsControl ItemsSource="{Binding Sections.Suggestions}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="10,8" Margin="0,2">
-              <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Grid.Column="0" Spacing="2">
-                  <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" TextWrapping="Wrap" />
-                  <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
-                    <Run Text="{Binding Severity}" /><Run Text=" · " /><Run Text="{Binding Category}" /><Run Text=" · " /><Run Text="{Binding Age}" />
-                  </TextBlock>
-                </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
-                  <Button Content="Open" FontSize="11" Padding="8,3"
-                          Command="{Binding $parent[ItemsControl].DataContext.OpenSuggestionCommand}"
-                          CommandParameter="{Binding}" />
-                  <Button Content="Promote" FontSize="11" Padding="8,3"
-                          Command="{Binding $parent[ItemsControl].DataContext.PromoteSuggestionCommand}"
-                          CommandParameter="{Binding}" />
-                  <Button Content="Dismiss" FontSize="11" Padding="8,3"
-                          Command="{Binding $parent[ItemsControl].DataContext.DismissSuggestionCommand}"
-                          CommandParameter="{Binding}" />
-                </StackPanel>
-              </Grid>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </ScrollViewer>
+    <!-- The backlog the auditors have raised. 162 of them open on this instance, all for one project and
+         all in one state, which is why the only useful distinctions are severity, category and effort —
+         and why a flat list of 162 was a wall rather than a backlog.
+
+         The chips are deliberately the queue's chips. The operator learns that vocabulary in the section
+         they use most; re-inventing a second one here would waste the lesson. -->
+    <Grid Grid.Row="2" IsVisible="{Binding Sections.IsSuggestions}" RowDefinitions="Auto,*">
+      <StackPanel Grid.Row="0" Spacing="6" Margin="14,12,14,8">
+        <TextBox Text="{Binding Sections.SuggestionSearch, Mode=TwoWay}" FontSize="12"
+                 Watermark="Search titles, rationale and referenced files" />
+
+        <WrapPanel Orientation="Horizontal">
+          <!-- Important first by default: 13 of 162, and they were previously indistinguishable. -->
+          <Button Classes="chip" Classes.on="{Binding Sections.IsSuggestionFilterImportant}" Content="Important"
+                  Command="{Binding Sections.SetSuggestionFilterCommand}" Margin="0,0,6,4"
+                  CommandParameter="{x:Static cb:SuggestionFilter.Important}" />
+          <Button Classes="chip" Classes.on="{Binding Sections.IsSuggestionFilterQuickWins}" Content="Quick wins"
+                  Command="{Binding Sections.SetSuggestionFilterCommand}" Margin="0,0,6,4"
+                  CommandParameter="{x:Static cb:SuggestionFilter.QuickWins}"
+                  ToolTip.Tip="Tiny and small effort" />
+          <Button Classes="chip" Classes.on="{Binding Sections.IsSuggestionFilterAll}" Content="All"
+                  Command="{Binding Sections.SetSuggestionFilterCommand}" Margin="0,0,14,4"
+                  CommandParameter="{x:Static cb:SuggestionFilter.All}" />
+
+          <ComboBox ItemsSource="{Binding Sections.SuggestionCategories}"
+                    SelectedItem="{Binding Sections.SuggestionCategory, Mode=TwoWay}"
+                    PlaceholderText="Any category" FontSize="11" MinWidth="150" Margin="0,0,14,4" />
+
+          <Button Classes="chip" Classes.on="{Binding Sections.IsSuggestionSortSeverity}" Content="By severity"
+                  Command="{Binding Sections.SetSuggestionSortCommand}" Margin="0,0,6,4"
+                  CommandParameter="{x:Static cb:SuggestionSort.Severity}" />
+          <Button Classes="chip" Classes.on="{Binding Sections.IsSuggestionSortEffort}" Content="By effort"
+                  Command="{Binding Sections.SetSuggestionSortCommand}" Margin="0,0,6,4"
+                  CommandParameter="{x:Static cb:SuggestionSort.Effort}" />
+          <Button Classes="chip" Classes.on="{Binding Sections.IsSuggestionSortNewest}" Content="Newest"
+                  Command="{Binding Sections.SetSuggestionSortCommand}" Margin="0,0,14,4"
+                  CommandParameter="{x:Static cb:SuggestionSort.Newest}" />
+
+          <Button Classes="chip" Content="Clear" Command="{Binding Sections.ClearSuggestionFiltersCommand}"
+                  Margin="0,0,0,4" />
+        </WrapPanel>
+
+        <!-- Slice against whole, so narrowing never silently hides the rest. -->
+        <TextBlock Text="{Binding Sections.SuggestionSummary}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+      </StackPanel>
+
+      <ScrollViewer Grid.Row="1" Padding="14,0,14,14">
+        <StackPanel>
+          <TextBlock Text="Nothing matches those filters." Foreground="{DynamicResource FgFaint}" FontSize="12"
+                     Margin="0,12" HorizontalAlignment="Center"
+                     IsVisible="{Binding !Sections.Suggestions.Count}" />
+          <ItemsControl ItemsSource="{Binding Sections.Suggestions}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="10,8" Margin="0,2"
+                        BorderThickness="1" BorderBrush="{DynamicResource Line}">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <!-- Severity as a mark rather than a word among words: important is the only thing
+                         here that argues for doing something at all. -->
+                    <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,1,10,1"
+                            Background="{DynamicResource Danger}" IsVisible="{Binding IsImportant}" />
+                    <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,1,10,1"
+                            Background="Transparent" IsVisible="{Binding !IsImportant}" />
+
+                    <StackPanel Grid.Column="1" Spacing="3">
+                      <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                                 TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Facts}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                      <!-- The auditor's reasoning, which the list never showed at all — up to 1,462
+                           characters of it, and the only thing that says whether a suggestion is worth
+                           promoting. Trimmed rather than hidden. -->
+                      <TextBlock Text="{Binding Rationale}" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                 TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
+                                 IsVisible="{Binding HasRationale}" />
+                      <TextBlock Text="{Binding Files}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                 FontFamily="monospace" TextWrapping="Wrap" IsVisible="{Binding HasFiles}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+                      <Button Content="Open" FontSize="11" Padding="8,3"
+                              Command="{Binding $parent[ItemsControl].DataContext.OpenSuggestionCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Content="Promote" FontSize="11" Padding="8,3" Classes="accent"
+                              Command="{Binding $parent[ItemsControl].DataContext.PromoteSuggestionCommand}"
+                              CommandParameter="{Binding}"
+                              ToolTip.Tip="Queue this as real work" />
+                      <Button Content="Dismiss" Classes="destructive" FontSize="11" Padding="8,3"
+                              Command="{Binding $parent[ItemsControl].DataContext.DismissSuggestionCommand}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
 
     <!-- Releases, and the templates a new batch of work can be queued from. -->
     <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsReleases}" Padding="14">
@@ -1212,9 +1320,62 @@
     </Grid>
 
     <!-- The orchestrator's own health surfaces. Several are optional and say so when switched off. -->
+    <!-- Ranked, finally. This was twenty JSON blobs in one scroll — flagged in two previous audits and
+         carried forward twice. The two surfaces that answer the question the section is actually opened
+         for ("why is nothing dispatching") are lifted out and given a shape; the other eighteen stay raw,
+         labelled as raw, and collapsed. They are genuinely useful and genuinely secondary. -->
     <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDiagnostics}" Padding="14">
-      <SelectableTextBlock Text="{Binding Sections.Diagnostics}" FontFamily="monospace" FontSize="11"
-                           Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+      <StackPanel Spacing="14">
+
+        <StackPanel Spacing="4" IsVisible="{Binding Sections.HasConcurrency}">
+          <TextBlock Text="Dispatch capacity" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" FontSize="12" />
+          <TextBlock Text="{Binding Sections.Concurrency.Label}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+          <Border Height="6" Width="140" CornerRadius="3" HorizontalAlignment="Left"
+                  Background="{DynamicResource PanelAlt}">
+            <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                    Width="{Binding Sections.Concurrency.BarWidth}" Background="{DynamicResource Accent}" />
+          </Border>
+        </StackPanel>
+
+        <StackPanel Spacing="4" IsVisible="{Binding Sections.HasQuota}">
+          <TextBlock Text="Provider quota" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" FontSize="12" />
+          <!-- Lowest headroom first: the agent about to start failing is the one worth seeing. -->
+          <TextBlock Text="Headroom remaining, lowest first. Agents the orchestrator has not probed are not listed."
+                     Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding Sections.Quota}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="*,144,Auto" Margin="0,2">
+                  <StackPanel Grid.Column="0" Spacing="1">
+                    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="11" />
+                    <TextBlock Text="{Binding Resets}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                               IsVisible="{Binding HasReset}" />
+                  </StackPanel>
+                  <Border Grid.Column="1" Height="6" Width="140" CornerRadius="3" VerticalAlignment="Center"
+                          HorizontalAlignment="Left" Background="{DynamicResource PanelAlt}">
+                    <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                            Width="{Binding BarWidth}" Background="{DynamicResource Accent}"
+                            IsVisible="{Binding !IsLow}" />
+                  </Border>
+                  <Border Grid.Column="1" Height="6" Width="140" CornerRadius="3" VerticalAlignment="Center"
+                          HorizontalAlignment="Left" Background="Transparent" IsVisible="{Binding IsLow}">
+                    <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                            Width="{Binding BarWidth}" Background="{DynamicResource Danger}" />
+                  </Border>
+                  <TextBlock Grid.Column="2" Text="{Binding Headroom}" FontSize="11" MinWidth="46"
+                             TextAlignment="Right" VerticalAlignment="Center"
+                             Foreground="{DynamicResource FgDim}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <Expander Header="Everything else, raw" FontSize="11">
+          <SelectableTextBlock Text="{Binding Sections.Diagnostics}" FontFamily="monospace" FontSize="11"
+                               Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" Margin="0,8,0,0" />
+        </Expander>
+      </StackPanel>
     </ScrollViewer>
 
     <TextBlock Grid.Row="2" Text="{Binding Sections.SectionStatus}" Foreground="{DynamicResource FgFaint}"

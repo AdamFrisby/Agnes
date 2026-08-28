@@ -375,9 +375,50 @@ public sealed record Suggestion(
     [property: JsonPropertyName("estimatedEffort")] string? EstimatedEffort,
     [property: JsonPropertyName("createdAt")] DateTimeOffset CreatedAt,
     [property: JsonPropertyName("state")] string? State,
-    [property: JsonPropertyName("promotedToWorkItemId")] string? PromotedToWorkItemId)
+    [property: JsonPropertyName("promotedToWorkItemId")] string? PromotedToWorkItemId,
+    // The auditors name the files they were looking at. Nearly two per suggestion here, and the surest
+    // way to tell at a glance whether a suggestion touches code you care about.
+    [property: JsonPropertyName("filesReferenced")] IReadOnlyList<string>? FilesReferenced = null,
+    [property: JsonPropertyName("dismissReason")] string? DismissReason = null)
 {
     public string Age => WorkItemRow.Relative(CreatedAt);
+
+    /// <summary>The one thing that should decide reading order. Of 162 open suggestions here, 13 are
+    /// important, 104 notable and 45 minor — a distinction the list previously rendered as grey text
+    /// identical to everything beside it.</summary>
+    public bool IsImportant => string.Equals(Severity, "important", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsMinor => string.Equals(Severity, "minor", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Cheap and worth doing. 30 of the 162 here are "tiny" — the natural place to start, and
+    /// previously indistinguishable from the 4 "large" ones.</summary>
+    public bool IsQuickWin => Effort is "tiny" or "small";
+
+    public string Effort => (EstimatedEffort ?? string.Empty).ToLowerInvariant();
+
+    public string Facts
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (Severity is { Length: > 0 }) { parts.Add(Severity); }
+            if (Category is { Length: > 0 }) { parts.Add(Category); }
+            if (EstimatedEffort is { Length: > 0 }) { parts.Add($"{EstimatedEffort} effort"); }
+            parts.Add(Age);
+            return string.Join("  ·  ", parts);
+        }
+    }
+
+    public bool HasRationale => !string.IsNullOrWhiteSpace(Rationale);
+
+    public bool HasFiles => FilesReferenced is { Count: > 0 };
+
+    /// <summary>Files on one line. Kept short: the point is recognition, not a full manifest.</summary>
+    public string Files => FilesReferenced is { Count: > 0 } files
+        ? string.Join("   ", files.Take(4)) + (files.Count > 4 ? $"   +{files.Count - 4} more" : string.Empty)
+        : string.Empty;
+
+    public bool IsPromoted => !string.IsNullOrWhiteSpace(PromotedToWorkItemId);
 }
 
 /// <summary>The suggestions listing, which is paged.</summary>
@@ -692,3 +733,67 @@ public sealed record RawJson(JsonDocument Document)
 {
     public string Text => Document.RootElement.ToString();
 }
+
+/// <summary>
+/// One agent's quota headroom, as the orchestrator last probed it.
+///
+/// <para>Promoted out of the Diagnostics JSON dump because it is the one thing in there that explains a
+/// queue that has stopped moving: 512 audit-phase runs on this instance died on provider quota. Reading
+/// that answer out of the eleventh of twenty JSON blobs is not reading it.</para>
+/// </summary>
+public sealed record QuotaProbe(
+    [property: JsonPropertyName("agent")] string Agent,
+    [property: JsonPropertyName("modelId")] string? ModelId,
+    [property: JsonPropertyName("billing")] string? Billing,
+    [property: JsonPropertyName("paused")] bool Paused,
+    [property: JsonPropertyName("pausedReason")] string? PausedReason,
+    [property: JsonPropertyName("wouldAllow")] bool? WouldAllow,
+    [property: JsonPropertyName("observedFailuresLast60m")] int ObservedFailuresLast60m,
+    [property: JsonPropertyName("latestSnapshot")] QuotaSnapshot? LatestSnapshot)
+{
+    /// <summary>Only probes that actually reported a number are worth a bar. Most rows on this instance
+    /// carry no snapshot at all, and drawing them at 0% would read as "exhausted" rather than "unknown".</summary>
+    public bool IsKnown => LatestSnapshot is { IsKnown: true, AvailablePct: not null };
+
+    public int Available => LatestSnapshot?.AvailablePct ?? 0;
+
+    public double BarWidth => IsKnown ? Math.Max(2, Available / 100.0 * 140) : 0;
+
+    /// <summary>Below a fifth left is worth colouring: it is the point at which the next few dispatches
+    /// start failing rather than queueing.</summary>
+    public bool IsLow => IsKnown && Available < 20;
+
+    public string Label => ModelId is { Length: > 0 } m ? $"{Agent}  ·  {m}" : Agent;
+
+    public string Headroom => IsKnown ? $"{Available}%" : "not probed";
+
+    public string Resets => LatestSnapshot?.ResetAt is { } at
+        ? $"resets {at.ToLocalTime():MMM d HH:mm}"
+        : string.Empty;
+
+    public bool HasReset => LatestSnapshot?.ResetAt is not null;
+}
+
+public sealed record QuotaSnapshot(
+    [property: JsonPropertyName("availablePct")] int? AvailablePct,
+    [property: JsonPropertyName("isKnown")] bool IsKnown,
+    [property: JsonPropertyName("resetAt")] DateTimeOffset? ResetAt);
+
+/// <summary>The orchestrator's dispatch capacity right now.</summary>
+public sealed record Concurrency(
+    [property: JsonPropertyName("globalMaxConcurrent")] int GlobalMaxConcurrent,
+    [property: JsonPropertyName("currentlyRunningTotal")] int CurrentlyRunningTotal,
+    [property: JsonPropertyName("perAgentCaps")] IReadOnlyDictionary<string, int>? PerAgentCaps)
+{
+    public string Label => $"{CurrentlyRunningTotal} of {GlobalMaxConcurrent} slots in use";
+
+    public double BarWidth => GlobalMaxConcurrent <= 0
+        ? 0
+        : Math.Min(1.0, (double)CurrentlyRunningTotal / GlobalMaxConcurrent) * 140;
+
+    public bool IsSaturated => GlobalMaxConcurrent > 0 && CurrentlyRunningTotal >= GlobalMaxConcurrent;
+}
+
+/// <summary>The quota listing.</summary>
+public sealed record QuotaReport(
+    [property: JsonPropertyName("probes")] IReadOnlyList<QuotaProbe> Probes);

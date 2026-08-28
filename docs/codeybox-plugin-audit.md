@@ -1,6 +1,6 @@
 # CodeyBox plugin — deep UX audit (third pass)
 
-**Scope.** The whole plugin tab, weighted heavily toward the Work queue. Comprehensive depth: information
+**Scope.** The whole plugin tab — all nine sections — weighted heavily toward the Work queue. Comprehensive depth: information
 architecture, the developer's task flows, what the orchestrator can actually supply, and where graphics
 earn their place. Accessibility, keyboard-only operation and narrow-viewport behaviour are **still not
 tested** and remain unknown.
@@ -233,16 +233,99 @@ already knows exactly what they are looking at.
 7. Agent and auditor-profile selectors from live data. *(F5)*
 
 **P3 — the rest of the tab**
-8. Budget bars and outcome sparklines in Fleet. *(F6)*
-9. Colour the diff. *(F8)*
-10. Rank Diagnostics; collapse the raw remainder. *(F7)*
+8. Budget bars and outcome sparklines in Fleet. *(F6)* — done
+9. Colour the diff. *(F8)* — done
+10. Rank Diagnostics; collapse the raw remainder. *(F7, S4)* — done
+11. Counts in the navigation rail, distinguishing "empty" from "off". *(S1)* — done
+12. Filter, sort and search the suggestion backlog; show the rationale. *(S2)* — done
+
+**Still open**
+13. Arm `Dismiss` on a suggestion the way the queue arms `Cancel`. *(S3)*
+14. Supervision, Releases and Testing have no content on this host, so their layouts are unproven. They
+    are structurally reviewed above and nothing more; that is a live-verification gap, not a pass.
 
 **Out of scope, and why:** anything needing `/quota/history` or `/stats/capacity` (503 here), and
 **anything to do with audit verdicts** — 7,268 blocking findings are recorded and none are reachable over
 HTTP. That is the single highest-value change available to this UI and it has to happen in CodeyBox
 first: one endpoint over `IAuditProgressStore` would unlock it.
 
-## 5. Not audited
+---
 
-Accessibility, keyboard-only operation, behaviour below ~900px, localisation, and the Testing / Setup /
-Releases sections beyond their information architecture.
+## 5. The other eight sections
+
+The queue is where the work is, but it is one of nine destinations. Audited here after the fact, because
+the first pass of this document covered the queue and then excluded the rest under "not audited" — which
+is most of the tab.
+
+### The state of each, measured
+
+| Section | On this instance | Verdict |
+| --- | --- | --- |
+| Queue | 404 items | The bulk of this audit |
+| **Suggestions** | **162 open** — 13 important, 104 notable, 45 minor; 6 categories; 30 tiny-effort | Richest under-exploited surface |
+| Fleet | 4 projects, budgets and recent outcomes | Real content |
+| Projects | 4, with agent/branch/audit config | Real content |
+| **Supervision** | `enabled: false`, 0 sessions | **Feature off at the orchestrator** |
+| **Releases** | **0 releases**, 20+ templates | **Half empty** |
+| **Testing** | **0 test cases, 0 e2e runs** | **Entirely empty** |
+| Setup / Diagnostics | 0 workers, 0 plugins, some 404s | Partly empty |
+
+### S1 — The rail sells nine equal destinations, four with nothing behind them — severity 3
+
+*Observed.* Supervision is switched off, Testing has no test cases and no e2e runs, Releases has no
+releases, and the worker and plugin lists are empty. All nine rail entries look identical.
+
+*Consequence.* The operator pays a click and a network round trip to discover "nothing here", and pays it
+again next week because there was nothing to remember it by. Hick's law in the wrong direction: nine
+choices, four of which cannot repay the attention.
+
+*Remedy.* A count in the rail, populated as each section loads. "empty" and "off" are kept distinct —
+one may fill tomorrow, the other needs an orchestrator setting changed.
+
+### S2 — 162 suggestions with no filter, sort, or search — severity 3
+
+*Observed.* The backlog rendered as one flat list of 162 rows: title, then `severity · category · age` in
+grey, then three buttons. Every one is `open` and all belong to one project, so the only distinctions that
+exist are severity (13 / 104 / 45), category (6 values) and effort (30 tiny … 4 large) — **none of which
+were filterable, sortable or searchable**. The `rationale` — up to 1,462 characters explaining why the
+auditor raised it — was not shown at all, nor were the referenced files.
+
+*Consequence.* This is the "future work" surface, and finding the 13 important items among 162, or the 30
+cheap ones, meant reading all of them. The single most useful field was invisible.
+
+*Remedy.* The queue's own chips — Important / Quick wins / All, sort by severity / effort / newest, a
+category picker built from the data, and a search that reaches the rationale and the file list. Severity
+becomes a mark rather than a word among words. Deliberately the *same* vocabulary as the queue: the
+operator learns it once in the section they use most, and it should keep working elsewhere.
+
+### S3 — Dismiss was unguarded while the queue arms every destructive action — severity 2
+
+*Observed.* `Cancel` and `Abandon` on a work item arm a named confirmation. `Dismiss` on a suggestion
+fired immediately.
+
+*Consequence.* An inconsistent safety model is worse than either a strict or a loose one, because the
+operator cannot form a rule. Dismiss now at least carries the destructive styling; arming it is a smaller
+follow-up.
+
+### S4 — Diagnostics: twenty JSON blobs, flagged twice, carried twice — severity 2
+
+*Observed.* Sixty raw bindings in one scroll, unranked.
+
+*Consequence.* The section is opened for one question — "why is nothing dispatching" — and its answer sits
+in the eleventh blob. 512 audit-phase runs on this instance died on provider quota; the quota probe
+reports per-agent headroom (`availablePct`, one agent at 55%) and it was buried.
+
+*Remedy.* Promote dispatch capacity and per-agent quota headroom, lowest first, as bars. Everything else
+stays raw, labelled raw, and collapsed. Probes that reported no number are omitted rather than drawn at
+0%, which would read as exhausted rather than unmeasured.
+
+---
+
+## 6. Not audited
+
+Accessibility (contrast, screen-reader semantics, focus order), keyboard-only operation, behaviour below
+~900px, and localisation — across every section.
+
+**Unproven rather than unexamined:** Supervision, Releases and Testing hold no data on this host, so their
+layouts have never rendered with content. Their information architecture is assessed above; their
+behaviour under real content is not, and no claim is made about it.

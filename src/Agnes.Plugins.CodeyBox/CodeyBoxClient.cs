@@ -53,6 +53,12 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     /// </summary>
     internal CodeyBoxEventStream CreateEventStream() => new(_options);
 
+    public async Task<IReadOnlyList<QuotaProbe>> GetQuotaProbesAsync(CancellationToken cancellationToken = default)
+        => (await Get<QuotaReport>("quota", cancellationToken).ConfigureAwait(false))?.Probes ?? [];
+
+    public Task<Concurrency?> GetConcurrencyAsync(CancellationToken cancellationToken = default)
+        => Get<Concurrency>("concurrency", cancellationToken);
+
     /// <summary>Raised for each chunk of the followed item's agent output.</summary>
     public event Action<StdoutChunk>? StdoutReceived;
 
