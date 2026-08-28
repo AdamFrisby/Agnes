@@ -20,11 +20,14 @@
           <Button Content="Supervision" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Supervision}" Padding="8,4" FontSize="11" />
           <Button Content="Suggestions" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Suggestions}" Padding="8,4" FontSize="11" />
           <Button Content="Releases"    Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Releases}"    Padding="8,4" FontSize="11" />
+          <Button Content="Projects"    Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Projects}"    Padding="8,4" FontSize="11" />
           <Button Content="Diagnostics" Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Diagnostics}" Padding="8,4" FontSize="11" />
           <Border Width="1" Background="{DynamicResource Line}" Margin="4,2" />
           <Button Content="{Binding PauseButtonText}" Command="{Binding TogglePauseCommand}"
                   IsEnabled="{Binding !IsBusy}" Padding="10,4" FontSize="12"
                   IsVisible="{Binding Sections.IsQueue}" />
+          <Button Content="New" Command="{Binding ToggleCreateCommand}" Padding="10,4" FontSize="12"
+                  IsVisible="{Binding Sections.IsQueue}" ToolTip.Tip="Queue a new work item" />
           <Button Content="Refresh" Command="{Binding RefreshCommand}" Padding="10,4" FontSize="12" />
         </StackPanel>
       </Grid>
@@ -42,6 +45,22 @@
           <Binding Path="Sections.IsQueue" />
         </MultiBinding>
       </Grid.IsVisible>
+
+      <Border Grid.Column="0" VerticalAlignment="Top" ZIndex="1" Margin="8" Padding="10,8" CornerRadius="6"
+              Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+              IsVisible="{Binding IsCreating}">
+        <StackPanel Spacing="6">
+          <TextBlock Text="New work item" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource Fg}" />
+          <TextBox Text="{Binding NewProjectId, Mode=TwoWay}" Watermark="Project id" FontSize="12" />
+          <TextBox Text="{Binding NewTitle, Mode=TwoWay}" Watermark="Title" FontSize="12" />
+          <TextBox Text="{Binding NewPrompt, Mode=TwoWay}" Watermark="What should the agent do?"
+                   AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" FontSize="12" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button Content="Queue it" Classes="accent" FontSize="11" Padding="10,4" Command="{Binding CreateCommand}" />
+            <Button Content="Cancel" FontSize="11" Padding="10,4" Command="{Binding ToggleCreateCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
 
       <ListBox Grid.Column="0" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected, Mode=TwoWay}"
                Background="Transparent" BorderThickness="0">
@@ -86,12 +105,89 @@
                   CommandParameter="{Binding Selected}" />
           <Button Content="Cancel" FontSize="11" Padding="8,3" Command="{Binding CancelCommand}"
                   CommandParameter="{Binding Selected}" />
+          <Button Content="Replay" FontSize="11" Padding="8,3" Command="{Binding ReplayCommand}"
+                  CommandParameter="{Binding Selected}" />
+          <Button Content="Resume" FontSize="11" Padding="8,3" Command="{Binding ResumeItemCommand}"
+                  CommandParameter="{Binding Selected}" />
+          <Button Content="Recover" FontSize="11" Padding="8,3" Command="{Binding RecoverCommand}"
+                  CommandParameter="{Binding Selected}" />
+          <Button Content="Uncancel" FontSize="11" Padding="8,3" Command="{Binding UncancelCommand}"
+                  CommandParameter="{Binding Selected}" />
+          <Button Content="Abandon" FontSize="11" Padding="8,3" Command="{Binding AbandonCommand}"
+                  CommandParameter="{Binding Selected}" />
+          <Border Width="1" Background="{DynamicResource Line}" Margin="4,2" />
+          <!-- Output vs detail: the live stream, or everything the orchestrator knows about this item. -->
+          <Button Content="Output" FontSize="11" Padding="8,3" Command="{Binding ShowOutputCommand}" />
+          <Button Content="Detail" FontSize="11" Padding="8,3" Command="{Binding ShowDetailCommand}" />
         </StackPanel>
 
+        <!-- Questions the agent is waiting on. Above the transcript, because an agent blocked on a person
+             is the one thing here that should interrupt someone — everything else can be scrolled to. -->
+        <Border Grid.Row="1" VerticalAlignment="Top" Margin="10,0,10,6" Padding="10,8" CornerRadius="6"
+                Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
+                IsVisible="{Binding HasOpenQuestions}" ZIndex="1">
+          <StackPanel Spacing="6">
+            <TextBlock Text="The agent is waiting on you" FontWeight="SemiBold" FontSize="12"
+                       Foreground="{DynamicResource Fg}" />
+            <ItemsControl ItemsSource="{Binding Questions}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Spacing="4" Margin="0,3" IsVisible="{Binding IsOpen}">
+                    <TextBlock Text="{Binding QuestionText}" Foreground="{DynamicResource Fg}" FontSize="12"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Age}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Content="Answer" FontSize="11" Padding="8,3"
+                              Command="{Binding $parent[ItemsControl].DataContext.AnswerQuestionCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Content="Dismiss" FontSize="11" Padding="8,3"
+                              Command="{Binding $parent[ItemsControl].DataContext.DismissQuestionCommand}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <!-- The reply box appears against the question being answered, so it can never be sent to a
+                 different one if the list refreshes underneath. -->
+            <StackPanel Spacing="4"
+                        IsVisible="{Binding AnsweringQuestion, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <TextBox Text="{Binding AnswerText, Mode=TwoWay}" AcceptsReturn="True" MinHeight="52"
+                       TextWrapping="Wrap" FontSize="12" Watermark="Your answer…" />
+              <Button Content="Send answer" Classes="accent" FontSize="11" Padding="10,4"
+                      HorizontalAlignment="Left"
+                      Command="{Binding AnswerQuestionCommand}" CommandParameter="{Binding AnsweringQuestion}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
         <!-- The agent's own output, streamed. Monospaced and selectable because it is terminal text. -->
-        <ScrollViewer Grid.Row="1" x:Name="OutputScroller" Padding="10,0,10,10">
+        <ScrollViewer Grid.Row="1" x:Name="OutputScroller" Padding="10,0,10,10"
+                      IsVisible="{Binding !IsDetailVisible}">
           <SelectableTextBlock Text="{Binding Output}" FontFamily="monospace" FontSize="11"
                                Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+        </ScrollViewer>
+
+        <!-- Timeline, diff, costs, timings, agent history, audit reports, attachments and dependents,
+             fetched only when this pane is opened. Each part is optional and says so when absent. -->
+        <ScrollViewer Grid.Row="1" Padding="10,0,10,10" IsVisible="{Binding IsDetailVisible}">
+          <StackPanel Spacing="8">
+            <!-- The two things about a queued item that are worth changing from here. -->
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="Priority" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />
+              <NumericUpDown Value="{Binding Priority, Mode=TwoWay}" Minimum="-100" Maximum="100" Increment="1"
+                             FormatString="0" Width="110" FontSize="11" />
+              <Button Content="Set" FontSize="11" Padding="8,3" Command="{Binding SetPriorityCommand}" />
+            </StackPanel>
+            <StackPanel Spacing="4">
+              <TextBox Text="{Binding PromptEdit, Mode=TwoWay}" Watermark="Replace the agent's prompt…"
+                       AcceptsReturn="True" MinHeight="48" TextWrapping="Wrap" FontSize="11" />
+              <Button Content="Update prompt" FontSize="11" Padding="8,3" HorizontalAlignment="Left"
+                      Command="{Binding SetPromptCommand}" />
+            </StackPanel>
+            <SelectableTextBlock Text="{Binding Detail}" FontFamily="monospace" FontSize="11"
+                                 Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+          </StackPanel>
         </ScrollViewer>
       </Grid>
     </Grid>
@@ -131,9 +227,14 @@
                     <TextBlock Text="{Binding Agent}" Foreground="{DynamicResource Fg}" FontSize="12" />
                     <TextBlock Text="{Binding PausedReason}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                   </StackPanel>
-                  <Button Grid.Column="1" Content="Resume" FontSize="11" Padding="8,3"
-                          Command="{Binding $parent[ItemsControl].DataContext.ResumeAgentCommand}"
-                          CommandParameter="{Binding}" />
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                    <Button Content="Pause" FontSize="11" Padding="8,3"
+                            Command="{Binding $parent[ItemsControl].DataContext.PauseAgentCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="Resume" FontSize="11" Padding="8,3"
+                            Command="{Binding $parent[ItemsControl].DataContext.ResumeAgentCommand}"
+                            CommandParameter="{Binding}" />
+                  </StackPanel>
                 </Grid>
               </Border>
             </DataTemplate>
@@ -182,9 +283,14 @@
                     <Run Text="{Binding Severity}" /><Run Text=" · " /><Run Text="{Binding Category}" /><Run Text=" · " /><Run Text="{Binding Age}" />
                   </TextBlock>
                 </StackPanel>
-                <Button Grid.Column="1" Content="Promote" FontSize="11" Padding="8,3" VerticalAlignment="Top"
-                        Command="{Binding $parent[ItemsControl].DataContext.PromoteSuggestionCommand}"
-                        CommandParameter="{Binding}" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+                  <Button Content="Promote" FontSize="11" Padding="8,3"
+                          Command="{Binding $parent[ItemsControl].DataContext.PromoteSuggestionCommand}"
+                          CommandParameter="{Binding}" />
+                  <Button Content="Dismiss" FontSize="11" Padding="8,3"
+                          Command="{Binding $parent[ItemsControl].DataContext.DismissSuggestionCommand}"
+                          CommandParameter="{Binding}" />
+                </StackPanel>
               </Grid>
             </Border>
           </DataTemplate>
@@ -200,10 +306,26 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate>
               <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="10,8" Margin="0,2">
-                <StackPanel Spacing="2">
-                  <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                  <TextBlock Text="{Binding State}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-                </StackPanel>
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Grid.Column="0" Spacing="2">
+                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                    <TextBlock Text="{Binding State}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Button Content="Ship" FontSize="11" Padding="8,3"
+                            Command="{Binding $parent[ItemsControl].DataContext.ShipReleaseCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="Close" FontSize="11" Padding="8,3"
+                            Command="{Binding $parent[ItemsControl].DataContext.CloseReleaseCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="Reopen" FontSize="11" Padding="8,3"
+                            Command="{Binding $parent[ItemsControl].DataContext.ReopenReleaseCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="Abandon" FontSize="11" Padding="8,3"
+                            Command="{Binding $parent[ItemsControl].DataContext.AbandonReleaseCommand}"
+                            CommandParameter="{Binding}" />
+                  </StackPanel>
+                </Grid>
               </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -215,7 +337,10 @@
             <DataTemplate>
               <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="10,6" Margin="0,2">
                 <StackPanel Orientation="Horizontal" Spacing="10">
-                  <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                  <Button Content="Queue" FontSize="11" Padding="8,3"
+                          Command="{Binding $parent[ItemsControl].DataContext.QueueTemplateCommand}"
+                          CommandParameter="{Binding}" />
+                  <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
                   <TextBlock Text="{Binding CheckCount, StringFormat='{}{0} checks'}" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
                 </StackPanel>
               </Border>
@@ -223,6 +348,36 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </StackPanel>
+    </ScrollViewer>
+
+    <!-- Projects: what the orchestrator runs work for, and its per-project queue control. -->
+    <ScrollViewer Grid.Row="1" IsVisible="{Binding Sections.IsProjects}" Padding="14">
+      <ItemsControl ItemsSource="{Binding Sections.Projects}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="10,8" Margin="0,2">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="2">
+                  <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                  <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
+                    <Run Text="{Binding DefaultAgent}" /><Run Text=" · " /><Run Text="{Binding DefaultBaseBranch}" />
+                  </TextBlock>
+                  <TextBlock Text="{Binding RepositoryUrl}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                  <Button Content="Pause queue" FontSize="11" Padding="8,3"
+                          Command="{Binding $parent[ItemsControl].DataContext.PauseProjectCommand}"
+                          CommandParameter="{Binding}" />
+                  <Button Content="Resume" FontSize="11" Padding="8,3"
+                          Command="{Binding $parent[ItemsControl].DataContext.ResumeProjectCommand}"
+                          CommandParameter="{Binding}" />
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
     </ScrollViewer>
 
     <!-- The orchestrator's own health surfaces. Several are optional and say so when switched off. -->

@@ -174,6 +174,33 @@ public sealed record StdoutChunk(
     [property: JsonPropertyName("phase")] string? Phase,
     [property: JsonPropertyName("chunk")] string Chunk);
 
+/// <summary>
+/// A question an agent has put to a human, and — once answered — the answer.
+/// </summary>
+/// <remarks>
+/// This is an agent blocked on a person, which is the situation Agnes exists to unblock, so it is the one
+/// part of the orchestrator's surface that earns a place in the queue view rather than behind a section.
+/// The store behind it is optional: an orchestrator without one answers 503, which reads as "this instance
+/// doesn't do questions" and not as a failure.
+/// </remarks>
+public sealed record WorkItemQuestion(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("workItemId")] string WorkItemId,
+    [property: JsonPropertyName("questionId")] string QuestionId,
+    [property: JsonPropertyName("questionText")] string QuestionText,
+    [property: JsonPropertyName("state")] string State,
+    [property: JsonPropertyName("askedAt")] DateTimeOffset AskedAt,
+    [property: JsonPropertyName("answeredAt")] DateTimeOffset? AnsweredAt,
+    [property: JsonPropertyName("answerText")] string? AnswerText,
+    [property: JsonPropertyName("answeredBy")] string? AnsweredBy,
+    [property: JsonPropertyName("dismissedAt")] DateTimeOffset? DismissedAt)
+{
+    /// <summary>Still waiting on a person — the only state that should interrupt anyone.</summary>
+    public bool IsOpen => AnsweredAt is null && DismissedAt is null;
+
+    public string Age => WorkItemRow.Relative(AskedAt);
+}
+
 /// <summary>What to create a work item from.</summary>
 public sealed record NewWorkItem(
     [property: JsonPropertyName("projectId")] string ProjectId,

@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using System.Collections.ObjectModel;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -37,6 +38,13 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         CancelCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.CancelAsync));
         RetryCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.RetryAsync));
         PromoteCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.PromoteAsync));
+        ReplayCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.ReplayAsync));
+        AbandonCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.AbandonAsync));
+        UncancelCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.UncancelAsync));
+        ResumeItemCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.ResumeWorkItemAsync));
+        RecoverCommand = new AsyncRelayCommand<WorkItemRow>(row => Act(row, _client.RecoverAsync));
+        AnswerQuestionCommand = new AsyncRelayCommand<WorkItemQuestion>(AnswerAsync);
+        DismissQuestionCommand = new AsyncRelayCommand<WorkItemQuestion>(DismissAsync);
 
         _client.StdoutReceived += OnStdout;
         _client.StreamCompleted += OnStreamCompleted;
@@ -77,6 +85,258 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     public IAsyncRelayCommand<WorkItemRow> CancelCommand { get; }
     public IAsyncRelayCommand<WorkItemRow> RetryCommand { get; }
     public IAsyncRelayCommand<WorkItemRow> PromoteCommand { get; }
+    public IAsyncRelayCommand<WorkItemRow> ReplayCommand { get; }
+    public IAsyncRelayCommand<WorkItemRow> AbandonCommand { get; }
+    public IAsyncRelayCommand<WorkItemRow> UncancelCommand { get; }
+    public IAsyncRelayCommand<WorkItemRow> ResumeItemCommand { get; }
+    public IAsyncRelayCommand<WorkItemRow> RecoverCommand { get; }
+    public IAsyncRelayCommand<WorkItemQuestion> AnswerQuestionCommand { get; }
+    public IAsyncRelayCommand<WorkItemQuestion> DismissQuestionCommand { get; }
+
+    /// <summary>
+    /// Questions the selected item's agent is waiting on. Kept beside the transcript rather than behind a
+    /// section: an agent blocked on a person is the one thing here that should interrupt someone.
+    /// </summary>
+    public ObservableCollection<WorkItemQuestion> Questions { get; } = [];
+
+    public bool HasOpenQuestions => Questions.Any(q => q.IsOpen);
+
+    /// <summary>What the person is typing in reply to <see cref="AnsweringQuestion"/>.</summary>
+    [ObservableProperty]
+    private string _answerText = string.Empty;
+
+    /// <summary>The question the answer box belongs to, or null when nothing is being answered.</summary>
+    [ObservableProperty]
+    private WorkItemQuestion? _answeringQuestion;
+
+    private async Task AnswerAsync(WorkItemQuestion? question)
+    {
+        if (question is null)
+        {
+            return;
+        }
+
+        // Two clicks: the first opens the box for that question, the second sends what was typed. The
+        // command carries the question either way, so answering never targets whichever row moved under it.
+        if (!ReferenceEquals(AnsweringQuestion, question))
+        {
+            await _toUi(() => { AnsweringQuestion = question; AnswerText = string.Empty; }).ConfigureAwait(false);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(AnswerText))
+        {
+            return;
+        }
+
+        try
+        {
+            await _client.AnswerQuestionAsync(question.WorkItemId, question.QuestionId, AnswerText.Trim(), _cts.Token)
+                .ConfigureAwait(false);
+            await _toUi(() => { AnsweringQuestion = null; AnswerText = string.Empty; }).ConfigureAwait(false);
+            await LoadQuestionsAsync(question.WorkItemId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("answer question", ex);
+            await _toUi(() => Status = $"Couldn't answer — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    private async Task DismissAsync(WorkItemQuestion? question)
+    {
+        if (question is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _client.DismissQuestionAsync(question.WorkItemId, question.QuestionId, "dismissed from Agnes", _cts.Token)
+                .ConfigureAwait(false);
+            await LoadQuestionsAsync(question.WorkItemId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("dismiss question", ex);
+            await _toUi(() => Status = $"Couldn't dismiss — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Whether the right pane shows the item's detail rather than its live output.</summary>
+    [ObservableProperty]
+    private bool _isDetailVisible;
+
+    /// <summary>The selected item's detail, gathered from the orchestrator's per-item endpoints.</summary>
+    [ObservableProperty]
+    private string _detail = string.Empty;
+
+    public ICommand ShowOutputCommand => _showOutput ??= new RelayCommand(() => IsDetailVisible = false);
+
+    public ICommand ShowDetailCommand => _showDetail ??= new RelayCommand(() =>
+    {
+        IsDetailVisible = true;
+        if (Selected is { } row)
+        {
+            _ = LoadDetailAsync(row.Id);
+        }
+    });
+
+    private ICommand? _showOutput;
+    private ICommand? _showDetail;
+
+    /// <summary>
+    /// Gathers everything the orchestrator knows about one work item into a single pane.
+    /// </summary>
+    /// <remarks>
+    /// Fetched only when the pane is opened, and each part independently: these are eight endpoints, most
+    /// of them optional, and an item with no diff yet or an orchestrator without audit reports should cost
+    /// a line saying so rather than the whole pane. Rendered as JSON because these shapes are wide,
+    /// instance-specific and not ours to model — see <see cref="RawJson"/>.
+    /// </remarks>
+    private async Task LoadDetailAsync(string workItemId)
+    {
+        await _toUi(() => Detail = "Loading…").ConfigureAwait(false);
+        try
+        {
+            var parts = new (string Label, RawJson? Value)[]
+            {
+                ("work item", await _client.GetWorkItemAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("timeline", await _client.GetTimelineAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("agent history", await _client.GetAgentHistoryAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("costs", await _client.GetCostsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("timings", await _client.GetTimingsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("diff", await _client.GetDiffAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("dependents", await _client.GetDependentsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("audit reports", await _client.GetAuditReportsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("agent streams", await _client.GetAgentStreamsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+                ("attachments", await _client.GetAttachmentsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
+            };
+
+            var text = string.Join(Environment.NewLine + Environment.NewLine, parts.Select(p =>
+                p.Value is null ? $"── {p.Label}: none" : $"── {p.Label}{Environment.NewLine}{p.Value.Text}"));
+            await _toUi(() => Detail = text).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report($"detail {workItemId}", ex);
+            await _toUi(() => Detail = $"Couldn't load detail — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    // ---- creating work, and editing what is queued ----
+
+    [ObservableProperty]
+    private string _newTitle = string.Empty;
+
+    [ObservableProperty]
+    private string _newPrompt = string.Empty;
+
+    [ObservableProperty]
+    private string _newProjectId = string.Empty;
+
+    [ObservableProperty]
+    private bool _isCreating;
+
+    [ObservableProperty]
+    private int _priority;
+
+    [ObservableProperty]
+    private string _promptEdit = string.Empty;
+
+    public ICommand ToggleCreateCommand => _toggleCreate ??= new RelayCommand(() => IsCreating = !IsCreating);
+    private ICommand? _toggleCreate;
+
+    public IAsyncRelayCommand CreateCommand => _create ??= new AsyncRelayCommand(CreateAsync);
+    private IAsyncRelayCommand? _create;
+
+    public IAsyncRelayCommand SetPriorityCommand => _setPriority ??= new AsyncRelayCommand(SetPriorityAsync);
+    private IAsyncRelayCommand? _setPriority;
+
+    public IAsyncRelayCommand SetPromptCommand => _setPrompt ??= new AsyncRelayCommand(SetPromptAsync);
+    private IAsyncRelayCommand? _setPrompt;
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(NewTitle) || string.IsNullOrWhiteSpace(NewPrompt) ||
+            string.IsNullOrWhiteSpace(NewProjectId))
+        {
+            await _toUi(() => Status = "A new work item needs a project, a title and a prompt.").ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            var id = await _client.CreateWorkItemAsync(
+                new NewWorkItem(NewProjectId.Trim(), NewTitle.Trim(), NewPrompt.Trim()), _cts.Token).ConfigureAwait(false);
+            await _toUi(() =>
+            {
+                Status = id is null ? "Created." : $"Created {id[..Math.Min(8, id.Length)]}.";
+                NewTitle = string.Empty;
+                NewPrompt = string.Empty;
+                IsCreating = false;
+            }).ConfigureAwait(false);
+            await RefreshAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("create work item", ex);
+            await _toUi(() => Status = $"Couldn't create — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    private async Task SetPriorityAsync()
+    {
+        if (Selected is not { } row)
+        {
+            return;
+        }
+
+        try
+        {
+            await _client.SetPriorityAsync(row.Id, Priority, _cts.Token).ConfigureAwait(false);
+            await RefreshAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("set priority", ex);
+            await _toUi(() => Status = $"Couldn't set priority — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    private async Task SetPromptAsync()
+    {
+        if (Selected is not { } row || string.IsNullOrWhiteSpace(PromptEdit))
+        {
+            return;
+        }
+
+        try
+        {
+            await _client.SetPromptAsync(row.Id, PromptEdit.Trim(), _cts.Token).ConfigureAwait(false);
+            await _toUi(() => Status = "Prompt updated.").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("set prompt", ex);
+            await _toUi(() => Status = $"Couldn't update the prompt — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    private async Task LoadQuestionsAsync(string workItemId)
+    {
+        var questions = await _client.GetQuestionsAsync(workItemId, _cts.Token).ConfigureAwait(false);
+        await _toUi(() =>
+        {
+            Questions.Clear();
+            foreach (var question in questions)
+            {
+                Questions.Add(question);
+            }
+
+            OnPropertyChanged(nameof(HasOpenQuestions));
+        }).ConfigureAwait(false);
+    }
 
     public string PauseButtonText => QueuePaused ? "Resume queue" : "Pause queue";
 
@@ -167,12 +427,21 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         {
             _output.Clear();
             OnPropertyChanged(nameof(Output));
+            Questions.Clear();
+            AnsweringQuestion = null;
+            OnPropertyChanged(nameof(HasOpenQuestions));
         }).ConfigureAwait(false);
 
         try
         {
             // Tail first, then follow: a subscription carries only what happens next, so an item already
             // an hour into its run would otherwise open on an empty pane.
+            await LoadQuestionsAsync(value.Id).ConfigureAwait(false);
+            if (IsDetailVisible)
+            {
+                await LoadDetailAsync(value.Id).ConfigureAwait(false);
+            }
+
             var tail = await _client.GetStdoutTailAsync(value.Id, _cts.Token).ConfigureAwait(false);
             await _toUi(() =>
             {

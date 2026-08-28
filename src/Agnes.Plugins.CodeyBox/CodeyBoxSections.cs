@@ -16,6 +16,7 @@ public enum CodeyBoxSection
     Supervision,
     Suggestions,
     Releases,
+    Projects,
     Diagnostics,
 }
 
@@ -38,6 +39,13 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
         PromoteSuggestionCommand = new AsyncRelayCommand<Suggestion>(PromoteSuggestionAsync);
         ResumeAgentCommand = new AsyncRelayCommand<AgentPause>(ResumeAgentAsync);
         ReloadCommand = new AsyncRelayCommand(() => LoadAsync(Section, force: true));
+        PauseAgentCommand = new AsyncRelayCommand<AgentPause>(p => AgentAction(p, true));
+        DismissSuggestionCommand = new AsyncRelayCommand<Suggestion>(DismissSuggestionAsync);
+        CloseReleaseCommand = new AsyncRelayCommand<Release>(r => ReleaseAction(r, _client.CloseReleaseAsync));
+        ReopenReleaseCommand = new AsyncRelayCommand<Release>(r => ReleaseAction(r, _client.ReopenReleaseAsync));
+        AbandonReleaseCommand = new AsyncRelayCommand<Release>(r => ReleaseAction(r, _client.AbandonReleaseAsync));
+        ShipReleaseCommand = new AsyncRelayCommand<Release>(r => ReleaseAction(r, _client.ShipReleaseAsync));
+        QueueTemplateCommand = new AsyncRelayCommand<TaskTemplate>(QueueTemplateAsync);
     }
 
     public ObservableCollection<FleetProject> Fleet { get; } = [];
@@ -46,6 +54,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     public ObservableCollection<Suggestion> Suggestions { get; } = [];
     public ObservableCollection<Release> Releases { get; } = [];
     public ObservableCollection<TaskTemplate> Templates { get; } = [];
+    public ObservableCollection<Project> Projects { get; } = [];
 
     [ObservableProperty]
     private CodeyBoxSection _section = CodeyBoxSection.Queue;
@@ -75,6 +84,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     public bool IsSupervision => Section == CodeyBoxSection.Supervision;
     public bool IsSuggestions => Section == CodeyBoxSection.Suggestions;
     public bool IsReleases => Section == CodeyBoxSection.Releases;
+    public bool IsProjects => Section == CodeyBoxSection.Projects;
     public bool IsDiagnostics => Section == CodeyBoxSection.Diagnostics;
 
     public bool CanInject => SelectedSession is not null && !string.IsNullOrWhiteSpace(InjectMessage);
@@ -83,6 +93,136 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     public IAsyncRelayCommand<Suggestion> PromoteSuggestionCommand { get; }
     public IAsyncRelayCommand<AgentPause> ResumeAgentCommand { get; }
     public IAsyncRelayCommand ReloadCommand { get; }
+    public IAsyncRelayCommand<AgentPause> PauseAgentCommand { get; }
+    public IAsyncRelayCommand<Suggestion> DismissSuggestionCommand { get; }
+    public IAsyncRelayCommand<Release> CloseReleaseCommand { get; }
+    public IAsyncRelayCommand<Release> ReopenReleaseCommand { get; }
+    public IAsyncRelayCommand<Release> AbandonReleaseCommand { get; }
+    public IAsyncRelayCommand<Release> ShipReleaseCommand { get; }
+    public IAsyncRelayCommand<TaskTemplate> QueueTemplateCommand { get; }
+
+    private async Task ReleaseAction(Release? release, Func<string, CancellationToken, Task> action)
+    {
+        if (release is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await action(release.Id, CancellationToken.None).ConfigureAwait(false);
+            await LoadAsync(CodeyBoxSection.Releases, force: true).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("release action", ex);
+            await _toUi(() => SectionStatus = $"Couldn't act on the release — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    public IAsyncRelayCommand<Project> PauseProjectCommand => _pauseProject ??=
+        new AsyncRelayCommand<Project>(p => ProjectQueue(p, pause: true));
+
+    public IAsyncRelayCommand<Project> ResumeProjectCommand => _resumeProject ??=
+        new AsyncRelayCommand<Project>(p => ProjectQueue(p, pause: false));
+
+    private IAsyncRelayCommand<Project>? _pauseProject;
+    private IAsyncRelayCommand<Project>? _resumeProject;
+
+    private async Task ProjectQueue(Project? project, bool pause)
+    {
+        if (project is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await (pause
+                ? _client.PauseProjectQueueAsync(project.Id, "paused from Agnes")
+                : _client.ResumeProjectQueueAsync(project.Id)).ConfigureAwait(false);
+            var budget = await _client.GetProjectBudgetAsync(project.Id).ConfigureAwait(false);
+            await _toUi(() => SectionStatus =
+                $"{project.DisplayName}: queue {(pause ? "paused" : "resumed")}" +
+                (budget is null ? string.Empty : " · budget read")).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("project queue", ex);
+            await _toUi(() => SectionStatus = $"Couldn't change {project.DisplayName} — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    private async Task QueueTemplateAsync(TaskTemplate? template)
+    {
+        if (template is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _client.QueueTemplateAsync(template.Name).ConfigureAwait(false);
+            await _toUi(() => SectionStatus = $"Queued “{template.Name}”.").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("queue template", ex);
+            await _toUi(() => SectionStatus = $"Couldn't queue {template.Name} — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    private async Task DismissSuggestionAsync(Suggestion? suggestion)
+    {
+        if (suggestion is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _client.DismissSuggestionAsync(suggestion.Id, "dismissed from Agnes").ConfigureAwait(false);
+            await LoadAsync(CodeyBoxSection.Suggestions, force: true).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("dismiss suggestion", ex);
+            await _toUi(() => SectionStatus = $"Couldn't dismiss — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Pauses or resumes an agent, at whichever granularity the row describes.</summary>
+    private async Task AgentAction(AgentPause? pause, bool pausing)
+    {
+        if (pause is null)
+        {
+            return;
+        }
+
+        try
+        {
+            const string Reason = "paused from Agnes";
+            if (pause.AgentInstanceId is { Length: > 0 } instance)
+            {
+                await (pausing
+                    ? _client.PauseAgentInstanceAsync(pause.Agent, instance, Reason)
+                    : _client.ResumeAgentInstanceAsync(pause.Agent, instance)).ConfigureAwait(false);
+            }
+            else
+            {
+                await (pausing
+                    ? _client.PauseAgentAsync(pause.Agent, Reason)
+                    : _client.ResumeAgentAsync(pause.Agent)).ConfigureAwait(false);
+            }
+
+            await LoadAsync(CodeyBoxSection.Fleet, force: true).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report($"{(pausing ? "pause" : "resume")} agent", ex);
+            await _toUi(() => SectionStatus = $"Couldn't change {pause.Agent} — {ex.Message}").ConfigureAwait(false);
+        }
+    }
 
     public IRelayCommand<CodeyBoxSection> ShowCommand => _show ??=
         new RelayCommand<CodeyBoxSection>(s => { Section = s; _ = LoadAsync(s); });
@@ -92,7 +232,8 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     partial void OnSectionChanged(CodeyBoxSection value)
     {
         foreach (var name in new[] { nameof(IsQueue), nameof(IsFleet), nameof(IsSupervision),
-                                     nameof(IsSuggestions), nameof(IsReleases), nameof(IsDiagnostics) })
+                                     nameof(IsSuggestions), nameof(IsReleases), nameof(IsProjects),
+                                     nameof(IsDiagnostics) })
         {
             OnPropertyChanged(name);
         }
@@ -146,6 +287,10 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
                     await Fill(Templates, await _client.GetTemplatesAsync().ConfigureAwait(false)).ConfigureAwait(false);
                     break;
 
+                case CodeyBoxSection.Projects:
+                    await Fill(Projects, await _client.GetProjectsAsync().ConfigureAwait(false)).ConfigureAwait(false);
+                    break;
+
                 case CodeyBoxSection.Diagnostics:
                     await LoadDiagnosticsAsync().ConfigureAwait(false);
                     break;
@@ -166,24 +311,40 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     private async Task LoadDiagnosticsAsync()
     {
         var workers = await _client.GetWorkerStatusAsync().ConfigureAwait(false);
-        var capacity = await _client.GetCapacityAsync().ConfigureAwait(false);
-        var quota = await _client.GetQuotaHistoryAsync().ConfigureAwait(false);
-        var retry = await _client.GetQuotaRetryStatusAsync().ConfigureAwait(false);
-        var leaks = await _client.GetSandboxLeaksAsync().ConfigureAwait(false);
-        var usage = await _client.GetSandboxResourceUsageAsync().ConfigureAwait(false);
-        var health = await _client.GetFleetTransitionHealthAsync().ConfigureAwait(false);
+
+        // Every remaining read-only surface the orchestrator offers, gathered in one place rather than
+        // given a screen each: they are diagnostics, consulted when something is wrong, and most of them
+        // are optional on any given instance.
+        var parts = new (string Label, RawJson? Value)[]
+        {
+            ("fleet transition health", await _client.GetFleetTransitionHealthAsync().ConfigureAwait(false)),
+            ("capacity", await _client.GetCapacityAsync().ConfigureAwait(false)),
+            ("quota history", await _client.GetQuotaHistoryAsync().ConfigureAwait(false)),
+            ("quota reset advice", await _client.GetQuotaResetAdviceAsync().ConfigureAwait(false)),
+            ("quota reset credits", await _client.GetQuotaResetCreditsAsync().ConfigureAwait(false)),
+            ("quota retry status", await _client.GetQuotaRetryStatusAsync().ConfigureAwait(false)),
+            ("agent pricing", await _client.GetAgentPricingAsync().ConfigureAwait(false)),
+            ("sandbox leaks", await _client.GetSandboxLeaksAsync().ConfigureAwait(false)),
+            ("leaked sandboxes", await _client.GetLeakedSandboxesAsync().ConfigureAwait(false)),
+            ("sandbox resource usage", await _client.GetSandboxResourceUsageAsync().ConfigureAwait(false)),
+            ("orchestrator plugins", await _client.GetPluginsRawAsync().ConfigureAwait(false)),
+            ("workers", await _client.GetWorkersAsync().ConfigureAwait(false)),
+            ("failure events", await _client.GetFailureEventsAsync().ConfigureAwait(false)),
+            ("aggregate timings", await _client.GetAggregateTimingsAsync().ConfigureAwait(false)),
+            ("aggregate agent streams", await _client.GetAggregateAgentStreamsAsync().ConfigureAwait(false)),
+            ("baselines", await _client.GetBaselinesAsync().ConfigureAwait(false)),
+            ("baseline images", await _client.GetBaselineImagesAsync().ConfigureAwait(false)),
+            ("e2e runs", await _client.GetE2eRunsAsync().ConfigureAwait(false)),
+            ("test cases", await _client.GetTestCasesAsync().ConfigureAwait(false)),
+            ("GitHub App", await _client.GetGitHubAppStatusAsync().ConfigureAwait(false)),
+        };
 
         var text = string.Join(Environment.NewLine + Environment.NewLine,
         [
             workers is null
                 ? "workers: unavailable"
                 : $"workers: {workers.CurrentlyRunning}/{workers.MaxConcurrent} running · {workers.QueuedCount} queued",
-            Describe("fleet transition health", health),
-            Describe("capacity", capacity),
-            Describe("quota history", quota),
-            Describe("quota retry status", retry),
-            Describe("sandbox leaks", leaks),
-            Describe("sandbox resource usage", usage),
+            .. parts.Select(p => Describe(p.Label, p.Value)),
         ]);
 
         await _toUi(() => Diagnostics = text).ConfigureAwait(false);
@@ -241,31 +402,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
         }
     }
 
-    private async Task ResumeAgentAsync(AgentPause? pause)
-    {
-        if (pause is null)
-        {
-            return;
-        }
-
-        try
-        {
-            if (pause.AgentInstanceId is { Length: > 0 } instance)
-            {
-                await _client.ResumeAgentInstanceAsync(pause.Agent, instance).ConfigureAwait(false);
-            }
-            else
-            {
-                await _client.ResumeAgentAsync(pause.Agent).ConfigureAwait(false);
-            }
-
-            await LoadAsync(CodeyBoxSection.Fleet, force: true).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            await _toUi(() => SectionStatus = $"Couldn't resume {pause.Agent} — {ex.Message}").ConfigureAwait(false);
-        }
-    }
+    private Task ResumeAgentAsync(AgentPause? pause) => AgentAction(pause, pausing: false);
 
     private Task Fill<T>(ObservableCollection<T> target, IReadOnlyList<T> items) => _toUi(() =>
     {

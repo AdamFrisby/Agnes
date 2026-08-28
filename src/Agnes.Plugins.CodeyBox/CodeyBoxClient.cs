@@ -216,8 +216,12 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task<RawJson?> GetDiffAsync(string id, CancellationToken cancellationToken = default)
         => GetRaw($"workitems/{id}/diff", cancellationToken);
 
-    public Task<RawJson?> GetQuestionsAsync(string id, CancellationToken cancellationToken = default)
-        => GetRaw($"workitems/{id}/questions", cancellationToken);
+    /// <summary>
+    /// The questions an agent has asked about this item. Empty when the orchestrator has no question store
+    /// configured — it answers 503 for that, which is a statement about the instance, not an error.
+    /// </summary>
+    public async Task<IReadOnlyList<WorkItemQuestion>> GetQuestionsAsync(string id, CancellationToken cancellationToken = default)
+        => await Get<List<WorkItemQuestion>>($"workitems/{id}/questions", cancellationToken).ConfigureAwait(false) ?? [];
 
     public Task<RawJson?> GetDependentsAsync(string id, CancellationToken cancellationToken = default)
         => GetRaw($"workitems/{id}/dependents", cancellationToken);
@@ -276,8 +280,10 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task AnswerQuestionAsync(string id, string questionId, string answer, CancellationToken cancellationToken = default)
         => PostJsonAsync($"workitems/{id}/answer", new { questionId, answer }, cancellationToken);
 
-    public Task DismissQuestionAsync(string id, string questionId, CancellationToken cancellationToken = default)
-        => PostJsonAsync($"workitems/{id}/dismiss-question", new { questionId }, cancellationToken);
+    /// <summary>Dismisses a question. The orchestrator requires both the id and a reason, and validates the
+    /// id against <c>^[a-zA-Z0-9_-]{1,64}$</c> before it will act.</summary>
+    public Task DismissQuestionAsync(string id, string questionId, string reason, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"workitems/{id}/dismiss-question", new { questionId, reason }, cancellationToken);
 
     public Task ReorderAsync(IReadOnlyList<string> orderedIds, CancellationToken cancellationToken = default)
         => PostJsonAsync("workitems/reorder", new { ids = orderedIds }, cancellationToken);
@@ -285,7 +291,183 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task QueueTemplateAsync(string name, CancellationToken cancellationToken = default)
         => PostJsonAsync($"templates/{name}/queue", new { }, cancellationToken);
 
+    // ---- the rest of the surface ----
+    // Completing the map so nothing is unreachable. Two families are deliberately absent and are not gaps:
+    // `github-app/callback` and `webhooks/github/release` are inbound endpoints the orchestrator exposes
+    // for GitHub to call, not actions a client performs.
+
+    public Task<RawJson?> GetProjectAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"projects/{id}", cancellationToken);
+
+    public Task<RawJson?> GetProjectBudgetAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"projects/{id}/budget", cancellationToken);
+
+    public Task<RawJson?> GetProjectBudgetUsageAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"projects/{id}/budget/usage", cancellationToken);
+
+    public Task PauseProjectQueueAsync(string id, string reason, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"projects/{id}/queue/pause", new { reason }, cancellationToken);
+
+    public Task ResumeProjectQueueAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"projects/{id}/queue/resume", new { }, cancellationToken);
+
+    public Task<RawJson?> GetWorkItemBudgetUsageAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/budget/usage", cancellationToken);
+
+    public Task<RawJson?> GetReplaysAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/replays", cancellationToken);
+
+    public Task<RawJson?> GetFailureEventsAsync(string query = "", CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/failure-events{query}", cancellationToken);
+
+    public Task<RawJson?> GetAggregateTimingsAsync(CancellationToken cancellationToken = default)
+        => GetRaw("workitems/timings/aggregate", cancellationToken);
+
+    public Task<RawJson?> GetAggregateAgentStreamsAsync(CancellationToken cancellationToken = default)
+        => GetRaw("workitems/agent-streams/aggregate", cancellationToken);
+
+    public Task<RawJson?> GetAgentStreamAnalysisAsync(string id, string fileName, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/agent-streams/{fileName}/analysis", cancellationToken);
+
+    /// <summary>One auditor's raw report for an iteration. Text, not JSON — it is a report, not a record.</summary>
+    public async Task<string> GetAuditReportRawAsync(string id, string target, int iteration, string auditor, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"workitems/{id}/audit-reports/{target}/{iteration}/{auditor}/raw", cancellationToken).ConfigureAwait(false);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
+            : string.Empty;
+    }
+
+    public Task PatchWorkItemAsync(string id, object changes, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Patch, $"workitems/{id}")
+        {
+            Content = JsonContent.Create(changes, options: Json),
+        }, cancellationToken);
+
+    public Task PatchExternalIdsAsync(string id, IReadOnlyDictionary<string, string> externalIds, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Patch, $"workitems/{id}/external-ids")
+        {
+            Content = JsonContent.Create(externalIds, options: Json),
+        }, cancellationToken);
+
+    public Task DeleteAttachmentAsync(string id, string attachmentId, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Delete, $"workitems/{id}/attachments/{attachmentId}"), cancellationToken);
+
+    public Task<RawJson?> GetAttachmentAsync(string id, string attachmentId, CancellationToken cancellationToken = default)
+        => GetRaw($"workitems/{id}/attachments/{attachmentId}", cancellationToken);
+
+    public Task<RawJson?> CreateReleaseAsync(object request, CancellationToken cancellationToken = default)
+        => PostForJsonAsync("releases", request, cancellationToken);
+
+    public Task<RawJson?> GetReleaseAuditIterationsAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"releases/{id}/audit-iterations", cancellationToken);
+
+    public async Task<int> GetSuggestionCountAsync(CancellationToken cancellationToken = default)
+    {
+        var raw = await GetRaw("suggestions/count", cancellationToken).ConfigureAwait(false);
+        return raw?.Document.RootElement.TryGetProperty("count", out var count) == true ? count.GetInt32() : 0;
+    }
+
+    public Task<RawJson?> GetE2eRunAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"e2eruns/{id}", cancellationToken);
+
+    public Task<RawJson?> GetE2eBatchAsync(string batchId, CancellationToken cancellationToken = default)
+        => GetRaw($"e2eruns/batches/{batchId}", cancellationToken);
+
+    public Task<RawJson?> GetE2eBatchRunsAsync(string batchId, CancellationToken cancellationToken = default)
+        => GetRaw($"e2eruns/batches/{batchId}/runs", cancellationToken);
+
+    public Task<RawJson?> CreateE2eRunAsync(object request, CancellationToken cancellationToken = default)
+        => PostForJsonAsync("e2eruns", request, cancellationToken);
+
+    public Task<RawJson?> CreateE2eRunsAsync(object request, CancellationToken cancellationToken = default)
+        => PostForJsonAsync("e2eruns/bulk", request, cancellationToken);
+
+    public Task CancelE2eRunAsync(string id, CancellationToken cancellationToken = default)
+        => PostJsonAsync($"e2eruns/{id}/cancel", new { }, cancellationToken);
+
+    public Task<RawJson?> GetTestCaseAsync(string id, CancellationToken cancellationToken = default)
+        => GetRaw($"testcases/{id}", cancellationToken);
+
+    public Task<RawJson?> GetTestCasesForWorkItemAsync(string workItemId, CancellationToken cancellationToken = default)
+        => GetRaw($"testcases/workitems/{workItemId}/testcases", cancellationToken);
+
+    public Task<RawJson?> GetTestCaseRunsAsync(string testCaseId, CancellationToken cancellationToken = default)
+        => GetRaw($"e2eruns/testcases/{testCaseId}/runs", cancellationToken);
+
+    public Task<RawJson?> CreateTestCaseAsync(object request, CancellationToken cancellationToken = default)
+        => PostForJsonAsync("testcases", request, cancellationToken);
+
+    public Task<RawJson?> CreateTestCasesAsync(object request, CancellationToken cancellationToken = default)
+        => PostForJsonAsync("testcases/bulk", request, cancellationToken);
+
+    public Task UpdateTestCaseAsync(string id, object request, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Put, $"testcases/{id}")
+        {
+            Content = JsonContent.Create(request, options: Json),
+        }, cancellationToken);
+
+    public Task DeleteTestCaseAsync(string id, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Delete, $"testcases/{id}"), cancellationToken);
+
+    /// <summary>The plugin list as the orchestrator returns it, for the diagnostics pane to show verbatim
+    /// alongside everything else it gathers.</summary>
+    public Task<RawJson?> GetPluginsRawAsync(CancellationToken cancellationToken = default)
+        => GetRaw("plugins", cancellationToken);
+
+    public Task<RawJson?> GetBaselineImagesAsync(CancellationToken cancellationToken = default)
+        => GetRaw("admin/baseline-images", cancellationToken);
+
+    public Task MigrateBaselinesAsync(CancellationToken cancellationToken = default)
+        => PostJsonAsync("baselines/migrate", new { }, cancellationToken);
+
+    public Task<RawJson?> GetGitHubAppStatusAsync(CancellationToken cancellationToken = default)
+        => GetRaw("github-app/status", cancellationToken);
+
+    public Task<RawJson?> StartGitHubAppConnectAsync(CancellationToken cancellationToken = default)
+        => GetRaw("github-app/start", cancellationToken);
+
+    public Task<RawJson?> ConnectGitHubAppAsync(object request, CancellationToken cancellationToken = default)
+        => PostForJsonAsync("github-app/connect", request, cancellationToken);
+
+    public Task<RawJson?> QueueTemplatesAsync(object request, CancellationToken cancellationToken = default)
+        => PostForJsonAsync("templates/queue", request, cancellationToken);
+
+    public Task<RawJson?> CreateProjectReleaseAsync(string projectId, object request, CancellationToken cancellationToken = default)
+        => PostForJsonAsync($"projects/{projectId}/release", request, cancellationToken);
+
+    /// <summary>
+    /// Follows every supervision session rather than one, for a view that watches the whole fleet.
+    /// Sessions arrive on the same connection as <see cref="FollowAsync"/>'s output.
+    /// </summary>
+    public async Task FollowAllSupervisionAsync(CancellationToken cancellationToken = default)
+    {
+        var hub = await EnsureHubAsync(cancellationToken).ConfigureAwait(false);
+        await hub.InvokeAsync("SubscribeAllSupervisionAsync", cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task FollowSupervisionSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        var hub = await EnsureHubAsync(cancellationToken).ConfigureAwait(false);
+        await hub.InvokeAsync("SubscribeSupervisionSessionAsync", sessionId, cancellationToken).ConfigureAwait(false);
+    }
+
     // ---- plumbing ----
+
+    /// <summary>POSTs and returns the body, for endpoints whose answer carries the thing they created.</summary>
+    private async Task<RawJson?> PostForJsonAsync(string path, object body, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(body, options: Json),
+        };
+        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var text = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(text) ? null : new RawJson(JsonDocument.Parse(text));
+    }
+
 
     private async Task<T?> Get<T>(string path, CancellationToken cancellationToken)
     {

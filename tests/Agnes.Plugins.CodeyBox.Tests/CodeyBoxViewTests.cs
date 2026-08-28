@@ -60,6 +60,7 @@ public class CodeyBoxViewTests
     [InlineData(CodeyBoxSection.Supervision)]
     [InlineData(CodeyBoxSection.Suggestions)]
     [InlineData(CodeyBoxSection.Releases)]
+    [InlineData(CodeyBoxSection.Projects)]
     [InlineData(CodeyBoxSection.Diagnostics)]
     public void Every_section_renders_without_throwing(CodeyBoxSection section)
         => Render(vm => vm.Sections.Section = section); // the assertion is that this does not throw
@@ -83,4 +84,16 @@ public class CodeyBoxViewTests
 
         Assert.Throws<ArgumentException>(() => vm.Sections.ShowCommand.CanExecute("Queue"));
     }
+
+    [Fact]
+    public void The_new_work_item_form_renders()
+    {
+        // Its own state rather than a section, so it has to be rendered explicitly to be covered.
+        Render(vm => vm.IsCreating = true);
+    }
+
+    [Fact]
+    public void The_detail_pane_renders()
+        // Timeline, diff, costs and the rest, plus the priority and prompt editors.
+        => Render(vm => vm.IsDetailVisible = true);
 }
