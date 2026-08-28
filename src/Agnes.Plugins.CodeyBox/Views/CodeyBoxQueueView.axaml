@@ -290,13 +290,25 @@
 
       <GridSplitter Grid.Row="1" Grid.Column="1" Background="{DynamicResource Line}" />
 
-      <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,*">
-        <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="10,8"
+      <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,*">
+        <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="10,4,10,4"
                    IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
-          <TextBlock Text="{Binding Selected.Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                     FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="200" Margin="0,0,8,0"
-                     TextTrimming="CharacterEllipsis" />
-          <!-- The two ordinary moves stay out; recovery hides behind More; the irreversible pair is kept
+          <!-- What this item IS. Pinned, because it is the answer to "which one am I looking at". -->
+        <StackPanel Grid.Row="0" Spacing="3" Margin="10,10,10,4"
+                    IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Text="{Binding Selected.Title}" Foreground="{DynamicResource Fg}" FontSize="14"
+                     FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Selected.Provenance}" Foreground="{DynamicResource FgFaint}"
+                     FontSize="11" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- Nothing selected: say so, rather than leaving half the tab blank. -->
+        <TextBlock Grid.Row="2" Text="Select a work item to see what it is doing."
+                   Foreground="{DynamicResource FgFaint}" FontSize="12"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNull}}" />
+
+        <!-- The two ordinary moves stay out; recovery hides behind More; the irreversible pair is kept
                apart and confirmed. Eight equal buttons made abandoning an item look like retrying one. -->
           <Button Content="Retry" FontSize="11" Padding="8,3" Command="{Binding RetryCommand}"
                   CommandParameter="{Binding Selected}" />
@@ -307,11 +319,13 @@
           <Border Width="1" Background="{DynamicResource Line}" Margin="4,2" />
           <!-- Output vs detail: the live stream, or everything the orchestrator knows about this item. -->
           <Button Content="Output" FontSize="11" Padding="8,3" Command="{Binding ShowOutputCommand}" />
+          <Button Content="Timeline" FontSize="11" Padding="8,3" Command="{Binding ShowTimelineCommand}"
+                  ToolTip.Tip="State changes, agent runs, auditors and audit iterations" />
           <Button Content="Detail" FontSize="11" Padding="8,3" Command="{Binding ShowDetailCommand}" />
         </WrapPanel>
 
         <!-- Recovery moves for an item that has gone wrong, and the two that destroy work. -->
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="10,36,10,0"
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6" Margin="10,30,10,0"
                     IsVisible="{Binding ShowMoreActions}">
           <Button Content="Replay" FontSize="11" Padding="8,3" Command="{Binding ReplayCommand}"
                   CommandParameter="{Binding Selected}" />
@@ -330,7 +344,7 @@
 
         <!-- Questions the agent is waiting on. Above the transcript, because an agent blocked on a person
              is the one thing here that should interrupt someone — everything else can be scrolled to. -->
-        <Border Grid.Row="1" VerticalAlignment="Top" Margin="10,0,10,6" Padding="10,8" CornerRadius="6"
+        <Border Grid.Row="2" VerticalAlignment="Top" Margin="10,0,10,6" Padding="10,8" CornerRadius="6"
                 Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
                 IsVisible="{Binding HasOpenQuestions}" ZIndex="1">
           <StackPanel Spacing="6">
@@ -369,15 +383,174 @@
         </Border>
 
         <!-- The agent's own output, streamed. Monospaced and selectable because it is terminal text. -->
-        <ScrollViewer Grid.Row="1" x:Name="OutputScroller" Padding="10,0,10,10"
-                      IsVisible="{Binding !IsDetailVisible}">
-          <SelectableTextBlock Text="{Binding Output}" FontFamily="monospace" FontSize="11"
-                               Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+        <ScrollViewer Grid.Row="2" x:Name="OutputScroller" Padding="10,0,10,10"
+                      IsVisible="{Binding ShowStory}">
+          <StackPanel Spacing="8">
+            <!-- Why it stopped, first: the engineer's opening question, previously three clicks away. -->
+            <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Danger}"
+                    BorderThickness="1" CornerRadius="6" Padding="9,7"
+                    IsVisible="{Binding Selected.HasError, FallbackValue=false}">
+              <StackPanel Spacing="3">
+                <TextBlock Text="Failure" Foreground="{DynamicResource Danger}" FontSize="10" FontWeight="SemiBold" />
+                <SelectableTextBlock Text="{Binding Selected.ErrorSummary}" Foreground="{DynamicResource Fg}"
+                                     FontSize="11" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+
+            <!-- The commonest reason an item is simply sitting there. -->
+            <Border Background="{DynamicResource PanelAlt}" CornerRadius="6" Padding="9,7"
+                    IsVisible="{Binding Selected.HasDependencies, FallbackValue=false}">
+              <StackPanel Spacing="3">
+                <TextBlock Text="Depends on" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Selected.DependencySummary}" Foreground="{DynamicResource Fg}" FontSize="11" />
+              </StackPanel>
+            </Border>
+
+            <!-- The task itself. Without it the pane never said what the work actually was. -->
+            <StackPanel Spacing="3" IsVisible="{Binding Selected.HasPrompt, FallbackValue=false}">
+              <TextBlock Text="Task" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+              <SelectableTextBlock Text="{Binding Selected.Prompt}" Foreground="{DynamicResource FgDim}"
+                                   FontSize="11" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="3" IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <TextBlock Text="Agent output" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+              <!-- An item that has produced nothing yet is ordinary; blankness alone is not an answer. -->
+              <TextBlock Text="Nothing yet." Foreground="{DynamicResource FgFaint}" FontSize="11"
+                         IsVisible="{Binding Output, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+              <SelectableTextBlock Text="{Binding Output}" FontFamily="monospace" FontSize="11"
+                                   Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+
+
+
+        <!-- How the item got here, out of the orchestrator's DATABASE rather than its logs. The admin UI
+             scrapes audit logs for this; those roll daily, and on this instance every scraped timeline was
+             empty while agent-history returned seventy-two runs for the same item. -->
+        <ScrollViewer Grid.Row="2" Padding="10,0,10,10" IsVisible="{Binding IsTimelineVisible}">
+          <StackPanel Spacing="10">
+            <TextBlock Text="No agent runs recorded for this item."
+                       Foreground="{DynamicResource FgFaint}" FontSize="11" Margin="0,8"
+                       IsVisible="{Binding TimelineEmpty}" />
+
+            <!-- Where the time and the money went, before the run-by-run detail. -->
+            <StackPanel Spacing="3" IsVisible="{Binding Phases.Count}">
+              <TextBlock Text="Phases" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+              <ItemsControl ItemsSource="{Binding Phases}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
+                      <TextBlock Grid.Column="0" Text="{Binding Phase}" Foreground="{DynamicResource Fg}" FontSize="11" />
+                      <TextBlock Grid.Column="1" Text="{Binding Duration}" Foreground="{DynamicResource FgDim}"
+                                 FontSize="11" Margin="10,0" />
+                      <TextBlock Grid.Column="2" Text="{Binding Cost}" Foreground="{DynamicResource FgFaint}"
+                                 FontSize="11" MinWidth="56" TextAlignment="Right" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <!-- Why a round failed: each auditor's objection, per iteration. -->
+            <StackPanel Spacing="4" IsVisible="{Binding HasAuditIterations}">
+              <TextBlock Text="Audit findings" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+              <ItemsControl ItemsSource="{Binding AuditIterations}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="9,7" Margin="0,2">
+                      <StackPanel Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock Text="{Binding Header}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                     FontWeight="SemiBold" />
+                          <TextBlock Text="{Binding Verdict}" FontSize="10" VerticalAlignment="Center"
+                                     Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !Blocked}" />
+                          <TextBlock Text="{Binding Verdict}" FontSize="10" VerticalAlignment="Center"
+                                     Foreground="{DynamicResource Danger}" IsVisible="{Binding Blocked}" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding All}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <StackPanel Spacing="2" Margin="0,2" IsVisible="{Binding HasFindings}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                  <TextBlock Text="{Binding AuditorName}" Foreground="{DynamicResource FgDim}" FontSize="10" />
+                                  <TextBlock Text="{Binding Verdict}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding All}">
+                                  <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                      <StackPanel Spacing="1" Margin="10,2,0,2">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                          <TextBlock Text="{Binding Severity}" FontSize="9" VerticalAlignment="Center"
+                                                     Foreground="{DynamicResource Danger}" IsVisible="{Binding IsBlocking}" />
+                                          <TextBlock Text="{Binding Severity}" FontSize="9" VerticalAlignment="Center"
+                                                     Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsBlocking}" />
+                                          <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                                     TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <SelectableTextBlock Text="{Binding Message}" Foreground="{DynamicResource FgDim}"
+                                                             FontSize="10" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding FileList}" Foreground="{DynamicResource FgFaint}"
+                                                   FontSize="9" TextWrapping="Wrap" IsVisible="{Binding HasFiles}" />
+                                      </StackPanel>
+                                    </DataTemplate>
+                                  </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                              </StackPanel>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <!-- Every agent run, newest first: phase, agent, model, iteration and how it ended. The model
+                 is shown because a fallback chain is only legible when it is. -->
+            <StackPanel Spacing="3" IsVisible="{Binding HasRuns}">
+              <TextBlock Text="Agent runs" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+              <ItemsControl ItemsSource="{Binding Runs}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,2">
+                      <TextBlock Grid.Column="0" Text="{Binding At}" Foreground="{DynamicResource FgFaint}"
+                                 FontSize="10" FontFamily="monospace" VerticalAlignment="Top" Margin="0,1,10,0" />
+                      <Border Grid.Column="1" Width="6" Height="6" CornerRadius="3" Margin="0,6,10,0"
+                              VerticalAlignment="Top" Background="{DynamicResource FgFaint}"
+                              IsVisible="{Binding !Failed}" />
+                      <Border Grid.Column="1" Width="6" Height="6" CornerRadius="3" Margin="0,6,10,0"
+                              VerticalAlignment="Top" Background="{DynamicResource Danger}"
+                              IsVisible="{Binding Failed}" />
+                      <StackPanel Grid.Column="2" Spacing="1">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <TextBlock Text="{Binding PhaseLabel}" Foreground="{DynamicResource Fg}" FontSize="11" />
+                          <TextBlock Text="{Binding IterationLabel}" Foreground="{DynamicResource FgFaint}"
+                                     FontSize="10" VerticalAlignment="Center" IsVisible="{Binding HasIteration}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Ran}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="3" Spacing="1" HorizontalAlignment="Right">
+                        <TextBlock Text="{Binding Outcome}" FontSize="10" TextAlignment="Right"
+                                   Foreground="{DynamicResource FgDim}" IsVisible="{Binding !Failed}" />
+                        <TextBlock Text="{Binding Outcome}" FontSize="10" TextAlignment="Right"
+                                   Foreground="{DynamicResource Danger}" IsVisible="{Binding Failed}" />
+                        <TextBlock Text="{Binding Duration}" Foreground="{DynamicResource FgFaint}"
+                                   FontSize="10" TextAlignment="Right" />
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
         </ScrollViewer>
 
         <!-- Timeline, diff, costs, timings, agent history, audit reports, attachments and dependents,
              fetched only when this pane is opened. Each part is optional and says so when absent. -->
-        <ScrollViewer Grid.Row="1" Padding="10,0,10,10" IsVisible="{Binding IsDetailVisible}">
+        <ScrollViewer Grid.Row="2" Padding="10,0,10,10" IsVisible="{Binding IsDetailVisible}">
           <StackPanel Spacing="8">
             <!-- The two things about a queued item that are worth changing from here. -->
             <StackPanel Orientation="Horizontal" Spacing="6">

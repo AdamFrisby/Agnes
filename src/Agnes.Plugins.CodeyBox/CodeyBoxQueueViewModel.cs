@@ -370,19 +370,121 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         }
     }
 
+    /// <summary>
+    /// How this item got to where it is: state transitions, agent starts and finishes, each auditor run
+    /// and each audit iteration. The single richest explanation the orchestrator holds, and it was buried
+    /// in a JSON dump behind a Detail button.
+    /// </summary>
+    public ObservableCollection<AgentRun> Runs { get; } = [];
+
+    /// <summary>Per-phase duration and cost, joined from the two endpoints that each hold half of it.</summary>
+    public ObservableCollection<PhaseSummary> Phases { get; } = [];
+
+    /// <summary>What each auditor objected to, per iteration — why a round failed.</summary>
+    public ObservableCollection<AuditIteration> AuditIterations { get; } = [];
+
+    public bool HasRuns => Runs.Count > 0;
+
+    public bool HasAuditIterations => AuditIterations.Count > 0;
+
+    /// <summary>
+    /// Whether the timeline has been fetched and came back empty — which is ordinary rather than broken.
+    /// It is read out of audit logs that roll daily, so an item older than the retained window has none.
+    /// </summary>
+    [ObservableProperty]
+    private bool _timelineEmpty;
+
+    [ObservableProperty]
+    private bool _isTimelineVisible;
+
+    /// <summary>Whether the pane is showing the item's story — its failure, task and live output — rather
+    /// than the timeline or the raw detail dump.</summary>
+    public bool ShowStory => !IsDetailVisible && !IsTimelineVisible;
+
+    partial void OnIsTimelineVisibleChanged(bool value) => OnPropertyChanged(nameof(ShowStory));
+
+    public ICommand ShowTimelineCommand => _showTimeline ??= new RelayCommand(() =>
+    {
+        IsTimelineVisible = true;
+        IsDetailVisible = false;
+        if (Selected is { } row)
+        {
+            _ = LoadTimelineAsync(row.Id);
+        }
+    });
+
+    private ICommand? _showTimeline;
+
+    /// <summary>
+    /// Builds the item's history from the orchestrator's <b>database</b> rather than from its logs.
+    /// </summary>
+    /// <remarks>
+    /// The admin UI reconstructs this by scraping audit logs, which is both lossy and short-lived: those
+    /// roll daily, and on this instance every item's scraped timeline came back empty. The same item's
+    /// agent-history returned seventy-two runs — every phase, every audit gate, every model fallback, with
+    /// outcomes. Timings and costs fill in how long each phase took and what it spent, and the audit
+    /// reports say what each gate objected to.
+    /// </remarks>
+    private async Task LoadTimelineAsync(string workItemId)
+    {
+        try
+        {
+            var runs = await _client.GetAgentRunsAsync(workItemId, _cts.Token).ConfigureAwait(false);
+            var phases = await _client.GetPhaseSummaryAsync(workItemId, _cts.Token).ConfigureAwait(false);
+            var audits = await _client.GetAuditIterationsAsync(workItemId, _cts.Token).ConfigureAwait(false);
+
+            await _toUi(() =>
+            {
+                Runs.Clear();
+                foreach (var run in runs.OrderByDescending(r => r.StartedAt))
+                {
+                    Runs.Add(run);
+                }
+
+                Phases.Clear();
+                foreach (var phase in phases)
+                {
+                    Phases.Add(phase);
+                }
+
+                AuditIterations.Clear();
+                foreach (var iteration in audits.OrderByDescending(i => i.Iteration))
+                {
+                    AuditIterations.Add(iteration);
+                }
+
+                TimelineEmpty = Runs.Count == 0;
+                OnPropertyChanged(nameof(HasRuns));
+                OnPropertyChanged(nameof(HasAuditIterations));
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report($"history {workItemId}", ex);
+            await _toUi(() => Status = $"Couldn't load the history — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
     /// <summary>Whether the right pane shows the item's detail rather than its live output.</summary>
     [ObservableProperty]
     private bool _isDetailVisible;
+
+    partial void OnIsDetailVisibleChanged(bool value) => OnPropertyChanged(nameof(ShowStory));
 
     /// <summary>The selected item's detail, gathered from the orchestrator's per-item endpoints.</summary>
     [ObservableProperty]
     private string _detail = string.Empty;
 
-    public ICommand ShowOutputCommand => _showOutput ??= new RelayCommand(() => IsDetailVisible = false);
+    public ICommand ShowOutputCommand => _showOutput ??= new RelayCommand(() =>
+    {
+        IsDetailVisible = false;
+        IsTimelineVisible = false;
+    });
 
     public ICommand ShowDetailCommand => _showDetail ??= new RelayCommand(() =>
     {
         IsDetailVisible = true;
+        IsTimelineVisible = false;
         if (Selected is { } row)
         {
             _ = LoadDetailAsync(row.Id);
@@ -411,7 +513,6 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
                 ("work item", await _client.GetWorkItemAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("replays", await _client.GetReplaysAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("budget usage", await _client.GetWorkItemBudgetUsageAsync(workItemId, _cts.Token).ConfigureAwait(false)),
-                ("timeline", await _client.GetTimelineAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("agent history", await _client.GetAgentHistoryAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("costs", await _client.GetCostsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("timings", await _client.GetTimingsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
@@ -778,6 +879,12 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             _output.Clear();
             OnPropertyChanged(nameof(Output));
             Questions.Clear();
+            Runs.Clear();
+            Phases.Clear();
+            AuditIterations.Clear();
+            TimelineEmpty = false;
+            OnPropertyChanged(nameof(HasRuns));
+            OnPropertyChanged(nameof(HasAuditIterations));
             AnsweringQuestion = null;
             OnPropertyChanged(nameof(HasOpenQuestions));
         }).ConfigureAwait(false);
@@ -790,6 +897,11 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             if (IsDetailVisible)
             {
                 await LoadDetailAsync(value.Id).ConfigureAwait(false);
+            }
+
+            if (IsTimelineVisible)
+            {
+                await LoadTimelineAsync(value.Id).ConfigureAwait(false);
             }
 
             var tail = await _client.GetStdoutTailAsync(value.Id, _cts.Token).ConfigureAwait(false);

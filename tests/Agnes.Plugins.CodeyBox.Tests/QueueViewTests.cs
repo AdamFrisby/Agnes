@@ -19,9 +19,11 @@ public class QueueViewTests
     private static WorkItemRow Row(
         string id, string state, string project = "codeybox-self", string agent = "claude",
         int priority = 0, bool depsOk = true, decimal cost = 0, string title = "A work item")
+        // Named, not positional: the record has grown twice and positional arguments broke silently both
+        // times, in a way the compiler only caught because the types happened to differ.
         => new(id, title, state, agent, project, 0, DateTimeOffset.UtcNow, null,
-               priority, DateTimeOffset.UtcNow.AddDays(-2), depsOk, null, null, null, "feat/x",
-               cost > 0 ? new UsageTotal(cost, 0, 0) : null);
+               Priority: priority, CreatedAt: DateTimeOffset.UtcNow.AddDays(-2), DependsOnSatisfied: depsOk,
+               WorkBranch: "feat/x", UsageTotal: cost > 0 ? new UsageTotal(cost, 0, 0) : null);
 
     [Theory]
     [InlineData("Queued", true)]

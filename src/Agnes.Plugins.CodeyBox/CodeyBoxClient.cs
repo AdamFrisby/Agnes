@@ -201,8 +201,65 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task<RawJson?> GetWorkItemAsync(string id, CancellationToken cancellationToken = default)
         => GetRaw($"workitems/{id}", cancellationToken);
 
-    public Task<RawJson?> GetTimelineAsync(string id, CancellationToken cancellationToken = default)
-        => GetRaw($"workitems/{id}/timeline", cancellationToken);
+    /// <summary>
+    /// How this item got to where it is. Empty is an ordinary answer, not a failure: the timeline is read
+    /// back out of the orchestrator's audit logs, which roll daily, so an item older than the retained
+    /// window has none left — on the instance this was built against, every item returned zero.
+    /// </summary>
+    public async Task<IReadOnlyList<TimelineEntry>> GetTimelineAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var timeline = await Get<WorkItemTimeline>($"workitems/{id}/timeline", cancellationToken).ConfigureAwait(false);
+        return timeline?.Entries ?? [];
+    }
+
+    /// <summary>
+    /// Every agent run against this item, from the orchestrator's database. The real answer to "what
+    /// happened here" — richer and more durable than the log-scraped timeline, which rolls away.
+    /// </summary>
+    public async Task<IReadOnlyList<AgentRun>> GetAgentRunsAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var history = await Get<AgentHistory>($"workitems/{id}/agent-history", cancellationToken).ConfigureAwait(false);
+        return history?.Runs ?? [];
+    }
+
+    /// <summary>
+    /// Per-phase duration and cost, joined from the two endpoints that each hold half of it.
+    /// </summary>
+    public async Task<IReadOnlyList<PhaseSummary>> GetPhaseSummaryAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var timings = await GetRaw($"workitems/{id}/timings", cancellationToken).ConfigureAwait(false);
+        var costs = await GetRaw($"workitems/{id}/costs", cancellationToken).ConfigureAwait(false);
+
+        var durations = ReadPhases(timings, "byPhase", "durationMs");
+        var spend = ReadPhases(costs, "byPhase", "estimatedUsd");
+
+        return [.. durations.Keys.Union(spend.Keys)
+            .Select(phase => new PhaseSummary(phase, (long)durations.GetValueOrDefault(phase), spend.GetValueOrDefault(phase)))
+            .Where(p => p.DurationMs > 0 || p.CostUsd > 0)
+            .OrderByDescending(p => p.DurationMs)];
+    }
+
+    private static Dictionary<string, decimal> ReadPhases(RawJson? json, string container, string field)
+    {
+        var result = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        if (json?.Document.RootElement.TryGetProperty(container, out var phases) != true ||
+            phases.ValueKind != JsonValueKind.Object)
+        {
+            return result;
+        }
+
+        foreach (var phase in phases.EnumerateObject())
+        {
+            if (phase.Value.ValueKind == JsonValueKind.Object &&
+                phase.Value.TryGetProperty(field, out var value) &&
+                value.ValueKind == JsonValueKind.Number)
+            {
+                result[phase.Name] = value.GetDecimal();
+            }
+        }
+
+        return result;
+    }
 
     public Task<RawJson?> GetAgentHistoryAsync(string id, CancellationToken cancellationToken = default)
         => GetRaw($"workitems/{id}/agent-history", cancellationToken);
@@ -225,6 +282,20 @@ public sealed class CodeyBoxClient : IAsyncDisposable
 
     public Task<RawJson?> GetDependentsAsync(string id, CancellationToken cancellationToken = default)
         => GetRaw($"workitems/{id}/dependents", cancellationToken);
+
+    /// <summary>
+    /// What each auditor objected to, per iteration — the direct answer to "why did that round fail".
+    /// </summary>
+    /// <remarks>
+    /// Empty is a real answer and not a failure: the report store was empty for all 404 items on the
+    /// instance this was built against, so the UI says so rather than showing a blank panel. The shape
+    /// below is the endpoint's own, read from its DTOs.
+    /// </remarks>
+    public async Task<IReadOnlyList<AuditIteration>> GetAuditIterationsAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var reports = await Get<AuditReports>($"workitems/{id}/audit-reports", cancellationToken).ConfigureAwait(false);
+        return reports?.Iterations ?? [];
+    }
 
     public Task<RawJson?> GetAuditReportsAsync(string id, CancellationToken cancellationToken = default)
         => GetRaw($"workitems/{id}/audit-reports", cancellationToken);

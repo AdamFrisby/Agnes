@@ -169,7 +169,7 @@ public class CodeyBoxViewTests
     {
         static WorkItemRow Make(string id, string title, string state, string agent, string project, int priority, bool depsOk = true)
             => new(id, title, state, agent, project, 0, DateTimeOffset.UtcNow, null,
-                   priority, DateTimeOffset.UtcNow.AddDays(-1), depsOk);
+                   Priority: priority, CreatedAt: DateTimeOffset.UtcNow.AddDays(-1), DependsOnSatisfied: depsOk);
 
         vm.Load(
         [

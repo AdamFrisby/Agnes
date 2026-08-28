@@ -24,6 +24,10 @@ public sealed record WorkItemRow(
     // Added after reading what a real queue holds: 404 items across three projects and six agents, 82 of
     // them with dependencies, one costing $73. None of that was modelled, so neither persona could answer
     // their first question without opening items one at a time.
+    // The task as it was given to the agent. The single most useful thing about an item and it was not
+    // modelled at all, so the pane could show a title and nothing of what the work actually is.
+    [property: JsonPropertyName("prompt")] string? Prompt = null,
+    [property: JsonPropertyName("dependsOn")] IReadOnlyList<string>? DependsOn = null,
     [property: JsonPropertyName("priority")] int Priority = 0,
     [property: JsonPropertyName("createdAt")] DateTimeOffset CreatedAt = default,
     [property: JsonPropertyName("dependsOnSatisfied")] bool DependsOnSatisfied = true,
@@ -58,6 +62,45 @@ public sealed record WorkItemRow(
     public string? Cost => UsageTotal is { CostUsd: > 0 } u ? $"${u.CostUsd:0.00}" : null;
 
     public bool IsBlockedByDependency => !DependsOnSatisfied;
+
+    public bool HasPrompt => !string.IsNullOrWhiteSpace(Prompt);
+
+    public bool HasError => !string.IsNullOrWhiteSpace(LastError) || !string.IsNullOrWhiteSpace(FailureKind);
+
+    /// <summary>The failure in one line: its kind when the orchestrator classified it, then the message.</summary>
+    public string ErrorSummary => (FailureKind, LastError) switch
+    {
+        ({ Length: > 0 } kind, { Length: > 0 } error) => $"{kind} — {error}",
+        ({ Length: > 0 } kind, _) => kind,
+        (_, { Length: > 0 } error) => error,
+        _ => string.Empty,
+    };
+
+    public bool HasDependencies => DependsOn is { Count: > 0 };
+
+    /// <summary>What this item is waiting on, and whether that wait is over.</summary>
+    public string DependencySummary => DependsOn is { Count: > 0 } deps
+        ? $"{deps.Count} " + (deps.Count == 1 ? "dependency" : "dependencies") +
+          (DependsOnSatisfied ? " · satisfied" : " · NOT satisfied")
+        : string.Empty;
+
+    public bool HasBranch => !string.IsNullOrWhiteSpace(WorkBranch);
+
+    /// <summary>The identity line under the title: where this item lives and what ran it.</summary>
+    public string Provenance
+    {
+        get
+        {
+            var parts = new List<string> { ShortId };
+            if (ProjectId is { Length: > 0 }) { parts.Add(ProjectId); }
+            if (Agent is { Length: > 0 }) { parts.Add(Agent); }
+            if (Priority != 0) { parts.Add($"priority {Priority}"); }
+            if (Cost is { } cost) { parts.Add(cost); }
+            if (HasBranch) { parts.Add(WorkBranch!); }
+            if (HasPr) { parts.Add($"PR {PrLabel}"); }
+            return string.Join("  ·  ", parts);
+        }
+    }
 
     public bool HasPr => MergedPrNumber is > 0;
 
@@ -249,6 +292,203 @@ public sealed record WorkItemQuestion(
 
     public string Age => WorkItemRow.Relative(AskedAt);
 }
+
+/// <summary>
+/// One thing that happened to a work item, as the orchestrator's audit log records it.
+/// </summary>
+/// <remarks>
+/// <para>The seven kinds the reader emits are <c>state_transition</c>, <c>agent_started</c>,
+/// <c>agent_finished</c>, <c>agent_stuck</c>, <c>auditor_run</c>, <c>iteration_complete</c> and
+/// <c>webhook_delivered</c>, mapped from eighteen source events. This is the record of how an item got to
+/// where it is — which audit iteration failed, which auditor objected, whether the agent was killed by
+/// the stuck probe — and it is the answer to "why is this like this".</para>
+///
+/// <para><see cref="Details"/> stays <see cref="JsonElement"/> deliberately: its shape is per-kind
+/// (an auditor run carries name/severity/duration, an iteration carries blocking and non-blocking counts),
+/// so this is a genuinely polymorphic sub-field at an external boundary rather than laziness. What the UI
+/// reads out of it is named below.</para>
+/// </remarks>
+public sealed record TimelineEntry(
+    [property: JsonPropertyName("occurredAt")] DateTimeOffset OccurredAt,
+    [property: JsonPropertyName("kind")] string Kind,
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("details")] JsonElement Details)
+{
+    public string At => OccurredAt.ToLocalTime().ToString("MMM d HH:mm:ss");
+
+    public string Age => WorkItemRow.Relative(OccurredAt);
+
+    /// <summary>The kind in the operator's words rather than the log's.</summary>
+    public string Label => Kind switch
+    {
+        "state_transition" => "State",
+        "agent_started" => "Agent started",
+        "agent_finished" => "Agent finished",
+        "agent_stuck" => "Agent stuck",
+        "auditor_run" => "Auditor",
+        "iteration_complete" => "Audit iteration",
+        "webhook_delivered" => "Webhook",
+        _ => Kind,
+    };
+
+    /// <summary>Whether this entry is one of the bad ones — the rows worth finding in a long timeline.</summary>
+    public bool IsTrouble => Kind is "agent_stuck" ||
+        Summary.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+        Summary.Contains("blocking", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The audit iteration this belongs to, when the entry names one.</summary>
+    public int? Iteration => Details.ValueKind == JsonValueKind.Object &&
+        Details.TryGetProperty("iteration", out var i) && i.ValueKind == JsonValueKind.Number
+            ? i.GetInt32()
+            : null;
+
+    public bool HasIteration => Iteration is not null;
+
+    public string IterationLabel => Iteration is { } i ? $"iter {i}" : string.Empty;
+}
+
+/// <summary>A work item's timeline, as the endpoint returns it.</summary>
+public sealed record WorkItemTimeline(
+    [property: JsonPropertyName("workItemId")] string WorkItemId,
+    [property: JsonPropertyName("entries")] IReadOnlyList<TimelineEntry> Entries);
+
+/// <summary>
+/// One agent run against a work item: which agent, which model, which phase, and how it ended.
+/// </summary>
+/// <remarks>
+/// This is the orchestrator's own record, out of its database, and it is the honest source for "what
+/// happened to this item". The admin UI reconstructs a timeline by scraping the audit logs instead, which
+/// is both weaker and lossy: those logs roll daily, so on this instance every item's scraped timeline came
+/// back <b>empty</b> while this endpoint returned seventy-two runs for the same item — model fallbacks and
+/// all.
+/// </remarks>
+public sealed record AgentRun(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("agentKind")] string AgentKind,
+    [property: JsonPropertyName("modelId")] string? ModelId,
+    [property: JsonPropertyName("phase")] string Phase,
+    [property: JsonPropertyName("startedAt")] DateTimeOffset StartedAt,
+    [property: JsonPropertyName("endedAt")] DateTimeOffset? EndedAt,
+    [property: JsonPropertyName("iteration")] int? Iteration,
+    [property: JsonPropertyName("outcome")] string? Outcome)
+{
+    public string At => StartedAt.ToLocalTime().ToString("MMM d HH:mm");
+
+    /// <summary>Anything that is not plain success — the rows worth finding in a run of seventy.</summary>
+    public bool Failed => Outcome is { Length: > 0 } o && !o.Equals("success", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The audit gates are named <c>audit:security:llm-review</c> and the like — seventeen of them on one
+    /// item. Only the <c>audit:</c> prefix is dropped, because it is the same for every gate while the
+    /// rest is what tells them apart: five of them end in <c>llm-review</c>, so trimming to the last
+    /// segment rendered security, architecture, quality, completeness and cheating identically.
+    /// </summary>
+    public string PhaseLabel => Phase.StartsWith("audit:", StringComparison.Ordinal)
+        ? Phase["audit:".Length..]
+        : Phase;
+
+    public bool IsAudit => Phase.StartsWith("audit:", StringComparison.Ordinal);
+
+    public string Duration => EndedAt is { } ended
+        ? Humanise(ended - StartedAt)
+        : "running";
+
+    public string IterationLabel => Iteration is { } i ? $"iter {i}" : string.Empty;
+
+    public bool HasIteration => Iteration is not null;
+
+    /// <summary>Agent and model together: the fallback chain is only legible when both are shown.</summary>
+    public string Ran => ModelId is { Length: > 0 } model ? $"{AgentKind} · {model}" : AgentKind;
+
+    internal static string Humanise(TimeSpan span) => span.TotalHours >= 1
+        ? $"{span.TotalHours:0.#}h"
+        : span.TotalMinutes >= 1 ? $"{span.TotalMinutes:0}m" : $"{span.TotalSeconds:0}s";
+}
+
+/// <summary>Every agent run against one item, newest last.</summary>
+public sealed record AgentHistory(
+    [property: JsonPropertyName("workAgent")] string? WorkAgent,
+    [property: JsonPropertyName("agentHistory")] IReadOnlyList<AgentRun> Runs);
+
+/// <summary>How long one phase took, and what it cost — the two questions asked of a finished item.</summary>
+public sealed record PhaseSummary(string Phase, long DurationMs, decimal CostUsd)
+{
+    public string Duration => AgentRun.Humanise(TimeSpan.FromMilliseconds(DurationMs));
+
+    public string Cost => CostUsd > 0 ? $"${CostUsd:0.00}" : string.Empty;
+
+    public bool HasCost => CostUsd > 0;
+}
+
+/// <summary>One thing an auditor objected to: what, how badly, and where.</summary>
+public sealed record AuditFinding(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("severity")] string? Severity,
+    [property: JsonPropertyName("title")] string? Title,
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("files")] IReadOnlyList<string>? Files,
+    [property: JsonPropertyName("lineHints")] IReadOnlyList<string>? LineHints)
+{
+    /// <summary>Error is what actually blocks a merge; everything else is advice.</summary>
+    public bool IsBlocking => string.Equals(Severity, "Error", StringComparison.OrdinalIgnoreCase);
+
+    public bool HasFiles => Files is { Count: > 0 };
+
+    public string FileList => Files is { Count: > 0 } f ? string.Join(", ", f) : string.Empty;
+}
+
+/// <summary>One auditor's verdict for one iteration.</summary>
+public sealed record AuditAuditor(
+    [property: JsonPropertyName("auditorName")] string AuditorName,
+    [property: JsonPropertyName("auditorKind")] string? AuditorKind,
+    [property: JsonPropertyName("worstSeverity")] string? WorstSeverity,
+    [property: JsonPropertyName("durationMs")] long DurationMs,
+    [property: JsonPropertyName("findings")] IReadOnlyList<AuditFinding>? Findings,
+    [property: JsonPropertyName("rawOutputAvailable")] bool RawOutputAvailable)
+{
+    public IReadOnlyList<AuditFinding> All => Findings ?? [];
+
+    public bool HasFindings => All.Count > 0;
+
+    public bool Objected => All.Any(f => f.IsBlocking);
+
+    public string Verdict => All.Count == 0
+        ? "passed"
+        : $"{All.Count(f => f.IsBlocking)} blocking, {All.Count(f => !f.IsBlocking)} advisory";
+
+    public string Duration => AgentRun.Humanise(TimeSpan.FromMilliseconds(DurationMs));
+}
+
+/// <summary>
+/// One audit iteration: every auditor that ran, and what each said.
+/// </summary>
+/// <remarks>
+/// This is the direct answer to "why did that round fail" — which gate objected, to what, in which files.
+/// Plan and code iterations are counted separately, so <see cref="Target"/> is part of the identity rather
+/// than decoration.
+/// </remarks>
+public sealed record AuditIteration(
+    [property: JsonPropertyName("target")] string Target,
+    [property: JsonPropertyName("iteration")] int Iteration,
+    [property: JsonPropertyName("blockingCount")] int BlockingCount,
+    [property: JsonPropertyName("nonBlockingCount")] int NonBlockingCount,
+    [property: JsonPropertyName("auditors")] IReadOnlyList<AuditAuditor>? Auditors)
+{
+    public IReadOnlyList<AuditAuditor> All => Auditors ?? [];
+
+    public bool Blocked => BlockingCount > 0;
+
+    public string Header => $"{Target} · iteration {Iteration}";
+
+    public string Verdict => BlockingCount > 0
+        ? $"{BlockingCount} blocking · {NonBlockingCount} advisory"
+        : NonBlockingCount > 0 ? $"passed · {NonBlockingCount} advisory" : "passed";
+}
+
+/// <summary>Every audit iteration recorded against one item.</summary>
+public sealed record AuditReports(
+    [property: JsonPropertyName("workItemId")] string WorkItemId,
+    [property: JsonPropertyName("iterations")] IReadOnlyList<AuditIteration>? Iterations);
 
 /// <summary>What to create a work item from.</summary>
 public sealed record NewWorkItem(
