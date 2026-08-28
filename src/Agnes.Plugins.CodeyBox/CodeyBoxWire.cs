@@ -797,3 +797,14 @@ public sealed record Concurrency(
 /// <summary>The quota listing.</summary>
 public sealed record QuotaReport(
     [property: JsonPropertyName("probes")] IReadOnlyList<QuotaProbe> Probes);
+
+/// <summary>
+/// How cleanly work has been moving through the pipeline.
+/// </summary>
+/// <param name="TotalTransitions">Carried because the score alone cannot be read: an empty window scores a
+/// perfect 1.0, and this host reports exactly that — over zero transitions.</param>
+public sealed record TransitionHealth(
+    [property: JsonPropertyName("score")] double Score,
+    [property: JsonPropertyName("infraFailureRate")] double InfraFailureRate,
+    [property: JsonPropertyName("totalTransitions")] int TotalTransitions,
+    [property: JsonPropertyName("worstStage")] string? WorstStage);

@@ -461,6 +461,59 @@ public class SectionContentRenderTests
     }
 
     [Fact]
+    public void Renders_the_dashboard_in_the_state_this_host_is_actually_in()
+        => Render(CodeyBoxSection.Dashboard, vm =>
+        {
+            // Ten queued, every one dependency-blocked: the stall banner, the "0 runnable" tile and a
+            // Next up list whose head cannot start.
+            var blocked = Enumerable.Range(0, 10).Select(i => new WorkItemRow(
+                Id: $"{i:x32}", Title: $"Blocked item {i}", State: "Queued", Agent: "claude",
+                ProjectId: "codeybox-self", QueuePosition: i, UpdatedAt: DateTimeOffset.UtcNow,
+                LastError: null, DependsOn: ["other"], Priority: 19 - i, DependsOnSatisfied: false)).ToList();
+
+            foreach (var tile in Dashboard.Tiles(blocked, queuePaused: false, slotsInUse: 0, slotsTotal: 3))
+            {
+                vm.Sections.Tiles.Add(tile);
+            }
+
+            foreach (var next in Dashboard.NextUp(blocked))
+            {
+                vm.Sections.NextUp.Add(next);
+            }
+
+            vm.Sections.IsStalled = true;
+            vm.Sections.Concurrency = new Concurrency(3, 0, new Dictionary<string, int> { ["claude"] = 3 });
+            vm.Sections.Quota.Add(new QuotaProbe(
+                "codex", "gpt-5.6-sol", "Subscription", false, null, true, 0,
+                new QuotaSnapshot(55, true, DateTimeOffset.UtcNow.AddHours(6))));
+            vm.Sections.Fleet.Add(new FleetProject(
+                "codeybox-self", "CodeyBox", 10, 0, null, false, true, null, 92617m, null, "ok",
+                ["Done", "Failed", "Done"]));
+            vm.Sections.HealthIsMeaningful = false;
+            vm.Sections.HealthLabel = Dashboard.HealthLabel(1.0, 0);
+            vm.Sections.SpendLabel = "$92,617 spent across 404 items";
+        });
+
+    [Fact]
+    public void Renders_the_dashboard_when_everything_is_healthy()
+        => Render(CodeyBoxSection.Dashboard, vm =>
+        {
+            var busy = new[]
+            {
+                new WorkItemRow("a", "Running", "Working", "claude", "p", 0, DateTimeOffset.UtcNow, null),
+                new WorkItemRow("b", "Waiting", "Queued", "claude", "p", 1, DateTimeOffset.UtcNow, null),
+            };
+
+            foreach (var tile in Dashboard.Tiles(busy, queuePaused: false, slotsInUse: 1, slotsTotal: 3))
+            {
+                vm.Sections.Tiles.Add(tile);
+            }
+
+            vm.Sections.HealthIsMeaningful = true;
+            vm.Sections.HealthLabel = Dashboard.HealthLabel(0.95, 40);
+        });
+
+    [Fact]
     public void Renders_suggestions_with_a_populated_backlog()
         => Render(CodeyBoxSection.Suggestions, vm =>
         {

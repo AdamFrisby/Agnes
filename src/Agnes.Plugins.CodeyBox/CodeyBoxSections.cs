@@ -11,6 +11,10 @@ namespace Agnes.Plugins.CodeyBox;
 /// </summary>
 public enum CodeyBoxSection
 {
+    /// <summary>Where the tab opens. First because the questions it answers — is it running, can anything
+    /// start, does anything need me — precede every question the queue answers.</summary>
+    Dashboard,
+
     Queue,
     Fleet,
     Supervision,
@@ -185,7 +189,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     private static string Count(int n) => n == 0 ? "empty" : n.ToString(System.Globalization.CultureInfo.CurrentCulture);
 
     [ObservableProperty]
-    private CodeyBoxSection _section = CodeyBoxSection.Queue;
+    private CodeyBoxSection _section = CodeyBoxSection.Dashboard;
 
     [ObservableProperty]
     private SupervisionSession? _selectedSession;
@@ -211,6 +215,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     /// they are rather than having to spot which of nine buttons looks pressed.</summary>
     public string SectionTitle => Section switch
     {
+        CodeyBoxSection.Dashboard => "Overview",
         CodeyBoxSection.Queue => "Work queue",
         CodeyBoxSection.Suggestions => "Suggestions",
         CodeyBoxSection.Fleet => "Fleet",
@@ -222,6 +227,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
         _ => "Diagnostics",
     };
 
+    public bool IsDashboard => Section == CodeyBoxSection.Dashboard;
     public bool IsQueue => Section == CodeyBoxSection.Queue;
     public bool IsFleet => Section == CodeyBoxSection.Fleet;
     public bool IsSupervision => Section == CodeyBoxSection.Supervision;
@@ -519,6 +525,10 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
         {
             switch (section)
             {
+                case CodeyBoxSection.Dashboard:
+                    await LoadDashboardAsync().ConfigureAwait(false);
+                    break;
+
                 case CodeyBoxSection.Fleet:
                     var fleet = await _client.GetFleetAsync().ConfigureAwait(false);
                     var paused = await _client.GetPausedAgentsAsync().ConfigureAwait(false);
@@ -595,6 +605,69 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     /// when their feature is off, and a null reads as "unavailable here" rather than an error, because on a
     /// given instance that is simply the truth.
     /// </summary>
+    /// <summary>The headline numbers.</summary>
+    public ObservableCollection<Tile> Tiles { get; } = [];
+
+    /// <summary>What the orchestrator would pick up next, blocked items included.</summary>
+    public ObservableCollection<WorkItemRow> NextUp { get; } = [];
+
+    public bool HasNextUp => NextUp.Count > 0;
+
+    /// <summary>Set when the queue is running yet nothing can start — the state this host is in, and one
+    /// the old list could not express at all.</summary>
+    [ObservableProperty]
+    private bool _isStalled;
+
+    [ObservableProperty]
+    private string _healthLabel = string.Empty;
+
+    [ObservableProperty]
+    private bool _healthIsMeaningful;
+
+    [ObservableProperty]
+    private string _spendLabel = string.Empty;
+
+    /// <summary>
+    /// Everything the overview needs, in one pass. Deliberately reuses the reads the other sections
+    /// already make rather than adding endpoints: the dashboard is a different arrangement of what the
+    /// orchestrator already says, not a new source of truth.
+    /// </summary>
+    private async Task LoadDashboardAsync()
+    {
+        var items = await _client.ListWorkItemsAsync().ConfigureAwait(false);
+        var queue = await _client.GetQueueStatusAsync().ConfigureAwait(false);
+        var concurrency = await _client.GetConcurrencyAsync().ConfigureAwait(false);
+        var fleet = await _client.GetFleetAsync().ConfigureAwait(false);
+        var probes = await _client.GetQuotaProbesAsync().ConfigureAwait(false);
+        var paused = await _client.GetPausedAgentsAsync().ConfigureAwait(false);
+        var health = await _client.GetTransitionHealthAsync().ConfigureAwait(false);
+
+        var queuePaused = queue?.IsPaused ?? false;
+        var slotsTotal = concurrency?.GlobalMaxConcurrent ?? 0;
+        var slotsInUse = concurrency?.CurrentlyRunningTotal ?? 0;
+
+        await _toUi(() =>
+        {
+            Reconcile.Apply(Tiles, Dashboard.Tiles(items, queuePaused, slotsInUse, slotsTotal), t => t.Label);
+            Reconcile.Apply(NextUp, Dashboard.NextUp(items), i => i.Id);
+            Reconcile.Apply(Fleet, fleet, f => f.ProjectId);
+            Reconcile.Apply(PausedAgents, paused, a => a.Agent);
+            Reconcile.Apply(Quota, [.. probes.Where(p => p.IsKnown).OrderBy(p => p.Available)], p => p.Label);
+            Concurrency = concurrency;
+            IsStalled = Dashboard.IsStalled(items, queuePaused);
+
+            HealthIsMeaningful = Dashboard.HealthIsMeaningful(health?.TotalTransitions ?? 0);
+            HealthLabel = Dashboard.HealthLabel(health?.Score ?? 0, health?.TotalTransitions ?? 0);
+
+            var spend = items.Sum(i => i.UsageTotal?.CostUsd ?? 0m);
+            SpendLabel = $"${spend:N0} spent across {items.Count} items";
+
+            OnPropertyChanged(nameof(HasNextUp));
+            OnPropertyChanged(nameof(HasQuota));
+            SectionStatus = string.Empty;
+        }).ConfigureAwait(false);
+    }
+
     /// <summary>Per-agent quota headroom — the first thing to look at when the queue stops moving.</summary>
     public ObservableCollection<QuotaProbe> Quota { get; } = [];
 

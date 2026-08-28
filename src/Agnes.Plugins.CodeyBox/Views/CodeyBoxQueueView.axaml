@@ -8,6 +8,38 @@
   <UserControl.Styles>
     <!-- A destination, not an action. The selected one is filled so the operator can read their location
          instead of inferring it: the previous header gave nine identical buttons and no current state. -->
+    <!-- A headline number. Tone is carried by the left edge and the value, never by a fill: five filled
+         panels in a row compete with each other and with the content below them. -->
+    <Style Selector="Border.tile">
+      <Setter Property="Background" Value="{DynamicResource Panel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="MinWidth" Value="182" />
+      <Setter Property="Margin" Value="0,0,10,10" />
+    </Style>
+    <Style Selector="TextBlock.tilelabel">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+    </Style>
+    <Style Selector="TextBlock.tilevalue">
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="TextBlock.tilecaption">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.cardhead">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+
     <!-- What a destination has behind it, shown in the rail rather than discovered by clicking. Four of
          the nine sections are empty on this host and the rail sold them as equals. -->
     <Style Selector="TextBlock.badge">
@@ -125,6 +157,8 @@
           </StackPanel>
 
           <TextBlock Classes="navgroup" Text="WORK" />
+          <Button Classes="nav" Classes.current="{Binding Sections.IsDashboard}" Content="Overview"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Dashboard}" />
           <Button Classes="nav" Classes.current="{Binding Sections.IsQueue}" Content="Work queue"
                   Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Queue}" />
           <Button Classes="nav" Classes.current="{Binding Sections.IsSuggestions}"
@@ -222,6 +256,186 @@
                Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" MaxWidth="520"
                Text="No CodeyBox API key found. Run `codeybox configure`, or set CODEYBOX_CLI_API_URL and CODEYBOX_CLI_API_KEY, then reopen this tab." />
 
+    <!-- THE OVERVIEW. The tab used to open on a 404-row list, which answers none of the questions asked
+         on arrival: is it running, can anything start, does anything need me, can it keep going.
+
+         The number that justifies the whole screen is "runnable now". On this host ten items are queued
+         and every one is blocked on a dependency, so nothing can start and resuming the queue would
+         change nothing — a state the list rendered as a perfectly healthy "10 queued". -->
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDashboard}" Padding="14">
+      <StackPanel Spacing="16">
+
+        <!-- Stopped without anyone having stopped it. Distinct from paused, which someone chose. -->
+        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Danger}" BorderThickness="1"
+                CornerRadius="8" Padding="12,10" IsVisible="{Binding Sections.IsStalled}">
+          <StackPanel Spacing="3">
+            <TextBlock Text="Nothing can start" Foreground="{DynamicResource Danger}" FontSize="12"
+                       FontWeight="SemiBold" />
+            <TextBlock Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap"
+                       Text="The queue is running and has work, but every queued item is waiting on a dependency that has not finished. Resuming or adding capacity will not change this." />
+          </StackPanel>
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding Sections.Tiles}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="tile">
+                <Grid ColumnDefinitions="Auto,*">
+                  <!-- Tone on the edge only. -->
+                  <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
+                          Background="{DynamicResource Danger}" IsVisible="{Binding IsBad}" />
+                  <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
+                          Background="{DynamicResource Accent}" IsVisible="{Binding IsAttention}" />
+                  <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
+                          Background="{DynamicResource Accent}" IsVisible="{Binding IsActive}" />
+                  <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
+                          Background="Transparent" IsVisible="{Binding IsNeutral}" />
+                  <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Classes="tilelabel" Text="{Binding Label}" />
+                    <TextBlock Classes="tilevalue" Text="{Binding Value}" />
+                    <TextBlock Classes="tilecaption" Text="{Binding Caption}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Grid ColumnDefinitions="*,14,*">
+
+          <!-- WHAT IS NEXT. Blocked items included: "the next thing cannot start" is the answer. -->
+          <StackPanel Grid.Column="0" Spacing="6">
+            <TextBlock Classes="cardhead" Text="Next up" />
+            <TextBlock Text="Nothing is queued." Foreground="{DynamicResource FgFaint}" FontSize="11"
+                       IsVisible="{Binding !Sections.HasNextUp}" />
+            <ItemsControl ItemsSource="{Binding Sections.NextUp}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="9,7" Margin="0,2">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                      <TextBlock Grid.Column="0" Text="{Binding Priority, StringFormat='p{0}'}"
+                                 Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="monospace"
+                                 VerticalAlignment="Top" Margin="0,1,10,0" MinWidth="26" />
+                      <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                   TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding DependencySummary}" Foreground="{DynamicResource Danger}"
+                                   FontSize="10" IsVisible="{Binding IsBlockedByDependency}" />
+                      </StackPanel>
+                      <TextBlock Grid.Column="2" Text="{Binding ProjectId}" Foreground="{DynamicResource FgFaint}"
+                                 FontSize="10" VerticalAlignment="Top" Margin="8,1,0,0" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <StackPanel Grid.Column="2" Spacing="14">
+
+            <!-- CAN IT KEEP GOING. -->
+            <StackPanel Spacing="6">
+              <TextBlock Classes="cardhead" Text="Capacity and quota" />
+              <StackPanel Spacing="3" IsVisible="{Binding Sections.HasConcurrency}">
+                <TextBlock Text="{Binding Sections.Concurrency.Label}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                <Border Height="6" Width="140" CornerRadius="3" HorizontalAlignment="Left"
+                        Background="{DynamicResource PanelAlt}">
+                  <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                          Width="{Binding Sections.Concurrency.BarWidth}" Background="{DynamicResource Accent}" />
+                </Border>
+              </StackPanel>
+              <TextBlock Text="No agent has been probed for quota." Foreground="{DynamicResource FgFaint}"
+                         FontSize="10" IsVisible="{Binding !Sections.HasQuota}" />
+              <ItemsControl ItemsSource="{Binding Sections.Quota}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="*,144,Auto" Margin="0,1">
+                      <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{DynamicResource FgDim}"
+                                 FontSize="10" VerticalAlignment="Center" />
+                      <Border Grid.Column="1" Height="6" Width="140" CornerRadius="3" VerticalAlignment="Center"
+                              HorizontalAlignment="Left" Background="{DynamicResource PanelAlt}">
+                        <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                                Width="{Binding BarWidth}" Background="{DynamicResource Accent}"
+                                IsVisible="{Binding !IsLow}" />
+                      </Border>
+                      <Border Grid.Column="1" Height="6" Width="140" CornerRadius="3" VerticalAlignment="Center"
+                              HorizontalAlignment="Left" Background="Transparent" IsVisible="{Binding IsLow}">
+                        <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                                Width="{Binding BarWidth}" Background="{DynamicResource Danger}" />
+                      </Border>
+                      <TextBlock Grid.Column="2" Text="{Binding Headroom}" Foreground="{DynamicResource FgDim}"
+                                 FontSize="10" MinWidth="42" TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <!-- PROJECTS. -->
+            <StackPanel Spacing="6">
+              <TextBlock Classes="cardhead" Text="Projects" />
+              <ItemsControl ItemsSource="{Binding Sections.Fleet}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="9,7" Margin="0,2">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="3">
+                          <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontSize="11" />
+                          <ItemsControl ItemsSource="{Binding Outcomes}" IsVisible="{Binding HasOutcomes}">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="3" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <Panel ToolTip.Tip="{Binding Outcome}">
+                                  <Border Width="12" Height="4" CornerRadius="2" IsVisible="{Binding IsGood}"
+                                          Background="{DynamicResource Accent}" />
+                                  <Border Width="12" Height="4" CornerRadius="2" IsVisible="{Binding IsBad}"
+                                          Background="{DynamicResource Danger}" />
+                                  <Border Width="12" Height="4" CornerRadius="2" IsVisible="{Binding IsNeutral}"
+                                          Background="{DynamicResource FgFaint}" />
+                                </Panel>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2" HorizontalAlignment="Right">
+                          <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10" TextAlignment="Right">
+                            <Run Text="{Binding QueuedCount}" /><Run Text=" queued · " /><Run Text="{Binding InFlightCount}" /><Run Text=" in flight" />
+                          </TextBlock>
+                          <Border Height="5" Width="120" CornerRadius="3" HorizontalAlignment="Right"
+                                  Background="{DynamicResource PanelAlt}" IsVisible="{Binding HasBudget}">
+                            <Border Height="5" CornerRadius="3" HorizontalAlignment="Left"
+                                    Width="{Binding BudgetBarWidth}" Background="{DynamicResource Accent}"
+                                    IsVisible="{Binding !OverBudget}" />
+                          </Border>
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <!-- Health, stated only when there is something to measure. -->
+            <StackPanel Spacing="3">
+              <TextBlock Classes="cardhead" Text="Pipeline health" />
+              <TextBlock Text="{Binding Sections.HealthLabel}" FontSize="11"
+                         Foreground="{DynamicResource FgDim}" IsVisible="{Binding Sections.HealthIsMeaningful}" />
+              <!-- An empty window scores a perfect 1.0. Rendering that as a green tick would turn silence
+                   into a health claim, so it is said plainly instead. -->
+              <TextBlock Text="{Binding Sections.HealthLabel}" FontSize="11"
+                         Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !Sections.HealthIsMeaningful}" />
+              <TextBlock Text="{Binding Sections.SpendLabel}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+    </ScrollViewer>
+
     <Grid Grid.Row="2" ColumnDefinitions="*,4,*" RowDefinitions="Auto,*">
       <Grid.IsVisible>
         <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -230,7 +444,8 @@
         </MultiBinding>
       </Grid.IsVisible>
 
-      <!-- Finding the item you mean, before anything else. A real queue here holds 404 items of which
+
+    <!-- Finding the item you mean, before anything else. A real queue here holds 404 items of which
            only ~30 are actionable, so the default slice is the actionable one and the count states what
            is being hidden. -->
       <StackPanel Grid.Row="0" Grid.Column="0" Spacing="6" Margin="8,8,8,4">

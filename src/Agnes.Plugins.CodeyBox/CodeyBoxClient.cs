@@ -59,6 +59,9 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task<Concurrency?> GetConcurrencyAsync(CancellationToken cancellationToken = default)
         => Get<Concurrency>("concurrency", cancellationToken);
 
+    public Task<TransitionHealth?> GetTransitionHealthAsync(CancellationToken cancellationToken = default)
+        => Get<TransitionHealth>("fleet/transition-health", cancellationToken);
+
     /// <summary>Raised for each chunk of the followed item's agent output.</summary>
     public event Action<StdoutChunk>? StdoutReceived;
 
