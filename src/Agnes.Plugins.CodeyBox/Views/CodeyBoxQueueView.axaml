@@ -249,6 +249,42 @@
           <TextBox Text="{Binding NewTitle, Mode=TwoWay}" Watermark="Title" FontSize="12" />
           <TextBox Text="{Binding NewPrompt, Mode=TwoWay}" Watermark="What should the agent do?"
                    AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" FontSize="12" />
+
+          <!-- The fast path is the three boxes above and stays that way. The endpoint accepts around
+               twenty fields; putting them all on screen would tax every ordinary item to serve the rare
+               one, so the rest are disclosed on request. -->
+          <Button Classes="linky" Content="{Binding CreateOptionsLabel}" HorizontalAlignment="Left"
+                  Command="{Binding ToggleCreateOptionsCommand}" />
+
+          <StackPanel Spacing="6" IsVisible="{Binding ShowCreateOptions}">
+            <!-- What the project would do unaided, so an empty box reads as "inherit" rather than "gap". -->
+            <TextBlock Text="{Binding CreateDefaultsLine}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                       TextWrapping="Wrap" />
+
+            <!-- Chosen from the agents that have actually run here, never typed. -->
+            <ComboBox ItemsSource="{Binding Agents}" SelectedItem="{Binding NewAgent, Mode=TwoWay}"
+                      PlaceholderText="Agent — project default" HorizontalAlignment="Stretch" FontSize="12" />
+
+            <ComboBox ItemsSource="{Binding AuditorProfiles}" SelectedItem="{Binding NewAuditorProfile, Mode=TwoWay}"
+                      PlaceholderText="Auditor profile — project default" HorizontalAlignment="Stretch"
+                      FontSize="12" IsVisible="{Binding HasAuditorProfiles}" />
+
+            <Grid ColumnDefinitions="*,8,*">
+              <TextBox Grid.Column="0" Text="{Binding NewPriority, Mode=TwoWay}" Watermark="Priority" FontSize="12" />
+              <TextBox Grid.Column="2" Text="{Binding NewAuditMaxIterations, Mode=TwoWay}"
+                       Watermark="Audit iterations" FontSize="12" />
+            </Grid>
+
+            <TextBox Text="{Binding NewBaseBranch, Mode=TwoWay}" Watermark="Base branch — project default"
+                     FontSize="12" />
+            <TextBox Text="{Binding NewDependsOn, Mode=TwoWay}"
+                     Watermark="Depends on — work item ids, comma separated" FontSize="12" />
+            <TextBox Text="{Binding NewExternalId, Mode=TwoWay}" Watermark="External tracker id" FontSize="12" />
+
+            <CheckBox IsChecked="{Binding NewIsRefactor, Mode=TwoWay}" FontSize="11"
+                      Content="Refactor — runs alone, no other item for this project starts while it does" />
+          </StackPanel>
+
           <StackPanel Orientation="Horizontal" Spacing="6">
             <Button Content="Queue it" Classes="accent" FontSize="11" Padding="10,4" Command="{Binding CreateCommand}" />
             <Button Content="Cancel" FontSize="11" Padding="10,4" Command="{Binding ToggleCreateCommand}" />
@@ -435,6 +471,9 @@
             <Button Classes="chip" Classes.on="{Binding IsTimelineView}" Content="Timeline"
                     Command="{Binding ShowTimelineCommand}"
                     ToolTip.Tip="Phases, audit findings and every agent run" />
+            <Button Classes="chip" Classes.on="{Binding IsDiffView}" Content="Diff"
+                    Command="{Binding ShowDiffCommand}"
+                    ToolTip.Tip="What the agent actually changed on the work branch" />
             <Button Classes="chip" Classes.on="{Binding IsDetailView}" Content="Detail"
                     Command="{Binding ShowDetailCommand}" />
           </StackPanel>
@@ -577,17 +616,88 @@
                        Foreground="{DynamicResource FgFaint}" FontSize="11" Margin="0,8"
                        IsVisible="{Binding TimelineEmpty}" />
 
+            <!-- HOW FAR IN. The single most actionable fact about an item and it was nowhere: an item on
+                 iteration 3 and one on iteration 44 rendered identically. The ceiling comes from the
+                 project; the orchestrator raises it in place rather than enforcing it, so running past it
+                 is normal and is exactly what "this is grinding" looks like. -->
+            <StackPanel Spacing="4" IsVisible="{Binding HasProgress}">
+              <TextBlock Text="{Binding Progress.Label}" Foreground="{DynamicResource Fg}" FontSize="11"
+                         FontWeight="SemiBold" />
+              <Border Background="{DynamicResource PanelAlt}" CornerRadius="3" Height="6" Width="200"
+                      HorizontalAlignment="Left">
+                <Border CornerRadius="3" Height="6" HorizontalAlignment="Left"
+                        Width="{Binding Progress.BarWidth}"
+                        Background="{DynamicResource Accent}" IsVisible="{Binding !Progress.OverBudget}" />
+              </Border>
+              <Border Background="{DynamicResource PanelAlt}" CornerRadius="3" Height="6" Width="200"
+                      HorizontalAlignment="Left" IsVisible="{Binding Progress.OverBudget}" Margin="0,-10,0,0">
+                <Border CornerRadius="3" Height="6" HorizontalAlignment="Left"
+                        Width="{Binding Progress.BarWidth}" Background="{DynamicResource Danger}" />
+              </Border>
+            </StackPanel>
+
+            <!-- GATE RELIABILITY — and it says so, because it is NOT the audit verdict. The only per-gate
+                 signal the API exposes is whether the auditor's run completed; there is no value in it
+                 meaning "the auditor rejected the work". The verdicts exist (1,559 of 1,771 iterations
+                 blocked here, 7,268 findings) in a table no endpoint reads. Calling run failures
+                 "blocked" would be a confident wrong answer to the most important question on the pane.
+
+                 It is still worth the space: 512 audit-phase runs on this instance died on provider quota
+                 alone, and the worst item holds 670 runs that no one can read row by row. -->
+            <StackPanel Spacing="4" IsVisible="{Binding HasGates}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Audit gate runs" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding GateSummaryLine}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+              </StackPanel>
+              <!-- Stated once, where it is relevant, rather than left for the reader to infer. -->
+              <TextBlock Text="Whether each gate&apos;s run completed — not whether the audit passed. The orchestrator does not expose audit verdicts."
+                         Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap" />
+              <ItemsControl ItemsSource="{Binding Gates}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="*,124,Auto" Margin="0,2">
+                      <StackPanel Grid.Column="0" Spacing="1">
+                        <TextBlock Text="{Binding Gate}" Foreground="{DynamicResource Fg}" FontSize="11" />
+                        <TextBlock Text="{Binding Counts}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                      </StackPanel>
+                      <!-- Proportion of this gate's runs that blocked. A gate that never blocked draws no
+                           bar at all rather than a zero-width one, so the eye lands only on what fails. -->
+                      <Border Grid.Column="1" Height="6" Width="120" CornerRadius="3" VerticalAlignment="Center"
+                              HorizontalAlignment="Left" Background="{DynamicResource PanelAlt}"
+                              IsVisible="{Binding EverBlocked}">
+                        <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                                Width="{Binding BarWidth}" Background="{DynamicResource Danger}" />
+                      </Border>
+                      <TextBlock Grid.Column="2" Text="{Binding LastLabel}" FontSize="10" MinWidth="78"
+                                 TextAlignment="Right" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !LastFailed}" />
+                      <TextBlock Grid.Column="2" Text="{Binding LastLabel}" FontSize="10" MinWidth="78"
+                                 TextAlignment="Right" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource Danger}" IsVisible="{Binding LastFailed}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
             <!-- Where the time and the money went, before the run-by-run detail. -->
             <StackPanel Spacing="3" IsVisible="{Binding Phases.Count}">
               <TextBlock Text="Phases" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
               <ItemsControl ItemsSource="{Binding Phases}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
+                    <Grid ColumnDefinitions="*,124,Auto,Auto" Margin="0,1">
                       <TextBlock Grid.Column="0" Text="{Binding Phase}" Foreground="{DynamicResource Fg}" FontSize="11" />
-                      <TextBlock Grid.Column="1" Text="{Binding Duration}" Foreground="{DynamicResource FgDim}"
+                      <!-- Share of this item's spend. Four numbers in a column are compared by reading;
+                           four bars are compared by looking. -->
+                      <Border Grid.Column="1" Height="6" Width="120" CornerRadius="3" VerticalAlignment="Center"
+                              HorizontalAlignment="Left" Background="{DynamicResource PanelAlt}">
+                        <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                                Width="{Binding BarWidth}" Background="{DynamicResource Accent}" />
+                      </Border>
+                      <TextBlock Grid.Column="2" Text="{Binding Duration}" Foreground="{DynamicResource FgDim}"
                                  FontSize="11" Margin="10,0" />
-                      <TextBlock Grid.Column="2" Text="{Binding Cost}" Foreground="{DynamicResource FgFaint}"
+                      <TextBlock Grid.Column="3" Text="{Binding Cost}" Foreground="{DynamicResource FgFaint}"
                                  FontSize="11" MinWidth="56" TextAlignment="Right" />
                     </Grid>
                   </DataTemplate>
@@ -653,7 +763,13 @@
             <!-- Every agent run, newest first: phase, agent, model, iteration and how it ended. The model
                  is shown because a fallback chain is only legible when it is. -->
             <StackPanel Spacing="3" IsVisible="{Binding HasRuns}">
-              <TextBlock Text="Agent runs" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Agent runs" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+                <!-- Narrowed by default and SAYS so with both numbers, so the list is never quietly
+                     truncated — the reader can always see how much is being held back. -->
+                <TextBlock Text="{Binding RunsSummaryLine}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                <Button Classes="linky" Content="{Binding RunsToggleLabel}" Command="{Binding ToggleAllRunsCommand}" />
+              </StackPanel>
               <ItemsControl ItemsSource="{Binding Runs}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -687,6 +803,35 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
             </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- The change itself. A unified diff is the one artefact here a developer reads instantly — but
+             only in colour; as plain monospace it was the least legible thing on the screen. Capped at
+             2,000 lines because a work-branch diff can be enormous, and the cap is stated rather than
+             silently applied. -->
+        <ScrollViewer Grid.Row="2" Padding="10,0,10,10" IsVisible="{Binding IsDiffVisible}">
+          <StackPanel Spacing="6">
+            <TextBlock Text="{Binding DiffSummary}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+            <ItemsControl ItemsSource="{Binding Diff}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Panel>
+                    <SelectableTextBlock Text="{Binding Text}" FontFamily="monospace" FontSize="11"
+                                         IsVisible="{Binding IsAdded}" Foreground="{DynamicResource Accent}" />
+                    <SelectableTextBlock Text="{Binding Text}" FontFamily="monospace" FontSize="11"
+                                         IsVisible="{Binding IsRemoved}" Foreground="{DynamicResource Danger}" />
+                    <SelectableTextBlock Text="{Binding Text}" FontFamily="monospace" FontSize="11"
+                                         IsVisible="{Binding IsFile}" FontWeight="SemiBold"
+                                         Foreground="{DynamicResource Fg}" />
+                    <SelectableTextBlock Text="{Binding Text}" FontFamily="monospace" FontSize="11"
+                                         IsVisible="{Binding IsHunk}" Foreground="{DynamicResource FgFaint}" />
+                    <SelectableTextBlock Text="{Binding Text}" FontFamily="monospace" FontSize="11"
+                                         IsVisible="{Binding IsContext}" Foreground="{DynamicResource FgDim}" />
+                  </Panel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
           </StackPanel>
         </ScrollViewer>
 
@@ -747,15 +892,53 @@
             <DataTemplate>
               <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="10,8" Margin="0,2">
                 <Grid ColumnDefinitions="*,Auto">
-                  <StackPanel Grid.Column="0" Spacing="2">
+                  <StackPanel Grid.Column="0" Spacing="4">
                     <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontSize="12" />
                     <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10"
                                Text="{Binding PausedReason}" IsVisible="{Binding IsPaused}" />
+                    <!-- The last five terminal outcomes, oldest to newest. An ordered run of results is a
+                         shape — three failures then two passes reads as recovering, the reverse reads as
+                         degrading — and no sentence conveys that as fast. Cancelled is neutral, not red:
+                         it is usually a decision, and colouring it as a fault would misreport six
+                         deliberate cancellations here as six broken builds. -->
+                    <ItemsControl ItemsSource="{Binding Outcomes}" IsVisible="{Binding HasOutcomes}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="3" /></ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Panel ToolTip.Tip="{Binding Outcome}">
+                            <Border Width="14" Height="5" CornerRadius="2" IsVisible="{Binding IsGood}"
+                                    Background="{DynamicResource Accent}" />
+                            <Border Width="14" Height="5" CornerRadius="2" IsVisible="{Binding IsBad}"
+                                    Background="{DynamicResource Danger}" />
+                            <Border Width="14" Height="5" CornerRadius="2" IsVisible="{Binding IsNeutral}"
+                                    Background="{DynamicResource FgFaint}" />
+                          </Panel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                   </StackPanel>
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding QueuedCount, StringFormat='{}{0} queued'}" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                    <TextBlock Text="{Binding InFlightCount, StringFormat='{}{0} in flight'}" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                    <TextBlock Text="{Binding Spend}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                  <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="14" HorizontalAlignment="Right">
+                      <TextBlock Text="{Binding QueuedCount, StringFormat='{}{0} queued'}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                      <TextBlock Text="{Binding InFlightCount, StringFormat='{}{0} in flight'}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                      <TextBlock Text="{Binding Spend}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                    </StackPanel>
+                    <!-- Spend against the month's budget. Drawn only where a budget exists — a bar with an
+                         invented denominator says less than no bar at all. -->
+                    <Border Height="6" Width="160" CornerRadius="3" HorizontalAlignment="Right"
+                            Background="{DynamicResource PanelAlt}" IsVisible="{Binding HasBudget}">
+                      <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                              Width="{Binding BudgetBarWidth}" Background="{DynamicResource Accent}"
+                              IsVisible="{Binding !OverBudget}" />
+                    </Border>
+                    <Border Height="6" Width="160" CornerRadius="3" HorizontalAlignment="Right"
+                            Background="{DynamicResource PanelAlt}" IsVisible="{Binding OverBudget}"
+                            Margin="0,-10,0,0">
+                      <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
+                              Width="{Binding BudgetBarWidth}" Background="{DynamicResource Danger}" />
+                    </Border>
                   </StackPanel>
                 </Grid>
               </Border>

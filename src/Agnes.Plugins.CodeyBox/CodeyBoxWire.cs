@@ -292,11 +292,45 @@ public sealed record FleetProject(
     [property: JsonPropertyName("pausedReason")] string? PausedReason,
     [property: JsonPropertyName("monthlySpendUsd")] decimal MonthlySpendUsd,
     [property: JsonPropertyName("monthlyBudgetUsd")] decimal? MonthlyBudgetUsd,
-    [property: JsonPropertyName("budgetThresholdState")] string? BudgetThresholdState)
+    [property: JsonPropertyName("budgetThresholdState")] string? BudgetThresholdState,
+    // The five most recent terminal outcomes, newest last. An ordered sequence, which is exactly the
+    // shape a sparkline reads and a sentence does not.
+    [property: JsonPropertyName("recentOutcomes")] IReadOnlyList<string>? RecentOutcomes = null)
 {
     public string Spend => MonthlyBudgetUsd is { } budget
         ? $"${MonthlySpendUsd:0.##} / ${budget:0.##}"
         : $"${MonthlySpendUsd:0.##}";
+
+    /// <summary>Whether a budget was set at all. Without one there is nothing to draw a bar against, and
+    /// a bar with an invented denominator would be worse than none.</summary>
+    public bool HasBudget => MonthlyBudgetUsd is > 0;
+
+    public double BudgetFraction => MonthlyBudgetUsd is { } budget && budget > 0
+        ? Math.Min(1.0, (double)(MonthlySpendUsd / budget))
+        : 0;
+
+    public double BudgetBarWidth => Math.Max(MonthlySpendUsd > 0 ? 2 : 0, BudgetFraction * 160);
+
+    /// <summary>Spent more than the month allowed. Reported rather than clamped silently.</summary>
+    public bool OverBudget => MonthlyBudgetUsd is { } budget && budget > 0 && MonthlySpendUsd > budget;
+
+    public IReadOnlyList<OutcomeDot> Outcomes =>
+        [.. (RecentOutcomes ?? []).Select(o => new OutcomeDot(o))];
+
+    public bool HasOutcomes => RecentOutcomes is { Count: > 0 };
+}
+
+/// <summary>One slot in a project's recent-outcome strip.</summary>
+public sealed record OutcomeDot(string Outcome)
+{
+    public bool IsGood => Outcome.Equals("Done", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsBad => Outcome is "Failed" or "AuditFailed" or "AbandonedAfterRecoveryAttempts"
+        or "MergeConflictResolutionFailed";
+
+    /// <summary>Cancelled is neither: it is usually a decision, not a fault. Rendering it as a failure
+    /// would make six deliberate cancellations here look like six broken builds.</summary>
+    public bool IsNeutral => !IsGood && !IsBad;
 }
 
 /// <summary>An agent (or one instance of it) an operator has paused.</summary>
@@ -365,7 +399,11 @@ public sealed record Project(
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("repositoryUrl")] string? RepositoryUrl,
     [property: JsonPropertyName("defaultBaseBranch")] string? DefaultBaseBranch,
-    [property: JsonPropertyName("defaultAgent")] string? DefaultAgent);
+    [property: JsonPropertyName("defaultAgent")] string? DefaultAgent,
+    // The audit budget an item is measured against. Not on the work item itself on this deployment, so
+    // the project is where the progress bar's denominator comes from.
+    [property: JsonPropertyName("auditMaxIterations")] int AuditMaxIterations = 0,
+    [property: JsonPropertyName("auditTypes")] IReadOnlyList<string>? AuditTypes = null);
 
 /// <summary>A task template that can be queued by name.</summary>
 public sealed record TaskTemplate(
@@ -532,8 +570,14 @@ public sealed record AgentHistory(
     [property: JsonPropertyName("agentHistory")] IReadOnlyList<AgentRun> Runs);
 
 /// <summary>How long one phase took, and what it cost — the two questions asked of a finished item.</summary>
-public sealed record PhaseSummary(string Phase, long DurationMs, decimal CostUsd)
+/// <param name="Share">This phase's share of the item's total spend, 0..1. Set by whoever builds the set,
+/// because a single phase cannot know the total — and the total is the whole point of drawing a bar.</param>
+public sealed record PhaseSummary(string Phase, long DurationMs, decimal CostUsd, double Share = 0)
 {
+    /// <summary>Bar width against a fixed 120px track. A phase that cost something always draws at least a
+    /// sliver, so "cheap" and "absent" stay distinguishable.</summary>
+    public double BarWidth => Share <= 0 ? 0 : Math.Max(2, Share * 120);
+
     public string Duration => AgentRun.Humanise(TimeSpan.FromMilliseconds(DurationMs));
 
     public string Cost => CostUsd > 0 ? $"${CostUsd:0.00}" : string.Empty;
@@ -612,12 +656,30 @@ public sealed record AuditReports(
     [property: JsonPropertyName("iterations")] IReadOnlyList<AuditIteration>? Iterations);
 
 /// <summary>What to create a work item from.</summary>
+/// <remarks>
+/// The orchestrator's create endpoint accepts around twenty fields; this models the ones an operator can
+/// reasonably set from a queue view. Every optional field is omitted from the JSON when null, so an
+/// unfilled box means "let the project decide" rather than "set this to empty" — which matters, because
+/// several of these have project-level defaults that a blank string would override.
+///
+/// <para>Not modelled, deliberately: <c>Check</c> (check-and-act), <c>AgentControl</c> and <c>Knobs</c>.
+/// Each is a nested structure that deserves its own affordance rather than a text box, and inventing a
+/// half-form for them would be worse than leaving them to the CLI.</para>
+/// </remarks>
 public sealed record NewWorkItem(
     [property: JsonPropertyName("projectId")] string ProjectId,
     [property: JsonPropertyName("title")] string Title,
     [property: JsonPropertyName("prompt")] string Prompt,
     [property: JsonPropertyName("agent")] string? Agent = null,
-    [property: JsonPropertyName("baseBranch")] string? BaseBranch = null);
+    [property: JsonPropertyName("baseBranch")] string? BaseBranch = null,
+    [property: JsonPropertyName("priority")] int? Priority = null,
+    [property: JsonPropertyName("dependsOn")] IReadOnlyList<string>? DependsOn = null,
+    [property: JsonPropertyName("auditMaxIterations")] int? AuditMaxIterations = null,
+    [property: JsonPropertyName("auditorProfile")] string? AuditorProfile = null,
+    [property: JsonPropertyName("externalId")] string? ExternalId = null,
+    [property: JsonPropertyName("workTimeoutMinutes")] int? WorkTimeoutMinutes = null,
+    [property: JsonPropertyName("minModelScore")] int? MinModelScore = null,
+    [property: JsonPropertyName("isRefactor")] bool? IsRefactor = null);
 
 /// <summary>
 /// A response this plugin passes through without modelling. Used for the orchestrator's diagnostic and

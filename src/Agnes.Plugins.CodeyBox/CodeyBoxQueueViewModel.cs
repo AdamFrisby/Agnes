@@ -425,7 +425,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
     /// <summary>Whether the pane is showing the item's story — its failure, task and live output — rather
     /// than the timeline or the raw detail dump.</summary>
-    public bool ShowStory => !IsDetailVisible && !IsTimelineVisible;
+    public bool ShowStory => !IsDetailVisible && !IsTimelineVisible && !IsDiffVisible;
 
     // The three views are a segmented control, not three buttons: they change what you are LOOKING at and
     // mutate nothing, so they must not be rendered like Retry and Promote — and the active one must be
@@ -441,6 +441,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         OnPropertyChanged(nameof(IsOutputView));
         OnPropertyChanged(nameof(IsTimelineView));
         OnPropertyChanged(nameof(IsDetailView));
+        OnPropertyChanged(nameof(IsDiffView));
     }
 
     /// <summary>
@@ -464,7 +465,8 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     /// characters here — and says what broke without saying where, which is the half an engineer needs to
     /// know which gate to look at.
     /// </summary>
-    public string? FailingPhase => Runs.FirstOrDefault(r => r.Failed)?.PhaseLabel;
+    public string? FailingPhase =>
+        _allRuns.OrderByDescending(r => r.StartedAt).FirstOrDefault(r => r.Failed)?.PhaseLabel;
 
     public bool HasFailingPhase => !string.IsNullOrEmpty(FailingPhase);
 
@@ -512,6 +514,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     {
         IsTimelineVisible = true;
         IsDetailVisible = false;
+        IsDiffVisible = false;
         if (Selected is { } row)
         {
             _ = LoadTimelineAsync(row.Id);
@@ -540,17 +543,40 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
             await _toUi(() =>
             {
+                _allRuns.Clear();
+                _allRuns.AddRange(runs);
+
+                // Gate-first, because the run list answers "what happened" and the gates answer "why it
+                // is not passing" — which is the question actually being asked.
+                Reconcile.Apply(Gates, [.. AuditSummary.Gates(runs)], g => g.Gate);
+                Progress = AuditSummary.Progress(runs, CeilingForSelected());
+
                 // Reconciled so a re-read appends the new run and leaves the rest of the history alone.
                 // A seventy-row history that rebuilds itself is unreadable: the row being read is torn
                 // down and the list snaps back to the top, on every update.
-                Reconcile.Apply(Runs, [.. runs.OrderByDescending(r => r.StartedAt)], r => r.Id);
-                Reconcile.Apply(Phases, [.. phases], p => p.Phase);
+                ApplyRuns();
+                // Cost share is computed here because only the whole set knows the total. Falls back to
+                // duration when nothing carried a cost, so the bars still say where the time went.
+                var totalCost = phases.Sum(x => x.CostUsd);
+                var totalMs = phases.Sum(x => x.DurationMs);
+                Reconcile.Apply(
+                    Phases,
+                    [.. phases.Select(x => x with
+                    {
+                        Share = totalCost > 0
+                            ? (double)(x.CostUsd / totalCost)
+                            : (totalMs > 0 ? (double)x.DurationMs / totalMs : 0),
+                    })],
+                    x => x.Phase);
                 Reconcile.Apply(
                     AuditIterations,
                     [.. audits.OrderByDescending(i => i.Iteration)],
                     i => (i.Target, i.Iteration));
 
-                TimelineEmpty = Runs.Count == 0;
+                TimelineEmpty = _allRuns.Count == 0;
+                OnPropertyChanged(nameof(HasGates));
+                OnPropertyChanged(nameof(GateSummaryLine));
+                OnPropertyChanged(nameof(BlockingGateCount));
                 OnPropertyChanged(nameof(FailingPhase));
                 OnPropertyChanged(nameof(HasFailingPhase));
                 OnPropertyChanged(nameof(HasRuns));
@@ -570,6 +596,142 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
     partial void OnIsDetailVisibleChanged(bool value) => NotifyViewChanged();
 
+    /// <summary>Which audit gates ran on this item and which of them blocked — the answer to "why is it
+    /// not passing", built from the runs the API already returns.</summary>
+    public ObservableCollection<GateSummary> Gates { get; } = [];
+
+    public bool HasGates => Gates.Count > 0;
+
+    /// <summary>Gates that have ever blocked this item, which is what the summary leads with.</summary>
+    /// <summary>Gates with at least one failed invocation. Not gates that rejected the work — see
+    /// <see cref="GateSummary"/> for why the API cannot answer that.</summary>
+    public int BlockingGateCount => Gates.Count(g => g.EverBlocked);
+
+    public string GateSummaryLine => Gates.Count == 0
+        ? string.Empty
+        : BlockingGateCount == 0
+            ? $"{Gates.Count} gates ran · every run completed"
+            : $"{BlockingGateCount} of {Gates.Count} gates had a run fail";
+
+    /// <summary>How deep into its audit budget the item has gone.</summary>
+    [ObservableProperty]
+    private AuditProgress? _progress;
+
+    public bool HasProgress => Progress is { IsKnown: true };
+
+    partial void OnProgressChanged(AuditProgress? value) => OnPropertyChanged(nameof(HasProgress));
+
+    /// <summary>
+    /// Whether every agent run is listed, rather than the failures and the current iteration. Off by
+    /// default: the worst item here holds 666 runs and the overwhelming majority are gates that passed
+    /// and will pass again.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showAllRuns;
+
+    partial void OnShowAllRunsChanged(bool value)
+    {
+        ApplyRuns();
+        OnPropertyChanged(nameof(RunsToggleLabel));
+    }
+
+    public ICommand ToggleAllRunsCommand =>
+        _toggleAllRuns ??= new RelayCommand(() => ShowAllRuns = !ShowAllRuns);
+
+    private ICommand? _toggleAllRuns;
+
+    public string RunsToggleLabel => ShowAllRuns
+        ? "Show only failures and the current iteration"
+        : $"Show all {_allRuns.Count} runs";
+
+    /// <summary>Every run, before the default narrowing. Held so the toggle costs nothing.</summary>
+    private readonly List<AgentRun> _allRuns = [];
+
+    public string RunsSummaryLine => _allRuns.Count == 0
+        ? string.Empty
+        : ShowAllRuns
+            ? $"all {_allRuns.Count} runs"
+            : $"{Runs.Count} of {_allRuns.Count} runs — failures and the current iteration";
+
+    /// <summary>
+    /// The audit budget the selected item is measured against. It comes from the project because the work
+    /// item does not carry one here; zero when the project is unknown, which the progress bar renders as
+    /// a depth with no denominator rather than inventing a ceiling.
+    /// </summary>
+    private int CeilingForSelected()
+        => Projects.FirstOrDefault(p => p.Id == Selected?.ProjectId)?.AuditMaxIterations ?? 0;
+
+    private void ApplyRuns()
+    {
+        var shown = ShowAllRuns ? _allRuns : AuditSummary.Notable(_allRuns);
+        Reconcile.Apply(Runs, [.. shown.OrderByDescending(r => r.StartedAt)], r => r.Id);
+        OnPropertyChanged(nameof(HasRuns));
+        OnPropertyChanged(nameof(RunsSummaryLine));
+        OnPropertyChanged(nameof(RunsToggleLabel));
+    }
+
+    /// <summary>The work branch's diff, classified for colouring.</summary>
+    public ObservableCollection<DiffLine> Diff { get; } = [];
+
+    public bool HasDiff => Diff.Count > 0;
+
+    [ObservableProperty]
+    private string _diffSummary = string.Empty;
+
+    [ObservableProperty]
+    private bool _isDiffVisible;
+
+    partial void OnIsDiffVisibleChanged(bool value) => NotifyViewChanged();
+
+    public bool IsDiffView => IsDiffVisible;
+
+    public ICommand ShowDiffCommand => _showDiff ??= new RelayCommand(() =>
+    {
+        IsDiffVisible = true;
+        IsTimelineVisible = false;
+        IsDetailVisible = false;
+        if (Selected is { } row)
+        {
+            _ = LoadDiffAsync(row.Id);
+        }
+    });
+
+    private ICommand? _showDiff;
+
+    private async Task LoadDiffAsync(string workItemId)
+    {
+        try
+        {
+            var text = await _client.GetDiffTextAsync(workItemId, _cts.Token).ConfigureAwait(false);
+            var lines = UnifiedDiff.Parse(text);
+            await _toUi(() =>
+            {
+                // Rebuilt, not reconciled. A diff is full of identical lines — every blank context line
+                // is equal to every other — so there is no stable key to reconcile against, and keying by
+                // content would silently collapse them. It is also loaded once per item on request, so
+                // there is no reader to disturb.
+                Diff.Clear();
+                foreach (var line in lines)
+                {
+                    Diff.Add(line);
+                }
+                DiffSummary = lines.Count == 0
+                    ? "No diff recorded for this item."
+                    : UnifiedDiff.Summarise(lines);
+                OnPropertyChanged(nameof(HasDiff));
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // shutting down
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report($"diff {workItemId}", ex);
+            await _toUi(() => DiffSummary = $"Couldn't load the diff — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
     /// <summary>The selected item's detail, gathered from the orchestrator's per-item endpoints.</summary>
     [ObservableProperty]
     private string _detail = string.Empty;
@@ -578,12 +740,14 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     {
         IsDetailVisible = false;
         IsTimelineVisible = false;
+        IsDiffVisible = false;
     });
 
     public ICommand ShowDetailCommand => _showDetail ??= new RelayCommand(() =>
     {
         IsDetailVisible = true;
         IsTimelineVisible = false;
+        IsDiffVisible = false;
         if (Selected is { } row)
         {
             _ = LoadDetailAsync(row.Id);
@@ -615,7 +779,6 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
                 ("agent history", await _client.GetAgentHistoryAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("costs", await _client.GetCostsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("timings", await _client.GetTimingsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
-                ("diff", await _client.GetDiffAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("dependents", await _client.GetDependentsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("audit reports", await _client.GetAuditReportsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
                 ("agent streams", await _client.GetAgentStreamsAsync(workItemId, _cts.Token).ConfigureAwait(false)),
@@ -655,7 +818,26 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         ? $"runs on {agent} by default"
         : string.Empty;
 
-    partial void OnNewProjectChanged(ProjectChoice? value) => OnPropertyChanged(nameof(NewProjectAgent));
+    partial void OnNewProjectChanged(ProjectChoice? value)
+    {
+        OnPropertyChanged(nameof(NewProjectAgent));
+        OnPropertyChanged(nameof(CreateDefaultsLine));
+
+        // The auditor profiles on offer are the ones this project actually configures, so choosing a
+        // project narrows the choice instead of leaving a free-text field the operator must already know
+        // the vocabulary for.
+        var profiles = _projectAuditTypes.TryGetValue(value?.Id ?? string.Empty, out var types) ? types : [];
+        Reconcile.Apply(AuditorProfiles, profiles, t => t);
+        if (NewAuditorProfile is { } chosen && !profiles.Contains(chosen))
+        {
+            NewAuditorProfile = null;
+        }
+
+        OnPropertyChanged(nameof(HasAuditorProfiles));
+    }
+
+    /// <summary>Auditor types per project, kept from the projects read so the create form can offer them.</summary>
+    private readonly Dictionary<string, IReadOnlyList<string>> _projectAuditTypes = [];
 
     [ObservableProperty]
     private bool _isCreating;
@@ -684,6 +866,73 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     public IAsyncRelayCommand SetPromptCommand => _setPrompt ??= new AsyncRelayCommand(SetPromptAsync);
     private IAsyncRelayCommand? _setPrompt;
 
+    /// <summary>
+    /// Whether the extra creation options are shown. Collapsed by default on purpose: a project, a title
+    /// and a prompt is the overwhelmingly common case and stays a three-box form. The remaining options
+    /// exist because the endpoint accepts them, not because most items need them.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showCreateOptions;
+
+    public ICommand ToggleCreateOptionsCommand =>
+        _toggleCreateOptions ??= new RelayCommand(() => ShowCreateOptions = !ShowCreateOptions);
+
+    private ICommand? _toggleCreateOptions;
+
+    public string CreateOptionsLabel => ShowCreateOptions ? "Fewer options" : "More options";
+
+    partial void OnShowCreateOptionsChanged(bool value) => OnPropertyChanged(nameof(CreateOptionsLabel));
+
+    /// <summary>Agent override. Null means the project's default, which the form states rather than
+    /// leaving the operator to guess.</summary>
+    [ObservableProperty]
+    private string? _newAgent;
+
+    [ObservableProperty]
+    private string _newPriority = string.Empty;
+
+    [ObservableProperty]
+    private string _newBaseBranch = string.Empty;
+
+    [ObservableProperty]
+    private string _newDependsOn = string.Empty;
+
+    [ObservableProperty]
+    private string _newAuditMaxIterations = string.Empty;
+
+    [ObservableProperty]
+    private string? _newAuditorProfile;
+
+    [ObservableProperty]
+    private string _newExternalId = string.Empty;
+
+    [ObservableProperty]
+    private bool _newIsRefactor;
+
+    /// <summary>Auditor profiles offered by the chosen project, so this is a choice rather than a string
+    /// the operator has to already know.</summary>
+    public ObservableCollection<string> AuditorProfiles { get; } = [];
+
+    public bool HasAuditorProfiles => AuditorProfiles.Count > 0;
+
+    /// <summary>What the project would do if nothing here overrode it. Stated so an empty box is
+    /// legible as a default rather than as a gap.</summary>
+    public string CreateDefaultsLine => NewProject is not { } p
+        ? string.Empty
+        : $"defaults: agent {p.DefaultAgent ?? "—"}  ·  branch {p.DefaultBaseBranch ?? "—"}" +
+          (p.AuditMaxIterations > 0 ? $"  ·  {p.AuditMaxIterations} audit iterations" : string.Empty);
+
+    /// <summary>Parses an optional whole number from a form box. Blank means "unset", not zero — the
+    /// distinction the API cares about.</summary>
+    private static int? OptionalInt(string text)
+        => int.TryParse(text.Trim(), System.Globalization.NumberStyles.Integer,
+                        System.Globalization.CultureInfo.CurrentCulture, out var value)
+            ? value
+            : null;
+
+    private static string? OptionalText(string text)
+        => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
     private async Task CreateAsync()
     {
         if (NewProject is not { } project || string.IsNullOrWhiteSpace(NewTitle) ||
@@ -695,13 +944,36 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
         try
         {
+            var dependsOn = NewDependsOn
+                .Split([',', ' ', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
             var id = await _client.CreateWorkItemAsync(
-                new NewWorkItem(project.Id, NewTitle.Trim(), NewPrompt.Trim()), _cts.Token).ConfigureAwait(false);
+                new NewWorkItem(
+                    project.Id,
+                    NewTitle.Trim(),
+                    NewPrompt.Trim(),
+                    Agent: OptionalText(NewAgent ?? string.Empty),
+                    BaseBranch: OptionalText(NewBaseBranch),
+                    Priority: OptionalInt(NewPriority),
+                    DependsOn: dependsOn.Length == 0 ? null : dependsOn,
+                    AuditMaxIterations: OptionalInt(NewAuditMaxIterations),
+                    AuditorProfile: OptionalText(NewAuditorProfile ?? string.Empty),
+                    ExternalId: OptionalText(NewExternalId),
+                    IsRefactor: NewIsRefactor ? true : null),
+                _cts.Token).ConfigureAwait(false);
             await _toUi(() =>
             {
                 Status = id is null ? "Created." : $"Created {id[..Math.Min(8, id.Length)]}.";
                 NewTitle = string.Empty;
                 NewPrompt = string.Empty;
+                NewPriority = string.Empty;
+                NewBaseBranch = string.Empty;
+                NewDependsOn = string.Empty;
+                NewAuditMaxIterations = string.Empty;
+                NewExternalId = string.Empty;
+                NewIsRefactor = false;
+                NewAgent = null;
+                NewAuditorProfile = null;
                 IsCreating = false;
             }).ConfigureAwait(false);
             await RefreshAsync().ConfigureAwait(false);
@@ -1009,9 +1281,16 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             {
                 var keep = Selected?.Id;
 
+                _projectAuditTypes.Clear();
+                foreach (var project in projects)
+                {
+                    _projectAuditTypes[project.Id] = project.AuditTypes ?? [];
+                }
+
                 Reconcile.Apply(
                     Projects,
-                    [.. projects.Select(p => new ProjectChoice(p.Id, p.DisplayName, p.DefaultAgent))],
+                    [.. projects.Select(p => new ProjectChoice(
+                        p.Id, p.DisplayName, p.DefaultAgent, p.AuditMaxIterations, p.DefaultBaseBranch))],
                     p => p.Id);
 
                 // Agents come from the queue rather than from configuration, so the filter offers what has
@@ -1053,6 +1332,12 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             OnPropertyChanged(nameof(Output));
             Questions.Clear();
             Runs.Clear();
+            Diff.Clear();
+            DiffSummary = string.Empty;
+            _allRuns.Clear();
+            Gates.Clear();
+            Progress = null;
+            ShowAllRuns = false;
             Phases.Clear();
             AuditIterations.Clear();
             TimelineEmpty = false;

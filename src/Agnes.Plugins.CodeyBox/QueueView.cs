@@ -39,7 +39,12 @@ public enum QueueSort
 /// Exists so creating work can be a choice rather than a memory test: the form used to require the
 /// project's id typed exactly ("codeybox-self"), which is knowledge the interface already had.
 /// </remarks>
-public sealed record ProjectChoice(string Id, string DisplayName, string? DefaultAgent)
+public sealed record ProjectChoice(
+    string Id,
+    string DisplayName,
+    string? DefaultAgent,
+    int AuditMaxIterations = 0,
+    string? DefaultBaseBranch = null)
 {
     public string Label => $"{DisplayName}  ({Id})";
 }

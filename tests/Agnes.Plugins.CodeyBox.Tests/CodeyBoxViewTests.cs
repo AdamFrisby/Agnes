@@ -341,6 +341,34 @@ public class ItemPaneRenderTests
     }
 
     [Fact]
+    public void Renders_the_new_creation_options()
+        => RenderWith(Row(), vm => { vm.IsCreating = true; vm.ShowCreateOptions = true; });
+
+    [Fact]
+    public void Renders_the_diff_view()
+        => RenderWith(Row(), vm =>
+        {
+            vm.IsDiffVisible = true;
+            foreach (var line in UnifiedDiff.Parse(
+                "diff --git a/x.cs b/x.cs\n--- a/x.cs\n+++ b/x.cs\n@@ -1 +1 @@\n-old\n+new\n"))
+            {
+                vm.Diff.Add(line);
+            }
+        });
+
+    [Fact]
+    public void Renders_the_gate_summary_and_progress_bar()
+        => RenderWith(Row(state: "Failed", lastError: "audit blocked"), vm =>
+        {
+            vm.IsTimelineVisible = true;
+            // Shapes taken from the live instance: a gate that blocks repeatedly, one that never has, and
+            // an item well past its 25-iteration budget.
+            vm.Gates.Add(new GateSummary("completeness:llm-review", 9, 7, true, DateTimeOffset.UtcNow));
+            vm.Gates.Add(new GateSummary("security:gitleaks", 9, 0, false, DateTimeOffset.UtcNow));
+            vm.Progress = new AuditProgress(52, 25);
+        });
+
+    [Fact]
     public void Renders_every_view_of_the_pane()
     {
         // The view state is set directly rather than through the commands: those also kick off a
@@ -348,6 +376,7 @@ public class ItemPaneRenderTests
         // been torn down. What is under test here is that each view renders, not what fetches it.
         RenderWith(Row(), vm => vm.IsTimelineVisible = true);
         RenderWith(Row(), vm => vm.IsDetailVisible = true);
+        RenderWith(Row(), vm => vm.IsDiffVisible = true);
         RenderWith(Row(), vm => { vm.IsTimelineVisible = false; vm.IsDetailVisible = false; });
     }
 

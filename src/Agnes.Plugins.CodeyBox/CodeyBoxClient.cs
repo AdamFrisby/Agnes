@@ -21,7 +21,12 @@ namespace Agnes.Plugins.CodeyBox;
 /// </remarks>
 public sealed class CodeyBoxClient : IAsyncDisposable
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    {
+        // Unset optional fields are omitted rather than sent as null. On create that is the difference
+        // between "let the project decide" and "override the project's default with nothing".
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 
     private readonly CodeyBoxOptions _options;
     private readonly HttpClient _http;
@@ -277,8 +282,18 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task<RawJson?> GetTimingsAsync(string id, CancellationToken cancellationToken = default)
         => GetRaw($"workitems/{id}/timings", cancellationToken);
 
-    public Task<RawJson?> GetDiffAsync(string id, CancellationToken cancellationToken = default)
-        => GetRaw($"workitems/{id}/diff", cancellationToken);
+    /// <summary>
+    /// The work branch's diff, as text. This endpoint answers <c>text/plain</c> — a unified diff — so it
+    /// is read as a string rather than through the raw-JSON path the other diagnostic endpoints use;
+    /// parsing "diff --git a/..." as JSON throws on the first character.
+    /// </summary>
+    public async Task<string> GetDiffTextAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"workitems/{id}/diff", cancellationToken).ConfigureAwait(false);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
+            : string.Empty;
+    }
 
     /// <summary>
     /// The questions an agent has asked about this item. Empty when the orchestrator has no question store
