@@ -538,8 +538,8 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         try
         {
             var runs = await _client.GetAgentRunsAsync(workItemId, _cts.Token).ConfigureAwait(false);
+            var audits = await _client.GetAuditProgressAsync(workItemId, _cts.Token).ConfigureAwait(false);
             var phases = await _client.GetPhaseSummaryAsync(workItemId, _cts.Token).ConfigureAwait(false);
-            var audits = await _client.GetAuditIterationsAsync(workItemId, _cts.Token).ConfigureAwait(false);
 
             await _toUi(() =>
             {
@@ -548,6 +548,13 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
                 // Gate-first, because the run list answers "what happened" and the gates answer "why it
                 // is not passing" — which is the question actually being asked.
+                // Newest iteration first: what blocked it most recently is what is being worked on.
+                Reconcile.Apply(
+                    AuditRows,
+                    [.. audits.OrderByDescending(a => a.WorkAttemptKey, StringComparer.Ordinal)
+                              .ThenByDescending(a => a.Iteration)],
+                    a => a.Id);
+
                 Reconcile.Apply(Gates, [.. AuditSummary.Gates(runs)], g => g.Gate);
                 Progress = AuditSummary.Progress(runs, CeilingForSelected());
 
@@ -568,12 +575,10 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
                             : (totalMs > 0 ? (double)x.DurationMs / totalMs : 0),
                     })],
                     x => x.Phase);
-                Reconcile.Apply(
-                    AuditIterations,
-                    [.. audits.OrderByDescending(i => i.Iteration)],
-                    i => (i.Target, i.Iteration));
-
                 TimelineEmpty = _allRuns.Count == 0;
+                OnPropertyChanged(nameof(HasAuditRows));
+                OnPropertyChanged(nameof(AuditSummaryLine));
+                OnPropertyChanged(nameof(BlockedIterationCount));
                 OnPropertyChanged(nameof(HasGates));
                 OnPropertyChanged(nameof(GateSummaryLine));
                 OnPropertyChanged(nameof(BlockingGateCount));
@@ -595,6 +600,75 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     private bool _isDetailVisible;
 
     partial void OnIsDetailVisibleChanged(bool value) => NotifyViewChanged();
+
+    /// <summary>
+    /// The real audit verdicts: every iteration, and the findings that blocked it.
+    ///
+    /// <para>Loaded only with the timeline, never with the queue — the heaviest items on this instance
+    /// answer with 1.2–1.8 MB, because the orchestrator's list cap is 20,000 characters per description
+    /// against a median finding of 524.</para>
+    /// </summary>
+    public ObservableCollection<AuditProgressRow> AuditRows { get; } = [];
+
+    public bool HasAuditRows => AuditRows.Count > 0;
+
+    /// <summary>Iterations that blocked, which is the number worth leading with.</summary>
+    public int BlockedIterationCount => AuditRows.Count(r => r.Blocked);
+
+    public string AuditSummaryLine => AuditRows.Count == 0
+        ? string.Empty
+        : BlockedIterationCount == 0
+            ? $"{AuditRows.Count} iteration(s) · none blocked"
+            : $"{BlockedIterationCount} of {AuditRows.Count} iterations blocked · " +
+              $"{AuditRows.Sum(r => r.BlockingFindings)} finding(s)";
+
+    /// <summary>
+    /// Fetches one iteration in full and swaps it in.
+    ///
+    /// <para>Per ITERATION rather than per finding, because that is the granularity the orchestrator
+    /// addresses: one request untruncates every finding in the row, so expanding a second finding in the
+    /// same iteration costs nothing. The row is replaced rather than mutated — these are records, and
+    /// Reconcile turns the swap into a single Replace at that index.</para>
+    /// </summary>
+    public IAsyncRelayCommand<AuditProgressRow> LoadFullFindingsCommand =>
+        _loadFullFindings ??= new AsyncRelayCommand<AuditProgressRow>(LoadFullFindingsAsync);
+
+    private IAsyncRelayCommand<AuditProgressRow>? _loadFullFindings;
+
+    private async Task LoadFullFindingsAsync(AuditProgressRow? row)
+    {
+        if (row is null || Selected is not { } item)
+        {
+            return;
+        }
+
+        try
+        {
+            var full = await _client.GetAuditProgressRowAsync(item.Id, row.Id, _cts.Token).ConfigureAwait(false);
+            if (full is null)
+            {
+                return;
+            }
+
+            await _toUi(() =>
+            {
+                var index = AuditRows.IndexOf(row);
+                if (index >= 0)
+                {
+                    AuditRows[index] = full;
+                }
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // shutting down
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report($"audit detail {row.Id}", ex);
+            await _toUi(() => Status = $"Couldn't load the full finding — {ex.Message}").ConfigureAwait(false);
+        }
+    }
 
     /// <summary>Which audit gates ran on this item and which of them blocked — the answer to "why is it
     /// not passing", built from the runs the API already returns.</summary>
@@ -1336,6 +1410,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             DiffSummary = string.Empty;
             _allRuns.Clear();
             Gates.Clear();
+            AuditRows.Clear();
             Progress = null;
             ShowAllRuns = false;
             Phases.Clear();

@@ -62,6 +62,21 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task<TransitionHealth?> GetTransitionHealthAsync(CancellationToken cancellationToken = default)
         => Get<TransitionHealth>("fleet/transition-health", cancellationToken);
 
+    /// <summary>
+    /// Every audit iteration for a work item, with the findings that blocked it. Descriptions are
+    /// truncated by the orchestrator to a configured cap and flagged; the full text comes from
+    /// <see cref="GetAuditProgressRowAsync"/>.
+    ///
+    /// <para>Called only when the timeline is opened, never on the queue read: on this instance the
+    /// heaviest items answer with 1.2–1.8 MB.</para>
+    /// </summary>
+    public async Task<IReadOnlyList<AuditProgressRow>> GetAuditProgressAsync(string id, CancellationToken cancellationToken = default)
+        => (await Get<AuditProgressList>($"workitems/{id}/audit-progress", cancellationToken).ConfigureAwait(false))?.Progress ?? [];
+
+    /// <summary>One iteration in full, with untruncated descriptions.</summary>
+    public Task<AuditProgressRow?> GetAuditProgressRowAsync(string id, string progressId, CancellationToken cancellationToken = default)
+        => Get<AuditProgressRow>($"workitems/{id}/audit-progress/{progressId}", cancellationToken);
+
     /// <summary>Raised for each chunk of the followed item's agent output.</summary>
     public event Action<StdoutChunk>? StdoutReceived;
 

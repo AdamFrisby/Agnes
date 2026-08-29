@@ -959,51 +959,76 @@
               </ItemsControl>
             </StackPanel>
 
-            <!-- Why a round failed: each auditor's objection, per iteration. -->
-            <StackPanel Spacing="4" IsVisible="{Binding HasAuditIterations}">
-              <TextBlock Text="Audit findings" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
-              <ItemsControl ItemsSource="{Binding AuditIterations}">
+            <!-- WHY IT IS NOT PASSING. These are the orchestrator's actual audit verdicts, from
+                 /workitems/{id}/audit-progress. Until that endpoint existed this pane could only show
+                 gate RUN reliability — whether the auditor's process completed — which is a different
+                 question and, read as a verdict, a misleading one.
+
+                 Descriptions arrive truncated to the orchestrator's configured cap and say so. The full
+                 text is fetched per ITERATION, not per finding, because that is the granularity the API
+                 addresses: one request untruncates every finding in the row. -->
+            <StackPanel Spacing="4" IsVisible="{Binding HasAuditRows}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Audit verdicts" Foreground="{DynamicResource FgDim}" FontSize="10" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding AuditSummaryLine}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+              </StackPanel>
+
+              <ItemsControl ItemsSource="{Binding AuditRows}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="9,7" Margin="0,2">
-                      <StackPanel Spacing="4">
+                    <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="9,7" Margin="0,2"
+                            BorderThickness="1" BorderBrush="{DynamicResource Line}">
+                      <StackPanel Spacing="5">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                           <TextBlock Text="{Binding Header}" Foreground="{DynamicResource Fg}" FontSize="11"
                                      FontWeight="SemiBold" />
                           <TextBlock Text="{Binding Verdict}" FontSize="10" VerticalAlignment="Center"
-                                     Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !Blocked}" />
-                          <TextBlock Text="{Binding Verdict}" FontSize="10" VerticalAlignment="Center"
                                      Foreground="{DynamicResource Danger}" IsVisible="{Binding Blocked}" />
+                          <TextBlock Text="{Binding Verdict}" FontSize="10" VerticalAlignment="Center"
+                                     Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !Blocked}" />
+                          <!-- Scheduled minus completed: the difference between "passed" and "never
+                               finished", which the counts alone cannot tell you. -->
+                          <TextBlock Text="{Binding OutstandingLabel}" FontSize="10" VerticalAlignment="Center"
+                                     Foreground="{DynamicResource FgFaint}" IsVisible="{Binding HasOutstanding}" />
+                          <TextBlock Text="{Binding At}" FontSize="10" VerticalAlignment="Center"
+                                     Foreground="{DynamicResource FgFaint}" />
                         </StackPanel>
-                        <ItemsControl ItemsSource="{Binding All}">
+
+                        <ItemsControl ItemsSource="{Binding Blocking}">
                           <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                              <StackPanel Spacing="2" Margin="0,2" IsVisible="{Binding HasFindings}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                  <TextBlock Text="{Binding AuditorName}" Foreground="{DynamicResource FgDim}" FontSize="10" />
-                                  <TextBlock Text="{Binding Verdict}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                              <Border Background="{DynamicResource PanelAlt}" CornerRadius="5" Padding="8,6" Margin="0,2">
+                                <StackPanel Spacing="3">
+                                  <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                             TextWrapping="Wrap" />
+                                  <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{Binding Auditor}" Foreground="{DynamicResource Danger}"
+                                               FontSize="10" />
+                                    <TextBlock Text="{Binding Location}" Foreground="{DynamicResource FgFaint}"
+                                               FontSize="10" FontFamily="monospace"
+                                               IsVisible="{Binding HasLocation}" />
+                                  </StackPanel>
+                                  <!-- Capped visually as well as over the wire: an untruncated
+                                       description still runs to 20,000 characters. -->
+                                  <SelectableTextBlock Text="{Binding Description}" FontSize="10"
+                                                       Foreground="{DynamicResource FgDim}" TextWrapping="Wrap"
+                                                       MaxLines="8" TextTrimming="CharacterEllipsis"
+                                                       IsVisible="{Binding HasDescription}" />
+                                  <StackPanel Orientation="Horizontal" Spacing="8"
+                                              IsVisible="{Binding DescriptionTruncated}">
+                                    <TextBlock Text="{Binding Withheld}" Foreground="{DynamicResource FgFaint}"
+                                               FontSize="10" VerticalAlignment="Center" />
+                                    <!-- The command is on the view model, so it is reached from the root
+                                         rather than through $parent[ItemsControl] — which from inside a
+                                         nested template resolves to the FINDINGS control, whose
+                                         DataContext is the iteration row and has no such command. The
+                                         parameter is that row, which is exactly what the fetch needs. -->
+                                    <Button Classes="linky" Content="Load the full text"
+                                            Command="{Binding $parent[UserControl].DataContext.LoadFullFindingsCommand}"
+                                            CommandParameter="{Binding $parent[ItemsControl].DataContext}" />
+                                  </StackPanel>
                                 </StackPanel>
-                                <ItemsControl ItemsSource="{Binding All}">
-                                  <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                      <StackPanel Spacing="1" Margin="10,2,0,2">
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                          <TextBlock Text="{Binding Severity}" FontSize="9" VerticalAlignment="Center"
-                                                     Foreground="{DynamicResource Danger}" IsVisible="{Binding IsBlocking}" />
-                                          <TextBlock Text="{Binding Severity}" FontSize="9" VerticalAlignment="Center"
-                                                     Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsBlocking}" />
-                                          <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="11"
-                                                     TextWrapping="Wrap" />
-                                        </StackPanel>
-                                        <SelectableTextBlock Text="{Binding Message}" Foreground="{DynamicResource FgDim}"
-                                                             FontSize="10" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding FileList}" Foreground="{DynamicResource FgFaint}"
-                                                   FontSize="9" TextWrapping="Wrap" IsVisible="{Binding HasFiles}" />
-                                      </StackPanel>
-                                    </DataTemplate>
-                                  </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                              </StackPanel>
+                              </Border>
                             </DataTemplate>
                           </ItemsControl.ItemTemplate>
                         </ItemsControl>

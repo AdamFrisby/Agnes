@@ -152,6 +152,20 @@ public class DeadButtonTests
             vm.Sections.Concurrency = new Concurrency(3, 0, new Dictionary<string, int>());
             foreach (var tile in Dashboard.Tiles([Row()], false, 0, 3)) { vm.Sections.Tiles.Add(tile); }
             vm.Sections.NextUp.Add(Row());
+
+            // A truncated audit finding, so the nested "Load the full text" button is materialised. Its
+            // command sits two template levels up, which is exactly the shape that produced the original
+            // dead buttons.
+            vm.IsTimelineVisible = true;
+            vm.AuditRows.Add(new AuditProgressRow(
+                Id: "row1", WorkAttemptKey: "2026-06-08T10:30:26.6779887+00:00", Iteration: 4,
+                MaxIterations: 28, Status: "complete", BlockingFindings: 1, NonBlockingFindings: 0,
+                RecordedAt: DateTimeOffset.UtcNow,
+                ScheduledAuditors: ["csharp:format-check"], CompletedAuditors: [],
+                BlockingFindingsDetails: [new AuditProgressFinding(
+                    "csharp:format-check", "Error", "command exited 2", new string('x', 20_000),
+                    80_496, true, "src/Foo.cs:12")],
+                Findings: [], Truncated: true));
         });
 
         Assert.Empty(dead);

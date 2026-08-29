@@ -808,3 +808,74 @@ public sealed record TransitionHealth(
     [property: JsonPropertyName("infraFailureRate")] double InfraFailureRate,
     [property: JsonPropertyName("totalTransitions")] int TotalTransitions,
     [property: JsonPropertyName("worstStage")] string? WorstStage);
+
+/// <summary>
+/// One auditor's objection, as recorded by the orchestrator. The real verdict — not the run-completion
+/// proxy this pane had to use before <c>/audit-progress</c> existed.
+/// </summary>
+public sealed record AuditProgressFinding(
+    [property: JsonPropertyName("auditorName")] string AuditorName,
+    [property: JsonPropertyName("severity")] string Severity,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("description")] string Description,
+    // The list endpoint truncates; these two say whether it did and by how much, so a client can offer
+    // "show the rest" only where there IS a rest rather than on every row.
+    [property: JsonPropertyName("descriptionLength")] int DescriptionLength,
+    [property: JsonPropertyName("descriptionTruncated")] bool DescriptionTruncated,
+    [property: JsonPropertyName("location")] string? Location)
+{
+    public bool Blocks => Severity.Equals("Error", StringComparison.OrdinalIgnoreCase);
+
+    public bool HasLocation => !string.IsNullOrWhiteSpace(Location);
+
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
+    /// <summary>The auditor without the family prefix, matching how gates are named elsewhere here.</summary>
+    public string Auditor => AuditorName;
+
+    /// <summary>How much was withheld, stated rather than silently cut.</summary>
+    public string Withheld => DescriptionTruncated
+        ? $"showing {Description.Length:N0} of {DescriptionLength:N0} characters"
+        : string.Empty;
+}
+
+/// <summary>One audit iteration: what was scheduled, what came back, and what blocked.</summary>
+public sealed record AuditProgressRow(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("workAttemptKey")] string WorkAttemptKey,
+    [property: JsonPropertyName("iteration")] int Iteration,
+    [property: JsonPropertyName("maxIterations")] int MaxIterations,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("blockingFindings")] int BlockingFindings,
+    [property: JsonPropertyName("nonBlockingFindings")] int NonBlockingFindings,
+    [property: JsonPropertyName("recordedAt")] DateTimeOffset RecordedAt,
+    [property: JsonPropertyName("scheduledAuditors")] IReadOnlyList<string>? ScheduledAuditors,
+    [property: JsonPropertyName("completedAuditors")] IReadOnlyList<string>? CompletedAuditors,
+    [property: JsonPropertyName("blockingFindingsDetails")] IReadOnlyList<AuditProgressFinding>? BlockingFindingsDetails,
+    [property: JsonPropertyName("findings")] IReadOnlyList<AuditProgressFinding>? Findings,
+    [property: JsonPropertyName("truncated")] bool Truncated)
+{
+    public bool Blocked => BlockingFindings > 0;
+
+    public IReadOnlyList<AuditProgressFinding> Blocking => BlockingFindingsDetails ?? [];
+
+    public string Header => $"Iteration {Iteration} of {MaxIterations}";
+
+    public string Verdict => Blocked
+        ? $"{BlockingFindings} blocking"
+        : Status.Equals("complete", StringComparison.OrdinalIgnoreCase) ? "passed" : Status;
+
+    /// <summary>Auditors scheduled but never heard from — the difference between "passed" and "did not
+    /// finish", which the counts alone cannot tell you.</summary>
+    public int Outstanding => Math.Max(0, (ScheduledAuditors?.Count ?? 0) - (CompletedAuditors?.Count ?? 0));
+
+    public bool HasOutstanding => Outstanding > 0 && !Status.Equals("complete", StringComparison.OrdinalIgnoreCase);
+
+    public string OutstandingLabel => $"{Outstanding} auditor(s) still to report";
+
+    public string At => RecordedAt.ToLocalTime().ToString("MMM d HH:mm");
+}
+
+/// <summary>The list response.</summary>
+public sealed record AuditProgressList(
+    [property: JsonPropertyName("progress")] IReadOnlyList<AuditProgressRow>? Progress);
