@@ -50,6 +50,7 @@ public sealed class MessageBubbleItem : TranscriptItem
     public MessageRole Role { get; }
     public bool IsThought { get; }
     public bool IsUser => Role == MessageRole.User && !IsThought;
+    public bool IsAssistant => Role == MessageRole.Assistant && !IsThought;
 
     /// <summary>Short speaker label for the UI.</summary>
     public string Speaker => IsThought ? "thinking" : IsUser ? "You" : "Agent";

@@ -64,6 +64,37 @@
     <Setter Property="LineHeight" Value="19" />
   </Style>
 
+  <!-- Explicit ```markdown / ```md fences remain code-block surfaces while their contents render. -->
+  <Style Selector="Border.markdownFence">
+    <Setter Property="Background" Value="{DynamicResource Surface2}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusMd}" />
+    <Setter Property="Margin" Value="0,4" />
+  </Style>
+  <Style Selector="Grid.markdownFenceToolbar">
+    <Setter Property="MinHeight" Value="40" />
+  </Style>
+  <Style Selector="Button.markdownFenceToggle">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentText}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="FontSize" Value="{StaticResource TextSm}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="MinHeight" Value="36" />
+    <Setter Property="MinWidth" Value="56" />
+    <Setter Property="Padding" Value="8,0" />
+    <Setter Property="Margin" Value="2" />
+  </Style>
+  <Style Selector="ContentControl.markdownFenceBody">
+    <Setter Property="Padding" Value="12,8" />
+  </Style>
+  <Style Selector="SelectableTextBlock.markdownFenceSource">
+    <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+    <Setter Property="FontSize" Value="{StaticResource TextSm}" />
+  </Style>
+
   <!-- Card: white/panel fill, 1px hairline, 16px radius — the brand's standard surface. -->
   <Style Selector="Border.card">
     <Setter Property="Background" Value="{DynamicResource Surface1}" />

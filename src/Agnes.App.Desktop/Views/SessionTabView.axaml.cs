@@ -736,6 +736,15 @@ public partial class SessionTabView : UserControl
         }
     }
 
+    private async void OnCopyPlan(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: PlanItemView plan }
+            && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(PlanMarkdown.Format(plan.Entries));
+        }
+    }
+
     // Collapses a side column to 0 when hidden (remembering any dragged width) and restores it
     // when shown — so panels appear only when needed, and the GridSplitter keeps its width.
     private static void Apply(ColumnDefinition panel, ColumnDefinition splitter, bool show, ref double remembered)
