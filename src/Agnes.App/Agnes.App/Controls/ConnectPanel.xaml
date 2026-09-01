@@ -9,11 +9,15 @@
             <TextBlock Text="Connect to a host" Opacity="0.7" />
 
             <Button Content="Continue with Cloudflare Access"
+                    x:Name="CloudflareAccessButton"
                     Click="OnCloudflareAccessClick"
                     HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" />
             <TextBlock Text="Use this when this browser has already passed Cloudflare Access."
                        TextWrapping="Wrap" Opacity="0.65" />
-            <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.8" />
+            <!-- This is updated directly by the browser click handler. Do not make the critical
+                 sign-in feedback depend on inherited DataContext bindings. -->
+            <TextBlock x:Name="CloudflareAccessStatus" Text="Ready to use Cloudflare Access."
+                       TextWrapping="Wrap" Opacity="0.8" />
 
             <TextBox Header="Host URL" Text="{Binding HostUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
             <TextBlock Text="Or connect with an existing Agnes device token" FontWeight="SemiBold" Margin="0,8,0,0" />
