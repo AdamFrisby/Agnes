@@ -27,7 +27,7 @@ var options = ParseArgs(args);
 if (options is null)
 {
     Console.Error.WriteLine(
-        "usage: Agnes.Record --agent <opencode|claude-code|claude-native> [--sandbox incus] " +
+        "usage: Agnes.Record --agent <opencode|claude-code|claude-native|antigravity> [--sandbox incus] " +
         "[--image <alias>] [--project <p>] [--pool <p>] [--bridge <b>] [--keep] [--skip-permissions] " +
         "[--out <file>] [--name <name>] [--cwd <dir>] <prompt> [<prompt> ...]");
     return 1;
@@ -40,6 +40,7 @@ IAgentAdapter adapter = options.Agent switch
 {
     "claude-code" => ClaudeCodeAgent.Create(loggerFactory),
     "claude-native" => ClaudeCodeNative.Create(loggerFactory),
+    "antigravity" => Agnes.Agents.Antigravity.AntigravityAgent.Create(loggerFactory),
     _ => OpenCodeAgent.Create(loggerFactory),
 };
 
@@ -59,7 +60,15 @@ if (options.Sandbox == "incus")
     sandbox = await provider.CreateAsync(new SandboxSpec { HostWorkingDirectory = options.Cwd });
     Console.WriteLine($">> sandbox up: {sandbox.Id} [{sandbox.Info.State}]");
 
-    var credentials = new ClaudeCredentialProvider(loggerFactory.CreateLogger<ClaudeCredentialProvider>());
+    // Every provider that might handle this adapter, tried in turn — the recorder used to know about
+    // Claude alone, which silently produced an unauthenticated VM for any other agent.
+    IAgentCredentialProvider[] providers =
+    [
+        new ClaudeCredentialProvider(loggerFactory.CreateLogger<ClaudeCredentialProvider>()),
+        new AntigravityCredentialProvider(loggerFactory.CreateLogger<AntigravityCredentialProvider>()),
+    ];
+    var credentials = providers.FirstOrDefault(p => p.Handles(adapter.Descriptor.Id))
+        ?? providers[0];
     if (credentials.Handles(adapter.Descriptor.Id))
     {
         var credential = await credentials.GetAsync(adapter.Descriptor.Id);

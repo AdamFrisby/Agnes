@@ -71,6 +71,7 @@
     <ProjectReference Include="..\Agnes.Agents.Native\Agnes.Agents.Native.csproj" />
     <ProjectReference Include="..\Agnes.Agents.Codex\Agnes.Agents.Codex.csproj" />
     <ProjectReference Include="..\Agnes.Agents.Copilot\Agnes.Agents.Copilot.csproj" />
+    <ProjectReference Include="..\Agnes.Agents.Antigravity\Agnes.Agents.Antigravity.csproj" />
     <ProjectReference Include="..\Agnes.Agents.Pi\Agnes.Agents.Pi.csproj" />
     <!-- Catalogue plugins, shipped in-tree the way the agent packages are: each is its own assembly with its
          own IAgnesPluginModule, so the same code also installs as a NuGet plugin on a host that doesn't

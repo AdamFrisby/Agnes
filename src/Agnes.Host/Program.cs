@@ -912,6 +912,22 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Pi.PiAgent.Creat
         Arguments = builder.Configuration.GetSection("Agnes:Pi:Args").Get<string[]>() ?? ["--mode", "rpc"],
     }));
 
+// Antigravity (`agy`) via its stream-json print mode — Google ships no ACP for it. Unlike CodeyBox's
+// one-shot `agy --print` per prompt, this holds ONE process open and feeds it a JSON line per turn, so
+// the conversation stays in the CLI's memory between turns rather than being reconstructed by --continue.
+// Autonomous only, and the adapter enforces that: without --dangerously-skip-permissions the CLI does not
+// ask, it silently writes to a scratch directory and claims success.
+builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Antigravity.AntigravityAgent.Create(
+    sp.GetRequiredService<ILoggerFactory>(),
+    new Agnes.Agents.Antigravity.AntigravityOptions
+    {
+        Command = builder.Configuration["Agnes:Antigravity:Command"] ?? "agy",
+        Arguments = builder.Configuration.GetSection("Agnes:Antigravity:Args").Get<string[]>()
+            ?? ["--input-format", "stream-json", "--output-format", "stream-json"],
+        PrintTimeout = TimeSpan.FromSeconds(
+            builder.Configuration.GetValue<int?>("Agnes:Antigravity:PrintTimeoutSeconds") ?? 1800),
+    }));
+
 // User-configured extra ACP backends (Agnes:CustomBackends): a "bring your own ACP CLI" path so a
 // host operator can point Agnes at any ACP-speaking binary from config alone — no new package. Each
 // valid entry becomes a generic AcpAgentAdapter joining the same registry as the built-ins. Fail-closed
