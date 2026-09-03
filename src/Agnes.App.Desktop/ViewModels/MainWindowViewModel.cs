@@ -205,6 +205,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             new SettingsCategoryVm("devices", "Devices", Symbol.Key, "paired devices pairing token revoke auth access per-device"),
             new SettingsCategoryVm("sandboxes", "Sandboxes", Symbol.Box, "sandbox vm incus running stopped resume restart delete reap orphan cleanup lifecycle"),
             new SettingsCategoryVm("mcp", "MCP servers", Symbol.PlugConnected, "mcp model context protocol server tool preset install curated playwright github context7 scope workspace host preview effective strict"),
+            new SettingsCategoryVm("localmodels", "Local models", Symbol.Server,
+                "local model models byok ollama vllm lemonade llama lm studio foundry openai compatible endpoint " +
+                "base url api key offline gpu self-hosted copilot provider bring your own key on-prem private"),
             // Per-project
             new SettingsCategoryVm("projects", "Projects", Symbol.Folder, "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
             new SettingsCategoryVm("plugins", "Plugins", Symbol.PuzzlePiece, "plugin plugins extension nuget install uninstall browse marketplace capability consent provider adapter transport voice notification enable disable configure"),
@@ -791,6 +794,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatDevices => SettingsCategory == "devices";
     public bool CatSandboxes => SettingsCategory == "sandboxes";
     public bool CatMcp => SettingsCategory == "mcp";
+    public bool CatLocalModels => SettingsCategory == "localmodels";
     public bool CatProjects => SettingsCategory == "projects";
     public bool CatPlugins => SettingsCategory == "plugins";
     public bool CatBugReport => SettingsCategory == "bugreport";
@@ -816,6 +820,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatDevices));
         OnPropertyChanged(nameof(CatSandboxes));
         OnPropertyChanged(nameof(CatMcp));
+        OnPropertyChanged(nameof(CatLocalModels));
         OnPropertyChanged(nameof(CatProjects));
         OnPropertyChanged(nameof(CatPlugins));
         OnPropertyChanged(nameof(CatBugReport));
@@ -844,6 +849,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         else if (value == "mcp")
         {
             _ = LoadMcpAsync();
+        }
+        else if (value == "localmodels")
+        {
+            _ = LoadLocalProviderAsync();
         }
         else if (value == "plugins")
         {
@@ -1765,6 +1774,163 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// presets need them to know what's already installed), then the presets, then what would actually be
     /// active. One call so the page is never half-populated.
     /// </summary>
+    // ---- Local models (Copilot BYOK against a self-hosted OpenAI-compatible endpoint) ----
+
+    [ObservableProperty] private string _localProviderUrl = string.Empty;
+    [ObservableProperty] private string _localProviderKey = string.Empty;
+    /// <summary>Whether the host already holds a key. Shown instead of the key, which the host never sends.</summary>
+    [ObservableProperty] private bool _localProviderHasKey;
+    [ObservableProperty] private string _localProviderWireModel = string.Empty;
+    [ObservableProperty] private string _localProviderModelId = string.Empty;
+    [ObservableProperty] private bool _localProviderOffline = true;
+    [ObservableProperty] private bool _localProviderExcludeApplyPatch = true;
+    [ObservableProperty] private string _localProviderStatus = string.Empty;
+    [ObservableProperty] private bool _localProviderBusy;
+
+    /// <summary>Models the endpoint reports, for the picker.</summary>
+    public ObservableCollection<LocalProviderModel> LocalProviderModels { get; } = [];
+
+    public bool HasLocalProviderModels => LocalProviderModels.Count > 0;
+
+    /// <summary>
+    /// Well-known ids worth offering for the "acts like" field. This is not a list of models Agnes can
+    /// run — it is the identity Copilot uses to choose prompting strategy, token limits, and the
+    /// reasoning-effort value it sends. gpt-5.4 leads because it is the one observed to send "medium",
+    /// which strict local servers accept; the default of "max" is rejected outright by some.
+    /// </summary>
+    public IReadOnlyList<string> LocalProviderModelIds { get; } =
+        ["gpt-5.4", "gpt-5-mini", "gpt-4.1", "claude-sonnet-4", "claude-opus-4.8"];
+
+    private async Task LoadLocalProviderAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => LocalProviderStatus = "Connect to a host to configure a local model.");
+            return;
+        }
+
+        try
+        {
+            var info = await LocalProviderManagement.GetAsync(target.Url, target.Token, target.Http);
+            _dispatcher.Post(() =>
+            {
+                if (info is null) { return; }
+                LocalProviderUrl = info.BaseUrl ?? string.Empty;
+                LocalProviderHasKey = info.HasApiKey;
+                LocalProviderKey = string.Empty;
+                LocalProviderModelId = info.ModelId ?? string.Empty;
+                LocalProviderWireModel = info.WireModel ?? string.Empty;
+                LocalProviderOffline = info.Offline;
+                // An empty stored list means "use the recommended set"; the single sentinel "none" is how
+                // an operator says they want no exclusions at all.
+                LocalProviderExcludeApplyPatch =
+                    info.ExcludedTools.Count == 0
+                    || info.ExcludedTools.Any(t => string.Equals(t, "apply_patch", StringComparison.OrdinalIgnoreCase));
+                LocalProviderStatus = info.IsConfigured
+                    ? "Sessions on this host use your local model."
+                    : "Not configured — sessions use GitHub's models.";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => LocalProviderStatus = $"Couldn't read the settings — {ex.Message}");
+        }
+    }
+
+    private LocalProviderRequest BuildLocalProviderRequest() => new(
+        BaseUrl: LocalProviderUrl,
+        ProviderType: "OpenAi",
+        // Blank means "keep what the host already has" — the host never sends the key back, so an
+        // untouched field must not be read as "clear it".
+        ApiKey: string.IsNullOrEmpty(LocalProviderKey) ? null : LocalProviderKey,
+        ModelId: LocalProviderModelId,
+        WireModel: LocalProviderWireModel,
+        ExcludedTools: LocalProviderExcludeApplyPatch ? ["apply_patch"] : ["none"],
+        Offline: LocalProviderOffline);
+
+    public IAsyncRelayCommand FetchLocalModelsCommand => _fetchLocalModels ??= new AsyncRelayCommand(async () =>
+    {
+        var target = ActiveHttpHost();
+        if (target is null) { return; }
+
+        _dispatcher.Post(() => { LocalProviderBusy = true; LocalProviderStatus = "Asking the endpoint…"; });
+        var result = await LocalProviderManagement.ModelsAsync(
+            target.Url, target.Token, BuildLocalProviderRequest(), target.Http);
+
+        _dispatcher.Post(() =>
+        {
+            LocalProviderBusy = false;
+            LocalProviderModels.Clear();
+            foreach (var m in result.Models) { LocalProviderModels.Add(m); }
+            OnPropertyChanged(nameof(HasLocalProviderModels));
+
+            // "Could not reach it" and "reachable but serving nothing" are different problems and get
+            // different words: one is a URL or key to fix, the other is a server with no model loaded.
+            LocalProviderStatus = !result.Reachable
+                ? result.Error ?? "Couldn't reach that endpoint."
+                : result.Models.Count == 0
+                    ? "Reached it, but it isn't serving any models."
+                    : $"Found {result.Models.Count} model(s).";
+        });
+    });
+
+    private IAsyncRelayCommand? _fetchLocalModels;
+
+    public IAsyncRelayCommand SaveLocalProviderCommand => _saveLocalProvider ??= new AsyncRelayCommand(async () =>
+    {
+        var target = ActiveHttpHost();
+        if (target is null) { return; }
+
+        _dispatcher.Post(() => { LocalProviderBusy = true; LocalProviderStatus = "Saving…"; });
+        try
+        {
+            var info = await LocalProviderManagement.SaveAsync(
+                target.Url, target.Token, BuildLocalProviderRequest(), target.Http);
+            _dispatcher.Post(() =>
+            {
+                LocalProviderBusy = false;
+                LocalProviderHasKey = info?.HasApiKey ?? LocalProviderHasKey;
+                LocalProviderKey = string.Empty;
+                // Stated because it is not obvious: the provider is read when a session launches, so a
+                // running session keeps the model it started with.
+                LocalProviderStatus = info?.IsConfigured == true
+                    ? "Saved. New sessions will use your local model."
+                    : "Saved. Sessions will use GitHub's models.";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => { LocalProviderBusy = false; LocalProviderStatus = $"Couldn't save — {ex.Message}"; });
+        }
+    });
+
+    private IAsyncRelayCommand? _saveLocalProvider;
+
+    /// <summary>Clears the provider, so Copilot goes back to GitHub's own model routing.</summary>
+    public IAsyncRelayCommand ClearLocalProviderCommand => _clearLocalProvider ??= new AsyncRelayCommand(async () =>
+    {
+        var target = ActiveHttpHost();
+        if (target is null) { return; }
+
+        await LocalProviderManagement.SaveAsync(
+            target.Url, target.Token,
+            new LocalProviderRequest(null, "OpenAi", "", null, null, null, false), target.Http);
+        _dispatcher.Post(() =>
+        {
+            LocalProviderUrl = string.Empty;
+            LocalProviderKey = string.Empty;
+            LocalProviderHasKey = false;
+            LocalProviderWireModel = string.Empty;
+            LocalProviderModelId = string.Empty;
+            LocalProviderModels.Clear();
+            OnPropertyChanged(nameof(HasLocalProviderModels));
+            LocalProviderStatus = "Cleared. Sessions use GitHub's models.";
+        });
+    });
+
+    private IAsyncRelayCommand? _clearLocalProvider;
+
     private async Task LoadMcpAsync()
     {
         await LoadMcpServersAsync();

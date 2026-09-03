@@ -249,6 +249,12 @@ var mcpFile = builder.Configuration["Agnes:McpFile"]
 builder.Services.AddSingleton(sp => new McpRegistry(
     mcpFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpRegistry>()));
 
+// ---- Local model provider (Copilot BYOK), configured from the UI ----
+var localProviderFile = builder.Configuration["Agnes:LocalProviderFile"]
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "local-provider.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.LocalProviderRegistry(
+    localProviderFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.LocalProviderRegistry>()));
+
 // Strict vs lenient MCP startup resolution (default lenient): an unresolvable enabled server is either
 // skipped-with-a-warning (lenient) or fails the session start naming the server (strict).
 builder.Services.AddSingleton(new McpOptions(builder.Configuration.GetValue("Agnes:Mcp:Strict", false)));
@@ -884,14 +890,20 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
         // server that implements only function tools rejects the entire request, so the default that
         // "works" against GitHub's own models is the default that cannot start against a local one.
         // "Agnes:Copilot:ExcludedTools": [] switches it off explicitly.
-        ExcludedTools = builder.Configuration.GetSection("Agnes:Copilot:ExcludedTools").Get<string[]>()
-            ?? (provider["BaseUrl"] is { Length: > 0 }
-                ? Agnes.Agents.Copilot.CopilotLocalCompatibility.RecommendedExcludedTools
-                : []),
+        ExcludedTools = sp.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>().ExcludedTools() is { Count: > 0 } fromUi
+            ? fromUi
+            : builder.Configuration.GetSection("Agnes:Copilot:ExcludedTools").Get<string[]>()
+                ?? (provider["BaseUrl"] is { Length: > 0 }
+                    ? Agnes.Agents.Copilot.CopilotLocalCompatibility.RecommendedExcludedTools
+                    : []),
         // No GitHub at all: no authentication, telemetry, web tools, GitHub MCP or auto-update. Ignored
         // unless a provider is configured, since Copilot needs something to infer against.
-        Offline = builder.Configuration.GetValue("Agnes:Copilot:Offline", false),
-        Provider = provider["BaseUrl"] is { Length: > 0 } baseUrl
+        Offline = sp.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>().Offline
+            || builder.Configuration.GetValue("Agnes:Copilot:Offline", false),
+        // The UI-configured provider wins over appsettings, and is read on each launch rather than at
+        // host start, so changing it in settings takes effect on the next session without a restart.
+        Provider = sp.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>().ProviderOptions()
+            ?? (provider["BaseUrl"] is { Length: > 0 } baseUrl
             ? new Agnes.Agents.Copilot.CopilotProviderOptions
             {
                 BaseUrl = baseUrl,
@@ -908,7 +920,7 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
                 MaxPromptTokens = provider.GetValue<int?>("MaxPromptTokens"),
                 MaxOutputTokens = provider.GetValue<int?>("MaxOutputTokens"),
             }
-            : null,
+            : null),
     };
     return Agnes.Agents.Copilot.CopilotAgent.Create(sp.GetRequiredService<ILoggerFactory>(), options);
 });
@@ -1907,6 +1919,36 @@ app.MapGet("/mcp/effective", async (HttpContext ctx, string? workspaceId, string
     Authorized(ctx, tokens)
         ? Results.Ok(await McpEffectiveConfig.PreviewAsync(mcp, agents.All, workspaceId, agentId, ct))
         : Results.Unauthorized());
+
+// ---- Local model provider: read, save, and ask an endpoint what it serves ----
+var localProvider = app.Services.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>();
+
+app.MapGet("/local-provider", (HttpContext ctx) =>
+    Authorized(ctx, tokens) ? Results.Ok(localProvider.Info()) : Results.Unauthorized());
+
+app.MapPut("/local-provider", (HttpContext ctx, LocalProviderRequest request) =>
+    Authorized(ctx, tokens) ? Results.Ok(localProvider.Save(request)) : Results.Unauthorized());
+
+// Discovery is proxied through the host on purpose: the model endpoint is usually on the host's network
+// rather than the client's, and this way a device never needs the provider key to populate a picker.
+app.MapPost("/local-provider/models", async (HttpContext ctx, LocalProviderRequest request, CancellationToken ct) =>
+{
+    if (!Authorized(ctx, tokens))
+    {
+        return Results.Unauthorized();
+    }
+
+    // A blank key in the probe means "use the one already stored", so a settings screen can test a saved
+    // provider without the client ever holding its credential.
+    var stored = localProvider.ProviderOptions();
+    var key = string.IsNullOrEmpty(request.ApiKey) ? stored?.ApiKey : request.ApiKey;
+    var url = string.IsNullOrWhiteSpace(request.BaseUrl) ? stored?.BaseUrl : request.BaseUrl;
+
+    var models = await Agnes.Agents.Copilot.CopilotLocalModels.ListAsync(url, key, cancellationToken: ct);
+    return Results.Ok(models is null
+        ? new LocalProviderModels(false, [], "Couldn't reach that endpoint, or it didn't answer with a model list.")
+        : new LocalProviderModels(true, [.. models.Select(m => new LocalProviderModel(m.Id, m.DisplayName))], null));
+});
 
 app.MapPost("/mcp", (HttpContext ctx, McpServerRequest request) =>
     AuthorizedForConfig(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());

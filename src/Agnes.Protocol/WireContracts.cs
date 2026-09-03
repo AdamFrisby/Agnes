@@ -611,6 +611,53 @@ public enum McpApplyScope
 /// effective-config preview so the user knows it's active, but not removable/editable here. Both are trailing
 /// and default to "not native", so an entry persisted before they existed deserializes to an Agnes-managed one.
 /// </summary>
+/// <summary>
+/// A local (or otherwise self-hosted) model provider the host will run Copilot against, as reported to a
+/// client.
+///
+/// <para>The API key is deliberately <b>not</b> a field. A settings screen needs to know whether a key is
+/// set so it can say so and offer to replace it; it never needs the key back, and sending one to every
+/// paired device to render a form would be handing out a credential for a UI affordance.</para>
+/// </summary>
+public sealed record LocalProviderInfo(
+    string? BaseUrl,
+    string ProviderType,
+    /// <summary>Whether a key is stored. See the note above on why the key itself is absent.</summary>
+    bool HasApiKey,
+    /// <summary>Well-known model id used for agent configuration — prompting strategy, token limits and
+    /// the reasoning-effort value sent to the provider.</summary>
+    string? ModelId,
+    /// <summary>The model name actually sent to the provider.</summary>
+    string? WireModel,
+    /// <summary>Tools withheld from the model. Empty means "use the recommended set".</summary>
+    IReadOnlyList<string> ExcludedTools,
+    /// <summary>Whether Copilot runs with no GitHub access at all.</summary>
+    bool Offline,
+    /// <summary>Whether this provider is configured enough to be used.</summary>
+    bool IsConfigured);
+
+/// <summary>A change to the local model provider.</summary>
+/// <param name="ApiKey">Null leaves any stored key untouched; empty string clears it. Without that
+/// distinction a settings form could never be saved without either resending or destroying the key.</param>
+public sealed record LocalProviderRequest(
+    string? BaseUrl,
+    string? ProviderType,
+    string? ApiKey,
+    string? ModelId,
+    string? WireModel,
+    IReadOnlyList<string>? ExcludedTools,
+    bool Offline);
+
+/// <summary>One model an endpoint reports, for a picker.</summary>
+public sealed record LocalProviderModel(string Id, string DisplayName);
+
+/// <summary>
+/// The result of asking an endpoint what it serves.
+/// </summary>
+/// <param name="Reachable">False means the endpoint could not be asked at all — a different answer from
+/// a reachable server with an empty catalogue, and the two need different words in the UI.</param>
+public sealed record LocalProviderModels(bool Reachable, IReadOnlyList<LocalProviderModel> Models, string? Error);
+
 public sealed record McpServerInfo(
     string Id,
     string Name,

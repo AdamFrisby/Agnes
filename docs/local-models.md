@@ -7,6 +7,23 @@ involved.
 Everything here was established against **copilot v1.0.81** by capturing what it puts on the wire. There
 are three things you need to know, and all three fail in ways that look like something else.
 
+## Configuring it
+
+**Settings → Local models**, on the desktop. Enter the endpoint, press **Fetch models** to see what it
+serves, pick one, and save. Two switches are on by default and both should stay on unless you know
+otherwise — they are the difference between a local model working and not starting at all, and each is
+explained below.
+
+The endpoint and key are stored **on the host**, not on the device you configured them from, and the key
+is never sent back to a client — a settings screen is told only that one exists. Discovery is proxied
+through the host too, so the model server can live on the host's network and a paired phone never holds
+the credential.
+
+Settings are read when a session **launches**, so a change applies to the next session; a running one
+keeps the model it started with. No host restart is needed.
+
+The same thing in host config, for an unattended setup:
+
 ## The short version
 
 ```jsonc

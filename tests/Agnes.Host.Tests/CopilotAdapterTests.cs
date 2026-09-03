@@ -2,6 +2,7 @@ using System.Text.Json;
 using Agnes.Abstractions;
 using Agnes.Acp;
 using Agnes.Agents.Copilot;
+using Agnes.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agnes.Host.Tests;
@@ -552,5 +553,132 @@ public sealed class CopilotLocalProviderTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
+    }
+}
+
+/// <summary>
+/// The host-side local provider: what it stores, what it refuses to hand back, and the two defaults that
+/// decide whether a local model starts at all.
+/// </summary>
+public sealed class LocalProviderRegistryTests : IDisposable
+{
+    private readonly string _path = Path.Combine(Path.GetTempPath(), $"agnes-lp-{Guid.NewGuid():N}.json");
+
+    private Agnes.Host.Hosting.LocalProviderRegistry New() => new(_path);
+
+    public void Dispose() => File.Delete(_path);
+
+    [Fact]
+    public void Nothing_configured_means_copilot_is_left_exactly_as_it_was()
+    {
+        var registry = New();
+
+        Assert.Null(registry.ProviderOptions());
+        Assert.False(registry.Info().IsConfigured);
+        // Critically: no tool exclusions when there is no local provider. The recommended set exists to
+        // make a local endpoint work and would only remove a capability from GitHub's own models.
+        Assert.Empty(registry.ExcludedTools());
+        Assert.False(registry.Offline);
+    }
+
+    [Fact]
+    public void The_api_key_is_stored_but_never_reported_back()
+    {
+        var info = New().Save(new LocalProviderRequest(
+            "http://10.0.0.36:13305/v1", "OpenAi", "secret-key", "gpt-5.4", "Qwen38-27B-Q5XL", null, true));
+
+        Assert.True(info.HasApiKey);
+        // A settings screen needs to know a key exists, never what it is.
+        Assert.DoesNotContain("secret-key", System.Text.Json.JsonSerializer.Serialize(info));
+        Assert.Equal("secret-key", New().ProviderOptions()!.ApiKey);
+    }
+
+    [Fact]
+    public void A_null_key_keeps_the_stored_one_and_an_empty_key_clears_it()
+    {
+        // Without this distinction a settings form could never be saved without either resending the
+        // credential to the client first or destroying it.
+        var registry = New();
+        registry.Save(new LocalProviderRequest("http://host/v1", "OpenAi", "k1", null, "m", null, false));
+
+        registry.Save(new LocalProviderRequest("http://host/v1", "OpenAi", null, null, "m2", null, false));
+        Assert.Equal("k1", registry.ProviderOptions()!.ApiKey);
+        Assert.Equal("m2", registry.ProviderOptions()!.Model);
+
+        registry.Save(new LocalProviderRequest("http://host/v1", "OpenAi", "", null, "m2", null, false));
+        Assert.False(registry.Info().HasApiKey);
+    }
+
+    [Fact]
+    public void A_configured_provider_gets_the_recommended_exclusions_by_default()
+    {
+        var registry = New();
+        registry.Save(new LocalProviderRequest("http://host/v1", "OpenAi", null, null, "m", null, false));
+
+        // apply_patch is a custom/grammar tool; a function-only server rejects the whole request.
+        Assert.Equal(CopilotLocalCompatibility.RecommendedExcludedTools, registry.ExcludedTools());
+    }
+
+    [Fact]
+    public void An_operator_can_ask_for_no_exclusions_at_all()
+    {
+        // An empty list means "use the recommended set", so opting out needs its own word — otherwise
+        // clearing the field in a form would silently re-enable the default.
+        var registry = New();
+        registry.Save(new LocalProviderRequest("http://host/v1", "OpenAi", null, null, "m", ["none"], false));
+
+        Assert.Empty(registry.ExcludedTools());
+    }
+
+    [Fact]
+    public void Offline_needs_a_provider_to_be_offline_against()
+    {
+        var registry = New();
+        registry.Save(new LocalProviderRequest(null, "OpenAi", null, null, null, null, Offline: true));
+
+        Assert.False(registry.Offline);
+    }
+
+    [Fact]
+    public void The_model_split_is_preserved_rather_than_flattened()
+    {
+        var registry = New();
+        registry.Save(new LocalProviderRequest(
+            "http://host/v1", "OpenAi", null, "gpt-5.4", "Qwen38-27B-Q5XL", null, false));
+
+        var options = registry.ProviderOptions()!;
+        Assert.Equal("gpt-5.4", options.ModelId);
+        Assert.Equal("Qwen38-27B-Q5XL", options.WireModel);
+        // COPILOT_MODEL must stay unset here: it sets both halves and would undo the split that fixes
+        // reasoning-effort rejection.
+        Assert.Null(options.Model);
+    }
+
+    [Fact]
+    public void With_no_model_id_the_wire_model_is_used_for_both()
+    {
+        var registry = New();
+        registry.Save(new LocalProviderRequest("http://host/v1", "OpenAi", null, null, "llama3.3:70b", null, false));
+
+        Assert.Equal("llama3.3:70b", registry.ProviderOptions()!.Model);
+    }
+
+    [Fact]
+    public void Settings_survive_a_restart()
+    {
+        New().Save(new LocalProviderRequest("http://host/v1", "OpenAi", "k", "gpt-5.4", "m", null, true));
+
+        var reloaded = New();
+        Assert.True(reloaded.Info().IsConfigured);
+        Assert.True(reloaded.Offline);
+        Assert.Equal("gpt-5.4", reloaded.ProviderOptions()!.ModelId);
+    }
+
+    [Fact]
+    public void A_corrupt_file_starts_unconfigured_rather_than_failing_the_host()
+    {
+        File.WriteAllText(_path, "{ this is not json");
+
+        Assert.False(New().Info().IsConfigured);
     }
 }
