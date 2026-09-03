@@ -27,7 +27,7 @@ var options = ParseArgs(args);
 if (options is null)
 {
     Console.Error.WriteLine(
-        "usage: Agnes.Record --agent <opencode|claude-code|claude-native|antigravity> [--sandbox incus] " +
+        "usage: Agnes.Record --agent <opencode|claude-code|claude-native|antigravity|copilot> [--sandbox incus] " +
         "[--image <alias>] [--project <p>] [--pool <p>] [--bridge <b>] [--keep] [--skip-permissions] " +
         "[--out <file>] [--name <name>] [--cwd <dir>] <prompt> [<prompt> ...]");
     return 1;
@@ -41,6 +41,22 @@ IAgentAdapter adapter = options.Agent switch
     "claude-code" => ClaudeCodeAgent.Create(loggerFactory),
     "claude-native" => ClaudeCodeNative.Create(loggerFactory),
     "antigravity" => Agnes.Agents.Antigravity.AntigravityAgent.Create(loggerFactory),
+    // Copilot, with BYOK read straight from the ambient environment so a local-provider setup can be
+    // exercised end to end without a host or config file.
+    "copilot" => Agnes.Agents.Copilot.CopilotAgent.Create(loggerFactory, new Agnes.Agents.Copilot.CopilotOptions
+    {
+        Provider = new Agnes.Agents.Copilot.CopilotProviderOptions
+        {
+            BaseUrl = Environment.GetEnvironmentVariable("COPILOT_PROVIDER_BASE_URL"),
+            ApiKey = Environment.GetEnvironmentVariable("COPILOT_PROVIDER_API_KEY"),
+            Model = Environment.GetEnvironmentVariable("COPILOT_MODEL"),
+            ModelId = Environment.GetEnvironmentVariable("COPILOT_PROVIDER_MODEL_ID"),
+            WireModel = Environment.GetEnvironmentVariable("COPILOT_PROVIDER_WIRE_MODEL"),
+        },
+        ExcludedTools = (Environment.GetEnvironmentVariable("AGNES_COPILOT_EXCLUDED_TOOLS") ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+        Offline = string.Equals(Environment.GetEnvironmentVariable("AGNES_COPILOT_OFFLINE"), "true", StringComparison.OrdinalIgnoreCase),
+    }),
     _ => OpenCodeAgent.Create(loggerFactory),
 };
 

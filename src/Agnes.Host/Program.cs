@@ -879,6 +879,18 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
         FleetMode = builder.Configuration.GetValue("Agnes:Copilot:FleetMode", false),
         SubagentNames = builder.Configuration.GetSection("Agnes:Copilot:SubagentNames").Get<string[]>()
             ?? Agnes.Agents.Copilot.CopilotSubagentSettings.ModelPinningAgents,
+        // Withheld tools. When a custom provider is configured this defaults to the recommended set
+        // rather than empty: apply_patch is offered as an OpenAI *custom* tool with a Lark grammar, and a
+        // server that implements only function tools rejects the entire request, so the default that
+        // "works" against GitHub's own models is the default that cannot start against a local one.
+        // "Agnes:Copilot:ExcludedTools": [] switches it off explicitly.
+        ExcludedTools = builder.Configuration.GetSection("Agnes:Copilot:ExcludedTools").Get<string[]>()
+            ?? (provider["BaseUrl"] is { Length: > 0 }
+                ? Agnes.Agents.Copilot.CopilotLocalCompatibility.RecommendedExcludedTools
+                : []),
+        // No GitHub at all: no authentication, telemetry, web tools, GitHub MCP or auto-update. Ignored
+        // unless a provider is configured, since Copilot needs something to infer against.
+        Offline = builder.Configuration.GetValue("Agnes:Copilot:Offline", false),
         Provider = provider["BaseUrl"] is { Length: > 0 } baseUrl
             ? new Agnes.Agents.Copilot.CopilotProviderOptions
             {

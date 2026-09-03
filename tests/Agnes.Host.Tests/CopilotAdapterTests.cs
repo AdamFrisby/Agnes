@@ -422,3 +422,135 @@ public sealed class CopilotAdapterTests
     public void Fleet_mode_is_off_unless_asked_for()
         => Assert.Empty(CopilotAgent.CreateLaunchSpec().StartupCommands);
 }
+
+/// <summary>
+/// Local-model support: the two incompatibilities that stop a plain OpenAI-compatible server dead, and
+/// the discovery that makes one configurable by picking rather than typing.
+///
+/// <para>Every shape asserted here was captured from copilot v1.0.81 on the wire, not read from docs.</para>
+/// </summary>
+public sealed class CopilotLocalProviderTests
+{
+    private static CopilotProviderOptions Local(string? modelId = null) => new()
+    {
+        BaseUrl = "http://10.0.0.36:13305/v1",
+        Model = "Qwen38-27B-Q5XL",
+        ModelId = modelId,
+    };
+
+    [Fact]
+    public void Excluded_tools_become_one_repeated_flag_each()
+    {
+        // Copilot takes --excluded-tools repeatably, not as a comma list.
+        var arguments = CopilotAgent.BuildArguments(new CopilotOptions
+        {
+            ExcludedTools = ["apply_patch", "fetch"],
+        });
+
+        Assert.Equal(["--acp", "--excluded-tools", "apply_patch", "--excluded-tools", "fetch"], arguments);
+    }
+
+    [Fact]
+    public void No_excluded_tools_leaves_the_launch_line_untouched()
+        => Assert.Equal(["--acp"], CopilotAgent.BuildArguments(new CopilotOptions()));
+
+    [Fact]
+    public void Blank_entries_are_dropped_rather_than_passed_as_empty_flags()
+    {
+        // A config array with a stray "" would otherwise produce `--excluded-tools ""`, which Copilot
+        // reads as a tool named empty-string.
+        var arguments = CopilotAgent.BuildArguments(new CopilotOptions { ExcludedTools = ["", "  ", "apply_patch"] });
+
+        Assert.Equal(["--acp", "--excluded-tools", "apply_patch"], arguments);
+    }
+
+    [Fact]
+    public void Apply_patch_is_the_recommended_exclusion_and_the_reason_is_recorded()
+    {
+        // It is offered as an OpenAI *custom* tool with a Lark grammar; a server implementing only
+        // function tools answers "Failed to parse tools: Unsupported tool type" and no turn starts.
+        Assert.Contains("apply_patch", CopilotLocalCompatibility.RecommendedExcludedTools);
+    }
+
+    [Fact]
+    public void Offline_mode_is_set_only_when_there_is_a_provider_to_be_offline_against()
+    {
+        // Copilot requires a provider for COPILOT_OFFLINE; without one it could neither authenticate nor
+        // infer, so honouring the flag literally would produce a CLI that cannot do anything.
+        Assert.Equal(
+            "true",
+            CopilotAgent.BuildEnvironment(new CopilotOptions { Offline = true, Provider = Local() })["COPILOT_OFFLINE"]);
+
+        Assert.DoesNotContain(
+            "COPILOT_OFFLINE",
+            CopilotAgent.BuildEnvironment(new CopilotOptions { Offline = true, Provider = null }).Keys);
+
+        Assert.DoesNotContain(
+            "COPILOT_OFFLINE",
+            CopilotAgent.BuildEnvironment(new CopilotOptions { Offline = false, Provider = Local() }).Keys);
+    }
+
+    [Fact]
+    public void The_provider_environment_still_carries_the_byok_variables()
+    {
+        var env = CopilotAgent.BuildEnvironment(new CopilotOptions { Provider = Local(modelId: "gpt-5.4") });
+
+        Assert.Equal("http://10.0.0.36:13305/v1", env["COPILOT_PROVIDER_BASE_URL"]);
+        Assert.Equal("openai", env["COPILOT_PROVIDER_TYPE"]);
+        // The split that fixes reasoning-effort rejection: a well-known id for agent config, the local
+        // name on the wire.
+        Assert.Equal("gpt-5.4", env["COPILOT_PROVIDER_MODEL_ID"]);
+        Assert.Equal("Qwen38-27B-Q5XL", env["COPILOT_MODEL"]);
+    }
+
+    [Theory]
+    // Copilot's documented examples end in /v1; an operator pasting a server's address will not. Getting
+    // this wrong yields a 404 that reads like an auth failure.
+    [InlineData("http://10.0.0.36:13305", "http://10.0.0.36:13305/v1/models")]
+    [InlineData("http://10.0.0.36:13305/", "http://10.0.0.36:13305/v1/models")]
+    [InlineData("http://10.0.0.36:13305/v1", "http://10.0.0.36:13305/v1/models")]
+    [InlineData("http://10.0.0.36:13305/v1/", "http://10.0.0.36:13305/v1/models")]
+    public void The_models_url_is_resolved_whether_or_not_the_base_already_has_v1(string baseUrl, string expected)
+        => Assert.Equal(expected, CopilotLocalModels.ModelsUrl(baseUrl));
+
+    [Fact]
+    public async Task Discovery_parses_a_real_model_list()
+    {
+        // Captured from the Lemonade server used to verify this end to end.
+        const string body = """
+            {"object":"list","data":[
+              {"id":"Qwen38-27B-Q5XL","object":"model","owned_by":"lemonade"},
+              {"id":"kokoro-v1","object":"model","owned_by":"lemonade"}]}
+            """;
+
+        var models = await CopilotLocalModels.ListAsync("http://host:13305", "k", new StubHandler(body));
+
+        Assert.NotNull(models);
+        Assert.Equal(["Qwen38-27B-Q5XL", "kokoro-v1"], models!.Select(m => m.Id));
+        Assert.Equal("Qwen38-27B-Q5XL  (lemonade)", models[0].DisplayName);
+    }
+
+    [Fact]
+    public async Task An_unreachable_or_non_json_endpoint_reports_null_not_an_empty_catalogue()
+    {
+        // "Could not ask" and "has no models" are different answers and the settings UI says different
+        // things about them.
+        Assert.Null(await CopilotLocalModels.ListAsync("http://host", null, new StubHandler("<html>502</html>")));
+        Assert.Null(await CopilotLocalModels.ListAsync("not a url", null, new StubHandler("{}")));
+        Assert.Null(await CopilotLocalModels.ListAsync(null, null, new StubHandler("{}")));
+        Assert.Null(await CopilotLocalModels.ListAsync(
+            "http://host", null, new StubHandler("{}", System.Net.HttpStatusCode.Unauthorized)));
+    }
+
+    [Fact]
+    public async Task A_reachable_server_serving_nothing_is_an_empty_list()
+        => Assert.Empty((await CopilotLocalModels.ListAsync(
+            "http://host", null, new StubHandler("""{"object":"list","data":[]}""")))!);
+
+    private sealed class StubHandler(string body, System.Net.HttpStatusCode status = System.Net.HttpStatusCode.OK)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
+    }
+}
