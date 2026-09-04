@@ -3,106 +3,38 @@ using Agnes.Ui.Core.Markdown;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Markdown.Avalonia;
 using Markdown.Avalonia.Parsers;
 using Markdown.Avalonia.Plugins;
 
-namespace Agnes.App.Mobile.Controls;
+namespace Agnes.App.Desktop.Controls;
 
 /// <summary>
-/// Renders markdown inline in the transcript.
-///
-/// Deliberately not <c>MarkdownScrollViewer</c>, which the desktop head uses: that control wraps its
-/// output in its own ScrollViewer, and a ScrollViewer that permits horizontal scrolling measures its
-/// content at infinite width — so on a 412dp screen every agent reply laid out one long line and got
-/// clipped at the edge instead of wrapping. Here the engine's output is hosted directly, so it wraps to
-/// the transcript's width like any other content.
-///
-/// Nesting a scroller inside the transcript's scroller would also have been wrong for touch: the two
-/// would fight over the same vertical drag.
+/// The desktop Markdown viewer with Agnes' opt-in rendering for <c>markdown</c>/<c>md</c> fences.
+/// It remains a MarkdownScrollViewer, preserving the library's cross-block selection and scroll
+/// behaviour, while the custom parser only claims explicitly-labelled Markdown fences.
 /// </summary>
-public sealed class MarkdownBlock : ContentControl
+public sealed class MarkdownViewer : global::Markdown.Avalonia.Full.MarkdownScrollViewer
 {
-    public static readonly StyledProperty<string?> MarkdownProperty =
-        AvaloniaProperty.Register<MarkdownBlock, string?>(nameof(Markdown));
-
     private readonly MarkdownFencePlugin _fencePlugin;
-    private readonly global::Markdown.Avalonia.Markdown _engine;
     private readonly HashSet<int> _sourceFences = [];
 
-    public MarkdownBlock()
+    public MarkdownViewer()
     {
         _fencePlugin = new MarkdownFencePlugin(CreateFence);
-        _engine = new global::Markdown.Avalonia.Markdown
-        {
-            Plugins = MarkdownEngine.CreatePlugins(_fencePlugin),
-        };
-
-        // The engine emits bare controls; this supplies the heading/list/code/table styling.
-        Styles.Add(MarkdownStyle.FluentAvalonia);
-    }
-
-    /// <summary>The markdown source. Re-rendered whenever it changes, which for a streaming reply is
-    /// every chunk — the engine is fast enough at message scale, and the alternative (re-rendering only
-    /// on turn end) would leave the reply invisible while it streamed.</summary>
-    public string? Markdown
-    {
-        get => GetValue(MarkdownProperty);
-        set => SetValue(MarkdownProperty, value);
+        Plugins = MarkdownEngine.CreatePlugins(_fencePlugin);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
-        base.OnPropertyChanged(change);
         if (change.Property == MarkdownProperty)
         {
-            Render(change.GetNewValue<string?>());
-        }
-    }
-
-    protected override Size MeasureOverride(Size availableSize)
-    {
-        var size = base.MeasureOverride(availableSize);
-
-        // The engine's output reports a desired width taken from its longest unbroken run of text rather
-        // than from the space it was offered, so on a phone a long reply laid out past the screen edge
-        // instead of wrapping. Measuring the subtree again against the real constraint makes it re-wrap.
-        // Cheap: it only happens when the first measure actually overflowed.
-        if (!double.IsInfinity(availableSize.Width)
-            && size.Width > availableSize.Width
-            && Presenter?.Child is Layoutable child)
-        {
-            child.InvalidateMeasure();
-            child.Measure(new Size(availableSize.Width, double.PositiveInfinity));
-            return new Size(availableSize.Width, child.DesiredSize.Height);
+            _fencePlugin.BeginRender(change.GetNewValue<string?>());
         }
 
-        return size;
-    }
-
-    private void Render(string? markdown)
-    {
-        if (string.IsNullOrEmpty(markdown))
-        {
-            Content = null;
-            return;
-        }
-
-        try
-        {
-            _fencePlugin.BeginRender(markdown);
-            Content = _engine.Transform(markdown);
-        }
-        catch
-        {
-            // Malformed markdown must never lose the message: fall back to the raw text.
-            Content = new SelectableTextBlock
-            {
-                Text = markdown,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-            };
-        }
+        base.OnPropertyChanged(change);
     }
 
     private Control CreateFence(string source, int ordinal)
@@ -221,6 +153,9 @@ internal static class MarkdownEngine
         plugins.Plugins.Insert(0, fencePlugin);
         return plugins;
     }
+
+    public static global::Markdown.Avalonia.Markdown Create(MarkdownFencePlugin fencePlugin)
+        => new() { Plugins = CreatePlugins(fencePlugin) };
 }
 
 internal sealed class MarkdownFenceView : Border
@@ -244,6 +179,7 @@ internal sealed class MarkdownFenceView : Border
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
         };
+        _toggle.Classes.Add("ghost");
         _toggle.Classes.Add("markdownFenceToggle");
         _toggle.Click += (_, _) =>
         {
@@ -275,7 +211,7 @@ internal sealed class MarkdownFenceView : Border
         ToolTip.SetTip(
             _toggle,
             _showSource ? "Render this code block as Markdown" : "Show the Markdown source as code");
-        _body.Content = _showSource ? CreateSource() : new MarkdownBlock { Markdown = _source };
+        _body.Content = _showSource ? CreateSource() : new InlineMarkdown(_source);
     }
 
     private Control CreateSource()
@@ -283,9 +219,52 @@ internal sealed class MarkdownFenceView : Border
         var text = new SelectableTextBlock
         {
             Text = _source,
-            TextWrapping = TextWrapping.Wrap,
+            TextWrapping = TextWrapping.NoWrap,
         };
         text.Classes.Add("markdownFenceSource");
-        return text;
+        return new ScrollViewer
+        {
+            Content = text,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+        };
     }
+}
+
+internal sealed class InlineMarkdown : ContentControl
+{
+    private readonly MarkdownFencePlugin _fencePlugin;
+    private readonly HashSet<int> _sourceFences = [];
+
+    public InlineMarkdown(string source)
+    {
+        Styles.Add(new StyleInclude(new Uri("avares://Agnes.App.Desktop/"))
+        {
+            Source = new Uri("avares://Agnes.App.Desktop/Themes/MarkdownNestedCodeStyles.axaml"),
+        });
+        _fencePlugin = new MarkdownFencePlugin(CreateFence);
+        var engine = MarkdownEngine.Create(_fencePlugin);
+
+        try
+        {
+            _fencePlugin.BeginRender(source);
+            Content = engine.Transform(source);
+        }
+        catch
+        {
+            var fallback = new SelectableTextBlock { Text = source, TextWrapping = TextWrapping.Wrap };
+            fallback.Classes.Add("markdownFenceSource");
+            Content = fallback;
+        }
+    }
+
+    private Control CreateFence(string source, int ordinal)
+        => new MarkdownFenceView(
+            source,
+            _sourceFences.Contains(ordinal),
+            showSource =>
+            {
+                if (showSource) { _sourceFences.Add(ordinal); }
+                else { _sourceFences.Remove(ordinal); }
+            });
 }
