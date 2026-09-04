@@ -1784,6 +1784,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     [ObservableProperty] private string _localProviderModelId = string.Empty;
     [ObservableProperty] private bool _localProviderOffline = true;
     [ObservableProperty] private bool _localProviderExcludeApplyPatch = true;
+    /// <summary>Reasoning effort. Empty means "let Copilot decide", which is what it does for a model it
+    /// recognises; for one it does not, it decides "max" — which some servers reject outright.</summary>
+    [ObservableProperty] private string _localProviderEffort = string.Empty;
     [ObservableProperty] private string _localProviderStatus = string.Empty;
     [ObservableProperty] private bool _localProviderBusy;
 
@@ -1800,6 +1803,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// </summary>
     public IReadOnlyList<string> LocalProviderModelIds { get; } =
         ["gpt-5.4", "gpt-5-mini", "gpt-4.1", "claude-sonnet-4", "claude-opus-4.8"];
+
+    /// <summary>Copilot's own effort levels, plus a blank first entry meaning "leave it alone".</summary>
+    public IReadOnlyList<string> LocalProviderEfforts { get; } =
+        ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
     private async Task LoadLocalProviderAsync()
     {
@@ -1822,6 +1829,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 LocalProviderModelId = info.ModelId ?? string.Empty;
                 LocalProviderWireModel = info.WireModel ?? string.Empty;
                 LocalProviderOffline = info.Offline;
+                LocalProviderEffort = info.Effort ?? string.Empty;
                 // An empty stored list means "use the recommended set"; the single sentinel "none" is how
                 // an operator says they want no exclusions at all.
                 LocalProviderExcludeApplyPatch =
@@ -1847,7 +1855,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ModelId: LocalProviderModelId,
         WireModel: LocalProviderWireModel,
         ExcludedTools: LocalProviderExcludeApplyPatch ? ["apply_patch"] : ["none"],
-        Offline: LocalProviderOffline);
+        Offline: LocalProviderOffline,
+        Effort: string.IsNullOrWhiteSpace(LocalProviderEffort) ? null : LocalProviderEffort);
 
     public IAsyncRelayCommand FetchLocalModelsCommand => _fetchLocalModels ??= new AsyncRelayCommand(async () =>
     {
@@ -1923,6 +1932,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             LocalProviderHasKey = false;
             LocalProviderWireModel = string.Empty;
             LocalProviderModelId = string.Empty;
+            LocalProviderEffort = string.Empty;
             LocalProviderModels.Clear();
             OnPropertyChanged(nameof(HasLocalProviderModels));
             LocalProviderStatus = "Cleared. Sessions use GitHub's models.";

@@ -396,6 +396,19 @@
                                        Text="Which well-known model the agent should treat yours as — it sets the prompting strategy and token limits. If your server rejects requests mentioning reasoning effort, choose gpt-5.4." />
                         </StackPanel>
 
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Reasoning effort" Classes="fieldLabel" />
+                            <ComboBox ItemsSource="{Binding LocalProviderEfforts}"
+                                      SelectedItem="{Binding LocalProviderEffort, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      PlaceholderText="Let Copilot decide" />
+                            <!-- The direct control over what strict servers reject. Copilot decides for
+                                 itself only when it recognises the model; for one it does not, it decides
+                                 "max", and some servers refuse that outright. -->
+                            <TextBlock Classes="scopeNote" TextWrapping="Wrap"
+                                       Text="Leave blank unless your server complains about it. If it rejects requests mentioning reasoning effort, pick medium." />
+                        </StackPanel>
+
                         <CheckBox IsChecked="{Binding LocalProviderOffline, Mode=TwoWay}"
                                   Content="No GitHub access at all (recommended)" />
                         <TextBlock Classes="scopeNote" TextWrapping="Wrap" Margin="24,-6,0,0"

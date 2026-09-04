@@ -148,6 +148,31 @@ public class LocalModelsSettingsTests
     }
 
     [Fact]
+    public void Effort_is_blank_by_default_and_sent_as_null()
+    {
+        // "Let Copilot decide" is the correct default: it picks sensibly for a model it recognises, and
+        // asserting a level Agnes invented would be worse than saying nothing.
+        var vm = NewVm();
+        Assert.Equal(string.Empty, vm.LocalProviderEffort);
+        Assert.Null(BuildRequest(vm).Effort);
+
+        vm.LocalProviderEffort = "medium";
+        Assert.Equal("medium", BuildRequest(vm).Effort);
+    }
+
+    [Fact]
+    public void The_effort_list_offers_copilots_own_levels_with_a_blank_first()
+    {
+        var vm = NewVm();
+
+        Assert.Equal(string.Empty, vm.LocalProviderEfforts[0]);
+        foreach (var level in new[] { "none", "minimal", "low", "medium", "high", "xhigh", "max" })
+        {
+            Assert.Contains(level, vm.LocalProviderEfforts);
+        }
+    }
+
+    [Fact]
     public void Offline_is_on_by_default_because_that_is_the_point_of_running_locally()
         => Assert.True(NewVm().LocalProviderOffline);
 
@@ -167,5 +192,6 @@ public class LocalModelsSettingsTests
         vm.LocalProviderModelId,
         vm.LocalProviderWireModel,
         vm.LocalProviderExcludeApplyPatch ? ["apply_patch"] : ["none"],
-        vm.LocalProviderOffline);
+        vm.LocalProviderOffline,
+        string.IsNullOrWhiteSpace(vm.LocalProviderEffort) ? null : vm.LocalProviderEffort);
 }

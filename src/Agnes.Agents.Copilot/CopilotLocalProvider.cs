@@ -34,16 +34,21 @@ public static class CopilotLocalCompatibility
     /// answered <c>Jinja Exception: Unexpected reasoning effort max. Supported types are xhigh
     /// (default), medium, and low.</c></para>
     ///
-    /// <para>Setting <see cref="CopilotProviderOptions.ModelId"/> to a well-known id changes what is
-    /// sent — <c>gpt-5.4</c> produced <c>"medium"</c> where <c>gpt-4.1</c> and <c>claude-sonnet-4</c>
-    /// both produced <c>"max"</c>. Agnes does <b>not</b> pick one automatically: the id also selects
-    /// prompting strategy and token limits, so choosing it is a real decision about how the agent
-    /// behaves, not a compatibility detail to paper over.</para>
+    /// <para><b>Set it directly.</b> Copilot takes <c>--effort</c> (also <c>--reasoning-effort</c>) with
+    /// the choices none / minimal / low / medium / high / xhigh / max — see
+    /// <see cref="CopilotOptions.Effort"/>. An earlier version of this guidance told operators to steer
+    /// it by naming a well-known <see cref="CopilotProviderOptions.ModelId"/> instead, which does work
+    /// (<c>gpt-5.4</c> yields <c>"medium"</c> where <c>gpt-4.1</c> and <c>claude-sonnet-4</c> yield
+    /// <c>"max"</c>) but only as a side effect of changing the agent's whole profile. The flag was
+    /// missed; it is the right lever.</para>
+    ///
+    /// <para>The model id is still worth setting — it selects prompting strategy and token limits — but
+    /// for that reason, not this one.</para>
     /// </summary>
     public const string ReasoningEffortGuidance =
-        "If the provider rejects the request with an error mentioning reasoning effort, set the model id " +
-        "to a well-known model whose effort profile it accepts (gpt-5.4 sends \"medium\"); the wire model " +
-        "stays your local model's name.";
+        "If the provider rejects the request with an error mentioning reasoning effort, set the effort " +
+        "explicitly (medium is widely accepted). Naming a well-known model id also moves it, but changes " +
+        "the agent's prompting strategy and token limits as a side effect.";
 }
 
 /// <summary>One model a local provider is serving.</summary>

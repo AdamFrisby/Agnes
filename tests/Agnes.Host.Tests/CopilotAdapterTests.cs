@@ -465,6 +465,43 @@ public sealed class CopilotLocalProviderTests
         Assert.Equal(["--acp", "--excluded-tools", "apply_patch"], arguments);
     }
 
+    [Theory]
+    [InlineData(CopilotEffort.None, "none")]
+    [InlineData(CopilotEffort.Minimal, "minimal")]
+    [InlineData(CopilotEffort.Low, "low")]
+    [InlineData(CopilotEffort.Medium, "medium")]
+    [InlineData(CopilotEffort.High, "high")]
+    [InlineData(CopilotEffort.XHigh, "xhigh")]
+    [InlineData(CopilotEffort.Max, "max")]
+    public void Every_effort_level_is_spelled_the_way_copilot_accepts_it(CopilotEffort effort, string expected)
+    {
+        // Copilot's own list: none / minimal / low / medium / high / xhigh / max. "xhigh" in particular
+        // is not what a naive ToString().ToLower() of the enum produces.
+        var arguments = CopilotAgent.BuildArguments(new CopilotOptions { Effort = effort });
+
+        Assert.Equal(["--acp", "--effort", expected], arguments);
+    }
+
+    [Fact]
+    public void No_effort_means_the_flag_is_absent_rather_than_a_default_being_asserted()
+    {
+        // "Let Copilot decide" and "decide max" are different instructions, and only one of them is
+        // Agnes's to give.
+        Assert.DoesNotContain("--effort", CopilotAgent.BuildArguments(new CopilotOptions()));
+    }
+
+    [Fact]
+    public void Effort_and_excluded_tools_compose()
+    {
+        var arguments = CopilotAgent.BuildArguments(new CopilotOptions
+        {
+            ExcludedTools = ["apply_patch"],
+            Effort = CopilotEffort.Medium,
+        });
+
+        Assert.Equal(["--acp", "--excluded-tools", "apply_patch", "--effort", "medium"], arguments);
+    }
+
     [Fact]
     public void Apply_patch_is_the_recommended_exclusion_and_the_reason_is_recorded()
     {
@@ -661,6 +698,31 @@ public sealed class LocalProviderRegistryTests : IDisposable
         registry.Save(new LocalProviderRequest("http://host/v1", "OpenAi", null, null, "llama3.3:70b", null, false));
 
         Assert.Equal("llama3.3:70b", registry.ProviderOptions()!.Model);
+    }
+
+    [Fact]
+    public void Effort_round_trips_and_is_parsed_case_insensitively()
+    {
+        var registry = New();
+        registry.Save(new LocalProviderRequest(
+            "http://host/v1", "OpenAi", null, null, "m", null, false, Effort: "Medium"));
+
+        Assert.Equal(CopilotEffort.Medium, registry.Effort);
+        Assert.Equal("Medium", registry.Info().Effort);
+    }
+
+    [Fact]
+    public void An_unset_or_nonsense_effort_leaves_copilot_to_decide()
+    {
+        var registry = New();
+        registry.Save(new LocalProviderRequest("http://host/v1", "OpenAi", null, null, "m", null, false));
+        Assert.Null(registry.Effort);
+
+        // A value from an older client or a hand-edited file must not become a launch flag Copilot
+        // rejects — the CLI validates the choice and would fail to start.
+        registry.Save(new LocalProviderRequest(
+            "http://host/v1", "OpenAi", null, null, "m", null, false, Effort: "extremely-hard"));
+        Assert.Null(registry.Effort);
     }
 
     [Fact]

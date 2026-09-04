@@ -898,6 +898,11 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
                     : []),
         // No GitHub at all: no authentication, telemetry, web tools, GitHub MCP or auto-update. Ignored
         // unless a provider is configured, since Copilot needs something to infer against.
+        Effort = sp.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>().Effort
+            ?? (Enum.TryParse<Agnes.Agents.Copilot.CopilotEffort>(
+                    builder.Configuration["Agnes:Copilot:Effort"], ignoreCase: true, out var cfgEffort)
+                ? cfgEffort
+                : null),
         Offline = sp.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>().Offline
             || builder.Configuration.GetValue("Agnes:Copilot:Offline", false),
         // The UI-configured provider wins over appsettings, and is read on each launch rather than at

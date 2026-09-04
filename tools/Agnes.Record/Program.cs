@@ -56,6 +56,10 @@ IAgentAdapter adapter = options.Agent switch
         ExcludedTools = (Environment.GetEnvironmentVariable("AGNES_COPILOT_EXCLUDED_TOOLS") ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
         Offline = string.Equals(Environment.GetEnvironmentVariable("AGNES_COPILOT_OFFLINE"), "true", StringComparison.OrdinalIgnoreCase),
+        Effort = Enum.TryParse<Agnes.Agents.Copilot.CopilotEffort>(
+            Environment.GetEnvironmentVariable("AGNES_COPILOT_EFFORT"), ignoreCase: true, out var effort)
+            ? effort
+            : null,
     }),
     _ => OpenCodeAgent.Create(loggerFactory),
 };

@@ -43,6 +43,7 @@ public sealed class LocalProviderRegistry
                 _current.WireModel,
                 _current.ExcludedTools ?? [],
                 _current.Offline,
+                _current.Effort,
                 IsConfigured: !string.IsNullOrWhiteSpace(_current.BaseUrl));
         }
     }
@@ -100,6 +101,24 @@ public sealed class LocalProviderRegistry
         }
     }
 
+    /// <summary>
+    /// The configured reasoning effort, or null for Copilot's own choice. This is the direct control over
+    /// the value a strict local server may reject; naming a well-known model id also moves it, but as a
+    /// side effect of changing the whole agent profile.
+    /// </summary>
+    public CopilotEffort? Effort
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return Enum.TryParse<CopilotEffort>(_current.Effort, ignoreCase: true, out var effort)
+                    ? effort
+                    : null;
+            }
+        }
+    }
+
     public bool Offline
     {
         get { lock (_gate) { return _current.Offline && !string.IsNullOrWhiteSpace(_current.BaseUrl); } }
@@ -120,6 +139,7 @@ public sealed class LocalProviderRegistry
                 WireModel = Trim(request.WireModel),
                 ExcludedTools = request.ExcludedTools?.Where(t => !string.IsNullOrWhiteSpace(t)).ToArray(),
                 Offline = request.Offline,
+                Effort = Trim(request.Effort),
             };
 
             Persist();
@@ -178,5 +198,6 @@ public sealed class LocalProviderRegistry
         public string? WireModel { get; init; }
         public IReadOnlyList<string>? ExcludedTools { get; init; }
         public bool Offline { get; init; }
+        public string? Effort { get; init; }
     }
 }

@@ -32,6 +32,21 @@ public sealed record CopilotOptions
     public IReadOnlyList<string> ExcludedTools { get; init; } = [];
 
     /// <summary>
+    /// Reasoning effort (<c>--effort</c>, also spelled <c>--reasoning-effort</c>). Null leaves Copilot's
+    /// own choice alone.
+    ///
+    /// <para>This is the direct control over the <c>reasoning_effort</c> field Copilot puts on the wire,
+    /// and it is the right lever for a local server that only accepts some values — one rejected
+    /// Copilot's unrecognised-model default of <c>max</c> outright with
+    /// <c>Unexpected reasoning effort max. Supported types are xhigh (default), medium, and low.</c></para>
+    ///
+    /// <para>The alternative is to steer it indirectly by naming a well-known
+    /// <see cref="CopilotProviderOptions.ModelId"/>, which also works but changes prompting strategy and
+    /// token limits as a side effect. Prefer this: it says exactly what it does and nothing else.</para>
+    /// </summary>
+    public CopilotEffort? Effort { get; init; }
+
+    /// <summary>
     /// Runs Copilot with no network access beyond the model provider (<c>COPILOT_OFFLINE</c>): no GitHub
     /// authentication, telemetry, web tools, GitHub MCP server or auto-update.
     ///
@@ -218,7 +233,7 @@ public static class CopilotAgent
     public static IReadOnlyList<string> BuildArguments(CopilotOptions options)
     {
         var excluded = options.ExcludedTools.Where(t => !string.IsNullOrWhiteSpace(t)).ToArray();
-        if (excluded.Length == 0)
+        if (excluded.Length == 0 && options.Effort is null)
         {
             return options.Arguments;
         }
@@ -230,8 +245,27 @@ public static class CopilotAgent
             arguments.Add(tool.Trim());
         }
 
+        if (options.Effort is { } effort)
+        {
+            arguments.Add("--effort");
+            arguments.Add(EffortValue(effort));
+        }
+
         return arguments;
     }
+
+    /// <summary>The spelling Copilot accepts. Its own list is
+    /// none / minimal / low / medium / high / xhigh / max.</summary>
+    internal static string EffortValue(CopilotEffort effort) => effort switch
+    {
+        CopilotEffort.None => "none",
+        CopilotEffort.Minimal => "minimal",
+        CopilotEffort.Low => "low",
+        CopilotEffort.Medium => "medium",
+        CopilotEffort.High => "high",
+        CopilotEffort.XHigh => "xhigh",
+        _ => "max",
+    };
 
     public static AcpLaunchSpec CreateLaunchSpec(CopilotOptions? options = null)
     {

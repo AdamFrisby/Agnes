@@ -633,6 +633,9 @@ public sealed record LocalProviderInfo(
     IReadOnlyList<string> ExcludedTools,
     /// <summary>Whether Copilot runs with no GitHub access at all.</summary>
     bool Offline,
+    /// <summary>Reasoning effort sent to the provider, or null to leave Copilot's own choice alone.
+    /// Some servers accept only a subset and reject the rest outright.</summary>
+    string? Effort,
     /// <summary>Whether this provider is configured enough to be used.</summary>
     bool IsConfigured);
 
@@ -646,7 +649,8 @@ public sealed record LocalProviderRequest(
     string? ModelId,
     string? WireModel,
     IReadOnlyList<string>? ExcludedTools,
-    bool Offline);
+    bool Offline,
+    string? Effort = null);
 
 /// <summary>One model an endpoint reports, for a picker.</summary>
 public sealed record LocalProviderModel(string Id, string DisplayName);

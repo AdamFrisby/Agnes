@@ -36,9 +36,10 @@ The same thing in host config, for an unattended setup:
         "BaseUrl": "http://10.0.0.36:13305/v1",
         "Type": "OpenAi",
         "ApiKey": "…",                      // omit for servers that need none
-        "ModelId":   "gpt-5.4",             // see "reasoning effort" below
+        "ModelId":   "gpt-5.4",             // how the agent should behave
         "WireModel": "Qwen38-27B-Q5XL"      // your model's real name
-      }
+      },
+      "Effort": "medium"                    // only if your server rejects the default
     }
   }
 }
@@ -71,7 +72,7 @@ No turn can start. So when a provider is configured, Agnes defaults `ExcludedToo
 
 Set `"Agnes:Copilot:ExcludedTools": []` to opt out.
 
-## 3. Reasoning effort, and why the model id is not cosmetic
+## 3. Reasoning effort
 
 Copilot derives `reasoning_effort` from the model **id**, and for an id it does not recognise it sends
 `"max"` — which is not an OpenAI-standard value (the standard set is low / medium / high). A server that
@@ -81,7 +82,18 @@ validates the field rejects the request:
 Jinja Exception: Unexpected reasoning effort max. Supported types are xhigh (default), medium, and low.
 ```
 
-Captured directly, the same request differs only by model id:
+**Set the effort directly.** Copilot takes `--effort` (also spelled `--reasoning-effort`) with the
+choices `none, minimal, low, medium, high, xhigh, max`, and Agnes exposes it as **Reasoning effort** in
+settings. Verified over the ACP path: `--effort medium` puts `"medium"` on the wire, `--effort low` puts
+`"low"`.
+
+Leave it blank unless your server complains. Copilot picks sensibly for a model it recognises; `max` is
+what it falls back to for one it does not.
+
+### The model id is a separate question — and still worth setting
+
+The effort can also be moved *indirectly* by naming a well-known `ModelId`, because Copilot derives the
+default from it:
 
 | `ModelId` | `reasoning_effort` sent |
 | --- | --- |
@@ -89,11 +101,21 @@ Captured directly, the same request differs only by model id:
 | `claude-sonnet-4` | `max` |
 | **`gpt-5.4`** | **`medium`** |
 
-So set `ModelId` to a well-known model whose profile your server accepts, and `WireModel` to your local
-model's actual name. Copilot documents this split for Azure deployments; it is also the fix here.
+Do not use it for that — `--effort` says exactly what it means. But do set it anyway, because it selects
+the **prompting strategy and token limits** Copilot applies. Without a recognised id the agent falls back
+to safe defaults, which is a real difference in how it is prompted.
 
-**Agnes does not choose one for you.** The model id also selects prompting strategy and token limits, so
-picking it is a decision about how the agent behaves, not a compatibility detail to hide.
+The recommended shape is therefore both — a recognised id for the agent profile, your model's real name
+on the wire, and the effort stated outright:
+
+```jsonc
+"ModelId":   "gpt-5.4",            // how the agent should behave
+"WireModel": "Qwen38-27B-Q5XL",    // what the server is asked for
+"Effort":    "medium"              // what goes in reasoning_effort
+```
+
+**Agnes does not choose the id for you.** It changes how the agent behaves, which is a decision, not a
+compatibility detail to hide.
 
 ## Offline mode
 
@@ -112,6 +134,28 @@ with a readable message instead of inside a session as a failed turn. The base U
 without a trailing `/v1`.
 
 "Could not reach it" and "it serves no models" are reported differently: null versus an empty list.
+
+## The model is the variable, not the plumbing
+
+Worth setting expectations, because it is easy to mistake for a broken configuration. Three runs against
+the same server and model, the same prompt, and near-identical settings produced three different
+behaviours:
+
+| Run | Config | What happened |
+| --- | --- | --- |
+| 1 | `ModelId: gpt-5.4` | Wrote the file to the working directory, correctly |
+| 2 | `--effort medium`, no `ModelId` | Invented a working directory that did not exist, then wrote into Copilot's session-state folder |
+| 3 | both | Made **no tool calls at all** and claimed it "only has read-only access" |
+
+None of these is a configuration failure — the requests were accepted, the tools were offered, and the
+turns completed. It is a 27B model being inconsistent at agentic work. A model that answers well in chat
+can still be unreliable at the "use your tools, then verify" loop a coding agent needs, and that
+unreliability looks exactly like a broken setup from the outside.
+
+So: prove the plumbing once with a trivial prompt, and after that judge the model rather than the
+integration. The signals that really do mean a configuration problem are the specific errors above —
+`Unsupported tool type`, `Unexpected reasoning effort`, or a run billed against `claude-haiku` when you
+expected your own hardware.
 
 ## Verified
 
