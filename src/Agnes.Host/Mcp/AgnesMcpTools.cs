@@ -53,14 +53,16 @@ public sealed class AgnesMcpTools
         return caller;
     }
 
-    /// <summary>Authenticates a goal-tool call and returns the session it may act on: the caller's own when a
-    /// session token was presented (any <c>sessionId</c> argument is then ignored rather than trusted), or
-    /// the named one for a paired device.</summary>
-    private string RequireGoalSession(string? sessionId)
+    /// <summary>Authenticates a call to a tool that acts on ONE session (the goal tools, sending the user a
+    /// file) and returns the session it may act on: the caller's own when a session token was presented (any
+    /// <c>sessionId</c> argument is then ignored rather than trusted), or the named one for a paired device.
+    /// The token is the identity, never the argument — that is what stops an agent naming somebody else's
+    /// session.</summary>
+    private string RequireActingSession(string? sessionId)
     {
         if (_sessionTokens.SessionFor(_tokenSource.CurrentToken) is { } own)
         {
-            return own; // an agent may only ever arm/inspect goals on itself
+            return own; // an agent may only ever act on itself
         }
 
         RequireCaller();
@@ -152,7 +154,7 @@ public sealed class AgnesMcpTools
         [Description("The session to arm. Omit to use the calling session.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireGoalSession(sessionId);
+        var target = RequireActingSession(sessionId);
         return await _backend.ArmGoalAsync(
             new ArmGoalRequest(target, goal, idleSeconds, maxProds, expiresInSeconds), cancellationToken).ConfigureAwait(false);
     }
@@ -199,6 +201,36 @@ public sealed class AgnesMcpTools
         return await _backend.ListGoalsAsync(target, cancellationToken).ConfigureAwait(false);
     }
 
+
+    [McpServerTool(Name = "send_user_file")]
+    [Description("Send a file to the user to look at — a screenshot, a report, a diagram, a built artifact. "
+        + "Use it for deliverables the person would want in front of them rather than merely mentioned; "
+        + "do not send routine working files.")]
+    public async Task<string> SendUserFile(
+        [Description("Absolute path, or a path relative to the working directory, or the /work/… path as seen inside a sandbox")] string path,
+        [Description("One line of context shown with the file, e.g. 'before vs after'")] string? caption = null,
+        [Description("Omit when called by the agent itself; required with a device token")] string? sessionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var target = RequireActingSession(sessionId);
+        var shared = await _backend.ShareFileAsync(target, path, caption, cancellationToken).ConfigureAwait(false);
+        return $"Sent {shared.FileName} ({DescribeSize(shared.Size)}) to the user.";
+    }
+
+    /// <summary>A human-sized rendering of a byte count for the confirmation the model reads back. Rounded on
+    /// purpose: the agent is being told the send worked, not being handed a figure to compute with.</summary>
+    private static string DescribeSize(long bytes)
+    {
+        const long Kb = 1024;
+        const long Mb = Kb * 1024;
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        return bytes switch
+        {
+            < Kb => string.Create(culture, $"{bytes} bytes"),
+            < Mb => string.Create(culture, $"{Math.Round(bytes / (double)Kb)} KB"),
+            _ => string.Create(culture, $"{bytes / (double)Mb:0.#} MB"),
+        };
+    }
 
     [McpServerTool(Name = "read_session_transcript", ReadOnly = true)]
     [Description("Read a privacy-filtered transcript of a session. By default raw tool-call arguments and file contents/paths are excluded; set forwardRawContext to true only if the user has explicitly opted in to sharing them with this endpoint.")]

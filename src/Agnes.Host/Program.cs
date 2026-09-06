@@ -620,6 +620,15 @@ builder.Services.AddSingleton(new Agnes.Host.Sessions.AutoContinueOptions
         ? p
         : new Agnes.Host.Sessions.AutoContinueOptions().Prompt,
 });
+
+// ---- an agent sending the user a file (Agnes:Sharing:*) ----
+// Sending copies: the file is duplicated into the workspace and then pulled down by every connected client,
+// phones included. The cap is what stops "send the user the build" from meaning a multi-gigabyte download
+// somebody pays for on mobile data — a clear refusal the agent can act on beats a silent, very slow success.
+builder.Services.AddSingleton(new Agnes.Host.Sessions.SharingOptions
+{
+    MaxBytes = builder.Configuration.GetValue("Agnes:Sharing:MaxBytes", Agnes.Host.Sessions.SharingOptions.DefaultMaxBytes),
+});
 builder.Services.AddHostedService<Agnes.Host.Sessions.UsageReporter>();
 builder.Services.AddHostedService<Agnes.Host.Events.TranscriptRetentionService>();
 builder.Services.AddSingleton<SessionManager>();

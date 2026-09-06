@@ -459,7 +459,8 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _pushRegistrations.SetPreferences(
             deviceId,
             request.Prefs.Enabled,
-            new Notifications.PushTriggerPrefs(request.Prefs.TurnReady, request.Prefs.PermissionRequest, request.Prefs.UserActionRequest));
+            new Notifications.PushTriggerPrefs(
+                request.Prefs.TurnReady, request.Prefs.PermissionRequest, request.Prefs.UserActionRequest, request.Prefs.FileShared));
 
         // Let the target channel record the channel-specific token (a real one would register it with FCM/APNs).
         if (_channels.Find(request.ChannelId) is { } channel)

@@ -75,6 +75,27 @@ internal sealed class FakeAgnesMcpBackend : IAgnesMcpBackend
     public Task<IReadOnlyList<SessionGoal>> ListGoalsAsync(string? sessionId, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<SessionGoal>>(
             sessionId is { Length: > 0 } id ? [.. Goals.Where(g => g.SessionId == id)] : Goals);
+
+    // ---- sending the user a file ----
+    public List<(string SessionId, string Path, string? Caption)> Shared { get; } = [];
+
+    /// <summary>Set to make ShareFileAsync throw — how the real backend reports a veto or a bad path.</summary>
+    public Exception? ShareFailure { get; set; }
+
+    public Agnes.Abstractions.FileSharedEvent Share { get; set; } =
+        new("abc123", "report.md", ".agnes/shared/abc123/report.md", 12 * 1024, "text/markdown", null);
+
+    public Task<Agnes.Abstractions.FileSharedEvent> ShareFileAsync(
+        string sessionId, string path, string? caption, CancellationToken cancellationToken = default)
+    {
+        if (ShareFailure is { } failure)
+        {
+            return Task.FromException<Agnes.Abstractions.FileSharedEvent>(failure);
+        }
+
+        Shared.Add((sessionId, path, caption));
+        return Task.FromResult(Share with { Caption = caption });
+    }
 }
 
 /// <summary>A fixed-token caller source for offline tool tests.</summary>

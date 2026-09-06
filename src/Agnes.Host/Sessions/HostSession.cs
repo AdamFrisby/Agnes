@@ -683,7 +683,9 @@ internal sealed class HostSession : IAsyncDisposable
         }
     }
 
-    private async Task AppendAndPublishAsync(SessionEvent @event)
+    /// <summary>Returns the STORED event — the same record carrying the sequence the log gave it — so a
+    /// caller that has to tell someone what it wrote (the file-sharing tool) can name that moment.</summary>
+    private async Task<SessionEvent> AppendAndPublishAsync(SessionEvent @event)
     {
         // Redaction hook: a plugin may suppress this event from reaching clients (still logged).
         var gate = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeAgentEventEvent(SessionId, @event)).ConfigureAwait(false);
@@ -697,6 +699,7 @@ internal sealed class HostSession : IAsyncDisposable
         // Every inbound agent event is dispatchable on the spine with full typing (SessionEvent : IAgnesEvent),
         // so a plugin can observe ToolCallEvent, TurnEndedEvent, etc. directly.
         await _bus.DispatchAsync(stored).ConfigureAwait(false);
+        return stored;
     }
 
     /// <summary>Records a forwarded MCP tool call in the session log (audit; from the forward proxy).</summary>
@@ -706,6 +709,15 @@ internal sealed class HostSession : IAsyncDisposable
     /// <summary>Records a brokered git-credential grant/denial in the session log (audit).</summary>
     public Task RecordGitCredentialAsync(string host, string? repo, bool allowed)
         => AppendAndPublishAsync(new GitCredentialEvent(host, repo, allowed));
+
+    /// <summary>
+    /// Records a file the agent sent the user. It takes the SAME path an agent's own events take —
+    /// interceptor gate, append, broadcast, spine — because that is exactly what makes it persisted,
+    /// sequenced, replayed to a client that joins later, and observable by a plugin. The push dispatcher
+    /// watches <c>BeforeAgentEventEvent</c>, so this is also how a phone learns a file arrived.
+    /// </summary>
+    public Task<SessionEvent> RecordFileSharedAsync(FileSharedEvent shared)
+        => AppendAndPublishAsync(shared);
 
     public async ValueTask DisposeAsync()
     {
