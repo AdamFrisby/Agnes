@@ -37,6 +37,11 @@ public sealed class SessionManager : IAsyncDisposable
     /// <summary>Where a sandboxed agent reaches Agnes's own MCP endpoint (bridge-local plain HTTP), or null
     /// when the guest endpoint isn't configured — in which case no agnes server is offered to agents.</summary>
     private readonly string? _guestMcp;
+
+    /// <summary>Where an agent running on the host reaches the same endpoint (loopback plain HTTP), or null
+    /// when the local listener is disabled. See <see cref="Mcp.LocalMcpOptions"/> for why it isn't the main
+    /// TLS listener.</summary>
+    private readonly string? _localMcp;
     private readonly ClaudeTokenRotationPusher? _rotationPusher;
     private readonly McpRegistry? _mcp;
     private readonly bool _mcpStrict;
@@ -155,7 +160,8 @@ public sealed class SessionManager : IAsyncDisposable
         AutoContinueOptions? autoContinue = null,
         Mcp.SessionMcpTokens? sessionMcpTokens = null,
         GuestMcpOptions? guestMcp = null,
-        SharingOptions? sharing = null)
+        SharingOptions? sharing = null,
+        Mcp.LocalMcpOptions? localMcp = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -170,6 +176,7 @@ public sealed class SessionManager : IAsyncDisposable
         _sharing = sharing ?? new SharingOptions();
         _sessionMcpTokens = sessionMcpTokens ?? new Mcp.SessionMcpTokens();
         _guestMcp = guestMcp?.Url;
+        _localMcp = localMcp?.Url;
         _credentialProviders = credentialProviders?.ToArray() ?? [];
         _rotationPusher = rotationPusher;
         _mcp = mcp;
@@ -800,7 +807,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
         else
         {
-            mcpConfigPath = await MaterializeHostMcpAsync(adapterId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
+            mcpConfigPath = await MaterializeHostMcpAsync(adapterId, sessionId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
             await ApplyHostSettingsAsync(adapterId, modelId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -1049,20 +1056,84 @@ public sealed class SessionManager : IAsyncDisposable
         return text.Length > header.Length ? new TextContent(text) : null;
     }
 
-    // Which agents Agnes can inject an MCP config into, and how: (config format, home-relative file,
-    // whether the CLI loads it via a flag). ACP bridges (claude-code, opencode) and host-side Codex
-    // are deferred — see the plan.
-    private static (string Format, string HomeRel, bool UsesFlag)? McpTargetFor(string adapterId) => adapterId switch
+    /// <summary>The config format an agent CLI reads its MCP servers from.</summary>
+    internal enum McpConfigFormat
     {
-        "claude-code-native" => ("claude", ".agnes/mcp.json", true),
-        "codex" => ("codex", ".codex/config.toml", false),
+        /// <summary>Claude Code's <c>{"mcpServers": …}</c> JSON; Copilot reads the same shape.</summary>
+        Claude,
+
+        /// <summary>Codex's <c>config.toml</c> <c>[mcp_servers.name]</c> tables.</summary>
+        Codex,
+    }
+
+    /// <summary>How a CLI's config can carry the bearer that authenticates it to Agnes's own MCP endpoint.</summary>
+    internal enum McpTokenCarriage
+    {
+        /// <summary>A literal <c>headers.Authorization</c> on the http entry (Claude Code, Copilot).</summary>
+        AuthorizationHeader,
+
+        /// <summary>The <i>name</i> of an environment variable the CLI reads at launch (Codex's
+        /// <c>bearer_token_env_var</c> — its config has no header map), which the launcher must also set.</summary>
+        BearerTokenEnvVar,
+    }
+
+    /// <summary>
+    /// Which agents Agnes can inject an MCP config into, and how. This is the one seam a new adapter fills
+    /// in to get everything MCP-related — the operator's servers, the host-server forward, and Agnes's own
+    /// <c>agnes</c> server — rather than each of those growing its own per-adapter special case.
+    /// </summary>
+    /// <param name="Format">The file format to render.</param>
+    /// <param name="HomeRelativePath">Where the file goes in a sandbox's home.</param>
+    /// <param name="UsesFlag">Whether the CLI is *pointed at* the file by a launch flag, rather than
+    /// discovering it at a fixed path of its own.</param>
+    /// <param name="TokenCarriage">How this format carries a bearer token.</param>
+    /// <param name="TokenEnvVar">The environment variable holding that bearer, for
+    /// <see cref="McpTokenCarriage.BearerTokenEnvVar"/>.</param>
+    internal sealed record McpTarget(
+        McpConfigFormat Format,
+        string HomeRelativePath,
+        bool UsesFlag,
+        McpTokenCarriage TokenCarriage,
+        string? TokenEnvVar = null)
+    {
+        /// <summary>
+        /// Whether Agnes may write this adapter's MCP config for an <b>unsandboxed</b> session.
+        /// </summary>
+        /// <remarks>
+        /// Only a flag-loaded file can be: Agnes generates it under a temp path and hands the CLI the path,
+        /// so nothing of the operator's is touched. A CLI that instead discovers its config at a fixed place
+        /// in the real home directory (Codex's <c>~/.codex/config.toml</c>) owns that file — the person using
+        /// this machine put their own servers, models and auth in it, and Agnes overwriting or merging into
+        /// it would be editing a user's configuration behind their back. In a sandbox the same path is
+        /// Agnes's to write, because the home directory is one Agnes created for that session.
+        /// </remarks>
+        public bool SupportsHostSessions => UsesFlag;
+    }
+
+    // ACP bridges (claude-code, opencode) reach Agnes's MCP endpoint through the model-environment path
+    // (AddSandboxModel/IModelEnvironmentAdapter) instead, so they are absent here on purpose rather than by
+    // omission. Pi ships no MCP client at all and Antigravity exposes no MCP config surface: nothing is
+    // written for either, and nothing pretends to be.
+    internal static McpTarget? McpTargetFor(string adapterId) => adapterId switch
+    {
+        "claude-code-native" => new(McpConfigFormat.Claude, ".agnes/mcp.json", true, McpTokenCarriage.AuthorizationHeader),
+        "codex" => new(McpConfigFormat.Codex, ".codex/config.toml", false, McpTokenCarriage.BearerTokenEnvVar, AgnesMcpTokenEnvVar),
         // Copilot reads Claude's {"mcpServers": …} shape unchanged (verified live against CLI v1.0.78, for
         // stdio and http entries alike) and loads an extra config with --additional-mcp-config. The file
         // goes under .agnes/ rather than .copilot/ deliberately: .copilot/mcp-config.json is auto-loaded,
         // so writing there AND passing the flag would offer every server to the agent twice.
-        "copilot" => ("claude", ".agnes/mcp.json", true),
+        "copilot" => new(McpConfigFormat.Claude, ".agnes/mcp.json", true, McpTokenCarriage.AuthorizationHeader),
         _ => null,
     };
+
+    /// <summary>The name Agnes's own MCP server is offered under. One name across every adapter, so a prompt
+    /// or skill can say "use the agnes tools" and mean the same thing everywhere.</summary>
+    internal const string AgnesMcpServerName = "agnes";
+
+    /// <summary>Environment variable carrying the session's bearer for CLIs that take one only by name.
+    /// Distinct from <c>AGNES_MCP_TOKEN</c>, which is the *forward shim's* grant — a different credential
+    /// for a different listener, and conflating them would hand each the other's authority.</summary>
+    internal const string AgnesMcpTokenEnvVar = "AGNES_MCP_BEARER";
 
     /// <summary>
     /// Builds a sandboxed session's MCP config into the given bundle (env + files): RunAt=Sandbox
@@ -1140,7 +1211,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
-    private string? AddSandboxMcp(string adapterId, ISandbox sandbox, string sessionId,
+    internal string? AddSandboxMcp(string adapterId, ISandbox sandbox, string sessionId,
         bool skipPermissions, string mcpApproval, Projects.Project? project, string? workspaceId,
         Dictionary<string, string> env, List<SandboxCredentialFile> files)
     {
@@ -1149,7 +1220,7 @@ public sealed class SessionManager : IAsyncDisposable
             return null;
         }
 
-        var entries = new List<McpServerInfo>(ApplicableMcp(project, McpRunAt.Sandbox, workspaceId));
+        var entries = McpConfigEntry.From(ApplicableMcp(project, McpRunAt.Sandbox, workspaceId));
 
         // An autonomous session doesn't prompt per tool, so host servers are only forwarded to it
         // when the user has chosen to trust them (the "Ask vs Trust" preference). Attended sessions
@@ -1172,21 +1243,95 @@ public sealed class SessionManager : IAsyncDisposable
             entries.AddRange(hostServers.Select(s => ShimEntry(s, shimVmPath)));
         }
 
+        // Agnes's own MCP server, at the address the guest can reach it on.
+        AddAgnesMcpEntry(entries, target, sessionId, _guestMcp, env);
+
         if (entries.Count == 0)
         {
             return null;
         }
 
-        var content = target.Format == "claude" ? McpConfig.ForClaude(entries) : McpConfig.ForCodex(entries);
-        files.Add(new SandboxCredentialFile(target.HomeRel, content));
+        var content = Render(target.Format, entries);
+        files.Add(new SandboxCredentialFile(target.HomeRelativePath, content));
         _logger.LogInformation("Materialized {Count} MCP server(s) into sandbox {SandboxId}", entries.Count, sandbox.Id);
-        return target.UsesFlag ? $"{sandbox.HomeDirectory.TrimEnd('/')}/{target.HomeRel}" : null;
+        return target.UsesFlag ? $"{sandbox.HomeDirectory.TrimEnd('/')}/{target.HomeRelativePath}" : null;
+    }
+
+    private static string Render(McpConfigFormat format, IReadOnlyList<McpConfigEntry> entries)
+        => format == McpConfigFormat.Claude ? McpConfig.ForClaude(entries) : McpConfig.ForCodex(entries);
+
+    /// <summary>
+    /// Appends Agnes's own MCP server — the <c>agnes</c> tools (<c>send_user_file</c>, <c>arm_goal</c>, …) —
+    /// to a session's config, carrying that session's bearer token in whatever place the adapter's format
+    /// takes one.
+    /// </summary>
+    /// <remarks>
+    /// The token <b>is</b> the session's identity to the tool layer, so the agent needs no session id of its
+    /// own and cannot name another session's (see <see cref="Mcp.SessionMcpTokens"/>). It is not a device
+    /// token and confers none of a paired human's authority.
+    ///
+    /// An operator who has configured their own server called <c>agnes</c> keeps it: silently replacing a
+    /// server someone deliberately configured is the kind of surprise that makes a tool untrustworthy. The
+    /// consequence — this session has no Agnes tools — is logged rather than swallowed.
+    /// </remarks>
+    private void AddAgnesMcpEntry(
+        List<McpConfigEntry> entries, McpTarget target, string sessionId, string? endpointUrl,
+        Dictionary<string, string>? env)
+    {
+        if (endpointUrl is not { Length: > 0 })
+        {
+            return; // no endpoint configured for this location — nothing to offer.
+        }
+
+        if (entries.Any(e => string.Equals(e.Name, AgnesMcpServerName, StringComparison.OrdinalIgnoreCase)))
+        {
+            _logger.LogWarning(
+                "Session {SessionId}: an MCP server named '{Name}' is already configured, so Agnes's own tools "
+                + "are not being offered to this session. Rename that server to get them back.",
+                sessionId, AgnesMcpServerName);
+            return;
+        }
+
+        var token = _sessionMcpTokens.Issue(sessionId);
+        var entry = new McpConfigEntry
+        {
+            Name = AgnesMcpServerName,
+            Transport = "http",
+            Url = endpointUrl,
+        };
+
+        if (target.TokenCarriage == McpTokenCarriage.BearerTokenEnvVar && target.TokenEnvVar is { Length: > 0 } variable)
+        {
+            // The config names a variable; the launcher has to actually set it. With nowhere to put it
+            // (a host session for a CLI that reads a fixed config path) the entry would authenticate with
+            // nothing, so it is not written at all.
+            if (env is null)
+            {
+                return;
+            }
+
+            env[variable] = token;
+            entry = entry with { BearerTokenEnv = variable };
+        }
+        else
+        {
+            entry = entry with
+            {
+                Headers = new Dictionary<string, string> { ["Authorization"] = $"Bearer {token}" },
+            };
+        }
+
+        entries.Add(entry);
     }
 
     // A RunAt=Host server, as the sandbox sees it: launch the forward shim, which tunnels to the host.
-    private static McpServerInfo ShimEntry(McpServerInfo s, string shimVmPath) => new(
-        s.Id, s.Name, s.RunAt, s.Enabled, "stdio", "python3", [shimVmPath, s.Name],
-        new Dictionary<string, string>(), null, null);
+    private static McpConfigEntry ShimEntry(McpServerInfo s, string shimVmPath) => new()
+    {
+        Name = s.Name,
+        Transport = "stdio",
+        Command = "python3",
+        Args = [shimVmPath, s.Name],
+    };
 
     /// <summary>
     /// Wires git credential brokering into a sandboxed session's bundle: derives the push scope from
@@ -1234,24 +1379,51 @@ public sealed class SessionManager : IAsyncDisposable
         _logger.LogInformation("Session {SessionId}: GitHub access on {Host} brokered ({Mode}, per-repo consent).", sessionId, host, mode);
     }
 
-    /// <summary>Writes a host (non-sandbox) session's RunAt=Host MCP config to a temp file for the CLI flag.</summary>
-    private async Task<string?> MaterializeHostMcpAsync(string adapterId, Projects.Project? project, string? workspaceId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Writes an unsandboxed session's MCP config — the operator's RunAt=Host servers plus Agnes's own
+    /// <c>agnes</c> server on the loopback endpoint — to a temp file for the CLI flag. Returns its path, or
+    /// null when this adapter takes no Agnes-written config on the host or there is nothing to write.
+    /// </summary>
+    internal async Task<string?> MaterializeHostMcpAsync(
+        string adapterId, string sessionId, Projects.Project? project, string? workspaceId, CancellationToken cancellationToken)
     {
-        if (McpTargetFor(adapterId) is not { UsesFlag: true })
-        {
-            return null; // only the config-flag (Claude) host path is wired; host-Codex/ACP deferred
-        }
-
-        var servers = ApplicableMcp(project, McpRunAt.Host, workspaceId);
-        if (servers.Count == 0)
+        // A CLI that discovers its config at a fixed path in the real home directory is excluded here — see
+        // McpTarget.SupportsHostSessions. Writing there would edit the operator's own configuration.
+        if (McpTargetFor(adapterId) is not { SupportsHostSessions: true } target)
         {
             return null;
         }
 
-        var tempFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
-        await File.WriteAllTextAsync(tempFile, McpConfig.ForClaude(servers), cancellationToken).ConfigureAwait(false);
-        return tempFile;
+        var entries = McpConfigEntry.From(ApplicableMcp(project, McpRunAt.Host, workspaceId));
+        AddAgnesMcpEntry(entries, target, sessionId, _localMcp, env: null);
+        if (entries.Count == 0)
+        {
+            return null;
+        }
+
+        // Named for the session rather than a fresh GUID: this now runs for every host session and again on
+        // every relaunch, so a random name would leave a growing pile of files each holding a live bearer.
+        // One file per session, overwritten in place, is the bound.
+        var directory = Path.Combine(Path.GetTempPath(), "agnes-mcp");
+        Directory.CreateDirectory(directory);
+        var file = Path.Combine(directory, $"{SafeFileName(sessionId)}.json");
+        await File.WriteAllTextAsync(file, Render(target.Format, entries), cancellationToken).ConfigureAwait(false);
+
+        // It carries a session bearer, so no other user of this machine may read it — the default
+        // temp-directory umask is not enough on a shared host.
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        return file;
     }
+
+    // Session ids are Agnes-generated, but this path is joined into a filename — keep it incapable of
+    // escaping the directory whatever a future id format looks like.
+    private static string SafeFileName(string sessionId)
+        => new(sessionId.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
 
     /// <summary>Loads the persisted session catalogue on startup. Sessions are dormant (history
     /// replays immediately); the agent re-attaches lazily on the first prompt.</summary>
@@ -1400,7 +1572,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
         else
         {
-            mcpConfigPath = await MaterializeHostMcpAsync(record.AdapterId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
+            mcpConfigPath = await MaterializeHostMcpAsync(record.AdapterId, sessionId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
             await ApplyHostSettingsAsync(record.AdapterId, record.ModelId, cancellationToken).ConfigureAwait(false);
         }
 

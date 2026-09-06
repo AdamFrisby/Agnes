@@ -263,6 +263,48 @@ Both approver surfaces show the digits *next to the buttons*, because approving 
 is the one way to use this mechanism and get nothing from it. Declining is the same size and distance
 as approving: "I wasn't expecting this" should be the cheap answer.
 
+## The plaintext MCP listeners (`/mcp-agnes`)
+
+Agnes offers its **own** MCP tools (`send_user_file`, `arm_goal`, …) back to the agents it runs. Two extra
+listeners carry that, both plain HTTP, both serving `/mcp-agnes` and nothing else:
+
+| Listener | Bound to | Reached by | Key |
+|---|---|---|---|
+| Sandbox bridge | the bridge gateway, e.g. `10.99.5.1:5099` | sandboxed sessions | `Agnes:Sandbox:GuestMcpBindUrl` / `…:GuestMcpUrl` (off unless set) |
+| Loopback | `127.0.0.1:5117` | agents running on the host itself | `Agnes:Mcp:LocalUrl`, `Agnes:Mcp:LocalEnabled` (**on** by default) |
+
+**Why not the main TLS listener.** Two reasons, and either alone is decisive. It is commonly self-signed or
+pinned — the deployment Agnes is built for — and an agent CLI has no way to be handed that trust anchor; and
+it is authenticated by **device tokens**, which carry the authority of a paired human across every session on
+the host. Handing one to an agent would be strictly worse than plaintext on loopback.
+
+**Why plaintext is acceptable here.** Three properties, enforced in code rather than assumed:
+
+- **Path allowlist, first in the pipeline.** `GuestMcpEndpoint.IsAllowedPath` refuses everything but
+  `/mcp-agnes` on these ports, and the middleware runs *before* authentication — registered later, the auth
+  layer would answer `/agnes` with a 401, which both admits the hub is there and would serve it outright to
+  anyone holding a device token. The hub, the REST API and the web head are unreachable on both ports.
+- **No device authority crosses them.** The only credential that works is a per-session token
+  (`SessionMcpTokens`) which *is* that session's identity to the tool layer: an agent presenting one can act
+  only on its own session, cannot name another, and is explicitly refused by the tools that need a paired
+  device. Tokens are in-memory, are revoked when the session closes, and do not survive a host restart.
+- **Neither address is routable off-box.** The bridge gateway is reachable only from that bridge's
+  sandboxes; loopback only from this machine.
+
+**They are added to your listener, never in place of it.** Kestrel takes endpoints from two channels that do
+not merge symmetrically, so Agnes picks the one that composes: an explicit `Listen` when you configure
+`Kestrel:Endpoints`, an appended address when you set `ASPNETCORE_URLS` (as the Docker image does). If you
+have configured **neither** — Kestrel is on its own default endpoint, which applies only while both channels
+are empty — Agnes logs a line and binds no MCP listener at all, because adding one would take the main
+listener away with it. Configure a listener and they come up alongside it.
+
+**What loopback does mean.** Any *local* process running as any user on the host can reach `127.0.0.1:5117` —
+but it gains nothing without a session token, and the tokens live only in files written for one session
+(`0600` for the host-session config; a sandbox's own home otherwise). On a shared machine where you do not
+trust local users, set `Agnes:Mcp:LocalEnabled=false`; unsandboxed sessions then simply get no `agnes` server.
+If the configured port is already taken (a second Agnes on the same box), the host logs it and starts without
+the local endpoint rather than failing to start.
+
 ## Data at rest
 
 The event store holds **full session transcripts** — which routinely contain secrets that flowed

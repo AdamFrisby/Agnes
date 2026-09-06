@@ -88,7 +88,16 @@ ASP.NET Core daemon:
 - **event-sourced session store** (SQLite): every `SessionEvent` appended with a monotonic sequence number,
 - `PtyManager` (real terminal) for fallback,
 - **SignalR hub** implementing `Agnes.Protocol`, with per-session broadcast groups,
-- auth: **TLS + device-pairing tokens** (short code / QR → per-device revocable bearer token).
+- auth: **TLS + device-pairing tokens** (short code / QR → per-device revocable bearer token),
+- **Agnes as an MCP server** (`/mcp-agnes`) — the relationship inverted: as well as *consuming* MCP
+  servers on an agent's behalf, the host offers its own tool set (`send_user_file`, `arm_goal`, …) back
+  to the agent it is running. Every session is offered it under the name `agnes`, materialized into
+  whatever config file that adapter's CLI reads (`SessionManager.McpTargetFor` is the one table that
+  says which), authenticated by a **per-session** bearer that *is* that session's identity to the tool
+  layer — so an agent can act on itself and can neither name another session nor exercise a paired
+  human's authority. Two plaintext listeners carry it, because a self-signed TLS endpoint is not
+  something an agent CLI can be told to trust: one on the sandbox bridge for sandboxed sessions, one on
+  loopback for unsandboxed ones. Both serve `/mcp-agnes` and nothing else. See `docs/security.md`.
 
 ### `Agnes.Client`
 Reusable, frontend-agnostic client library: a **connection pool across multiple hosts**, session subscription, snapshot+tail replay, automatic reconnection, and a device-token store.

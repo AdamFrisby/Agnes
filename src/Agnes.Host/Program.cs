@@ -652,18 +652,97 @@ builder.Services.AddSingleton<Agnes.Host.Mcp.IAgnesMcpBackend>(sp => new Agnes.H
 // is no extra listener and no agnes server is offered to any agent.
 var guestMcpBind = builder.Configuration["Agnes:Sandbox:GuestMcpBindUrl"];
 var guestMcpUrl = builder.Configuration["Agnes:Sandbox:GuestMcpUrl"];
-if (!string.IsNullOrWhiteSpace(guestMcpBind))
+
+// ---- and the same endpoint on loopback, for agents that run ON the host (unsandboxed sessions) ----
+// On by default: without it the agnes tools reach only sandboxed sessions, which is not a security posture,
+// just a gap. Loopback plaintext is acceptable for the same three reasons the bridge listener is — the port
+// serves nothing but the MCP path (the gate below), the traffic never leaves this machine, and the only
+// credential crossing it is a per-session token that carries no device authority. See docs/security.md.
+var localMcpBind = builder.Configuration.GetValue("Agnes:Mcp:LocalEnabled", true)
+    ? builder.Configuration["Agnes:Mcp:LocalUrl"] is { Length: > 0 } configured
+        ? configured
+        : Agnes.Host.Mcp.LocalMcpOptions.DefaultBindUrl
+    : null;
+
+// A port already in use must not take the whole host down with it — a second Agnes on the same machine is
+// an ordinary thing to do. Degrade to "no local endpoint" and say so.
+if (localMcpBind is not null
+    && Agnes.Host.Mcp.GuestMcpEndpoint.TryGetPort(localMcpBind) is { } wantedPort
+    && !Agnes.Host.Mcp.GuestMcpEndpoint.IsPortFree(wantedPort))
 {
-    // Append rather than replace: calling UseUrls with only this address would drop the main TLS listener.
-    var existing = builder.Configuration["urls"]
-        ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
-    builder.WebHost.UseUrls(Agnes.Host.Mcp.GuestMcpEndpoint.CombineUrls(existing, guestMcpBind));
+    Console.Error.WriteLine(
+        $"[agnes] Local MCP port {wantedPort} is already in use; the loopback MCP endpoint is disabled for this "
+        + "host. Unsandboxed sessions will not be offered the agnes tools. Set Agnes:Mcp:LocalUrl to a free port.");
+    localMcpBind = null;
+}
+
+// Seizing a fixed, well-known port is the daemon's job. When Agnes.Host is loaded INSIDE another process —
+// the integration tests' WebApplicationFactory, tooling embedding the host — it must not: two such hosts in
+// one process would collide on the port, and an embedded host is not what an agent's on-disk MCP config is
+// written against anyway.
+var isDaemon = System.Reflection.Assembly.GetEntryAssembly() == typeof(Agnes.Host.Mcp.AgnesMcpEndpoints).Assembly;
+if (!isDaemon)
+{
+    guestMcpBind = null;
+    localMcpBind = null;
+}
+
+// Add these listeners through whichever channel ADDS to the host's main listener rather than replacing it.
+// Kestrel's two endpoint channels don't merge symmetrically and the wrong one silently unbinds the listener
+// every client uses — see GuestMcpEndpoint.ChooseChannel for the three cases and what each does.
+var extraBinds = new[] { guestMcpBind, localMcpBind }.Where(u => !string.IsNullOrWhiteSpace(u)).ToArray();
+if (extraBinds.Length > 0)
+{
+    var hostingUrls = builder.Configuration["urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+    var kestrelEndpoints = builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Any();
+
+    switch (Agnes.Host.Mcp.GuestMcpEndpoint.ChooseChannel(hostingUrls, kestrelEndpoints))
+    {
+        case Agnes.Host.Mcp.GuestMcpEndpoint.ListenerChannel.HostingUrls:
+            var urls = hostingUrls;
+            foreach (var extra in extraBinds)
+            {
+                urls = Agnes.Host.Mcp.GuestMcpEndpoint.CombineUrls(urls, extra!);
+            }
+
+            builder.WebHost.UseUrls(urls!);
+            break;
+
+        case Agnes.Host.Mcp.GuestMcpEndpoint.ListenerChannel.KestrelEndpoint:
+            builder.WebHost.ConfigureKestrel(kestrel =>
+            {
+                foreach (var extra in extraBinds)
+                {
+                    if (Agnes.Host.Mcp.GuestMcpEndpoint.TryGetEndpoint(extra) is { } endpoint)
+                    {
+                        kestrel.Listen(endpoint.Address, endpoint.Port);
+                    }
+                }
+            });
+            break;
+
+        default:
+            // Neither channel is in use, so Kestrel is on its own default endpoint — which applies only
+            // while both channels are empty. Binding here would take the main listener away with it.
+            Console.Error.WriteLine(
+                "[agnes] No listener is configured (ASPNETCORE_URLS or Kestrel:Endpoints), so the plaintext MCP "
+                + "endpoints were not bound — adding one would have replaced the host's default listener. "
+                + "Configure a listener and they will come up alongside it.");
+            guestMcpBind = null;
+            localMcpBind = null;
+            break;
+    }
 }
 
 builder.Services.AddSingleton(new Agnes.Host.Sessions.GuestMcpOptions
 {
     Url = string.IsNullOrWhiteSpace(guestMcpBind) ? null : guestMcpUrl,
     BindUrl = guestMcpBind,
+});
+builder.Services.AddSingleton(new Agnes.Host.Mcp.LocalMcpOptions
+{
+    Url = Agnes.Host.Mcp.LocalMcpOptions.UrlFor(localMcpBind),
+    BindUrl = localMcpBind,
 });
 builder.Services.AddSingleton<Agnes.Host.Mcp.SessionMcpTokens>();
 
@@ -1277,15 +1356,17 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginManagementServi
 
 var app = builder.Build();
 
-// FIRST in the pipeline on purpose. This port is plaintext and reachable from every sandbox, so the
-// path restriction has to run before anything else can respond on it: registered later, authentication
-// answers /agnes with a 401 instead, which both leaks that the hub is there and would serve it outright
-// to anyone holding a device token. Everything but the MCP endpoint is refused here.
-if (Agnes.Host.Mcp.GuestMcpEndpoint.TryGetPort(guestMcpBind) is { } guestPort)
+// FIRST in the pipeline on purpose. These ports are plaintext — one reachable from every sandbox, one from
+// anything running on this machine — so the path restriction has to run before anything else can respond on
+// them: registered later, authentication answers /agnes with a 401 instead, which both leaks that the hub is
+// there and would serve it outright to anyone holding a device token. Everything but the MCP endpoint is
+// refused here, on every plaintext port at once.
+var plaintextMcpPorts = Agnes.Host.Mcp.GuestMcpEndpoint.RestrictedPorts(guestMcpBind, localMcpBind);
+if (plaintextMcpPorts.Count > 0)
 {
     app.Use(async (ctx, next) =>
     {
-        if (ctx.Connection.LocalPort == guestPort
+        if (plaintextMcpPorts.Contains(ctx.Connection.LocalPort)
             && !Agnes.Host.Mcp.GuestMcpEndpoint.IsAllowedPath(ctx.Request.Path.Value))
         {
             ctx.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -1325,6 +1406,8 @@ _ = app.Services.GetRequiredService<Agnes.Host.Notifications.PushNotificationDis
 await app.Services.GetRequiredService<Agnes.Host.Plugins.PluginInstaller>().RestoreEnabledPluginsAsync();
 
 var tokens = app.Services.GetRequiredService<DeviceRegistry>();
+// Per-session MCP bearers — the other credential the /mcp-agnes wall accepts (see there).
+var sessionMcpTokens = app.Services.GetRequiredService<Agnes.Host.Mcp.SessionMcpTokens>();
 // The host event spine — auth endpoints emit observe-only audit events (device paired/revoked) on it so a
 // plugin can react (notify, log) without the security-critical DeviceRegistry taking an async dependency.
 var authEvents = app.Services.GetRequiredService<Agnes.Abstractions.Events.IEventBus>();
@@ -1401,12 +1484,14 @@ app.Use(async (context, next) =>
     }
 
     // Agnes-as-MCP-server endpoint: gate every request (each tool call is its own POST in stateless mode) on a
-    // valid device token, read from an Authorization: Bearer header (the OpenAI Realtime MCP connector) or the
-    // access_token query. The tools re-resolve the caller identity from the same token; this is the outer wall.
+    // credential we recognize, read from an Authorization: Bearer header (how both an agent's generated config
+    // and the OpenAI Realtime MCP connector authenticate) or the access_token query. This is the outer wall;
+    // the tools re-resolve the caller from the same token and decide what it may do. See McpEndpointGate for
+    // which bearers pass and why a session token has to be one of them.
     if (context.Request.Path.StartsWithSegments(Agnes.Host.Mcp.AgnesMcpEndpoints.Path))
     {
         var mcpToken = Agnes.Host.Mcp.HttpContextMcpTokenSource.ExtractToken(context);
-        if (!tokens.IsValid(mcpToken))
+        if (!Agnes.Host.Mcp.McpEndpointGate.IsAccepted(mcpToken, tokens, sessionMcpTokens))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return;
@@ -2214,7 +2299,13 @@ var transport = transports.Find(transportName)
         $"No transport provider named '{transportName}' is registered (have: {string.Join(", ", transports.All.Select(t => t.Id))}).");
 app.Lifetime.ApplicationStarted.Register(() =>
 {
-    var bound = app.Urls.Count > 0 ? app.Urls.ToArray() : ["(host default binding)"];
+    // The plaintext MCP listeners are NOT client addresses. They serve one path, speak no Agnes protocol,
+    // and take no device token — advertising one would put a broken address in the pairing QR, and handing
+    // one to a tunnel transport would publish a plaintext port to the internet.
+    var clientAddresses = app.Urls
+        .Where(u => Agnes.Host.Mcp.GuestMcpEndpoint.TryGetPort(u) is not { } port || !plaintextMcpPorts.Contains(port))
+        .ToArray();
+    var bound = clientAddresses.Length > 0 ? clientAddresses : ["(host default binding)"];
     try
     {
         // ExposeAsync actively brings a tunnel transport up (e.g. runs `tailscale serve`); Direct just
