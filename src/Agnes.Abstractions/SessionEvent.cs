@@ -77,6 +77,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(GitCredentialEvent), "git_credential")]
 [JsonDerivedType(typeof(SessionTitleEvent), "session_title")]
 [JsonDerivedType(typeof(PendingQueueEvent), "pending_queue")]
+[JsonDerivedType(typeof(FileSharedEvent), "file_shared")]
 public abstract record SessionEvent : Events.IAgnesEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -257,3 +258,24 @@ public sealed record SubagentStartedEvent(string SubagentId, string Name, string
 /// the parent's transcript read-only above a "Forked from…" divider (sessions/01).
 /// </summary>
 public sealed record ForkedFromEvent(string ParentSessionId, long ParentSequence) : SessionEvent;
+
+/// <summary>
+/// The agent sent the user a file: a screenshot, a report, a build — something to look at rather than a
+/// diff to review. The host copied it to a stable place under the session's workspace
+/// (<c>.agnes/shared/&lt;FileId&gt;/&lt;FileName&gt;</c>) at the moment of sending, so a later edit or
+/// deletion by the agent cannot change what the person receives, and every client fetches it through the
+/// ordinary guarded workspace download path by <see cref="RelativePath"/>.
+/// </summary>
+/// <param name="FileId">Stable id (also the folder under <c>.agnes/shared</c>).</param>
+/// <param name="FileName">Leaf name, as the person will see and save it.</param>
+/// <param name="RelativePath">Workspace-relative, POSIX-separated path of the stored copy.</param>
+/// <param name="Size">Bytes.</param>
+/// <param name="MimeType">Best-effort from the extension; null when unknown.</param>
+/// <param name="Caption">The agent's one line of context ("before vs after"), or null.</param>
+public sealed record FileSharedEvent(
+    string FileId,
+    string FileName,
+    string RelativePath,
+    long Size,
+    string? MimeType,
+    string? Caption) : SessionEvent;

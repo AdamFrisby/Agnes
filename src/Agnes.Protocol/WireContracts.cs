@@ -894,7 +894,8 @@ public sealed record PushNotificationPrefs(
     bool Enabled = true,
     bool TurnReady = true,
     bool PermissionRequest = true,
-    bool UserActionRequest = true);
+    bool UserActionRequest = true,
+    bool FileShared = true);
 
 /// <summary>A device registering (or re-registering) its push token against a notification channel, together
 /// with its toggles. <see cref="ChannelId"/> is the target <c>INotificationChannel</c> ("mobile-push",
