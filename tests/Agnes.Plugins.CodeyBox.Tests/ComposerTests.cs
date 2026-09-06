@@ -355,7 +355,9 @@ public sealed class ComposerTests
         var draft = Composer.Infer(new ComposerContext(null, ComposerIntent.Promote, null, suggestion), Projects, []);
 
         Assert.Equal("Split the audit view", draft.Title);
-        Assert.Equal("It renders four unrelated things.\n\nFiles: AuditView.cs, DiffView.cs", draft.Prompt);
+        // The title leads the prompt: the agent reads the prompt, and the composer derives its title from
+        // the prompt's first line, so the two agree by construction.
+        Assert.Equal("Split the audit view\n\nIt renders four unrelated things.\n\nFiles: AuditView.cs, DiffView.cs", draft.Prompt);
         Assert.Empty(draft.DependsOn);
         Assert.Equal("other", draft.ProjectId);
     }

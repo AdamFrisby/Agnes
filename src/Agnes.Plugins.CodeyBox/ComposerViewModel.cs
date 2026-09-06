@@ -105,15 +105,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         var projects = _projects();
         var items = _items();
 
-        Draft? inferred = null;
-        try
-        {
-            inferred = Composer.Infer(context, projects, items);
-        }
-        catch (NotImplementedException)
-        {
-            // BoardModel/Composer is landing concurrently. See the remark above.
-        }
+        Draft? inferred = Composer.Infer(context, projects, items);
 
         Intent = context.Intent;
         Prefix = $"plan-{DateTimeOffset.Now:yyyyMMdd-HHmm}";
@@ -432,17 +424,7 @@ public sealed partial class ComposerViewModel : ObservableObject
         }
 
         var ceiling = ProjectOf(ProjectId)?.PriorityCeiling ?? Project.GlobalMaxPriority;
-        int value;
-        try
-        {
-            value = Composer.PriorityFor(Position, AfterChain?.Id, [.. NextChains], ceiling);
-        }
-        catch (NotImplementedException)
-        {
-            // Composer.PriorityFor lands alongside this. Normal is 0 either way, so the common case is
-            // right and the others simply do not move until it arrives.
-            value = 0;
-        }
+        var value = Composer.PriorityFor(Position, AfterChain?.Id, [.. NextChains], ceiling);
 
         _recomputing = true;
         Priority = value;
@@ -506,15 +488,7 @@ public sealed partial class ComposerViewModel : ObservableObject
 
                 // Off the UI thread on purpose: splitting a long pasted plan is real work, and it runs on
                 // every keystroke that survives the debounce.
-                Plan? parsed;
-                try
-                {
-                    parsed = Composer.Parse(text, projectId, prefix);
-                }
-                catch (NotImplementedException)
-                {
-                    parsed = null;
-                }
+                Plan? parsed = Composer.Parse(text, projectId, prefix);
 
                 if (generation != Volatile.Read(ref _parseGeneration))
                 {

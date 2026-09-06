@@ -19,8 +19,6 @@ namespace Agnes.Plugins.CodeyBox.Tests;
 /// </remarks>
 public class BoardViewModelTests
 {
-    private const string PendingModel =
-        "BoardModel is being implemented concurrently and throws NotImplementedException. Integrator: un-skip.";
 
     private static (CodeyBoxQueueViewModel Vm, RoutingHandler Http) New(Action<RoutingHandler>? arrange = null)
     {
@@ -34,7 +32,7 @@ public class BoardViewModelTests
 
     // ---- the board ----
 
-    [Fact(Skip = PendingModel)]
+    [Fact]
     public async Task The_board_is_built_on_every_refresh()
     {
         var (vm, _) = New(h => h.ItemsBody = JsonSerializer.Serialize(new[]
@@ -50,7 +48,7 @@ public class BoardViewModelTests
         Assert.NotNull(vm.Board);
     }
 
-    [Fact(Skip = PendingModel)]
+    [Fact]
     public async Task Search_narrows_every_horizon_and_surfaces_history()
     {
         // One narrowing feeds all four horizons — a search that moved Next but left Landed describing the
@@ -73,7 +71,7 @@ public class BoardViewModelTests
         Assert.Contains(vm.HistoryMatches, c => c.Steps.Any(s => s.Item.Id == "cccc3333"));
     }
 
-    [Fact(Skip = PendingModel)]
+    [Fact]
     public async Task History_is_empty_when_nothing_is_being_searched_for()
     {
         var (vm, _) = New(h => h.ItemsBody = JsonSerializer.Serialize(new[]
@@ -87,7 +85,7 @@ public class BoardViewModelTests
         Assert.Empty(vm.HistoryMatches);
     }
 
-    [Fact(Skip = PendingModel)]
+    [Fact]
     public async Task Selecting_recomputes_the_relations_band()
     {
         var (vm, _) = New(h => h.ItemsBody = JsonSerializer.Serialize(new[]
@@ -106,7 +104,7 @@ public class BoardViewModelTests
         Assert.Contains(vm.Relations!.Parents, p => p.Item.Id == "aaaa1111");
     }
 
-    [Fact(Skip = PendingModel)]
+    [Fact]
     public async Task Run_next_sends_exactly_the_priority_patches_the_model_asked_for()
     {
         // The orchestrator's own /workitems/reorder writes a hint the dispatcher ignores, so a move IS a

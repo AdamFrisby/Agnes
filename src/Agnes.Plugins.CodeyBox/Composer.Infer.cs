@@ -97,17 +97,28 @@ public static partial class Composer
             IsRefactor: false);
     }
 
+    // The title leads the prompt: the agent reads the prompt, not the title field, and the composer derives
+    // its title from the prompt's first line — so the two agree by construction.
     private static string PromotedPrompt(Suggestion suggestion)
     {
-        var rationale = suggestion.Rationale?.Trim() ?? string.Empty;
-        var files = suggestion.FilesReferenced ?? [];
-        if (files.Count == 0)
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(suggestion.Title))
         {
-            return rationale;
+            parts.Add(suggestion.Title.Trim());
         }
 
-        var line = $"Files: {string.Join(", ", files)}";
-        return rationale.Length == 0 ? line : $"{rationale}\n\n{line}";
+        if (!string.IsNullOrWhiteSpace(suggestion.Rationale))
+        {
+            parts.Add(suggestion.Rationale.Trim());
+        }
+
+        var files = suggestion.FilesReferenced ?? [];
+        if (files.Count > 0)
+        {
+            parts.Add($"Files: {string.Join(", ", files)}");
+        }
+
+        return string.Join("\n\n", parts);
     }
 
     /// <summary>The priority a <see cref="Position"/> maps to among the currently queued items.</summary>

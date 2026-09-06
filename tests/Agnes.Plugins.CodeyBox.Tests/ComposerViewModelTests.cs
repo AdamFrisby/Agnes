@@ -18,8 +18,6 @@ namespace Agnes.Plugins.CodeyBox.Tests;
 /// </remarks>
 public class ComposerViewModelTests
 {
-    private const string PendingModel =
-        "Composer's pure half is being implemented concurrently and throws NotImplementedException. Integrator: un-skip.";
 
     private static readonly Project[] TheProjects =
     [
@@ -114,7 +112,7 @@ public class ComposerViewModelTests
         Assert.Equal("Cache the audit reports", composer.Title);
     }
 
-    [Fact(Skip = PendingModel)]
+    [Fact]
     public void What_the_model_infers_is_what_the_composer_shows()
     {
         var from = Fake.Row("aaaa1111", agent: "codex", project: "codeybox-self");
@@ -218,7 +216,7 @@ public class ComposerViewModelTests
         Assert.Equal(137, composer.Priority);
     }
 
-    [Fact(Skip = PendingModel)]
+    [Fact]
     public void A_position_maps_to_the_number_the_model_says()
     {
         var next = new[] { Fake.Chain(Fake.Row("aaaa1111", priority: 50)), Fake.Chain(Fake.Row("bbbb2222", priority: 20)) };

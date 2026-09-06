@@ -399,27 +399,12 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
                 IReadOnlyList<Chain> history = [];
                 Relations? relations = null;
 
-                try
-                {
-                    board = BoardModel.Build(items, projects, slots.Busy, slots.Total, now);
-                    history = narrowed ? HistoryChains(board, items, now) : [];
-                }
-                catch (NotImplementedException)
-                {
-                    // BoardModel is landing alongside this. The tab still opens, showing no runway rather
-                    // than an exception; the integrator removes this tolerance.
-                }
+                board = BoardModel.Build(items, projects, slots.Busy, slots.Total, now);
+                history = narrowed ? HistoryChains(board, items, now) : [];
 
                 if (selectedId is not null && items.FirstOrDefault(i => i.Id == selectedId) is { } selected)
                 {
-                    try
-                    {
-                        relations = BoardModel.RelationsOf(selected, items, now);
-                    }
-                    catch (NotImplementedException)
-                    {
-                        // as above
-                    }
+                    relations = BoardModel.RelationsOf(selected, items, now);
                 }
 
                 if (generation != Volatile.Read(ref _rebuildGeneration))
@@ -1126,16 +1111,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             return;
         }
 
-        IReadOnlyList<PriorityChange> changes;
-        try
-        {
-            changes = BoardModel.Reorder([.. queued.Select(c => c.Head)], chain.Head.Id, target, ProjectCeilings);
-        }
-        catch (NotImplementedException)
-        {
-            await _toUi(() => Status = "Reordering isn't wired up yet.").ConfigureAwait(false);
-            return;
-        }
+        var changes = BoardModel.Reorder([.. queued.Select(c => c.Head)], chain.Head.Id, target, ProjectCeilings);
 
         if (changes.Count == 0)
         {
@@ -1383,18 +1359,10 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         var added = Picker.Ticked.Where(id => !Parents(item).Contains(id)).ToList();
         var wanted = Parents(item).Concat(added).Distinct(StringComparer.Ordinal).ToList();
 
-        try
+        if (added.Count > 0 && BoardModel.WouldCycle(item.Id, added, _all))
         {
-            if (added.Count > 0 && BoardModel.WouldCycle(item.Id, added, _all))
-            {
-                await _toUi(() => Status = "That would make the chain depend on itself.").ConfigureAwait(false);
-                return;
-            }
-        }
-        catch (NotImplementedException)
-        {
-            // The cycle check lands with BoardModel. Until it does, the orchestrator is the backstop —
-            // it rejects a cycle outright, which is a worse message but not a wrong outcome.
+            await _toUi(() => Status = "That would make the chain depend on itself.").ConfigureAwait(false);
+            return;
         }
 
         await _toUi(() => IsAddingDependency = false).ConfigureAwait(false);
