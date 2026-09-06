@@ -63,6 +63,7 @@ public class CodeyBoxViewTests
     }
 
     [Theory]
+    [InlineData(CodeyBoxSection.Dashboard)]
     [InlineData(CodeyBoxSection.Queue)]
     [InlineData(CodeyBoxSection.Fleet)]
     [InlineData(CodeyBoxSection.Supervision)]

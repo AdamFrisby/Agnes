@@ -1,0 +1,254 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:v="using:Agnes.Plugins.CodeyBox.Views"
+             xmlns:c="using:Agnes.Plugins.CodeyBox.Views.Controls"
+             x:Class="Agnes.Plugins.CodeyBox.Views.OverviewView">
+  <!-- THE OVERVIEW. Three bands, read top to bottom in about five seconds, answering in this order:
+       is it moving, is it converging, did it land whole.
+
+         Band 1  the state of the world in one sentence, then five vitals against their own norms
+         Band 2  one trace per live item, worst first; the healthy ones collapse to a count
+         Band 3  the trend: cumulative flow over 30 days, and quota burning down to its reset
+
+       The DataContext here is the Overview record itself, so nothing in this file knows about a view
+       model, a client or a host. The two things a row can DO arrive as properties on this control
+       (OpenItemCommand, ExtendCeilingCommand) and rows reach them with $parent[UserControl].
+
+       Every colour is a DynamicResource role from the host's theme, never a literal, and the status hues
+       keep their one meaning each: sky = in motion, amber = blocked on you, mint = done/healthy,
+       pink = failed. The drawn controls (c:*) do the same lookup in code — see ThemedDrawing. -->
+  <UserControl.Resources>
+
+    <!-- One live item. Shared by the attention list and the healthy list behind the count, because they
+         differ in urgency, not in what a row is. -->
+    <DataTemplate x:Key="TraceRow">
+      <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+        <!-- The row itself is the affordance: the whole thing opens the item. -->
+        <Button Grid.Column="0" Classes="tracerow" Command="{Binding $parent[UserControl].OpenItemCommand}"
+                CommandParameter="{Binding}">
+          <Grid ColumnDefinitions="Auto,*,Auto" ToolTip.Tip="{Binding Why}">
+            <c:MotionDot Grid.Column="0" Motion="{Binding Motion}" Width="9" Height="9"
+                         VerticalAlignment="Top" Margin="0,4,9,0" />
+
+            <StackPanel Grid.Column="1" Spacing="2">
+              <TextBlock Text="{Binding Item.Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                         TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Border Classes="statechip">
+                  <TextBlock Text="{Binding Item.State}" FontSize="9" Foreground="{DynamicResource FgDim}" />
+                </Border>
+                <TextBlock Text="{Binding Item.Agent}" FontSize="10" Foreground="{DynamicResource FgFaint}"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Converter={x:Static v:OverviewConverters.Iterations}}"
+                           FontSize="10" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
+              </StackPanel>
+
+              <!-- Why it is where it is. Wedged is a defect, so it is pink; waiting on a person is amber,
+                   the hue that means "blocked on you" everywhere else in the app; everything else is a
+                   fact rather than a call to action and stays dim. -->
+              <TextBlock Text="{Binding Why}" FontSize="10" TextWrapping="Wrap" MaxLines="2"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource StatusError}" IsVisible="{Binding IsWedged}" />
+              <TextBlock Text="{Binding Why}" FontSize="10" TextWrapping="Wrap" MaxLines="2"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource StatusAttention}">
+                <TextBlock.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="NeedsPerson" />
+                    <Binding Path="!IsWedged" />
+                  </MultiBinding>
+                </TextBlock.IsVisible>
+              </TextBlock>
+              <TextBlock Text="{Binding Why}" FontSize="10" TextWrapping="Wrap" MaxLines="2"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource FgDim}">
+                <TextBlock.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="!NeedsPerson" />
+                    <Binding Path="!IsWedged" />
+                  </MultiBinding>
+                </TextBlock.IsVisible>
+              </TextBlock>
+            </StackPanel>
+
+            <!-- The audit loop as a shape. What it is doing, not how many times it has done it. -->
+            <c:TraceGlyph Grid.Column="2" Trace="{Binding}" Width="124" Height="22"
+                          VerticalAlignment="Center" Margin="10,0,0,0" IsVisible="{Binding HasTrace}" />
+          </Grid>
+        </Button>
+
+        <!-- Offered only where it changes an outcome: an item still converging as it runs out of budget
+             is work that gets discarded for the sake of a number. Kept outside the row button so the two
+             clicks cannot be confused for one another. -->
+        <Button Grid.Column="1" Classes="secondary" Content="Extend ceiling" VerticalAlignment="Center"
+                Margin="8,0,0,0" Padding="9,4" FontSize="11" IsVisible="{Binding NearCeiling}"
+                Command="{Binding $parent[UserControl].ExtendCeilingCommand}" CommandParameter="{Binding}" />
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <Style Selector="Button.tracerow">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="{DynamicResource Panel}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="9,7" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.tracerow:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+    <Style Selector="Border.statechip">
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.secondary">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    </Style>
+    <Style Selector="Border.vital">
+      <Setter Property="Background" Value="{DynamicResource Panel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="MinWidth" Value="182" />
+      <Setter Property="Margin" Value="0,0,10,10" />
+    </Style>
+    <Style Selector="TextBlock.vitallabel">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+    </Style>
+    <Style Selector="TextBlock.vitalvalue">
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="TextBlock.vitalcaption">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.bandhead">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="TextBlock.quiet">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Spacing="16">
+
+    <!-- ============ BAND 1: the state of the world ============
+         One sentence naming the constraint, in the words you would use out loud, and five vitals read
+         against the fleet's own trailing norm rather than an absolute — so a quiet day reads as quiet
+         instead of as a collapse. -->
+    <Grid ColumnDefinitions="Auto,*">
+      <c:ToneEdge Grid.Column="0" Tone="{Binding Verdict}" Width="3" Margin="0,0,10,0" />
+      <TextBlock Grid.Column="1" Text="{Binding Sentence}" FontSize="15" FontWeight="SemiBold"
+                 Foreground="{DynamicResource Fg}" TextWrapping="Wrap" VerticalAlignment="Center" />
+    </Grid>
+
+    <StackPanel Spacing="0">
+      <ItemsControl ItemsSource="{Binding Vitals}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Classes="vital">
+              <Grid ColumnDefinitions="Auto,*">
+                <!-- Tone on the edge only. -->
+                <c:ToneEdge Grid.Column="0" Tone="{Binding Tone}" Width="3" Margin="0,0,10,0" />
+                <StackPanel Grid.Column="1" Spacing="2">
+                  <TextBlock Classes="vitallabel" Text="{Binding Label}" />
+                  <TextBlock Classes="vitalvalue" Text="{Binding Value}" />
+                  <!-- The band sits behind the number's history, not behind the number: what is normal
+                       is a property of the series. -->
+                  <c:Sparkline Height="26" HorizontalAlignment="Stretch" Margin="0,2,0,0"
+                               Values="{Binding Spark}" BandLow="{Binding BandLow}"
+                               BandHigh="{Binding BandHigh}" Median="{Binding Median}"
+                               Trend="{Binding Trend}" Tone="{Binding Tone}"
+                               IsVisible="{Binding HasSpark}" />
+                  <TextBlock Classes="vitalcaption" Text="{Binding Caption}" />
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <TextBlock Classes="quiet" Text="Sparklines fill in as the tab is left open."
+                 IsVisible="{Binding Vitals, Converter={x:Static v:OverviewConverters.NoVitalHasBand}}" />
+    </StackPanel>
+
+    <!-- ============ BAND 2: one trace per live item ============
+         Worst first. Everything that is moving and converging collapses into a single count, because a
+         list that shows healthy work at the same weight as wedged work is a list nobody reads. -->
+    <StackPanel Spacing="6">
+      <TextBlock Classes="bandhead" Text="Needs a look" />
+      <TextBlock Classes="quiet" Text="Nothing is in flight." IsVisible="{Binding !HasAttention}" />
+      <ItemsControl ItemsSource="{Binding Attention}" ItemTemplate="{StaticResource TraceRow}" />
+
+      <Expander IsVisible="{Binding HasHealthy}" Padding="0" Margin="0,4,0,0">
+        <Expander.Header>
+          <TextBlock Text="{Binding HealthyLabel}" FontSize="11" Foreground="{DynamicResource FgDim}" />
+        </Expander.Header>
+        <ItemsControl ItemsSource="{Binding Healthy}" ItemTemplate="{StaticResource TraceRow}" />
+      </Expander>
+    </StackPanel>
+
+    <!-- ============ BAND 3: the trend ============ -->
+    <Grid ColumnDefinitions="*,16,Auto">
+
+      <!-- Did it land whole. The slope of the landed band is throughput; the gap above it is WIP. -->
+      <StackPanel Grid.Column="0" Spacing="6">
+        <TextBlock Classes="bandhead" Text="Cumulative flow · 30 days" />
+        <c:FlowChart Series="{Binding Flow}" Height="140" HorizontalAlignment="Stretch"
+                     IsVisible="{Binding Flow.HasData}" />
+        <TextBlock Classes="quiet" Text="Not enough history to draw a flow yet."
+                   IsVisible="{Binding !Flow.HasData}" />
+      </StackPanel>
+
+      <!-- Can it keep going. Unspent quota at the reset is the only waste under a subscription, so the
+           projection is the number, not the spend. -->
+      <StackPanel Grid.Column="2" Spacing="6" MinWidth="240">
+        <TextBlock Classes="bandhead" Text="Quota to reset" />
+        <TextBlock Classes="quiet" Text="No quota history on this host."
+                   IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.NoQuotaHistory}}" />
+        <ItemsControl ItemsSource="{Binding Quota}"
+                      IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.HasQuotaHistory}}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Spacing="2" Margin="0,0,0,8" IsVisible="{Binding HasSamples}">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11"
+                             Foreground="{DynamicResource FgDim}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="1" FontSize="11" Foreground="{DynamicResource Fg}"
+                             Text="{Binding NowPct, StringFormat='{}{0:0}% left'}"
+                             IsVisible="{Binding NowPct, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                </Grid>
+                <c:BurnDown Burn="{Binding}" Height="40" HorizontalAlignment="Stretch" />
+                <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}"
+                           Text="{Binding ProjectedUnspentPct, StringFormat='leaves ~{0:0}% unspent at reset'}"
+                           IsVisible="{Binding ProjectedUnspentPct, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Grid>
+  </StackPanel>
+</UserControl>
