@@ -1,0 +1,419 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:cb="using:Agnes.Plugins.CodeyBox"
+             xmlns:v="using:Agnes.Plugins.CodeyBox.Views"
+             xmlns:c="using:Agnes.Plugins.CodeyBox.Views.Controls"
+             x:Class="Agnes.Plugins.CodeyBox.Views.BoardView">
+  <!-- THE RUNWAY. Four horizons read top to bottom — Now, Next, Waiting, Landed — replacing a flat list
+       of 404 rows that could not answer the one question an operator opens this tab with: what happens
+       next, and can I change it.
+
+       The unit of READING here is the chain: nine items authored in one second as a seven-step series
+       are one row with a strip of pips, not nine rows that say nothing about each other. The unit of
+       ACTING stays the item, which is why a pip, a blocker link and an expanded step row all select an
+       individual step.
+
+       This control's DataContext is the queue view model, so the rows reach commands through
+       $parent[UserControl].DataContext — an ordinary {Binding} inside a row template would resolve
+       against the Chain. The three REORDER commands arrive as properties instead, because drag-and-drop
+       is driven from code-behind and code-behind should not be reaching into a DataContext by name.
+
+       Colours are DynamicResource roles, never literals, and each status hue keeps its one meaning:
+       sky = in motion, amber = blocked on you, mint = landed, pink = failed, violet = selection. -->
+  <UserControl.Resources>
+
+    <!-- ONE row template for every horizon. The differences between them are properties of the chain
+         (IsNext, HasBlocker, IsSingleton), not different kinds of row, and writing them as separate
+         templates is how the Waiting rows would quietly stop growing a feature the Now rows got. -->
+    <DataTemplate x:Key="ChainRow">
+      <Grid Classes="chainrow" Classes.nextrow="{Binding IsNext}" Background="Transparent" Margin="0,1"
+            ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+
+        <!-- Selection is violet and nothing else in the app is, so it is drawn as its own wash rather
+             than as a state on the button: a class toggled by a MultiBinding cannot be expressed, and a
+             row that silently stops highlighting is a bug nobody reports. -->
+        <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" CornerRadius="5" Opacity="0.2"
+                Background="{DynamicResource Accent}">
+          <Border.IsVisible>
+            <MultiBinding Converter="{x:Static v:BoardConverters.IsSelected}">
+              <Binding />
+              <Binding Path="$parent[UserControl].DataContext.Selected" />
+            </MultiBinding>
+          </Border.IsVisible>
+        </Border>
+
+        <!-- The row itself selects the chain's head: the step the row already stands for. -->
+        <Button Grid.Row="0" Grid.Column="0" Classes="chainbutton"
+                Command="{Binding $parent[UserControl].DataContext.SelectChainCommand}"
+                CommandParameter="{Binding}">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:StepDot Grid.Column="0" Width="9" Height="9" Margin="0,0,9,0" VerticalAlignment="Center"
+                       State="{Binding Converter={x:Static v:BoardConverters.HeadState}}" />
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding Agent}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                         VerticalAlignment="Center" />
+              <TextBlock Text="{Binding ProjectId}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+
+            <!-- Why it is where it is. Pink only where something is broken, amber only where it is
+                 waiting on a person; a chain that is merely queued states a fact and stays dim. -->
+            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource StatusError}"
+                       Text="{Binding Why}"
+                       IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyIsError}}" />
+            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource StatusAttention}"
+                       Text="{Binding Why}"
+                       IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyNeedsPerson}}" />
+            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource FgDim}"
+                       Text="{Binding Why}"
+                       IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyIsPlain}}" />
+          </Grid>
+        </Button>
+
+        <!-- The chain, as a shape. Kept outside the row button so a pip can select its own step without
+             the click also selecting the head. -->
+        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="7" Margin="8,0,0,0"
+                    VerticalAlignment="Center" IsVisible="{Binding !IsSingleton}">
+          <c:ChainStrip Steps="{Binding Steps}" VerticalAlignment="Center"
+                        SelectedId="{Binding $parent[UserControl].DataContext.Selected,
+                                     Converter={x:Static v:BoardConverters.IdOf}}"
+                        StepCommand="{Binding $parent[UserControl].DataContext.SelectStepCommand}" />
+          <!-- The progress IS the disclosure: a word the operator wanted to read anyway, rather than a
+               separate glyph-shaped affordance next to it. -->
+          <ToggleButton x:Name="Expand" Classes="progress" Content="{Binding Progress}"
+                        ToolTip.Tip="Show the steps" />
+        </StackPanel>
+
+        <!-- Reordering, revealed on hover so four buttons per row do not shout over the queue. -->
+        <StackPanel Grid.Row="0" Grid.Column="2" Classes="rowactions" Orientation="Horizontal" Spacing="4"
+                    VerticalAlignment="Center" Margin="8,0,0,0" IsVisible="{Binding IsNext}">
+          <Button Classes="ghost" Content="Run next" ToolTip.Tip="Put this at the front of the queue"
+                  Command="{Binding $parent[UserControl].RunNextCommand}" CommandParameter="{Binding}" />
+          <Button Classes="ghost" Content="Up"
+                  Command="{Binding $parent[UserControl].DataContext.MoveUpCommand}" CommandParameter="{Binding}" />
+          <Button Classes="ghost" Content="Down"
+                  Command="{Binding $parent[UserControl].DataContext.MoveDownCommand}" CommandParameter="{Binding}" />
+          <Button Classes="ghost" Content="Run after…" ToolTip.Tip="Then pick the chain it should follow"
+                  Command="{Binding $parent[UserControl].BeginRunAfterCommand}" CommandParameter="{Binding}" />
+        </StackPanel>
+
+        <!-- The other half of "Run after…": while a move is armed, every other queued row becomes a
+             destination. Not hover-revealed — during a move it is the only thing being looked for. -->
+        <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Classes="putafter"
+                Content="Put it after this" HorizontalAlignment="Left" Margin="19,2,0,2"
+                Command="{Binding $parent[UserControl].RunAfterCommand}" CommandParameter="{Binding}">
+          <Button.IsVisible>
+            <MultiBinding Converter="{x:Static v:BoardConverters.PendingElsewhere}">
+              <Binding />
+              <Binding Path="$parent[UserControl].DataContext.PendingMove" />
+            </MultiBinding>
+          </Button.IsVisible>
+        </Button>
+
+        <!-- What is actually holding a waiting chain, named and selectable. The unblock itself lives in
+             the pane's relations band, one click away, because it acts on the parent rather than here. -->
+        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="5"
+                    Margin="19,0,0,2" IsVisible="{Binding HasBlocker}">
+          <TextBlock Text="held by" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                     VerticalAlignment="Center" />
+          <Button Classes="linky" Content="{Binding Blocker.Item.Title}"
+                  Command="{Binding $parent[UserControl].DataContext.SelectStepCommand}"
+                  CommandParameter="{Binding Blocker}" />
+        </StackPanel>
+
+        <!-- The steps, in place. Expanding a chain must not cost the operator their position in the
+             queue, so it happens under the row rather than by navigating into it. -->
+        <ItemsControl Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" ItemsSource="{Binding Steps}"
+                      Margin="19,2,0,4"
+                      IsVisible="{Binding #Expand.IsChecked, FallbackValue=False, TargetNullValue=False}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid>
+                <Border CornerRadius="4" Opacity="0.2" Background="{DynamicResource Accent}">
+                  <Border.IsVisible>
+                    <MultiBinding Converter="{x:Static v:BoardConverters.IsSelected}">
+                      <Binding />
+                      <Binding Path="$parent[UserControl].DataContext.Selected" />
+                    </MultiBinding>
+                  </Border.IsVisible>
+                </Border>
+                <Button Classes="steprow"
+                        Command="{Binding $parent[UserControl].DataContext.SelectStepCommand}"
+                        CommandParameter="{Binding}">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                  <TextBlock Grid.Column="0" Text="{Binding Series}" Width="34" FontSize="10"
+                             Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
+                  <c:StepDot Grid.Column="1" Width="8" Height="8" Margin="0,0,7,0" VerticalAlignment="Center"
+                             State="{Binding State}" />
+                  <TextBlock Grid.Column="2" Text="{Binding Item.Title}" FontSize="11"
+                             Foreground="{DynamicResource FgDim}" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" />
+                  <Border Grid.Column="3" Classes="statechip">
+                    <TextBlock FontSize="9" Foreground="{DynamicResource FgDim}"
+                               Text="{Binding State, Converter={x:Static v:BoardConverters.StateWord}}" />
+                  </Border>
+                  <TextBlock Grid.Column="4" Text="{Binding Item.Agent}" FontSize="10" Margin="8,0,6,0"
+                             Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
+                </Grid>
+                </Button>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <Style Selector="Button.chainbutton">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.chainbutton:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+
+    <Style Selector="Button.steprow">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="6,3" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.steprow:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+
+    <Style Selector="TextBlock.why">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="10,0,0,0" />
+      <Setter Property="MaxWidth" Value="280" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style Selector="Border.statechip">
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Button.ghost">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    </Style>
+    <Style Selector="Button.ghost:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+
+    <Style Selector="Button.putafter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusAttention}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="9,2" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+    </Style>
+
+    <Style Selector="Button.linky">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.linky /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <Style Selector="ToggleButton.progress">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="2,0" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.progress:checked">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="ToggleButton.progress:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- Present, but only once the pointer is on the row it belongs to. -->
+    <Style Selector="StackPanel.rowactions">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Grid.chainrow:pointerover StackPanel.rowactions">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+
+    <Style Selector="Expander.horizon">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="TextBlock.horizonhead">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="TextBlock.subhead">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    </Style>
+    <!-- An empty horizon is a sentence. A blank gap is indistinguishable from a failed request. -->
+    <Style Selector="TextBlock.nothing">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="Margin" Value="19,3,0,3" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- Search first, then the two slices that matter on a host serving several repositories, then the
+         one action the board itself offers. No filter chips: the horizons ARE the filter, and a chip
+         that hides a horizon hides the order the operator came here to read. -->
+    <Grid Grid.Row="0" Margin="8,8,8,6" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
+      <TextBox Grid.Column="0" FontSize="12" Text="{Binding Search, Mode=TwoWay}"
+               PlaceholderText="Search title, id, branch, prompt…" />
+      <ComboBox Grid.Column="1" ItemsSource="{Binding Projects}" MinWidth="140" FontSize="11"
+                SelectedValue="{Binding ProjectFilter, Mode=TwoWay}" SelectedValueBinding="{Binding Id}"
+                DisplayMemberBinding="{Binding DisplayName}" PlaceholderText="All projects" />
+      <ComboBox Grid.Column="2" ItemsSource="{Binding Agents}" MinWidth="104" FontSize="11"
+                SelectedItem="{Binding AgentFilter, Mode=TwoWay}" PlaceholderText="All agents" />
+      <Button Grid.Column="3" Content="New" Padding="12,4" FontSize="12"
+              ToolTip.Tip="Describe some work, or paste a plan"
+              Command="{Binding OpenComposerCommand}"
+              CommandParameter="{x:Static cb:ComposerIntent.Blank}" />
+    </Grid>
+
+    <ScrollViewer Grid.Row="1" Padding="8,0,8,10">
+      <StackPanel Spacing="10">
+
+        <Expander Classes="horizon" IsExpanded="True">
+          <Expander.Header>
+            <TextBlock Classes="horizonhead" Text="{Binding Board.NowHeader}" />
+          </Expander.Header>
+          <StackPanel>
+            <TextBlock Classes="nothing" Text="Nothing running." IsVisible="{Binding !Board.HasNow}" />
+            <ItemsControl ItemsSource="{Binding Board.Now}" ItemTemplate="{StaticResource ChainRow}" />
+          </StackPanel>
+        </Expander>
+
+        <Expander Classes="horizon" IsExpanded="True">
+          <Expander.Header>
+            <TextBlock Classes="horizonhead" Text="{Binding Board.NextHeader}" />
+          </Expander.Header>
+          <StackPanel>
+            <!-- A move in progress states which chain is being moved, because by the time the operator
+                 has scrolled to the destination the row they picked is off screen. -->
+            <Border Margin="0,2,0,6" Padding="9,6" CornerRadius="6"
+                    Background="{DynamicResource Panel}" BorderThickness="1"
+                    BorderBrush="{DynamicResource StatusAttention}"
+                    IsVisible="{Binding HasPendingMove, FallbackValue=False}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"
+                           Foreground="{DynamicResource Fg}"
+                           Text="{Binding PendingMove, Converter={x:Static v:BoardConverters.ChooseWhere}}" />
+                <Button Grid.Column="1" Classes="ghost" Content="Cancel"
+                        Command="{Binding CancelPendingMoveCommand}" />
+              </Grid>
+            </Border>
+
+            <TextBlock Classes="nothing" Text="Nothing queued — add work with New."
+                       IsVisible="{Binding !Board.HasNext}" />
+            <ItemsControl x:Name="NextList" ItemsSource="{Binding Board.Next}"
+                          ItemTemplate="{StaticResource ChainRow}" />
+          </StackPanel>
+        </Expander>
+
+        <Expander Classes="horizon" IsExpanded="True">
+          <Expander.Header>
+            <TextBlock Classes="horizonhead" Text="{Binding Board.WaitingHeader}" />
+          </Expander.Header>
+          <StackPanel>
+            <TextBlock Classes="nothing" Text="Nothing waiting." IsVisible="{Binding !Board.HasWaiting}" />
+            <!-- Grouped by REASON, because a reason is an unblock: everything under one heading is
+                 released by the same move. -->
+            <ItemsControl ItemsSource="{Binding Board.Waiting}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Expander Classes="horizon" IsExpanded="True" Margin="0,2,0,0">
+                    <Expander.Header>
+                      <TextBlock Classes="subhead" Text="{Binding Header}" />
+                    </Expander.Header>
+                    <ItemsControl ItemsSource="{Binding Chains}"
+                                  ItemTemplate="{StaticResource ChainRow}" />
+                  </Expander>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Expander>
+
+        <Expander Classes="horizon" IsExpanded="True">
+          <Expander.Header>
+            <TextBlock Classes="horizonhead" Text="{Binding Board.LandedHeader}" />
+          </Expander.Header>
+          <StackPanel>
+            <TextBlock Classes="nothing" Text="Nothing landed in the last 7 days."
+                       IsVisible="{Binding !Board.HasLanded}" />
+            <!-- Today open, the rest of the week folded: history is here to be searched, not read. -->
+            <ItemsControl ItemsSource="{Binding Board.Landed}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Expander Classes="horizon" Margin="0,2,0,0"
+                            IsExpanded="{Binding Converter={x:Static v:BoardConverters.IsToday}}">
+                    <Expander.Header>
+                      <TextBlock Classes="subhead" Text="{Binding Header}" />
+                    </Expander.Header>
+                    <ItemsControl ItemsSource="{Binding Chains}"
+                                  ItemTemplate="{StaticResource ChainRow}" />
+                  </Expander>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Expander>
+
+        <!-- What the four horizons are deliberately not showing, and how to reach it. -->
+        <TextBlock Text="{Binding Board.HistoryLabel}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                   Margin="4,2,0,0" TextWrapping="Wrap" />
+
+        <Expander Classes="horizon" IsExpanded="True"
+                  IsVisible="{Binding HistoryMatches, Converter={x:Static v:BoardConverters.Any},
+                              FallbackValue=False}">
+          <Expander.Header>
+            <TextBlock Classes="horizonhead" Text="History" />
+          </Expander.Header>
+          <ItemsControl ItemsSource="{Binding HistoryMatches}" ItemTemplate="{StaticResource ChainRow}" />
+        </Expander>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>
