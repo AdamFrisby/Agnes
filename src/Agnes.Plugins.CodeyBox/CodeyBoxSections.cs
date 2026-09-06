@@ -46,17 +46,27 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
     /// </summary>
     private readonly Action<string>? _openItem;
 
+    /// <summary>
+    /// Hands a suggestion to the composer instead of promoting it outright. Supplied the same way
+    /// <see cref="_openItem"/> is, and for the same reason: the sections do not know what contains them.
+    /// Null falls back to the orchestrator's own one-shot promote, which is what a sections view model
+    /// built on its own — in a test, or a future screen — should still do.
+    /// </summary>
+    private readonly Action<Suggestion>? _promote;
+
     public CodeyBoxSectionsViewModel(
         CodeyBoxClient client,
         Func<Action, Task> toUi,
         Confirmation? confirmation = null,
         Action<string>? openItem = null,
-        OverviewHistory? history = null)
+        OverviewHistory? history = null,
+        Action<Suggestion>? promote = null)
     {
         _client = client;
         _toUi = toUi;
         _confirmation = confirmation ?? new Confirmation();
         _openItem = openItem;
+        _promote = promote;
         _history = history ?? new OverviewHistory();
         OpenItemCommand = new RelayCommand<ItemTrace>(OpenItem);
         ExtendCeilingCommand = new AsyncRelayCommand<ItemTrace>(ExtendCeilingAsync);
@@ -1376,6 +1386,16 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
     {
         if (suggestion is null)
         {
+            return;
+        }
+
+        // Promoting is usually the moment someone wants to say which project, what it waits on and where
+        // in the queue it lands — none of which the orchestrator's one-shot promote can be told. So when
+        // there is a composer to open, this opens it seeded from the suggestion and creating stays the
+        // operator's own act.
+        if (_promote is { } compose)
+        {
+            await _toUi(() => compose(suggestion)).ConfigureAwait(false);
             return;
         }
 

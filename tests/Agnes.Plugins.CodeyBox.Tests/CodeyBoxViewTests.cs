@@ -194,8 +194,10 @@ public class CodeyBoxViewTests
         => Render(Seed);
 
     [Fact]
-    public void Grouping_by_project_renders()
-        => Render(vm => { Seed(vm); vm.GroupByProject = true; });
+    public void Narrowing_to_one_project_renders()
+        // Was "grouping by project". Grouping is gone — one queue serving several repositories is now a
+        // project filter that moves every horizon together, rather than a second list beside the first.
+        => Render(vm => { Seed(vm); vm.ProjectFilter = "codeybox-self"; });
 
     [Fact]
     public void The_create_form_offers_projects_rather_than_asking_for_an_id()
@@ -259,7 +261,6 @@ public class ItemPaneRenderTests
                     new CodeyBoxClient(new CodeyBoxOptions("http://127.0.0.1:1", "k"), new OfflineHandler()),
                     action => { action(); return Task.CompletedTask; });
                 vm.Load([row]);
-                vm.Filter = QueueFilter.All;
                 vm.Selected = row;
                 arrange?.Invoke(vm);
 
