@@ -24,6 +24,7 @@ public sealed class SessionViewModel : ObservableObject
     private readonly IUiDispatcher _dispatcher;
     private readonly IPromptStore _prompts;
     private readonly IPermissionPolicy _policy;
+    private readonly IReceivedFileHandler _receivedFiles;
 
     // The host's prompt library, loaded lazily so typing a template's slash token (e.g. /review) expands it.
     private IReadOnlyList<Agnes.Abstractions.LibraryPrompt> _libraryPrompts = [];
@@ -73,13 +74,17 @@ public sealed class SessionViewModel : ObservableObject
     private bool _replaying;
     private SendPolicy _sendPolicy = SendPolicy.QueueInAgent;
 
-    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null, Agnes.Abstractions.Events.IEventBus? eventBus = null)
+    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null, Agnes.Abstractions.Events.IEventBus? eventBus = null, IReceivedFileHandler? receivedFiles = null)
     {
         _host = host;
         _view = view;
         _dispatcher = dispatcher;
         _prompts = prompts ?? NullPromptStore.Instance;
         _policy = policy ?? NullPermissionPolicy.Instance;
+        // What this client can do with a file the agent sends it. Optional and defaulted, because the verbs
+        // are the one genuinely per-platform part of receiving a file: a desktop picks a folder and hands
+        // the file to the OS, a phone shares it. A head that hasn't wired one still renders the card.
+        _receivedFiles = receivedFiles ?? NullReceivedFileHandler.Instance;
         _bus = eventBus ?? new Agnes.Abstractions.Events.EventBus();
         Title = title;
 
@@ -199,6 +204,15 @@ public sealed class SessionViewModel : ObservableObject
         // Only the null → first-plan transition needs announcing; after that the same PlanItemView is
         // updated in place and the panels are already bound to it.
         _transcript.PlanChanged += () => { OnPropertyChanged(nameof(Plan)); RaisePanels(); };
+        SaveSharedFileCommand = new AsyncRelayCommand<SharedFileItem>(
+            item => UseSharedFileAsync(item, (f, ct) => _receivedFiles.SaveAsync(f, ct), "save"),
+            _ => _receivedFiles.CanSave);
+        OpenSharedFileCommand = new AsyncRelayCommand<SharedFileItem>(
+            item => UseSharedFileAsync(item, (f, ct) => _receivedFiles.OpenAsync(f, ct), "open"),
+            _ => _receivedFiles.CanOpen);
+        ShareSharedFileCommand = new AsyncRelayCommand<SharedFileItem>(
+            item => UseSharedFileAsync(item, (f, ct) => _receivedFiles.ShareAsync(f, ct), "share"),
+            _ => _receivedFiles.CanShare);
         AnswerQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = AnswerQuestionAsync(item); });
         DismissQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = DismissQuestionAsync(item); });
 
@@ -2019,6 +2033,32 @@ public sealed class SessionViewModel : ObservableObject
 
                 break;
 
+            case FileSharedEvent shared:
+                // The builder has already put the card in the transcript (this runs after _transcript.Apply),
+                // so pick that same instance up rather than making a second one: the "all files this session"
+                // list and the card the user scrolls to must be the same object, or a link into one lands on
+                // the other.
+                if (Items.OfType<SharedFileItem>().LastOrDefault(i => i.FileId == shared.FileId) is { } card)
+                {
+                    SharedFiles.Add(card);
+                    OnPropertyChanged(nameof(HasSharedFiles));
+                    if (!_replaying)
+                    {
+                        // Replay is not delivery. Reconnecting to a session that received a file yesterday
+                        // rebuilds the card and the list, but must not re-announce it — same rule as
+                        // permissions and turn-end above.
+                        SharedFileReceived?.Invoke(card);
+                        NotificationRaised?.Invoke(new AppNotification(
+                            $"{DisplayTitle} sent you a file",
+                            card.HasCaption ? $"{card.FileName} — {card.Caption}" : card.FileName,
+                            NotificationKind.File,
+                            SessionId,
+                            card.AnchorId));
+                    }
+                }
+
+                break;
+
             case SessionTitleEvent titleEvent when !string.IsNullOrWhiteSpace(titleEvent.Title):
                 AgentTitle = PrettifyTitle(titleEvent.Title);
                 break;
@@ -2092,6 +2132,99 @@ public sealed class SessionViewModel : ObservableObject
 
     /// <summary>Raised when the session wants a notification surfaced (blocker / completion / error).</summary>
     public event Action<AppNotification>? NotificationRaised;
+
+    // ---- files the agent sent (see Agnes.Ui.Core/ReceivedFiles.cs) ----
+
+    /// <summary>
+    /// Every file the agent has sent in this session, oldest first — the same <see cref="SharedFileItem"/>
+    /// instances that sit in the transcript, so a head can offer a "files" list without a second model that
+    /// could disagree with the cards. Rebuilt by replay, appended live.
+    /// </summary>
+    public ObservableCollection<SharedFileItem> SharedFiles { get; } = [];
+
+    public bool HasSharedFiles => SharedFiles.Count > 0;
+
+    /// <summary>
+    /// Raised for a file arriving <em>now</em> — never for one replayed out of the log. A head uses it to
+    /// react (flash a panel, pop a sheet); the corresponding <see cref="AppNotification"/> is raised on the
+    /// same terms through <see cref="NotificationRaised"/>.
+    /// </summary>
+    public event Action<SharedFileItem>? SharedFileReceived;
+
+    /// <summary>What this client can do with a received file. Never null; a head that wired nothing gets
+    /// <see cref="NullReceivedFileHandler"/>, whose three flags are all false so no dead button renders.</summary>
+    public IReceivedFileHandler ReceivedFiles => _receivedFiles;
+
+    /// <summary>
+    /// Fetches a shared file's bytes from the host. The card carries only metadata — a transcript of a
+    /// hundred screenshots must not be a hundred megabytes in memory — so the bytes are pulled on the one
+    /// occasion someone actually asks for them.
+    /// </summary>
+    public async Task<ReceivedFile> DownloadSharedFileAsync(SharedFileItem item, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        cancellationToken.ThrowIfCancellationRequested();
+        var bytes = await _host.DownloadFileAsync(SessionId, item.RelativePath).ConfigureAwait(false);
+        return new ReceivedFile(item.FileName, item.MimeType, bytes);
+    }
+
+    /// <summary>
+    /// Reads a shared file for inline preview (an image's bytes, a text file's text). Returns null rather
+    /// than throwing when the host can't serve it — a preview that fails is a card without a thumbnail, not
+    /// a dead session.
+    /// </summary>
+    public async Task<FileContent?> PreviewSharedFileAsync(SharedFileItem item, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return await _host.ReadFileAsync(SessionId, item.RelativePath).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Saves a received file wherever the head's handler puts it (desktop: a file picker).</summary>
+    public IAsyncRelayCommand<SharedFileItem> SaveSharedFileCommand { get; }
+
+    /// <summary>Opens a received file in whatever the platform uses for its type.</summary>
+    public IAsyncRelayCommand<SharedFileItem> OpenSharedFileCommand { get; }
+
+    /// <summary>Hands a received file to the platform's share surface (phones; not desktop).</summary>
+    public IAsyncRelayCommand<SharedFileItem> ShareSharedFileCommand { get; }
+
+    // Download once, then hand the bytes to the head's handler. A failure anywhere in that chain is the
+    // user's problem to see, not the app's to die of: it lands in the transcript as an error notice, which
+    // is where this session already reports things that went wrong.
+    private async Task UseSharedFileAsync(SharedFileItem? item, Func<ReceivedFile, CancellationToken, Task> use, string verb)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var file = await DownloadSharedFileAsync(item).ConfigureAwait(false);
+            await use(file, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The person closed the picker / backed out. Not a failure.
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => _transcript.Items.Add(
+                new NoticeItem($"Could not {verb} \u201c{item.FileName}\u201d: {ex.Message}", isError: true)));
+        }
+    }
 
     private void OnHostStateChanged(AgnesConnectionState state) => _dispatcher.Post(UpdateBanner);
 

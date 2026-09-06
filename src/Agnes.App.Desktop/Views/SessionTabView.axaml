@@ -1877,6 +1877,85 @@
                                         </Border>
                                     </DataTemplate>
 
+                                    <!-- A file the agent sent. Not a tool row and not a message: a card you
+                                         can act on, with the image itself when there is one to show. The
+                                         buttons appear only for verbs this head actually has (the desktop
+                                         has no share sheet), so no button here is decorative. -->
+                                    <DataTemplate DataType="tr:SharedFileItem">
+                                        <Border Margin="0,6" Padding="12,10" CornerRadius="10"
+                                                Background="{DynamicResource PanelAlt}"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                            <StackPanel Spacing="9">
+                                                <Grid ColumnDefinitions="Auto,*">
+                                                    <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9" Margin="0,0,11,0"
+                                                            Background="{DynamicResource AccentSoft}" VerticalAlignment="Top">
+                                                        <ic:SymbolIcon Symbol="{Binding Symbol}" FontSize="18"
+                                                                       Foreground="{DynamicResource Accent}"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding FileName}" Foreground="{DynamicResource Fg}"
+                                                                   FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock Text="{Binding Extension}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                                            <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                                            <TextBlock Text="{Binding SizeText}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <TextBlock Text="{Binding Caption}" Foreground="{DynamicResource FgDim}"
+                                                           FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasCaption}" />
+
+                                                <!-- Images show themselves. The bytes are fetched lazily on
+                                                     attach (OnSharedImageAttached) and cached per file, so
+                                                     scrolling a long transcript doesn't re-download them. -->
+                                                <Border IsVisible="{Binding IsImage}" CornerRadius="8" ClipToBounds="True"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                        Background="{DynamicResource Panel}" HorizontalAlignment="Left">
+                                                    <Panel MinHeight="48" MinWidth="120">
+                                                        <TextBlock Text="Loading preview…" Margin="14,14" FontSize="11"
+                                                                   Foreground="{DynamicResource FgFaint}"
+                                                                   IsVisible="{Binding #SharedImage.Source, Converter={x:Static conv:ObjectConverters.IsNull}}" />
+                                                        <Image x:Name="SharedImage" MaxHeight="320" Stretch="Uniform"
+                                                               StretchDirection="DownOnly" HorizontalAlignment="Left"
+                                                               AttachedToVisualTree="OnSharedImageAttached" />
+                                                    </Panel>
+                                                </Border>
+
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <Button Classes="chip" Padding="12,5"
+                                                            IsVisible="{Binding $parent[ItemsControl].DataContext.ReceivedFiles.CanOpen}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.OpenSharedFileCommand}"
+                                                            CommandParameter="{Binding}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <ic:SymbolIcon Symbol="Open" FontSize="14" />
+                                                            <TextBlock Text="Open" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Classes="chip" Padding="12,5"
+                                                            IsVisible="{Binding $parent[ItemsControl].DataContext.ReceivedFiles.CanSave}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.SaveSharedFileCommand}"
+                                                            CommandParameter="{Binding}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <ic:SymbolIcon Symbol="ArrowDownload" FontSize="14" />
+                                                            <TextBlock Text="Save…" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Classes="chip" Padding="12,5"
+                                                            IsVisible="{Binding $parent[ItemsControl].DataContext.ReceivedFiles.CanShare}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.ShareSharedFileCommand}"
+                                                            CommandParameter="{Binding}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <ic:SymbolIcon Symbol="ShareAndroid" FontSize="14" />
+                                                            <TextBlock Text="Share" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+
                                     <DataTemplate DataType="tr:NoticeItem">
                                         <TextBlock Text="{Binding Text}" Foreground="{DynamicResource FgDim}"
                                                    FontStyle="Italic" Margin="0,6" TextWrapping="Wrap" />

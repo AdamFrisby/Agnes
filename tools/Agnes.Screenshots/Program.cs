@@ -51,6 +51,8 @@ public static class Program
         window.Show();
         MainWindowViewModel.ApplyTheme("Dark"); // pin dark for the canonical shots (every theme gets its own below)
         vm.Notifier = new AvaloniaNotifier(window); // in-app toasts for blockers/completions
+        // The real save/open verbs, so a received-file card shows the buttons the desktop actually has.
+        vm.ReceivedFiles = new DesktopReceivedFileHandler(() => window);
         vm.WindowActive = false; // simulate a background window so completion toasts also show
         vm.Showcase.Dismiss(); // record this version so the first-run feature showcase doesn't auto-open
         vm.RestoreAsync(); // empty → one fresh host-picker tab; also enables persistence
@@ -277,6 +279,15 @@ public static class Program
         Prompt(ask, "Ask me a clarifying question before you start.");
         Pump(() => ask.Session!.PendingQuestion is not null);
         Capture(window, "05c-question-card.png");
+
+        // 5cf) A file the agent sent: the card in the transcript, with the image shown inline and the two
+        //      verbs this head has. Its own tab, so the shot is the card and nothing else.
+        var sent = OpenSession(vm, "opencode");
+        Settle(6000); // wait out the earlier tabs' toasts, so the only one in shot is this file's own
+        Prompt(sent, "Send me a screenshot of the header when you're done.");
+        Pump(() => sent.Session!.SharedFiles.Count > 0);
+        Settle(700); // the inline preview is fetched after the card attaches
+        Capture(window, "05cf-shared-file.png");
 
         // 5d) Fork dialog — copy the working folder to a new location (+ optional CoW sandbox clone).
         var forkTab = OpenSession(vm, "opencode");
