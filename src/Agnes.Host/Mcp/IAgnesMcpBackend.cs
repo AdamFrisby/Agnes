@@ -1,3 +1,4 @@
+using Agnes.Abstractions;
 using Agnes.Protocol;
 
 namespace Agnes.Host.Mcp;
@@ -44,6 +45,13 @@ public interface IAgnesMcpBackend
 
     /// <summary>Goals on one session, or every goal when <paramref name="sessionId"/> is null.</summary>
     Task<IReadOnlyList<SessionGoal>> ListGoalsAsync(string? sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends the user a file from the session's workspace: copies it to a stable place and appends the
+    /// <see cref="FileSharedEvent"/> every client renders. Throws when the path escapes the workspace, is
+    /// missing, is too large, or an interceptor vetoes it — the message is the agent's error text.
+    /// </summary>
+    Task<FileSharedEvent> ShareFileAsync(string sessionId, string path, string? caption, CancellationToken cancellationToken = default);
 }
 
 /// <summary>An open/known session as an MCP client sees it.</summary>

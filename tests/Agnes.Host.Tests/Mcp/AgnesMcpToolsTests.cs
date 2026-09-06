@@ -23,7 +23,8 @@ public sealed class AgnesMcpToolsTests
             new[]
             {
                 "arm_goal", "disarm_goal", "get_session_status", "list_goals", "list_open_approvals",
-                "list_sessions", "read_session_transcript", "respond_permission", "send_prompt", "set_mode",
+                "list_sessions", "read_session_transcript", "respond_permission", "send_prompt",
+                "send_user_file", "set_mode",
             },
             names);
 
@@ -210,4 +211,72 @@ public sealed class AgnesMcpToolsTests
     public async Task A_device_token_must_name_a_session_since_it_has_none_of_its_own()
         => await Assert.ThrowsAsync<ArgumentException>(
             () => Build(new FakeAgnesMcpBackend()).ArmGoal("no target", idleSeconds: 60));
+
+    // ---- send_user_file ----
+
+    [Fact]
+    public async Task Send_user_file_acts_on_the_calling_session_and_ignores_a_named_one()
+    {
+        // Same rule as the goal tools: the token IS the identity, so an agent naming somebody else's session
+        // sends into its own — it can't use this to drop a file into a stranger's transcript.
+        var backend = new FakeAgnesMcpBackend();
+        var (tools, _, _) = BuildForSession(backend, "s1");
+
+        var confirmation = await tools.SendUserFile("out/report.md", "the numbers", sessionId: "s2-somebody-else");
+
+        var only = Assert.Single(backend.Shared);
+        Assert.Equal(("s1", "out/report.md", "the numbers"), only);
+        Assert.Equal("Sent report.md (12 KB) to the user.", confirmation);
+    }
+
+    [Fact]
+    public async Task Send_user_file_with_a_device_token_requires_a_session()
+    {
+        var backend = new FakeAgnesMcpBackend();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => Build(backend).SendUserFile("report.md"));
+        Assert.Empty(backend.Shared);
+    }
+
+    [Fact]
+    public async Task Send_user_file_with_a_device_token_sends_to_the_named_session()
+    {
+        var backend = new FakeAgnesMcpBackend();
+
+        await Build(backend).SendUserFile("report.md", sessionId: "s9");
+
+        Assert.Equal("s9", Assert.Single(backend.Shared).SessionId);
+    }
+
+    [Fact]
+    public async Task A_veto_reason_reaches_the_agent_as_the_tool_error()
+    {
+        // The whole point of the veto being reported rather than swallowed: the agent must be able to act on
+        // "that file has a credential in it" instead of assuming the person received it.
+        var backend = new FakeAgnesMcpBackend
+        {
+            ShareFailure = new InvalidOperationException("Sending 'secrets.env' was blocked: contains a credential."),
+        };
+        var (tools, _, _) = BuildForSession(backend, "s1");
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => tools.SendUserFile("secrets.env"));
+
+        Assert.Contains("contains a credential", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Send_user_file_advertises_its_parameters_and_is_not_read_only()
+    {
+        var tool = BuildToolDescriptors().Single(t => t.ProtocolTool.Name == "send_user_file");
+        var properties = tool.ProtocolTool.InputSchema.GetProperty("properties");
+
+        Assert.True(properties.TryGetProperty("path", out _));
+        Assert.True(properties.TryGetProperty("caption", out _));
+        Assert.True(properties.TryGetProperty("sessionId", out _));
+
+        // Only `path` is required — an agent calling it needs to know caption and sessionId are optional.
+        var required = tool.ProtocolTool.InputSchema.GetProperty("required")
+            .EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToArray();
+        Assert.Equal(["path"], required);
+    }
 }

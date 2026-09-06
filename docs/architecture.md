@@ -108,6 +108,10 @@ Every `session/update` from an agent is normalized to a `SessionEvent` and **app
 - **Multi-client consistency** — a joining client requests `since = cursor`; the host replies with a snapshot up to `head` then streams the live tail. Every client converges on the same ordered log.
 - **Reconnect** — a dropped client resumes from its last acknowledged sequence number with no lost or duplicated events.
 - **Fallback** — raw PTY output is carried as its own `SessionEvent` kind, interleaved in order.
+- **Host-originated facts ride the same log** — a notice, a title, a brokered git credential, and a file the
+  agent sent the user (`FileSharedEvent`) are appended exactly like an agent's own events, so they are
+  sequenced, replayed and observable on the spine with no second delivery path. See
+  [send-user-file.md](send-user-file.md).
 
 ## Security model (v1)
 

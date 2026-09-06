@@ -31,6 +31,7 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly SessionSecurityOptions _security;
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
     private readonly AutoContinueOptions _autoContinue;
+    private readonly SharingOptions _sharing;
     private readonly Mcp.SessionMcpTokens _sessionMcpTokens;
 
     /// <summary>Where a sandboxed agent reaches Agnes's own MCP endpoint (bridge-local plain HTTP), or null
@@ -153,7 +154,8 @@ public sealed class SessionManager : IAsyncDisposable
         SessionSecurityOptions? security = null,
         AutoContinueOptions? autoContinue = null,
         Mcp.SessionMcpTokens? sessionMcpTokens = null,
-        GuestMcpOptions? guestMcp = null)
+        GuestMcpOptions? guestMcp = null,
+        SharingOptions? sharing = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -165,6 +167,7 @@ public sealed class SessionManager : IAsyncDisposable
         _sandboxes = sandboxProviders?.All.FirstOrDefault();
         _security = security ?? new SessionSecurityOptions();
         _autoContinue = autoContinue ?? new AutoContinueOptions();
+        _sharing = sharing ?? new SharingOptions();
         _sessionMcpTokens = sessionMcpTokens ?? new Mcp.SessionMcpTokens();
         _guestMcp = guestMcp?.Url;
         _credentialProviders = credentialProviders?.ToArray() ?? [];
@@ -2479,9 +2482,7 @@ public sealed class SessionManager : IAsyncDisposable
     public async Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data, AttachmentConflict conflict = AttachmentConflict.KeepBoth)
     {
         var hostDir = WorkingDirectoryOf(sessionId);
-        var attachDir = Files.WorkspacePaths.ResolveWithin(hostDir, Path.Combine(".agnes", "attachments"))
-            ?? throw new InvalidOperationException("Could not resolve the attachments directory within the workspace.");
-        Directory.CreateDirectory(attachDir);
+        var attachDir = Files.AgnesDirectory.EnsureIn(hostDir, "attachments");
 
         var leaf = Path.GetFileName(fileName);
         if (string.IsNullOrWhiteSpace(leaf))
@@ -2530,6 +2531,152 @@ public sealed class SessionManager : IAsyncDisposable
                 return candidate;
             }
         }
+    }
+
+    // ---- sending the user a file (the mirror image of an attachment upload) ----
+
+    /// <summary>
+    /// The agent's "here, look at this": copies <paramref name="path"/> to a stable place under the session's
+    /// workspace and appends a <see cref="FileSharedEvent"/> naming it, which is what every connected client
+    /// then renders and downloads.
+    /// <para>
+    /// Three things are deliberate. It <b>copies</b>: the agent keeps working, and a file the person opens
+    /// tomorrow must be the file that was sent today, not whatever that path has become — so the copy, under
+    /// an id nothing else writes to, is the artifact. It never <b>moves</b> the original, which is still the
+    /// agent's working file. And it resolves through <see cref="Files.WorkspacePaths.ResolveWithin"/> first,
+    /// so a path outside the workspace is refused <i>before</i> anything is read: "send me
+    /// /home/you/.ssh/id_ed25519" must fail at the boundary, not at the copy.
+    /// </para>
+    /// </summary>
+    /// <param name="path">An absolute host path, a workspace-relative path, or the <c>/work/…</c> path the
+    /// agent sees inside its sandbox (the host workspace is bind-mounted there).</param>
+    /// <param name="caption">One line of context, or null. An interceptor may rewrite it.</param>
+    /// <returns>The appended event, carrying the sequence the log gave it.</returns>
+    /// <exception cref="InvalidOperationException">The path escapes the workspace, the file is missing or is a
+    /// directory, it exceeds <see cref="SharingOptions.EffectiveMaxBytes"/>, or an interceptor vetoed the send.
+    /// The message names the reason, because it is shown to the agent as the tool's error text.</exception>
+    public async Task<FileSharedEvent> ShareFileAsync(
+        string sessionId, string path, string? caption, CancellationToken cancellationToken = default)
+    {
+        var workspace = WorkingDirectoryOf(sessionId);
+        var source = ResolveShareSource(workspace, path)
+            ?? throw new InvalidOperationException(
+                $"'{path}' is outside this session's workspace, so it can't be sent. Copy it into the working "
+                + "directory first if the user should have it.");
+
+        if (Directory.Exists(source))
+        {
+            throw new InvalidOperationException($"'{path}' is a directory. Send a single file — archive it first if you meant the whole folder.");
+        }
+
+        if (!File.Exists(source))
+        {
+            throw new InvalidOperationException($"There is no file at '{path}' to send.");
+        }
+
+        var info = new FileInfo(source);
+        var max = _sharing.EffectiveMaxBytes;
+        if (info.Length > max)
+        {
+            throw new InvalidOperationException(
+                $"'{Path.GetFileName(source)}' is {info.Length / (1024 * 1024)} MB, over this host's "
+                + $"{max / (1024 * 1024)} MB limit for a sent file. Send something smaller, or tell the user where it is.");
+        }
+
+        var leaf = Path.GetFileName(source) is { Length: > 0 } name ? name : "file";
+
+        // The veto point (a secrets scanner is the motivating case). Dispatched BEFORE the copy, so a vetoed
+        // file leaves nothing behind, and the reason travels back to the agent as the tool's error.
+        var gate = await _bus.DispatchAsync(
+            new BeforeFileSharedEvent(sessionId, source, leaf, info.Length, caption)).ConfigureAwait(false);
+        if (gate.IsCanceled)
+        {
+            throw new InvalidOperationException(
+                $"Sending '{leaf}' was blocked: {gate.CancelReason ?? "no reason given"}.");
+        }
+
+        var fileId = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+        var directory = Files.AgnesDirectory.EnsureIn(workspace, "shared", fileId);
+        var target = Path.Combine(directory, leaf);
+        File.Copy(source, target, overwrite: false);
+
+        var shared = new FileSharedEvent(
+            fileId,
+            leaf,
+            Path.GetRelativePath(workspace, target).Replace(Path.DirectorySeparatorChar, '/'),
+            info.Length,
+            Files.SharedFileTypes.MimeTypeFor(leaf),
+            gate.Caption);
+
+        var stored = await AppendFileSharedAsync(sessionId, shared, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation(
+            "Session {SessionId}: sent the user {FileName} ({Bytes} bytes) as {FileId}", sessionId, leaf, info.Length, fileId);
+        return stored;
+    }
+
+    /// <summary>
+    /// The three forms an agent may name a file in, resolved to one absolute host path inside the workspace —
+    /// or null if it lies outside. A sandboxed agent's cwd is <c>/work</c>, which IS the host working
+    /// directory bind-mounted, so stripping that prefix is a rename, not a trust decision: whatever is left
+    /// still goes through the same guard as a path typed by a client.
+    /// </summary>
+    internal static string? ResolveShareSource(string workspace, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        const string SandboxRoot = "/work";
+        var candidate = path.Trim();
+
+        if (candidate == SandboxRoot || candidate.StartsWith(SandboxRoot + "/", StringComparison.Ordinal))
+        {
+            candidate = candidate[SandboxRoot.Length..].TrimStart('/');
+            return candidate.Length == 0 ? null : Files.WorkspacePaths.ResolveWithin(workspace, candidate);
+        }
+
+        if (Path.IsPathRooted(candidate))
+        {
+            // Re-express an absolute path relative to the workspace and let the shared guard rule on it, so
+            // there is exactly ONE containment check in the system rather than a second one written here.
+            string relative;
+            try
+            {
+                relative = Path.GetRelativePath(Path.GetFullPath(workspace), Path.GetFullPath(candidate));
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return null;
+            }
+
+            return Files.WorkspacePaths.ResolveWithin(workspace, relative);
+        }
+
+        return Files.WorkspacePaths.ResolveWithin(workspace, candidate);
+    }
+
+    /// <summary>Appends the shared-file fact on the same path an agent's own events take.</summary>
+    private async Task<FileSharedEvent> AppendFileSharedAsync(
+        string sessionId, FileSharedEvent shared, CancellationToken cancellationToken)
+    {
+        if (_sessions.TryGetValue(sessionId, out var live))
+        {
+            return (FileSharedEvent)await live.RecordFileSharedAsync(shared).ConfigureAwait(false);
+        }
+
+        // No live handle — a dormant session shared from a paired device. Take the same three steps
+        // HostSession does (gate, append + broadcast, dispatch the fact) rather than waking an agent process
+        // purely to write one row.
+        var gate = await _bus.DispatchAsync(new BeforeAgentEventEvent(sessionId, shared)).ConfigureAwait(false);
+        var stored = await _store.AppendAsync(sessionId, shared, cancellationToken).ConfigureAwait(false);
+        if (!gate.IsCanceled)
+        {
+            await _broadcaster.PublishAsync(sessionId, stored).ConfigureAwait(false);
+        }
+
+        await _bus.DispatchAsync(stored).ConfigureAwait(false);
+        return (FileSharedEvent)stored;
     }
 
     // ---- file browser (see .ideas/git-and-files/03-attachments-and-file-browser.md) ----
