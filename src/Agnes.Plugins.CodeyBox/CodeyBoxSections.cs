@@ -710,19 +710,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
             _history.Read(),
             ceilings);
 
-        Overview built;
-        try
-        {
-            built = OverviewModel.Build(inputs);
-        }
-        catch (NotImplementedException)
-        {
-            // The model lands separately. Until it does the tab must still open, so the overview stays
-            // null and the view shows its empty state — not a crash on the app's first screen.
-            await _toUi(() => SectionStatus = "The overview model is not available in this build.")
-                .ConfigureAwait(false);
-            return;
-        }
+        var built = OverviewModel.Build(inputs);
 
         await _toUi(() =>
         {

@@ -101,17 +101,9 @@ public sealed class LiveOverviewProbe
         Assert.All(burns, b => Assert.NotEmpty(b.Samples));
         Assert.NotEmpty(ceilings);
 
-        try
-        {
-            var overview = OverviewModel.Build(inputs);
-            Assert.False(string.IsNullOrWhiteSpace(overview.Sentence));
-            Assert.Equal(5, overview.Vitals.Count);
-            Console.WriteLine($"[overview] {overview.Sentence}");
-        }
-        catch (NotImplementedException)
-        {
-            // The model lands separately. Tolerated ONLY for that one exception type, and only until it
-            // does: anything else from Build is a real failure and must not be swallowed here.
-        }
+        var overview = OverviewModel.Build(inputs);
+        Assert.False(string.IsNullOrWhiteSpace(overview.Sentence));
+        Assert.Equal(5, overview.Vitals.Count);
+        Console.WriteLine($"[overview] {overview.Sentence}");
     }
 }

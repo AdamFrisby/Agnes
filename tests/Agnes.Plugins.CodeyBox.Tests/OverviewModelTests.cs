@@ -107,7 +107,7 @@ public sealed class OverviewModelTests
             Paused: paused,
             PausedReason: null,
             WouldAllow: wouldAllow,
-            ObservedFailuresLast60m: 0,
+            ObservedFailures: null,
             LatestSnapshot: availablePct is null && resetAt is null
                 ? null
                 : new QuotaSnapshot(availablePct, availablePct is not null, resetAt));

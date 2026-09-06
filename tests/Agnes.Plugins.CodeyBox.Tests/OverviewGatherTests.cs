@@ -221,24 +221,6 @@ public class OverviewGatherTests
     }
 
     [Fact]
-    public async Task The_overview_stays_null_while_the_model_is_unimplemented()
-    {
-        var handler = new RoutingHandler { ItemsBody = "[" + Item("live", "Working", Stamp) + "]" };
-
-        var sections = New(handler, out var client);
-        await using (client)
-        await using (sections)
-        {
-            await sections.LoadAsync(CodeyBoxSection.Dashboard);
-
-            // Delete this test when OverviewModel.Build lands: until it does, the tab must still open,
-            // and an empty overview is how that is expressed.
-            Assert.False(sections.HasOverview);
-            Assert.Null(sections.Overview);
-        }
-    }
-
-    [Fact]
     public async Task A_transition_only_nudges_the_overview_while_it_is_the_section_on_screen()
     {
         var handler = new RoutingHandler { ItemsBody = "[" + Item("live", "Working", Stamp) + "]" };
