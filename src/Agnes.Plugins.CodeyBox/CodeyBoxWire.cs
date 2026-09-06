@@ -444,7 +444,21 @@ public sealed record Project(
     // The audit budget an item is measured against. Not on the work item itself on this deployment, so
     // the project is where the progress bar's denominator comes from.
     [property: JsonPropertyName("auditMaxIterations")] int AuditMaxIterations = 0,
-    [property: JsonPropertyName("auditTypes")] IReadOnlyList<string>? AuditTypes = null);
+    [property: JsonPropertyName("auditTypes")] IReadOnlyList<string>? AuditTypes = null,
+    // The per-project ceiling on work-item priority. Nullable because "unset" is a real answer and a
+    // different one from zero: unset means no project cap beyond the global [-1000, 1000], while 0 would
+    // mean nothing here may ever be pushed above the default. Verified against the live instance, where
+    // /projects omits the field entirely on all four projects — so it deserializes to null, which is
+    // exactly right. The board's reorder maths reads it through Project.PriorityCeiling.
+    [property: JsonPropertyName("maxPriority")] int? MaxPriority = null)
+{
+    /// <summary>The highest priority this project accepts: its own cap, else the orchestrator's global
+    /// one. The number reordering is allowed to climb to.</summary>
+    public int PriorityCeiling => MaxPriority ?? GlobalMaxPriority;
+
+    /// <summary>The orchestrator's global priority range is [-1000, 1000].</summary>
+    public const int GlobalMaxPriority = 1000;
+}
 
 /// <summary>A task template that can be queued by name.</summary>
 public sealed record TaskTemplate(
@@ -1053,3 +1067,14 @@ public static class QuotaHistoryMap
         return kept;
     }
 }
+
+/// <summary>
+/// The body of a dependency replace-set: <c>PATCH /workitems/{id}</c> with only <c>dependsOn</c>.
+/// </summary>
+/// <remarks>
+/// A named record rather than an anonymous object so the one field the board ever patches is part of the
+/// compiled surface — the generic <see cref="CodeyBoxClient.PatchWorkItemAsync"/> exists for operator-typed
+/// JSON, which is a genuinely untyped boundary; this is not.
+/// </remarks>
+public sealed record DependencyPatch(
+    [property: JsonPropertyName("dependsOn")] IReadOnlyList<string> DependsOn);

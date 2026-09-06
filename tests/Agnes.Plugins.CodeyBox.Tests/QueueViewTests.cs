@@ -46,10 +46,42 @@ public class QueueViewTests
     }
 
     [Fact]
-    public void The_default_view_shows_only_what_can_be_acted_on()
+    public void The_default_view_hides_nothing_and_narrows_nothing()
     {
+        // The filter chips are gone: the runway's horizons ARE the narrowing, and they are derived from
+        // the queue rather than chosen from a row of buttons. So a freshly-opened tab starts with no
+        // search and no filter, and what limits the list is which horizon a chain belongs to.
         var vm = New();
-        Assert.Equal(QueueFilter.NeedsAttention, vm.Filter);
+
+        Assert.Equal(string.Empty, vm.Search);
+        Assert.Null(vm.ProjectFilter);
+        Assert.Null(vm.AgentFilter);
+    }
+
+    [Fact]
+    public void Search_narrows_the_visible_queue()
+    {
+        // Retained from the filter-chip era, retargeted: searching still has to narrow, and it now has to
+        // narrow the thing the board is built from.
+        var vm = New();
+        vm.Load([Row("aaaa1111", "Queued", title: "Fix quota detection"),
+                 Row("bbbb2222", "Queued", title: "Circuit breaker")]);
+
+        vm.Search = "quota";
+
+        Assert.Single(vm.Items);
+        Assert.Equal("aaaa1111", vm.Items[0].Id);
+    }
+
+    [Fact]
+    public void Search_reaches_the_prompt_as_well_as_the_title()
+    {
+        // The median prompt on this instance is 2,726 characters and is frequently the only place a
+        // distinguishing word appears at all — a search that could not see it could not find the item.
+        var row = Row("aaaa1111", "Queued", title: "Step 3") with { Prompt = "rewrite the dispatcher" };
+
+        Assert.True(CodeyBoxQueueViewModel.Matches(row, "dispatcher"));
+        Assert.False(CodeyBoxQueueViewModel.Matches(row, "auditor"));
     }
 
     [Fact]

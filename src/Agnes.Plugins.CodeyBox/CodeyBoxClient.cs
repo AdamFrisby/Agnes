@@ -492,6 +492,23 @@ public sealed class CodeyBoxClient : IAsyncDisposable
             Content = JsonContent.Create(changes, options: Json),
         }, cancellationToken);
 
+    /// <summary>
+    /// Replaces a work item's dependency set.
+    /// </summary>
+    /// <remarks>
+    /// A REPLACE, not an append: the orchestrator takes <c>dependsOn</c> as the whole set, so a caller
+    /// adding one edge must send the existing ones back with it and a caller removing one sends what is
+    /// left. Allowed in any state, and each entry may be a UUID, an <c>externalId</c>, or
+    /// <c>&lt;projectId&gt;:&lt;externalId&gt;</c>. Typed rather than handed to
+    /// <see cref="PatchWorkItemAsync"/> as loose JSON, because this is our own call shape and not a
+    /// boundary schema we are merely relaying.
+    /// </remarks>
+    public Task SetDependenciesAsync(string id, IReadOnlyList<string> dependsOn, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Patch, $"workitems/{id}")
+        {
+            Content = JsonContent.Create(new DependencyPatch(dependsOn), options: Json),
+        }, cancellationToken);
+
     public Task PatchExternalIdsAsync(string id, IReadOnlyDictionary<string, string> externalIds, CancellationToken cancellationToken = default)
         => SendAsync(new HttpRequestMessage(HttpMethod.Patch, $"workitems/{id}/external-ids")
         {

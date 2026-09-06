@@ -61,9 +61,20 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         _client.StdoutReceived += OnStdout;
         _client.StreamCompleted += OnStreamCompleted;
 
-        // The sections are handed a way to show an item rather than a reference to the queue: the overview
-        // needs to hand a row over, and selecting one here is what starts following its output.
-        Sections = new CodeyBoxSectionsViewModel(client, toUi, Confirmation, SelectById);
+        Composer = new ComposerViewModel(
+            client,
+            toUi,
+            () => _projectRecords,
+            () => _all,
+            () => Board?.Next ?? [],
+            RefreshAsync,
+            SelectById);
+
+        // The sections are handed ways to reach the queue rather than a reference to it: the overview
+        // needs to hand a row over, and promoting a suggestion needs to open the composer. The sections
+        // deliberately do not know what contains them.
+        Sections = new CodeyBoxSectionsViewModel(
+            client, toUi, Confirmation, SelectById, promote: PromoteSuggestionViaComposer);
     }
 
     /// <summary>A pending irreversible action, awaiting confirmation. Shared with the sections below, so
@@ -107,7 +118,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         _all.Clear();
         _all.AddRange(items);
 
-        // Reconciled: clearing this would drop the open filter dropdown's selection on every update.
+        // Reconciled: clearing this would drop the open agent dropdown's selection on every update.
         Reconcile.Apply(
             Agents,
             [.. _all.Select(i => i.Agent).Where(a => a is { Length: > 0 }).Distinct().Order()!],
@@ -116,11 +127,56 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         ApplyView();
     }
 
-    /// <summary>The same items grouped by project, for when one queue serves several repositories.</summary>
-    public ObservableCollection<WorkItemGroup> Groups { get; } = [];
-
     /// <summary>Projects, for the filter and for the new-item picker.</summary>
     public ObservableCollection<ProjectChoice> Projects { get; } = [];
+
+    /// <summary>
+    /// The projects as the orchestrator describes them, kept beside the pickers' <see cref="Projects"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ProjectChoice"/> is a label and an id — everything a dropdown needs and nothing the
+    /// board does. The runway needs the whole record, because reordering has to respect each project's
+    /// own priority ceiling and a chain has to be able to say which project it belongs to.
+    /// </remarks>
+    private readonly List<Project> _projectRecords = [];
+
+    /// <summary>The highest priority each project accepts, for the reorder maths.</summary>
+    private IReadOnlyDictionary<string, int> ProjectCeilings =>
+        _projectRecords.GroupBy(p => p.Id, StringComparer.Ordinal)
+                       .ToDictionary(g => g.Key, g => g.First().PriorityCeiling, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Dispatch slots, for the Now header.
+    /// </summary>
+    /// <remarks>
+    /// Read from whatever the sections already fetched rather than asked for again: the board rebuilds on
+    /// every state transition in the fleet, and a per-rebuild request for a number that changes when a
+    /// slot frees would be one extra call per event. When Diagnostics has never been opened there is
+    /// nothing to reuse, so <see cref="RefreshSlotsAsync"/> fetches it at most once a minute.
+    /// </remarks>
+    private (int Busy, int Total) Slots => (Sections.Concurrency ?? _concurrency) is { } c
+        ? (c.CurrentlyRunningTotal, c.GlobalMaxConcurrent)
+        : (0, 0);
+
+    private Concurrency? _concurrency;
+
+    private DateTimeOffset _concurrencyAt = DateTimeOffset.MinValue;
+
+    /// <summary>How stale the slot count is allowed to get before it is re-read. Slots move when work
+    /// starts and stops, which the board already learns about from the feed; this only exists so the
+    /// header has a denominator at all.</summary>
+    private static readonly TimeSpan ConcurrencyWindow = TimeSpan.FromMinutes(1);
+
+    private async Task RefreshSlotsAsync()
+    {
+        if (Sections.Concurrency is not null || DateTimeOffset.UtcNow - _concurrencyAt < ConcurrencyWindow)
+        {
+            return;
+        }
+
+        _concurrencyAt = DateTimeOffset.UtcNow;
+        _concurrency = await _client.GetConcurrencyAsync(_cts.Token).ConfigureAwait(false);
+    }
 
     /// <summary>Agents seen in the queue, for the filter. Read from the items rather than configured, so
     /// it lists what has actually run here.</summary>
@@ -130,48 +186,24 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     private string _search = string.Empty;
 
     [ObservableProperty]
-    private QueueFilter _filter = QueueFilter.NeedsAttention;
-
-    [ObservableProperty]
-    private QueueSort _sort = QueueSort.Priority;
-
-    [ObservableProperty]
     private string? _projectFilter;
 
     [ObservableProperty]
     private string? _agentFilter;
 
-    [ObservableProperty]
-    private bool _groupByProject;
-
-    /// <summary>How many items need a person, regardless of the current filter — the number worth knowing
+    /// <summary>How many items need a person, regardless of the current search — the number worth knowing
     /// even while looking at something else.</summary>
     public int AttentionCount => _all.Count(i => i.NeedsAttention);
 
     public bool HasAttention => AttentionCount > 0;
 
-    /// <summary>What the current slice is showing, against the whole, so a filter can never silently hide
+    /// <summary>What the current slice is showing, against the whole, so a search can never silently hide
     /// the rest of the queue.</summary>
     public string ViewSummary => _all.Count == 0
         ? string.Empty
-        : $"{Items.Count} of {_all.Count}" + (AttentionCount > 0 ? $"  ·  {AttentionCount} need attention" : string.Empty);
+        : $"{Items.Count} of {_all.Count}" + (AttentionCount > 0 ? $"  \u00b7  {AttentionCount} need attention" : string.Empty);
 
-    public bool IsFilterNeedsAttention => Filter == QueueFilter.NeedsAttention;
-    public bool IsFilterActive => Filter == QueueFilter.Active;
-    public bool IsFilterDone => Filter == QueueFilter.Done;
-    public bool IsFilterCancelled => Filter == QueueFilter.Cancelled;
-    public bool IsFilterAll => Filter == QueueFilter.All;
-
-    public IRelayCommand<QueueFilter> SetFilterCommand =>
-        _setFilter ??= new RelayCommand<QueueFilter>(f => Filter = f);
-
-    public IRelayCommand<QueueSort> SetSortCommand =>
-        _setSort ??= new RelayCommand<QueueSort>(sort => Sort = sort);
-
-    public IRelayCommand ToggleGroupCommand =>
-        _toggleGroup ??= new RelayCommand(() => GroupByProject = !GroupByProject);
-
-    /// <summary>Selects a row from the grouped list, which uses buttons rather than a ListBox.</summary>
+    /// <summary>Selects a row from a list that uses buttons rather than a ListBox.</summary>
     public IRelayCommand<WorkItemRow> SelectCommand =>
         _select ??= new RelayCommand<WorkItemRow>(row => { if (row is not null) { Selected = row; } });
 
@@ -179,8 +211,8 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
     /// <summary>
     /// Selects an item by id, for a caller holding an id rather than a row — the overview, which shows
-    /// rows of its own making. Widens the filter if the item is not in the current slice, because sending
-    /// someone to a row that the open filter hides looks exactly like the command doing nothing.
+    /// rows of its own making. Clears the narrowing if the item is not in the current slice, because
+    /// sending someone to a row that a narrowed board hides looks exactly like the command doing nothing.
     /// </summary>
     private void SelectById(string id)
     {
@@ -192,7 +224,6 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
         if (!Items.Contains(row))
         {
-            Filter = QueueFilter.All;
             Search = string.Empty;
             ProjectFilter = null;
             AgentFilter = null;
@@ -206,37 +237,89 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         Search = string.Empty;
         ProjectFilter = null;
         AgentFilter = null;
-        Filter = QueueFilter.NeedsAttention;
     });
 
-    private IRelayCommand<QueueFilter>? _setFilter;
-    private IRelayCommand<QueueSort>? _setSort;
-    private IRelayCommand? _toggleGroup;
     private IRelayCommand? _clearFilters;
 
     partial void OnSearchChanged(string value) => ApplyView();
-    partial void OnFilterChanged(QueueFilter value) => ApplyView();
-    partial void OnSortChanged(QueueSort value) => ApplyView();
     partial void OnProjectFilterChanged(string? value) => ApplyView();
     partial void OnAgentFilterChanged(string? value) => ApplyView();
-    partial void OnGroupByProjectChanged(bool value) => ApplyView();
+
+    // ---- the runway ----
 
     /// <summary>
-    /// Narrows the whole queue down to what is on screen. Search matches title, id and work branch —
-    /// the three things someone actually has to hand when looking for an item they remember.
+    /// The four horizons: what is running, what is next in dispatch order, what cannot start, and what
+    /// landed. Null until the first build, which is why <see cref="HasBoard"/> exists — a screen that
+    /// renders its empty state and its not-yet-built state identically tells the operator nothing.
     /// </summary>
+    [ObservableProperty]
+    private Board? _board;
+
+    public bool HasBoard => Board is not null;
+
+    partial void OnBoardChanged(Board? value)
+    {
+        OnPropertyChanged(nameof(HasBoard));
+        Composer.NoteBoardChanged();
+    }
+
+    /// <summary>
+    /// Chains that matched the search but sit outside the board's horizons — older than the landed
+    /// window, or cancelled.
+    /// </summary>
+    /// <remarks>
+    /// History is deliberately not a horizon: 372 of 404 items on the live instance are finished, so
+    /// showing them by default buries the thirty that matter. But the moment someone SEARCHES they are
+    /// looking for a specific thing, and are as likely to want last month's cancelled attempt as today's
+    /// work. So search — and only search — reaches into history, and what it finds is listed apart from
+    /// the live horizons rather than mixed into them.
+    /// </remarks>
+    [ObservableProperty]
+    private IReadOnlyList<Chain> _historyMatches = [];
+
+    public bool HasHistoryMatches => HistoryMatches.Count > 0;
+
+    partial void OnHistoryMatchesChanged(IReadOnlyList<Chain> value)
+        => OnPropertyChanged(nameof(HasHistoryMatches));
+
+    /// <summary>Where the selected item sits in its chain: its parents, its children, and the one
+    /// ancestor whose retry would unblock it.</summary>
+    [ObservableProperty]
+    private Relations? _relations;
+
+    public bool HasRelations => Relations is not null;
+
+    partial void OnRelationsChanged(Relations? value) => OnPropertyChanged(nameof(HasRelations));
+
+    /// <summary>Selecting a chain selects the member it stands for — the running step, or whichever one
+    /// is holding it up. The chain is what you read; an item is what you act on.</summary>
+    public IRelayCommand<Chain> SelectChainCommand =>
+        _selectChain ??= new RelayCommand<Chain>(chain => { if (chain is not null) { Selected = chain.Head; } });
+
+    public IRelayCommand<Step> SelectStepCommand =>
+        _selectStep ??= new RelayCommand<Step>(step => { if (step is not null) { Selected = step.Item; } });
+
+    private IRelayCommand<Chain>? _selectChain;
+    private IRelayCommand<Step>? _selectStep;
+
+    /// <summary>Whether a search or a filter is narrowing the board. History is only reachable while this
+    /// is true.</summary>
+    private bool IsNarrowed => Search is { Length: > 0 }
+        || ProjectFilter is { Length: > 0 } || AgentFilter is { Length: > 0 };
+
+    /// <summary>
+    /// Narrows the whole queue down to what is on screen, then rebuilds the runway from exactly that.
+    /// </summary>
+    /// <remarks>
+    /// One narrowing feeds every horizon, so a project filter moves Now, Next, Waiting and Landed
+    /// together rather than leaving three of them describing a fleet the operator is not looking at.
+    /// Search matches the five handles a person has on an item they remember: title, id, work branch,
+    /// external id, and the prompt it was given — the last because the median prompt on this instance is
+    /// 2,726 characters and is frequently the only place a distinguishing word appears at all.
+    /// </remarks>
     private void ApplyView()
     {
         IEnumerable<WorkItemRow> view = _all;
-
-        view = Filter switch
-        {
-            QueueFilter.NeedsAttention => view.Where(i => i.NeedsAttention),
-            QueueFilter.Active => view.Where(i => i.IsActive),
-            QueueFilter.Done => view.Where(i => i.State == "Done"),
-            QueueFilter.Cancelled => view.Where(i => i.State == "Cancelled"),
-            _ => view,
-        };
 
         if (ProjectFilter is { Length: > 0 } project)
         {
@@ -250,63 +333,172 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
         if (Search is { Length: > 0 } search)
         {
-            view = view.Where(i =>
-                i.Title.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                i.Id.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                (i.WorkBranch?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false));
+            view = view.Where(i => Matches(i, search));
         }
 
-        view = Sort switch
-        {
-            // Highest priority first: the orchestrator works the queue in that order, so it is the
-            // ordering that predicts what happens next rather than merely describing what happened.
-            QueueSort.Priority => view.OrderByDescending(i => i.Priority).ThenBy(i => i.QueuePosition),
-            QueueSort.Recent => view.OrderByDescending(i => i.UpdatedAt),
-            QueueSort.Oldest => view.OrderBy(i => i.CreatedAt),
-            _ => view.OrderByDescending(i => i.UsageTotal?.CostUsd ?? 0m),
-        };
-
-        var ordered = view.ToList();
+        // Dispatch order: the orchestrator works the queue by priority DESC then createdAt ASC, so it is
+        // the ordering that predicts what happens next rather than merely describing what happened.
+        var ordered = view
+            .OrderByDescending(i => i.Priority)
+            .ThenBy(i => i.CreatedAt)
+            .ThenBy(i => i.Id, StringComparer.Ordinal)
+            .ToList();
 
         // Reconciled, not rebuilt: an unchanged row keeps its container, so the list stays readable
         // while it updates instead of jumping back to the top. See Reconcile.
         Reconcile.Apply(Items, ordered, i => i.Id);
 
-        if (GroupByProject)
-        {
-            // Existing groups are updated rather than recreated, so an expanded project stays expanded
-            // and keeps its scroll position across a refresh.
-            var desired = new List<WorkItemGroup>();
-            foreach (var group in ordered.GroupBy(i => i.ProjectId ?? "(no project)").OrderBy(g => g.Key))
-            {
-                var existing = Groups.FirstOrDefault(g => g.Project == group.Key);
-                if (existing is not null)
-                {
-                    existing.Update([.. group]);
-                    desired.Add(existing);
-                }
-                else
-                {
-                    desired.Add(new WorkItemGroup(group.Key, [.. group]));
-                }
-            }
-
-            Reconcile.Apply(Groups, desired, g => g.Project);
-        }
-        else if (Groups.Count > 0)
-        {
-            Groups.Clear();
-        }
-
         OnPropertyChanged(nameof(ViewSummary));
         OnPropertyChanged(nameof(AttentionCount));
         OnPropertyChanged(nameof(HasAttention));
-        foreach (var name in new[] { nameof(IsFilterNeedsAttention), nameof(IsFilterActive),
-                                     nameof(IsFilterDone), nameof(IsFilterCancelled), nameof(IsFilterAll) })
-        {
-            OnPropertyChanged(name);
-        }
+
+        ScheduleRebuild();
     }
+
+    /// <summary>The handles a person actually has on an item they are trying to find again.</summary>
+    internal static bool Matches(WorkItemRow item, string search)
+        => DependencyPicker.Matches(item, search)
+        || (item.Prompt?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false);
+
+    /// <summary>Guards the background build: a narrowing typed while an older build is in flight must
+    /// win, and the older one must not be allowed to land on top of it.</summary>
+    private int _rebuildGeneration;
+
+    private Task _rebuild = Task.CompletedTask;
+
+    /// <summary>
+    /// The in-flight board build, for a caller that needs the board to exist before it looks at it. The
+    /// screen never awaits this — it binds, and lets the assignment arrive.
+    /// </summary>
+    public Task BoardReady => _rebuild;
+
+    /// <summary>
+    /// Rebuilds the runway off the UI thread and assigns it back on it.
+    /// </summary>
+    /// <remarks>
+    /// Off-thread because <see cref="BoardModel.Build"/> walks the whole queue, groups it into chains and
+    /// topologically sorts each one — four hundred items' worth of graph work, on every refresh, and the
+    /// refresh is driven by an event feed that fires on every state transition in the fleet. Doing that
+    /// inline is a stutter on each of them.
+    /// </remarks>
+    private void ScheduleRebuild()
+    {
+        var generation = Interlocked.Increment(ref _rebuildGeneration);
+        var items = Items.ToList();
+        var narrowed = IsNarrowed;
+        var projects = _projectRecords.ToList();
+        var slots = Slots;
+        var selectedId = Selected?.Id;
+
+        _rebuild = Task.Run(async () =>
+        {
+            try
+            {
+                var now = DateTimeOffset.Now;
+                Board? board = null;
+                IReadOnlyList<Chain> history = [];
+                Relations? relations = null;
+
+                try
+                {
+                    board = BoardModel.Build(items, projects, slots.Busy, slots.Total, now);
+                    history = narrowed ? HistoryChains(board, items, now) : [];
+                }
+                catch (NotImplementedException)
+                {
+                    // BoardModel is landing alongside this. The tab still opens, showing no runway rather
+                    // than an exception; the integrator removes this tolerance.
+                }
+
+                if (selectedId is not null && items.FirstOrDefault(i => i.Id == selectedId) is { } selected)
+                {
+                    try
+                    {
+                        relations = BoardModel.RelationsOf(selected, items, now);
+                    }
+                    catch (NotImplementedException)
+                    {
+                        // as above
+                    }
+                }
+
+                if (generation != Volatile.Read(ref _rebuildGeneration))
+                {
+                    return;
+                }
+
+                await _toUi(() =>
+                {
+                    if (board is not null)
+                    {
+                        Board = board;
+                    }
+
+                    HistoryMatches = history;
+                    Relations = relations;
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Diagnostic.Report("build board", ex);
+            }
+        }, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// The chains a search found in history — the matches the board did not place on a horizon.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Board"/> reports history as a COUNT, not as rows, because by default history is not
+    /// something to render. So the chains are recovered through the model's own
+    /// <see cref="BoardModel.RelationsOf"/>, which hands back the chain any item belongs to: whatever the
+    /// board did not show is asked for one item at a time and deduplicated by chain membership. Bounded,
+    /// because a one-letter search matches most of a four-hundred-item queue and nobody reads four
+    /// hundred rows.
+    /// </remarks>
+    private static IReadOnlyList<Chain> HistoryChains(Board board, IReadOnlyList<WorkItemRow> items, DateTimeOffset now)
+    {
+        if (board.HistoryCount == 0)
+        {
+            return [];
+        }
+
+        var shown = new HashSet<string>(
+            board.Now.Concat(board.Next)
+                 .Concat(board.Waiting.SelectMany(g => g.Chains))
+                 .Concat(board.Landed.SelectMany(d => d.Chains))
+                 .SelectMany(c => c.Steps)
+                 .Select(step => step.Item.Id),
+            StringComparer.Ordinal);
+
+        var chains = new List<Chain>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var item in items.Where(i => !shown.Contains(i.Id))
+                                  .OrderByDescending(i => i.UpdatedAt)
+                                  .Take(HistoryMatchLimit))
+        {
+            if (seen.Contains(item.Id))
+            {
+                continue;
+            }
+
+            var chain = BoardModel.RelationsOf(item, items, now).Chain;
+            foreach (var step in chain.Steps)
+            {
+                seen.Add(step.Item.Id);
+            }
+
+            seen.Add(item.Id);
+            chains.Add(chain);
+        }
+
+        return chains;
+    }
+
+    /// <summary>How many history chains a search lists before it stops. A search narrow enough to be
+    /// useful never reaches this; one that does was not a search.</summary>
+    private const int HistoryMatchLimit = 40;
 
     [ObservableProperty]
     private WorkItemRow? _selected;
@@ -896,6 +1088,352 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         }
     }
 
+    // ---- steering the dispatch order ----
+
+    /// <summary>
+    /// Moving a chain means REWRITING PRIORITIES, not calling a reorder endpoint.
+    /// </summary>
+    /// <remarks>
+    /// <c>POST /workitems/reorder</c> exists and does nothing useful: it writes a <c>queue_position</c>
+    /// hint the dispatcher never reads. The order that actually decides pickup is
+    /// <c>priority DESC, created_at ASC, id ASC</c>, so a move is a set of priority patches — computed by
+    /// <see cref="BoardModel.Reorder"/>, which prefers to move only the dragged item and renumbers its
+    /// neighbours only when there is no gap left to land in.
+    ///
+    /// <para>Confirmed only when it touches more than <see cref="BulkMoveThreshold"/> items. Moving one
+    /// chain up a place is an ordinary, visible, reversible act and a dialog on it would train the
+    /// operator to dismiss dialogs; renumbering eleven items is a change they cannot see the whole of and
+    /// should be told about first.</para>
+    /// </remarks>
+    private async Task MoveAsync(Chain? chain, Func<int, int> destination)
+    {
+        if (chain is null || Board is not { } board)
+        {
+            return;
+        }
+
+        var queued = board.Next;
+        var index = IndexOf(queued, chain.Id);
+        if (index < 0)
+        {
+            await _toUi(() => Status = "Only queued work can be reordered.").ConfigureAwait(false);
+            return;
+        }
+
+        var target = Math.Clamp(destination(index), 0, Math.Max(0, queued.Count - 1));
+        if (target == index)
+        {
+            return;
+        }
+
+        IReadOnlyList<PriorityChange> changes;
+        try
+        {
+            changes = BoardModel.Reorder([.. queued.Select(c => c.Head)], chain.Head.Id, target, ProjectCeilings);
+        }
+        catch (NotImplementedException)
+        {
+            await _toUi(() => Status = "Reordering isn't wired up yet.").ConfigureAwait(false);
+            return;
+        }
+
+        if (changes.Count == 0)
+        {
+            return;
+        }
+
+        if (changes.Count > BulkMoveThreshold)
+        {
+            Confirmation.Ask(
+                "Renumber",
+                $"{changes.Count} items to move “{chain.Title}”",
+                () => ApplyChangesAsync(changes));
+            return;
+        }
+
+        await ApplyChangesAsync(changes).ConfigureAwait(false);
+    }
+
+    /// <summary>Above this many priority rewrites, a move is confirmed before it is sent.</summary>
+    private const int BulkMoveThreshold = 3;
+
+    private static int IndexOf(IReadOnlyList<Chain> chains, string id)
+    {
+        for (var i = 0; i < chains.Count; i++)
+        {
+            if (string.Equals(chains[i].Id, id, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Sends one priority patch per change, in the order the model returned them.
+    /// </summary>
+    /// <remarks>
+    /// Sequentially and in order: the changes are a renumbering, and applying them concurrently would let
+    /// the queue pass through an order nobody asked for — briefly, but the dispatcher is watching and two
+    /// slots are free. A failure halfway stops the rest and says so rather than continuing into a state
+    /// that is neither the old order nor the new one.
+    /// </remarks>
+    private async Task ApplyChangesAsync(IReadOnlyList<PriorityChange> changes)
+    {
+        var sent = 0;
+        try
+        {
+            foreach (var change in changes)
+            {
+                await _client.SetPriorityAsync(change.Id, change.To, _cts.Token).ConfigureAwait(false);
+                sent++;
+            }
+
+            await _toUi(() => Status = changes.Count == 1
+                ? string.Empty
+                : $"Renumbered {changes.Count} items.").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("reorder", ex);
+            await _toUi(() => Status = $"Moved {sent} of {changes.Count} — {ex.Message}").ConfigureAwait(false);
+        }
+        finally
+        {
+            await RefreshAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Puts a chain at the head of the dispatch order: the next thing a free slot picks up.</summary>
+    public IAsyncRelayCommand<Chain> RunNextCommand =>
+        _runNext ??= new AsyncRelayCommand<Chain>(c => MoveAsync(c, _ => 0));
+
+    public IAsyncRelayCommand<Chain> MoveUpCommand =>
+        _moveUp ??= new AsyncRelayCommand<Chain>(c => MoveAsync(c, i => i - 1));
+
+    public IAsyncRelayCommand<Chain> MoveDownCommand =>
+        _moveDown ??= new AsyncRelayCommand<Chain>(c => MoveAsync(c, i => i + 1));
+
+    private IAsyncRelayCommand<Chain>? _runNext, _moveUp, _moveDown;
+
+    /// <summary>
+    /// "Run after…" is two clicks, not a drag.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="BeginRunAfterCommand"/> arms a chain into <see cref="PendingMove"/> and every row in the
+    /// Next list then offers "put it here"; <see cref="RunAfterCommand"/> takes the chain to land behind.
+    /// Chosen over a single command carrying both chains because a tuple parameter is not something an
+    /// AXAML <c>CommandParameter</c> can express without a converter, and over drag-and-drop because the
+    /// dispatch order is a scrolling list of chains — a drag across it is a gesture the operator has to
+    /// get right, where two clicks can be abandoned by pressing Escape.
+    /// </remarks>
+    [ObservableProperty]
+    private Chain? _pendingMove;
+
+    public bool HasPendingMove => PendingMove is not null;
+
+    partial void OnPendingMoveChanged(Chain? value) => OnPropertyChanged(nameof(HasPendingMove));
+
+    public IRelayCommand<Chain> BeginRunAfterCommand =>
+        _beginRunAfter ??= new RelayCommand<Chain>(chain => PendingMove = chain);
+
+    public IRelayCommand CancelPendingMoveCommand =>
+        _cancelPendingMove ??= new RelayCommand(() => PendingMove = null);
+
+    /// <summary>Lands the armed chain immediately after <c>after</c> in the dispatch order.</summary>
+    public IAsyncRelayCommand<Chain> RunAfterCommand =>
+        _runAfter ??= new AsyncRelayCommand<Chain>(RunAfterAsync);
+
+    private IRelayCommand<Chain>? _beginRunAfter;
+    private IRelayCommand? _cancelPendingMove;
+    private IAsyncRelayCommand<Chain>? _runAfter;
+
+    private async Task RunAfterAsync(Chain? after)
+    {
+        if (PendingMove is not { } moved || after is null || Board is not { } board)
+        {
+            return;
+        }
+
+        var moving = moved;
+        await _toUi(() => PendingMove = null).ConfigureAwait(false);
+
+        if (string.Equals(moving.Id, after.Id, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var target = IndexOf(board.Next, after.Id);
+        var from = IndexOf(board.Next, moving.Id);
+        if (target < 0)
+        {
+            return;
+        }
+
+        // Landing "after" index n means index n when moving DOWN the list (everything between shifts up
+        // by one as the mover leaves) and n+1 when moving up. Getting this wrong puts the chain one place
+        // from where the operator pointed, which is the kind of error nobody reports and everybody
+        // stops trusting.
+        await MoveAsync(moving, _ => from >= 0 && from < target ? target : target + 1).ConfigureAwait(false);
+    }
+
+    // ---- editing what a chain waits on ----
+
+    /// <summary>
+    /// Drops one dependency edge.
+    /// </summary>
+    /// <remarks>
+    /// Always confirmed and always named, because <c>dependsOn</c> is a REPLACE-SET: the call sends the
+    /// whole remaining list, and a mis-click here does not remove an edge so much as declare a new set of
+    /// them. Dropping an edge is also how an operator un-wedges a chain whose parent failed, so the
+    /// alternative to the edge — retry the parent, uncancel it — sits beside it in the same band.
+    /// </remarks>
+    public IAsyncRelayCommand<Relation> RemoveDependencyCommand =>
+        _removeDependency ??= new AsyncRelayCommand<Relation>(relation =>
+        {
+            if (relation is not null && Selected is { } item)
+            {
+                Confirmation.Ask(
+                    "Stop waiting on",
+                    $"“{relation.Item.Title}” ({relation.Item.ShortId})",
+                    () => SetDependenciesAsync(item, [.. Parents(item).Where(id => id != relation.Item.Id)]));
+            }
+
+            return Task.CompletedTask;
+        });
+
+    private IAsyncRelayCommand<Relation>? _removeDependency;
+
+    /// <summary>The selected item's dependency set as the orchestrator holds it — the list any edit has
+    /// to send back whole.</summary>
+    private static IReadOnlyList<string> Parents(WorkItemRow item) => [.. item.DependsOn ?? []];
+
+    private async Task SetDependenciesAsync(WorkItemRow item, IReadOnlyList<string> dependsOn)
+    {
+        try
+        {
+            await _client.SetDependenciesAsync(item.Id, dependsOn, _cts.Token).ConfigureAwait(false);
+            await RefreshAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report("set dependencies", ex);
+            await _toUi(() => Status = $"Couldn't change what it waits on — {ex.Message}").ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Retries the parent that is holding the selected item up. The unblock for a Failed
+    /// parent — a dependency is satisfied only by Done, so a failed one blocks its children forever
+    /// until somebody does this or drops the edge.</summary>
+    public IAsyncRelayCommand<Relation> RetryParentCommand =>
+        _retryParent ??= new AsyncRelayCommand<Relation>(r => Act(r?.Item, _client.RetryAsync));
+
+    public IAsyncRelayCommand<Relation> UncancelParentCommand =>
+        _uncancelParent ??= new AsyncRelayCommand<Relation>(r => Act(r?.Item, _client.UncancelAsync));
+
+    private IAsyncRelayCommand<Relation>? _retryParent, _uncancelParent;
+
+    /// <summary>Whether the pane is showing the dependency picker.</summary>
+    [ObservableProperty]
+    private bool _isAddingDependency;
+
+    /// <summary>The picker, shared by the pane and the composer so the two are learned once.</summary>
+    public DependencyPicker Picker { get; } = new();
+
+    public IRelayCommand OpenAddDependencyCommand => _openAddDependency ??= new RelayCommand(() =>
+    {
+        if (Selected is not { } item)
+        {
+            return;
+        }
+
+        Picker.Reset(item, _all, Parents(item));
+        IsAddingDependency = true;
+    });
+
+    public IRelayCommand CancelAddDependencyCommand =>
+        _cancelAddDependency ??= new RelayCommand(() => IsAddingDependency = false);
+
+    /// <summary>
+    /// Applies the ticked set as the item's new dependencies.
+    /// </summary>
+    /// <remarks>
+    /// Checked for cycles first. The picker already excludes the subject's descendants, so a cycle should
+    /// be unreachable — but the check is cheap, the queue may have moved under an open picker, and the
+    /// alternative is a 400 from the orchestrator arriving after the operator committed.
+    /// </remarks>
+    public IAsyncRelayCommand ApplyAddDependencyCommand =>
+        _applyAddDependency ??= new AsyncRelayCommand(ApplyAddDependencyAsync);
+
+    /// <summary>The same command under the name the pane's "add dependencies" affordance reads best
+    /// as. One instance, so arming or disabling one arms or disables the other.</summary>
+    public IAsyncRelayCommand AddDependenciesCommand => ApplyAddDependencyCommand;
+
+    private IRelayCommand? _openAddDependency, _cancelAddDependency;
+    private IAsyncRelayCommand? _applyAddDependency;
+
+    private async Task ApplyAddDependencyAsync()
+    {
+        if (Selected is not { } item)
+        {
+            return;
+        }
+
+        var added = Picker.Ticked.Where(id => !Parents(item).Contains(id)).ToList();
+        var wanted = Parents(item).Concat(added).Distinct(StringComparer.Ordinal).ToList();
+
+        try
+        {
+            if (added.Count > 0 && BoardModel.WouldCycle(item.Id, added, _all))
+            {
+                await _toUi(() => Status = "That would make the chain depend on itself.").ConfigureAwait(false);
+                return;
+            }
+        }
+        catch (NotImplementedException)
+        {
+            // The cycle check lands with BoardModel. Until it does, the orchestrator is the backstop —
+            // it rejects a cycle outright, which is a worse message but not a wrong outcome.
+        }
+
+        await _toUi(() => IsAddingDependency = false).ConfigureAwait(false);
+        await SetDependenciesAsync(item, wanted).ConfigureAwait(false);
+    }
+
+    // ---- the composer ----
+
+    /// <summary>
+    /// Creating work, in one place that already knows the answers.
+    /// </summary>
+    /// <remarks>
+    /// Handed functions rather than a reference to this view model: the composer needs to READ the
+    /// projects, the queue and the dispatch order at the moment it is opened, and to hand back a refresh
+    /// and a selection — that is five arrows, not ownership, and stating them keeps the composer testable
+    /// without a queue behind it.
+    /// </remarks>
+    public ComposerViewModel Composer { get; }
+
+    /// <summary>Opens the composer for an intent, filling it in from what is selected and filtered.</summary>
+    public IRelayCommand<ComposerIntent> OpenComposerCommand =>
+        _openComposer ??= new RelayCommand<ComposerIntent>(intent =>
+            Composer.Open(new ComposerContext(Selected, intent, ProjectFilter, null)));
+
+    private IRelayCommand<ComposerIntent>? _openComposer;
+
+    /// <summary>
+    /// Promotes a suggestion through the composer rather than straight into the queue.
+    /// </summary>
+    /// <remarks>
+    /// The orchestrator's own <c>promote</c> creates an item immediately, with the suggestion's title and
+    /// rationale and every other field left to the project. That is the right default and the wrong only
+    /// option: a promoted suggestion is usually the moment someone wants to say which project, what it
+    /// should wait on, and where in the queue it lands. So the button opens the composer seeded from the
+    /// suggestion, and creating is the operator's own act.
+    /// </remarks>
+    private void PromoteSuggestionViaComposer(Suggestion suggestion)
+        => Composer.Open(new ComposerContext(null, ComposerIntent.Promote, suggestion.ProjectId, suggestion));
+
     // ---- creating work, and editing what is queued ----
 
     [ObservableProperty]
@@ -1386,11 +1924,17 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
             var projects = await _client.GetProjectsAsync(_cts.Token).ConfigureAwait(false);
 
+            // The Now header's denominator. Read at most once a minute, and not at all when Diagnostics
+            // has already fetched it — see Slots.
+            await RefreshSlotsAsync().ConfigureAwait(false);
+
             await _toUi(() =>
             {
                 var keep = Selected?.Id;
 
                 _projectAuditTypes.Clear();
+                _projectRecords.Clear();
+                _projectRecords.AddRange(projects);
                 foreach (var project in projects)
                 {
                     _projectAuditTypes[project.Id] = project.AuditTypes ?? [];
@@ -1454,7 +1998,13 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             OnPropertyChanged(nameof(HasRuns));
             OnPropertyChanged(nameof(HasAuditIterations));
             AnsweringQuestion = null;
+            IsAddingDependency = false;
             OnPropertyChanged(nameof(HasOpenQuestions));
+
+            // The relations band belongs to whichever item is selected, so it is rebuilt here as well as
+            // on every refresh — otherwise it would keep describing the item you just navigated away from
+            // until the next event happened to arrive.
+            ScheduleRebuild();
         }).ConfigureAwait(false);
 
         try
