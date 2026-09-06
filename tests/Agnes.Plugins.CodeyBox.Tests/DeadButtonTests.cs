@@ -147,11 +147,9 @@ public class DeadButtonTests
             vm.Sections.Projects.Add(new Project(
                 "codeybox-self", "CodeyBox", "https://github.com/AdamFrisby/CodeyBox.git", "main", "codex", 25, ["security"]));
             vm.Sections.Quota.Add(new QuotaProbe(
-                "codex", "gpt-5.6-sol", "Subscription", false, null, true, 0,
+                "codex", "gpt-5.6-sol", "Subscription", false, null, true, null,
                 new QuotaSnapshot(55, true, DateTimeOffset.UtcNow)));
             vm.Sections.Concurrency = new Concurrency(3, 0, new Dictionary<string, int>());
-            foreach (var tile in Dashboard.Tiles([Row()], false, 0, 3)) { vm.Sections.Tiles.Add(tile); }
-            vm.Sections.NextUp.Add(Row());
 
             // A truncated audit finding, so the nested "Load the full text" button is materialised. Its
             // command sits two template levels up, which is exactly the shape that produced the original

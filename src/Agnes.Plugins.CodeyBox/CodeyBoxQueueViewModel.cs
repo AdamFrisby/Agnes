@@ -61,7 +61,9 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         _client.StdoutReceived += OnStdout;
         _client.StreamCompleted += OnStreamCompleted;
 
-        Sections = new CodeyBoxSectionsViewModel(client, toUi, Confirmation);
+        // The sections are handed a way to show an item rather than a reference to the queue: the overview
+        // needs to hand a row over, and selecting one here is what starts following its output.
+        Sections = new CodeyBoxSectionsViewModel(client, toUi, Confirmation, SelectById);
     }
 
     /// <summary>A pending irreversible action, awaiting confirmation. Shared with the sections below, so
@@ -174,6 +176,30 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         _select ??= new RelayCommand<WorkItemRow>(row => { if (row is not null) { Selected = row; } });
 
     private IRelayCommand<WorkItemRow>? _select;
+
+    /// <summary>
+    /// Selects an item by id, for a caller holding an id rather than a row — the overview, which shows
+    /// rows of its own making. Widens the filter if the item is not in the current slice, because sending
+    /// someone to a row that the open filter hides looks exactly like the command doing nothing.
+    /// </summary>
+    private void SelectById(string id)
+    {
+        var row = _all.FirstOrDefault(i => i.Id == id);
+        if (row is null)
+        {
+            return;
+        }
+
+        if (!Items.Contains(row))
+        {
+            Filter = QueueFilter.All;
+            Search = string.Empty;
+            ProjectFilter = null;
+            AgentFilter = null;
+        }
+
+        Selected = row;
+    }
 
     public IRelayCommand ClearFiltersCommand => _clearFilters ??= new RelayCommand(() =>
     {
@@ -1241,6 +1267,11 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
         _poller = Task.Run(FollowAsync);
         _drainer = Task.Run(DrainAsync);
+
+        // The tab opens on the overview, so the overview is loaded here rather than waiting for the
+        // operator to press the section it is already looking at. Its own loop then keeps it current.
+        Sections.StartOverviewRefresh();
+        _ = Sections.LoadAsync(CodeyBoxSection.Dashboard);
     }
 
     /// <summary>
@@ -1317,6 +1348,10 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
                 }
 
                 await RefreshAsync().ConfigureAwait(false);
+
+                // The same transitions the queue reads back are what the overview is built from. It is
+                // told, not re-read: it decides for itself whether it is visible and debounces the burst.
+                Sections.NoteWorkItemsChanged();
 
                 // The open item's history only changes when that item does, so it is re-read only then.
                 if (touchedSelected && IsTimelineVisible && Selected is { } selected)
@@ -1540,6 +1575,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         _client.StreamCompleted -= OnStreamCompleted;
         await _cts.CancelAsync().ConfigureAwait(false);
         _cts.Dispose();
+        await Sections.DisposeAsync().ConfigureAwait(false);
         await _client.DisposeAsync().ConfigureAwait(false);
     }
 }
