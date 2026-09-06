@@ -46,7 +46,10 @@ public partial class App : Avalonia.Application
                 dictate: AndroidCapabilities.CanDictate ? AndroidCapabilities.DictateAsync : null,
                 copyToClipboard: AndroidCapabilities.CopyToClipboard,
                 openUrl: AndroidCapabilities.OpenUrl,
-                clearNotification: notifier.Clear);
+                clearNotification: notifier.Clear,
+                // What this device does with a file an agent sends it. Built here, once, with the
+                // application context — everything above the shell just asks the handler what it can do.
+                receivedFiles: new AndroidReceivedFileHandler(AndroidHost.Context));
 
             // Android recreates the activity (and therefore the view) independently of the app object, so
             // Avalonia wants a factory rather than a single instance — `MainView` logs

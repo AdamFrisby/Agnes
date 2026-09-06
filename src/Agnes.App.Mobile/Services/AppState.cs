@@ -8,6 +8,7 @@ public sealed record MobileSettings(
     bool Haptics = true,
     bool NotifyOnBlocked = true,
     bool NotifyOnComplete = true,
+    bool NotifyOnFile = true,
     bool ReducedMotion = false,
     bool ShowThinking = false,
     string LastWorkingDirectory = "",

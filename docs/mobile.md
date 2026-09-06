@@ -113,6 +113,21 @@ demo runs the real event pipeline, so what you see is honestly how the app behav
 - **Edge-to-edge** — bar backgrounds run to the screen edge while their content clears the status bar and
   the gesture handle (`SafeSpacer`).
 
+**Received files land where a phone is best.** An agent can send you a file — a screenshot, a report, a
+build — and the phone is the primary place to receive one. It arrives as a card in the transcript (an
+image shows itself inline, fetched only once the card is on screen), as a **Sent to you** row in the
+Inbox across every session and host, and, when the app isn't foreground, on its own default-importance
+notification channel that can be silenced separately from the one that says an agent is blocked. Tapping
+any of those lands on the card. The card opens a sheet with three verbs in the order a phone uses them:
+**Share** first and primary — the screenshot is two taps from the group chat, which on a laptop is a
+download, a file manager and an upload — then **Save to Downloads**, then **Open**. Each is a real
+platform mechanism, not a wrapper: Save goes through `MediaStore` (no storage permission at all from API
+29, staged `IS_PENDING` so nothing indexes a half-written file), Share and Open stage a copy in the app
+cache and hand out a `content://` URI from `AgnesFileProvider` — a `file://` URI in an Intent has thrown
+`FileUriExposedException` since Android 7, and the read grant has to travel with the URI. See
+`Services/AndroidReceivedFileHandler.cs` and `Resources/xml/file_paths.xml`, which between them expose
+exactly one directory and nothing else.
+
 **No terminal.** The desktop head embeds a VT terminal; a phone does not get one. A 40-column terminal
 behind a soft keyboard is worse than useless, and the things you'd use it for are covered by the git
 sheet and the tool timeline.

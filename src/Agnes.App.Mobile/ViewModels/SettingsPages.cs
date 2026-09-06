@@ -107,6 +107,11 @@ public sealed partial class NotificationsPageViewModel : PageViewModel
             Shell.UpdateSettings(s => s with { NotifyOnComplete = !s.NotifyOnComplete });
             OnPropertyChanged(nameof(NotifyOnComplete));
         });
+        ToggleFileCommand = new RelayCommand(() =>
+        {
+            Shell.UpdateSettings(s => s with { NotifyOnFile = !s.NotifyOnFile });
+            OnPropertyChanged(nameof(NotifyOnFile));
+        });
         ToggleHapticsCommand = new RelayCommand(() =>
         {
             Shell.UpdateSettings(s => s with { Haptics = !s.Haptics });
@@ -125,10 +130,17 @@ public sealed partial class NotificationsPageViewModel : PageViewModel
 
     public IRelayCommand ToggleBlockedCommand { get; }
     public IRelayCommand ToggleCompleteCommand { get; }
+
+    /// <summary>Whether a file an agent sends should reach the shade. Its own switch rather than riding
+    /// on "a turn finished": a file is the one thing you might want told about even when you've turned the
+    /// chatter off, because it's the only kind of notification with something to take away from it.</summary>
+    public IRelayCommand ToggleFileCommand { get; }
+
     public IRelayCommand ToggleHapticsCommand { get; }
 
     public bool NotifyOnBlocked => _shell.Settings.NotifyOnBlocked;
     public bool NotifyOnComplete => _shell.Settings.NotifyOnComplete;
+    public bool NotifyOnFile => _shell.Settings.NotifyOnFile;
     public bool Haptics => _shell.Settings.Haptics;
 }
 

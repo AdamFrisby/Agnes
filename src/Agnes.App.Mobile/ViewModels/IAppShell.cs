@@ -56,6 +56,14 @@ public interface IAppShell
 
     IHaptics Haptics { get; }
 
+    /// <summary>
+    /// What this device can do with a file an agent sent it. Android's answer (Downloads, the share
+    /// sheet, an app that opens the type) is a platform type, so it arrives here rather than being
+    /// constructed by a screen — and the headless preview and the tests get the null one, which reports
+    /// that it can do nothing and so renders the sheet's buttons disabled rather than lying.
+    /// </summary>
+    IReceivedFileHandler ReceivedFiles { get; }
+
     IUiDispatcher Dispatcher { get; }
 
     MobileSettings Settings { get; }

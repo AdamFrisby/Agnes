@@ -261,6 +261,71 @@
                          Margin="0,6,0,14" Foreground="{DynamicResource TextMuted}" />
             </DataTemplate>
 
+            <!-- ===== a file the agent sent =====
+                 Promoted to a real card rather than a line, because a file is a thing you act on: the
+                 whole card is the tap target and it opens the sheet with share / save / open. An image
+                 shows itself inline — on a phone the answer to "what did it send me" is usually the
+                 picture, and making you tap to find out is a step for nothing. -->
+            <DataTemplate DataType="tr:SharedFileItem">
+              <Button Theme="{StaticResource RowButton}" Padding="0" Margin="0,0,0,12"
+                      Command="{Binding $parent[ItemsControl].DataContext.OpenSharedFileCommand}"
+                      CommandParameter="{Binding}">
+                <Border Classes="card" Padding="12">
+                  <StackPanel Spacing="10">
+
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                      <Border Grid.Column="0" Width="38" Height="38" Margin="0,0,11,0"
+                              CornerRadius="{StaticResource RadiusMd}"
+                              Background="{DynamicResource AccentSoft}">
+                        <Panel>
+                          <c:Icon Data="{StaticResource IconImage}" Size="19"
+                                  Stroke="{DynamicResource AccentText}"
+                                  IsVisible="{Binding Converter={x:Static v:SharedFileKindConverter.Instance},
+                                                      ConverterParameter=image}" />
+                          <c:Icon Data="{StaticResource IconFileText}" Size="19"
+                                  Stroke="{DynamicResource AccentText}"
+                                  IsVisible="{Binding Converter={x:Static v:SharedFileKindConverter.Instance},
+                                                      ConverterParameter=document}" />
+                          <c:Icon Data="{StaticResource IconFile}" Size="19"
+                                  Stroke="{DynamicResource AccentText}"
+                                  IsVisible="{Binding Converter={x:Static v:SharedFileKindConverter.Instance},
+                                                      ConverterParameter=other}" />
+                        </Panel>
+                      </Border>
+
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="{Binding FileName}" Classes="strong" MaxLines="1"
+                                   TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <TextBlock Text="{Binding SizeText}" Classes="caption" />
+                          <TextBlock Text="·" Classes="caption"
+                                     IsVisible="{Binding Extension,
+                                                 Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                          <TextBlock Text="{Binding Extension}" Classes="caption"
+                                     IsVisible="{Binding Extension,
+                                                 Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                      </StackPanel>
+
+                      <c:Icon Grid.Column="2" Data="{StaticResource IconChevronRight}" Size="15"
+                              VerticalAlignment="Center" Stroke="{DynamicResource TextMuted}" />
+                    </Grid>
+
+                    <!-- Fetched only once the card is on screen; a session full of screenshots must not
+                         cost a download each on a cellular connection. -->
+                    <Border CornerRadius="{StaticResource RadiusMd}" ClipToBounds="True"
+                            IsVisible="{Binding IsImage}">
+                      <c:SharedImage Item="{Binding}" MaxHeight="260" Stretch="Uniform"
+                                     HorizontalAlignment="Stretch"
+                                     Session="{Binding $parent[ItemsControl].DataContext.Session}" />
+                    </Border>
+
+                    <TextBlock Text="{Binding Caption}" Classes="muted" IsVisible="{Binding HasCaption}" />
+                  </StackPanel>
+                </Border>
+              </Button>
+            </DataTemplate>
+
             <!-- ===== structured question (resolved) ===== -->
             <DataTemplate DataType="tr:QuestionItem">
               <Border Classes="inset" Margin="0,0,0,10" Padding="12,9" IsVisible="{Binding Resolved}">
