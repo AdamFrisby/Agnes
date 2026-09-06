@@ -1,0 +1,212 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:cb="using:Agnes.Plugins.CodeyBox"
+             xmlns:v="using:Agnes.Plugins.CodeyBox.Views"
+             xmlns:c="using:Agnes.Plugins.CodeyBox.Views.Controls"
+             x:Class="Agnes.Plugins.CodeyBox.Views.RelationsBandView">
+  <!-- WHERE THIS ITEM SITS, and what that costs it. The pane could previously say an item was blocked
+       and could not say by what, so the operator went back to the list to find a parent by title —
+       which is why 82 items with dependencies were, in practice, 82 items nobody unblocked.
+
+       Everything here acts on something OTHER than the selected item: retrying its parent, dropping an
+       edge, opening its child, creating work beside it. That is why the band sits above the agent's
+       output rather than among the item's own actions — Retry here would mean a different item to the
+       Retry six pixels away.
+
+       DataContext is the queue view model. -->
+  <UserControl.Styles>
+    <Style Selector="Border.chip">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="11" />
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="Margin" Value="0,0,5,4" />
+    </Style>
+    <Style Selector="TextBlock.bandlabel">
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="Margin" Value="0,0,0,3" />
+    </Style>
+    <Style Selector="Button.linky">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.linky /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.chipaction">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="Margin" Value="7,0,0,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+      <!-- Dropping an edge is a real change to the plan, so it is not offered until the pointer is on
+           the chip it belongs to. Opacity rather than IsVisible: chips must not jump as you cross them. -->
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Border.chip:pointerover Button.chipaction">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.chipaction /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.small">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Margin="10,0,10,8" Padding="10,8" CornerRadius="6"
+          Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+          IsVisible="{Binding Relations, Converter={x:Static ObjectConverters.IsNotNull},
+                      FallbackValue=False}">
+    <StackPanel Spacing="7">
+
+      <!-- The chain, and this item's place in it, before any of the edges: an item is easier to reason
+           about once you can see it is step 3 of 7 rather than a thing on its own. -->
+      <StackPanel Orientation="Horizontal" Spacing="9">
+        <TextBlock Text="{Binding Relations.PositionLabel}" FontSize="11" VerticalAlignment="Center"
+                   Foreground="{DynamicResource FgDim}" />
+        <c:ChainStrip Steps="{Binding Relations.Chain.Steps}" VerticalAlignment="Center"
+                      SelectedId="{Binding Relations.Item, Converter={x:Static v:BoardConverters.IdOf}}"
+                      StepCommand="{Binding SelectStepCommand}" />
+      </StackPanel>
+
+      <!-- WAITS ON. A dependency is satisfied only by Done, so a parent that failed or was cancelled
+           holds its children until somebody acts on the PARENT — which is the move the pane offers. -->
+      <StackPanel IsVisible="{Binding Relations.HasParents}">
+        <TextBlock Classes="bandlabel" Text="WAITS ON" />
+        <ItemsControl ItemsSource="{Binding Relations.Parents}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="chip">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <c:StepDot Width="8" Height="8" State="{Binding State}" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Label}" FontSize="11" MaxWidth="210" VerticalAlignment="Center"
+                             Foreground="{DynamicResource Fg}" TextTrimming="CharacterEllipsis" />
+                  <!-- Satisfied is worth its own mark: it is the only state that lets the child run. -->
+                  <TextBlock Text="satisfied" FontSize="9" VerticalAlignment="Center"
+                             Foreground="{DynamicResource StatusDone}" IsVisible="{Binding Satisfied}" />
+                  <Button Classes="chipaction" Content="Remove"
+                          ToolTip.Tip="Stop waiting on this one"
+                          Command="{Binding $parent[UserControl].DataContext.RemoveDependencyCommand}"
+                          CommandParameter="{Binding}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <!-- The one edge that is actually costing time, with the one move that clears it. Nothing is
+           offered for a parent still in flight, because waiting IS the correct action there. -->
+      <Border Padding="9,6" CornerRadius="5" Background="{DynamicResource PanelAlt}"
+              BorderThickness="1" BorderBrush="{DynamicResource StatusAttention}"
+              IsVisible="{Binding Relations.IsBlocked, FallbackValue=False}">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"
+                     Foreground="{DynamicResource Fg}"
+                     Text="{Binding Relations.BlockingRoot,
+                            Converter={x:Static v:BoardConverters.BlockedBy}}" />
+          <Button Classes="small" Content="Retry it"
+                  Command="{Binding RetryParentCommand}"
+                  CommandParameter="{Binding Relations.BlockingRoot}"
+                  IsVisible="{Binding Relations.BlockingRoot,
+                              Converter={x:Static v:BoardConverters.CanRetry}}" />
+          <Button Classes="small" Content="Uncancel it"
+                  Command="{Binding UncancelParentCommand}"
+                  CommandParameter="{Binding Relations.BlockingRoot}"
+                  IsVisible="{Binding Relations.BlockingRoot,
+                              Converter={x:Static v:BoardConverters.CanUncancel}}" />
+        </StackPanel>
+      </Border>
+
+      <!-- BLOCKS. What is downstream of this item — the reason finishing it matters to anything else. -->
+      <StackPanel IsVisible="{Binding Relations.HasChildren}">
+        <TextBlock Classes="bandlabel" Text="BLOCKS" />
+        <ItemsControl ItemsSource="{Binding Relations.Children}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="chip">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <c:StepDot Width="8" Height="8" State="{Binding State}" VerticalAlignment="Center" />
+                  <!-- A child is opened, not edited: the pane already has the whole vocabulary for
+                       acting on an item, and it applies once that item is the selected one. -->
+                  <Button Classes="linky" Content="{Binding Label}" MaxWidth="210"
+                          Command="{Binding $parent[UserControl].DataContext.SelectCommand}"
+                          CommandParameter="{Binding Item}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <Button Classes="linky" Content="Add a dependency" HorizontalAlignment="Left"
+              Command="{Binding OpenAddDependencyCommand}"
+              IsVisible="{Binding !IsAddingDependency}" />
+
+      <Border Padding="9,7" CornerRadius="5" Background="{DynamicResource PanelAlt}"
+              BorderBrush="{DynamicResource Line}" BorderThickness="1"
+              IsVisible="{Binding IsAddingDependency, FallbackValue=False}">
+        <StackPanel Spacing="7">
+          <v:DependencyPickerView DataContext="{Binding Picker}" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button Classes="small" Content="{Binding Picker.TickedCount, StringFormat='Add {0}'}"
+                    IsEnabled="{Binding Picker.TickedCount,
+                                Converter={x:Static v:BoardConverters.Positive}}"
+                    Command="{Binding ApplyAddDependencyCommand}" />
+            <Button Classes="small" Content="Cancel" Command="{Binding CancelAddDependencyCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- CREATE FROM HERE. Four shapes of "more work like this", each of which knows the item it came
+           from — which is what stops the composer opening as an empty form the operator must re-type
+           the project, the branch and the dependency into. -->
+      <StackPanel>
+        <TextBlock Classes="bandlabel" Text="CREATE FROM HERE" />
+        <WrapPanel Orientation="Horizontal">
+          <Button Classes="small" Content="Add a follow-up" Margin="0,0,5,0"
+                  ToolTip.Tip="New work that waits on this one"
+                  Command="{Binding OpenComposerCommand}"
+                  CommandParameter="{x:Static cb:ComposerIntent.FollowUp}" />
+          <Button Classes="small" Content="Add a sibling" Margin="0,0,5,0"
+                  ToolTip.Tip="New work beside this one, in the same chain"
+                  Command="{Binding OpenComposerCommand}"
+                  CommandParameter="{x:Static cb:ComposerIntent.Sibling}" />
+          <Button Classes="small" Content="Split into steps" Margin="0,0,5,0"
+                  ToolTip.Tip="Carve this item's prompt into a chain"
+                  Command="{Binding OpenComposerCommand}"
+                  CommandParameter="{x:Static cb:ComposerIntent.Split}" />
+          <Button Classes="small" Content="Duplicate"
+                  Command="{Binding OpenComposerCommand}"
+                  CommandParameter="{x:Static cb:ComposerIntent.Duplicate}" />
+        </WrapPanel>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

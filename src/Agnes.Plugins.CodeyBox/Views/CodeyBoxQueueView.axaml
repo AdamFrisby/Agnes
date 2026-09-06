@@ -197,8 +197,6 @@
           <Button Content="{Binding PauseButtonText}" Command="{Binding TogglePauseCommand}"
                   IsEnabled="{Binding !IsBusy}" Padding="10,4" FontSize="12"
                   IsVisible="{Binding Sections.IsQueue}" />
-          <Button Content="New" Command="{Binding ToggleCreateCommand}" Padding="10,4" FontSize="12"
-                  IsVisible="{Binding Sections.IsQueue}" ToolTip.Tip="Queue a new work item" />
           <Button Content="Refresh" Command="{Binding RefreshCommand}" Padding="10,4" FontSize="12" />
         </StackPanel>
       </Grid>
@@ -254,181 +252,32 @@
       </Grid.IsVisible>
 
 
-    <!-- Finding the item you mean, before anything else. A real queue here holds 404 items of which
-           only ~30 are actionable, so the default slice is the actionable one and the count states what
-           is being hidden. -->
-      <StackPanel Grid.Row="0" Grid.Column="0" Spacing="6" Margin="8,8,8,4">
-        <TextBox Text="{Binding Search, Mode=TwoWay}" FontSize="12"
-                 Watermark="Search title, id or branch…" />
-        <WrapPanel Orientation="Horizontal">
-          <Button Classes="chip" Classes.on="{Binding IsFilterNeedsAttention}" Content="Needs attention"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.NeedsAttention}"
-                  Margin="0,0,4,4" />
-          <Button Classes="chip" Classes.on="{Binding IsFilterActive}" Content="Running"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.Active}"
-                  Margin="0,0,4,4" />
-          <Button Classes="chip" Classes.on="{Binding IsFilterDone}" Content="Done"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.Done}"
-                  Margin="0,0,4,4" />
-          <Button Classes="chip" Classes.on="{Binding IsFilterCancelled}" Content="Cancelled"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.Cancelled}"
-                  Margin="0,0,4,4" />
-          <Button Classes="chip" Classes.on="{Binding IsFilterAll}" Content="All"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.All}"
-                  Margin="0,0,4,4" />
-        </WrapPanel>
-        <WrapPanel Orientation="Horizontal">
-          <ComboBox ItemsSource="{Binding Projects}" SelectedValue="{Binding ProjectFilter, Mode=TwoWay}"
-                    SelectedValueBinding="{Binding Id}" DisplayMemberBinding="{Binding DisplayName}"
-                    PlaceholderText="All projects" FontSize="11" MinWidth="150" Margin="0,0,6,4" />
-          <ComboBox ItemsSource="{Binding Agents}" SelectedItem="{Binding AgentFilter, Mode=TwoWay}"
-                    PlaceholderText="All agents" FontSize="11" MinWidth="110" Margin="0,0,6,4" />
-          <Button Classes="chip" Classes.on="{Binding GroupByProject}" Content="Group by project"
-                  Command="{Binding ToggleGroupCommand}" Margin="0,0,6,4" />
-          <Button Classes="chip" Content="Clear" Command="{Binding ClearFiltersCommand}" Margin="0,0,6,4" />
-        </WrapPanel>
-        <StackPanel Orientation="Horizontal" Spacing="6">
-          <TextBlock Text="{Binding ViewSummary}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                     VerticalAlignment="Center" />
-          <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
-          <Button Classes="chip" Content="Priority" Command="{Binding SetSortCommand}"
-                  CommandParameter="{x:Static cb:QueueSort.Priority}" Padding="6,2" />
-          <Button Classes="chip" Content="Recent" Command="{Binding SetSortCommand}"
-                  CommandParameter="{x:Static cb:QueueSort.Recent}" Padding="6,2" />
-          <Button Classes="chip" Content="Cost" Command="{Binding SetSortCommand}"
-                  CommandParameter="{x:Static cb:QueueSort.Cost}" Padding="6,2" />
-        </StackPanel>
-      </StackPanel>
+    <!-- THE RUNWAY, and the composer that fills it. Both are their own controls over this same view
+         model — see BoardView and ComposerView for what each of them is and why.
 
-      <Border Grid.Row="1" Grid.Column="0" VerticalAlignment="Top" ZIndex="1" Margin="8" Padding="10,8" CornerRadius="6"
-              Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-              IsVisible="{Binding IsCreating}">
-        <StackPanel Spacing="6">
-          <TextBlock Text="New work item" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource Fg}" />
-          <ComboBox ItemsSource="{Binding Projects}" SelectedItem="{Binding NewProject, Mode=TwoWay}"
-                    DisplayMemberBinding="{Binding Label}" PlaceholderText="Choose a project"
-                    HorizontalAlignment="Stretch" FontSize="12" />
-          <TextBlock Text="{Binding NewProjectAgent}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-          <TextBox Text="{Binding NewTitle, Mode=TwoWay}" Watermark="Title" FontSize="12" />
-          <TextBox Text="{Binding NewPrompt, Mode=TwoWay}" Watermark="What should the agent do?"
-                   AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" FontSize="12" />
+         What was here before was a list: a search box, five filter chips, a flat ListBox of 404 rows in
+         no particular order, and a create form of twenty fields. It could not answer the question the
+         tab is opened with — what runs next, and can I change it — because a list has no order to show
+         and a filter chip hides the very thing the question is about. Four horizons have one.
 
-          <!-- The fast path is the three boxes above and stays that way. The endpoint accepts around
-               twenty fields; putting them all on screen would tax every ordinary item to serve the rare
-               one, so the rest are disclosed on request. -->
-          <Button Classes="linky" Content="{Binding CreateOptionsLabel}" HorizontalAlignment="Left"
-                  Command="{Binding ToggleCreateOptionsCommand}" />
+         Nothing renders until a board has been built. That is not defensive dressing: a half-drawn
+         runway with dead controls on it is worse than a sentence saying it is still coming, and the
+         same choice is made one section over for the overview. -->
+      <TextBlock Grid.Row="1" Grid.Column="0" Margin="16" VerticalAlignment="Top"
+                 Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                 Text="Building the runway…" IsVisible="{Binding !HasBoard}" />
 
-          <StackPanel Spacing="6" IsVisible="{Binding ShowCreateOptions}">
-            <!-- What the project would do unaided, so an empty box reads as "inherit" rather than "gap". -->
-            <TextBlock Text="{Binding CreateDefaultsLine}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                       TextWrapping="Wrap" />
+      <v:BoardView Grid.Row="0" Grid.RowSpan="2" Grid.Column="0"
+                   IsVisible="{Binding HasBoard, FallbackValue=False}"
+                   RunNextCommand="{Binding RunNextCommand}"
+                   BeginRunAfterCommand="{Binding BeginRunAfterCommand}"
+                   RunAfterCommand="{Binding RunAfterCommand}" />
 
-            <!-- Chosen from the agents that have actually run here, never typed. -->
-            <ComboBox ItemsSource="{Binding Agents}" SelectedItem="{Binding NewAgent, Mode=TwoWay}"
-                      PlaceholderText="Agent — project default" HorizontalAlignment="Stretch" FontSize="12" />
-
-            <ComboBox ItemsSource="{Binding AuditorProfiles}" SelectedItem="{Binding NewAuditorProfile, Mode=TwoWay}"
-                      PlaceholderText="Auditor profile — project default" HorizontalAlignment="Stretch"
-                      FontSize="12" IsVisible="{Binding HasAuditorProfiles}" />
-
-            <Grid ColumnDefinitions="*,8,*">
-              <TextBox Grid.Column="0" Text="{Binding NewPriority, Mode=TwoWay}" Watermark="Priority" FontSize="12" />
-              <TextBox Grid.Column="2" Text="{Binding NewAuditMaxIterations, Mode=TwoWay}"
-                       Watermark="Audit iterations" FontSize="12" />
-            </Grid>
-
-            <TextBox Text="{Binding NewBaseBranch, Mode=TwoWay}" Watermark="Base branch — project default"
-                     FontSize="12" />
-            <TextBox Text="{Binding NewDependsOn, Mode=TwoWay}"
-                     Watermark="Depends on — work item ids, comma separated" FontSize="12" />
-            <TextBox Text="{Binding NewExternalId, Mode=TwoWay}" Watermark="External tracker id" FontSize="12" />
-
-            <CheckBox IsChecked="{Binding NewIsRefactor, Mode=TwoWay}" FontSize="11"
-                      Content="Refactor — runs alone, no other item for this project starts while it does" />
-          </StackPanel>
-
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <Button Content="Queue it" Classes="accent" FontSize="11" Padding="10,4" Command="{Binding CreateCommand}" />
-            <Button Content="Cancel" FontSize="11" Padding="10,4" Command="{Binding ToggleCreateCommand}" />
-          </StackPanel>
-        </StackPanel>
-      </Border>
-
-      <ListBox Grid.Row="1" Grid.Column="0" ItemsSource="{Binding Items}"
-               SelectedItem="{Binding Selected, Mode=TwoWay}"
-               IsVisible="{Binding !GroupByProject}"
-               Background="Transparent" BorderThickness="0">
-        <ListBox.ItemTemplate>
-          <DataTemplate>
-            <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,3">
-              <!-- One dot carrying state, so the list scans vertically without reading every row. -->
-              <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                      Margin="0,0,10,0"
-                      Background="{DynamicResource FgFaint}"
-                      IsVisible="{Binding !IsActive}" />
-              <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                      Margin="0,0,10,0"
-                      Background="{DynamicResource Accent}" IsVisible="{Binding IsActive}" />
-              <StackPanel Grid.Column="1" Spacing="1">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                             TextTrimming="CharacterEllipsis" />
-                  <!-- A dependency that is not satisfied is why an item sits still; it belongs on the row
-                       rather than three clicks away in the detail pane. -->
-                  <Border Background="{DynamicResource PanelAlt}" CornerRadius="8" Padding="6,0"
-                          IsVisible="{Binding IsBlockedByDependency}" VerticalAlignment="Center">
-                    <TextBlock Text="blocked" Foreground="{DynamicResource Danger}" FontSize="9" />
-                  </Border>
-                </StackPanel>
-                <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                           TextTrimming="CharacterEllipsis" />
-              </StackPanel>
-              <TextBlock Grid.Column="2" Text="{Binding Age}" Foreground="{DynamicResource FgFaint}"
-                         FontSize="10" VerticalAlignment="Center" />
-            </Grid>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
-
-      <!-- Grouped by project, for a queue serving several repositories at once — this one serves three. -->
-      <ScrollViewer Grid.Row="1" Grid.Column="0" IsVisible="{Binding GroupByProject}">
-        <ItemsControl ItemsSource="{Binding Groups}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <StackPanel Margin="0,0,0,8">
-                <TextBlock Text="{Binding Header}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                           FontWeight="SemiBold" Margin="10,6,0,2" />
-                <ItemsControl ItemsSource="{Binding Items}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Button Command="{Binding $parent[ItemsControl].DataContext.SelectCommand}"
-                              CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                              Padding="10,4" Cursor="Hand">
-                        <StackPanel Spacing="1">
-                          <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                       TextTrimming="CharacterEllipsis" />
-                            <!-- Same signal as the flat list: grouping must not cost the one badge that
-                                 explains why an item is sitting still. -->
-                            <Border Background="{DynamicResource PanelAlt}" CornerRadius="8" Padding="6,0"
-                                    IsVisible="{Binding IsBlockedByDependency}" VerticalAlignment="Center">
-                              <TextBlock Text="blocked" Foreground="{DynamicResource Danger}" FontSize="9" />
-                            </Border>
-                          </StackPanel>
-                          <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                     TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-                      </Button>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
+      <!-- Over the runway rather than beside it: writing a prompt is the whole of what you are doing
+           while you are doing it, and the queue you were reading is still there when you cancel. -->
+      <v:ComposerView Grid.Row="0" Grid.RowSpan="2" Grid.Column="0"
+                      DataContext="{Binding Composer}"
+                      IsVisible="{Binding IsOpen, FallbackValue=False}" />
 
       <GridSplitter Grid.Row="1" Grid.Column="1" Background="{DynamicResource Line}" />
 
@@ -503,6 +352,12 @@
                          FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
             </StackPanel>
           </Border>
+
+          <!-- WHERE IT SITS. Between the facts about this item and the output it is producing, because
+               it is neither: every control in it acts on a DIFFERENT item — the parent to retry, the
+               child to open, the follow-up to create — and mixing those into the row of buttons below
+               would make "Retry" mean two things a centimetre apart. See RelationsBandView. -->
+          <v:RelationsBandView Margin="-10,2,-10,0" />
         </StackPanel>
 
         <!-- Nothing selected: say so, rather than leaving half the tab blank. -->
