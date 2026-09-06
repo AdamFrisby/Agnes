@@ -199,6 +199,36 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task<RawJson?> GetQuotaHistoryAsync(CancellationToken cancellationToken = default)
         => GetRaw("quota/history", cancellationToken);
 
+    /// <summary>
+    /// One agent's quota samples since a moment, typed — the series the overview's burn-down is drawn
+    /// from.
+    /// </summary>
+    /// <remarks>
+    /// Empty is a first-class answer, not a failure: the route is served by the statistics plugin and an
+    /// orchestrator without it loaded answers 503, so an absent series means "this host does not record
+    /// quota over time" and the overview simply draws no burn-down. The untyped overload above stays for
+    /// the diagnostics dump, which shows the body verbatim on purpose.
+    /// </remarks>
+    public async Task<IReadOnlyList<QuotaHistoryRow>> GetQuotaHistoryAsync(
+        string agent, DateTimeOffset since, CancellationToken cancellationToken = default)
+    {
+        var from = since.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        var path = $"quota/history?agent={Uri.EscapeDataString(agent)}&from={Uri.EscapeDataString(from)}&limit={QuotaHistoryLimit}";
+        return (await Get<QuotaHistoryPage>(path, cancellationToken).ConfigureAwait(false))?.Rows ?? [];
+    }
+
+    /// <summary>
+    /// The endpoint's own clamp, asked for deliberately.
+    /// </summary>
+    /// <remarks>
+    /// <c>limit</c> truncates a series that is ordered <b>ascending</b> by sample time, so a limit below
+    /// the row count drops the NEWEST rows, not the oldest — which is the one thing a burn-down cannot
+    /// survive. A week of one agent on this instance is 7 881 rows; a limit of 5 000 came back with its
+    /// latest reading three days stale and looked entirely plausible. Ask for the lot; the series is
+    /// thinned for drawing afterwards, where doing so cannot cost the current reading.
+    /// </remarks>
+    private const int QuotaHistoryLimit = 50_000;
+
     public Task<RawJson?> GetQuotaResetAdviceAsync(CancellationToken cancellationToken = default)
         => GetRaw("quota/reset-advice", cancellationToken);
 

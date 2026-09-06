@@ -31,7 +31,7 @@ public enum CodeyBoxSection
 /// then on demand: the orchestrator has around a hundred endpoints, and eagerly polling all of them to
 /// render one visible panel would put more load on it than the operator watching it does.
 /// </summary>
-public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
+public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly CodeyBoxClient _client;
     private readonly Func<Action, Task> _toUi;
@@ -39,11 +39,27 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
 
     private readonly Confirmation _confirmation;
 
-    public CodeyBoxSectionsViewModel(CodeyBoxClient client, Func<Action, Task> toUi, Confirmation? confirmation = null)
+    /// <summary>
+    /// Shows a work item in the queue. Supplied by the owner rather than reached for, because the sections
+    /// deliberately do not know what contains them — the overview needs to hand an item over, not to hold
+    /// the queue.
+    /// </summary>
+    private readonly Action<string>? _openItem;
+
+    public CodeyBoxSectionsViewModel(
+        CodeyBoxClient client,
+        Func<Action, Task> toUi,
+        Confirmation? confirmation = null,
+        Action<string>? openItem = null,
+        OverviewHistory? history = null)
     {
         _client = client;
         _toUi = toUi;
         _confirmation = confirmation ?? new Confirmation();
+        _openItem = openItem;
+        _history = history ?? new OverviewHistory();
+        OpenItemCommand = new RelayCommand<ItemTrace>(OpenItem);
+        ExtendCeilingCommand = new AsyncRelayCommand<ItemTrace>(ExtendCeilingAsync);
         InjectCommand = new AsyncRelayCommand(InjectAsync, () => CanInject);
         PromoteSuggestionCommand = new AsyncRelayCommand<Suggestion>(PromoteSuggestionAsync);
         ResumeAgentCommand = new AsyncRelayCommand<AgentPause>(ResumeAgentAsync);
@@ -492,10 +508,10 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
 
     partial void OnSectionChanged(CodeyBoxSection value)
     {
-        foreach (var name in new[] { nameof(IsQueue), nameof(IsFleet), nameof(IsSupervision),
-                                     nameof(IsSuggestions), nameof(IsReleases), nameof(IsProjects),
-                                     nameof(IsTesting), nameof(IsSetup), nameof(IsDiagnostics),
-                                     nameof(SectionTitle) })
+        foreach (var name in new[] { nameof(IsDashboard), nameof(IsQueue), nameof(IsFleet),
+                                     nameof(IsSupervision), nameof(IsSuggestions), nameof(IsReleases),
+                                     nameof(IsProjects), nameof(IsTesting), nameof(IsSetup),
+                                     nameof(IsDiagnostics), nameof(SectionTitle) })
         {
             OnPropertyChanged(name);
         }
@@ -526,7 +542,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
             switch (section)
             {
                 case CodeyBoxSection.Dashboard:
-                    await LoadDashboardAsync().ConfigureAwait(false);
+                    await LoadOverviewAsync().ConfigureAwait(false);
                     break;
 
                 case CodeyBoxSection.Fleet:
@@ -601,71 +617,405 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The orchestrator's own health surfaces, gathered into one pane. Each is optional: several answer 503
-    /// when their feature is off, and a null reads as "unavailable here" rather than an error, because on a
-    /// given instance that is simply the truth.
+    /// The overview, ready to draw — or null before the first load has landed, which is a real state and
+    /// the reason <see cref="HasOverview"/> exists rather than the view binding into an empty record.
     /// </summary>
-    /// <summary>The headline numbers.</summary>
-    public ObservableCollection<Tile> Tiles { get; } = [];
-
-    /// <summary>What the orchestrator would pick up next, blocked items included.</summary>
-    public ObservableCollection<WorkItemRow> NextUp { get; } = [];
-
-    public bool HasNextUp => NextUp.Count > 0;
-
-    /// <summary>Set when the queue is running yet nothing can start — the state this host is in, and one
-    /// the old list could not express at all.</summary>
     [ObservableProperty]
-    private bool _isStalled;
+    private Overview? _overview;
 
-    [ObservableProperty]
-    private string _healthLabel = string.Empty;
+    public bool HasOverview => Overview is not null;
 
-    [ObservableProperty]
-    private bool _healthIsMeaningful;
+    partial void OnOverviewChanged(Overview? value) => OnPropertyChanged(nameof(HasOverview));
 
-    [ObservableProperty]
-    private string _spendLabel = string.Empty;
+    /// <summary>Audit progress by work-item id, keyed on the item's <c>UpdatedAt</c>.</summary>
+    /// <remarks>
+    /// The heaviest items answer <c>/audit-progress</c> with 1.2–1.8 MB, and the overview re-reads on every
+    /// transition anywhere in the fleet. Without this, one item finishing would re-download the audit
+    /// history of every other live item — so a row is refetched only when the item itself has moved, which
+    /// is exactly when its trace can have changed.
+    /// </remarks>
+    private readonly Dictionary<string, (DateTimeOffset At, IReadOnlyList<AuditProgressRow> Rows)> _traces = [];
+
+    /// <summary>How many audit-progress reads may be in flight at once. The orchestrator serves a single
+    /// fleet; a client that fans out over every live item at once is a load spike, not a fast refresh.</summary>
+    private const int TraceParallelism = 4;
+
+    /// <summary>How far back the quota series is asked for. A week covers the longest window a provider
+    /// publishes (<c>seven_day</c>), so a burn-down never starts mid-window with no history behind it.</summary>
+    private static readonly TimeSpan QuotaWindow = TimeSpan.FromDays(7);
+
+    private readonly OverviewHistory _history;
 
     /// <summary>
-    /// Everything the overview needs, in one pass. Deliberately reuses the reads the other sections
-    /// already make rather than adding endpoints: the dashboard is a different arrangement of what the
-    /// orchestrator already says, not a new source of truth.
+    /// Everything the overview needs, gathered in one pass and handed to the pure model.
     /// </summary>
-    private async Task LoadDashboardAsync()
+    /// <remarks>
+    /// <para>The gather is the only part that touches the network, and every surface in it is optional
+    /// except the work-item list: quota history, transition health and concurrency are all switched off on
+    /// some hosts, so each degrades to null/empty and the model says so rather than inventing a number.</para>
+    ///
+    /// <para>Audit progress is read for the live items and the failed family only — a decided item's trace
+    /// cannot change, and reading 325 finished items would cost more than the whole rest of the overview
+    /// put together.</para>
+    /// </remarks>
+    private async Task LoadOverviewAsync()
+    {
+        // One gather at a time. Two can be asked for at once — a feed burst and the idle tick, or a manual
+        // reload over either — and they share the trace cache, so overlapping them would both double the
+        // load on the orchestrator and race the dictionary they are trying to save it with.
+        await _gathering.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await GatherOverviewAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _gathering.Release();
+        }
+    }
+
+    private readonly SemaphoreSlim _gathering = new(1, 1);
+
+    private async Task GatherOverviewAsync()
     {
         var items = await _client.ListWorkItemsAsync().ConfigureAwait(false);
         var queue = await _client.GetQueueStatusAsync().ConfigureAwait(false);
         var concurrency = await _client.GetConcurrencyAsync().ConfigureAwait(false);
-        var fleet = await _client.GetFleetAsync().ConfigureAwait(false);
         var probes = await _client.GetQuotaProbesAsync().ConfigureAwait(false);
-        var paused = await _client.GetPausedAgentsAsync().ConfigureAwait(false);
         var health = await _client.GetTransitionHealthAsync().ConfigureAwait(false);
+        var projects = await _client.GetProjectsAsync().ConfigureAwait(false);
 
-        var queuePaused = queue?.IsPaused ?? false;
-        var slotsTotal = concurrency?.GlobalMaxConcurrent ?? 0;
-        var slotsInUse = concurrency?.CurrentlyRunningTotal ?? 0;
+        // A failed item is terminal but still the operator's problem, so its trace is what explains why.
+        var traced = items.Where(i => !i.IsTerminal || i.IsFailed).ToList();
+        var progress = await TracesAsync(traced).ConfigureAwait(false);
+        var questions = await QuestionsAsync(items).ConfigureAwait(false);
+        var quota = await QuotaBurnAsync(probes).ConfigureAwait(false);
+
+        var ceilings = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var project in projects.Where(p => p.AuditMaxIterations > 0))
+        {
+            ceilings[project.Id] = project.AuditMaxIterations;
+        }
+
+        var inputs = new OverviewInputs(
+            DateTimeOffset.Now,
+            items,
+            progress,
+            questions,
+            queue,
+            concurrency,
+            probes,
+            quota,
+            health,
+            _history.Read(),
+            ceilings);
+
+        Overview built;
+        try
+        {
+            built = OverviewModel.Build(inputs);
+        }
+        catch (NotImplementedException)
+        {
+            // The model lands separately. Until it does the tab must still open, so the overview stays
+            // null and the view shows its empty state — not a crash on the app's first screen.
+            await _toUi(() => SectionStatus = "The overview model is not available in this build.")
+                .ConfigureAwait(false);
+            return;
+        }
 
         await _toUi(() =>
         {
-            Reconcile.Apply(Tiles, Dashboard.Tiles(items, queuePaused, slotsInUse, slotsTotal), t => t.Label);
-            Reconcile.Apply(NextUp, Dashboard.NextUp(items), i => i.Id);
-            Reconcile.Apply(Fleet, fleet, f => f.ProjectId);
-            Reconcile.Apply(PausedAgents, paused, a => a.Agent);
+            Overview = built;
             Reconcile.Apply(Quota, [.. probes.Where(p => p.IsKnown).OrderBy(p => p.Available)], p => p.Label);
             Concurrency = concurrency;
-            IsStalled = Dashboard.IsStalled(items, queuePaused);
-
-            HealthIsMeaningful = Dashboard.HealthIsMeaningful(health?.TotalTransitions ?? 0);
-            HealthLabel = Dashboard.HealthLabel(health?.Score ?? 0, health?.TotalTransitions ?? 0);
-
-            var spend = items.Sum(i => i.UsageTotal?.CostUsd ?? 0m);
-            SpendLabel = $"${spend:N0} spent across {items.Count} items";
-
-            OnPropertyChanged(nameof(HasNextUp));
             OnPropertyChanged(nameof(HasQuota));
             SectionStatus = string.Empty;
         }).ConfigureAwait(false);
+
+        // Off the UI thread on purpose: this writes a file, and it is the sample the NEXT build reads, so
+        // nothing on screen is waiting for it.
+        _history.Append(built.Sample);
+    }
+
+    /// <summary>Audit progress for the items that can still change, capped and cached.</summary>
+    private async Task<IReadOnlyList<ItemAuditProgress>> TracesAsync(IReadOnlyList<WorkItemRow> items)
+    {
+        var fetched = new System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<AuditProgressRow>>(
+            StringComparer.Ordinal);
+
+        var stale = items.Where(i => !(_traces.TryGetValue(i.Id, out var cached) && cached.At == i.UpdatedAt)).ToList();
+
+        await Parallel.ForEachAsync(
+            stale,
+            new ParallelOptions { MaxDegreeOfParallelism = TraceParallelism },
+            async (item, token) =>
+            {
+                try
+                {
+                    fetched[item.Id] = await _client.GetAuditProgressAsync(item.Id, token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // One item's history failing must not cost the other forty their traces.
+                    Diagnostic.Report($"audit-progress {item.ShortId}", ex);
+                }
+            }).ConfigureAwait(false);
+
+        var traces = new List<ItemAuditProgress>(items.Count);
+        foreach (var item in items)
+        {
+            if (fetched.TryGetValue(item.Id, out var rows))
+            {
+                _traces[item.Id] = (item.UpdatedAt, rows);
+            }
+            else if (_traces.TryGetValue(item.Id, out var cached))
+            {
+                rows = cached.Rows;
+            }
+            else
+            {
+                continue;
+            }
+
+            if (rows.Count > 0)
+            {
+                traces.Add(new ItemAuditProgress(item.Id, rows));
+            }
+        }
+
+        // Items that have left the live set never come back to it; keeping their traces would grow the
+        // cache by the size of the whole queue's history over a long-running session.
+        var live = items.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var gone in _traces.Keys.Where(id => !live.Contains(id)).ToList())
+        {
+            _traces.Remove(gone);
+        }
+
+        return traces;
+    }
+
+    /// <summary>
+    /// Open-question counts, for the items that say they are waiting on one. Read only for
+    /// <c>NeedsOperatorInput</c>: the endpoint is per item, and the state is the orchestrator's own claim
+    /// that there is something to find.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, int>> QuestionsAsync(IReadOnlyList<WorkItemRow> items)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (var item in items.Where(i => i.State.Equals("NeedsOperatorInput", StringComparison.Ordinal)))
+        {
+            try
+            {
+                var questions = await _client.GetQuestionsAsync(item.Id).ConfigureAwait(false);
+                var open = questions.Count(q => q.IsOpen);
+                if (open > 0)
+                {
+                    counts[item.Id] = open;
+                }
+            }
+            catch (Exception ex)
+            {
+                Diagnostic.Report($"questions {item.ShortId}", ex);
+            }
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// The burn-downs, one series request per agent that actually reported a reading. Absent everywhere on
+    /// a host without the statistics plugin, which is why this returns empty rather than failing the load.
+    /// </summary>
+    private async Task<IReadOnlyList<QuotaBurn>> QuotaBurnAsync(IReadOnlyList<QuotaProbe> probes)
+    {
+        // A week of samples is 31 753 rows — about 8 MB — across the four agents this instance probes, and
+        // a busy fleet can ask for a gather every five seconds. The series moves on the sampler's clock,
+        // not on work-item transitions, so re-reading it faster than it is written buys nothing and costs
+        // that 8 MB each time.
+        if (_quotaBurns is { } cached && DateTimeOffset.UtcNow - _quotaBurnsAt < QuotaBurnMaxAge)
+        {
+            return cached;
+        }
+
+        var since = DateTimeOffset.UtcNow - QuotaWindow;
+        var rows = new List<QuotaHistoryRow>();
+
+        foreach (var agent in probes.Where(p => p.IsKnown).Select(p => p.Agent)
+                     .Where(a => !string.IsNullOrWhiteSpace(a))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                rows.AddRange(await _client.GetQuotaHistoryAsync(agent, since).ConfigureAwait(false));
+            }
+            catch (Exception ex)
+            {
+                Diagnostic.Report($"quota-history {agent}", ex);
+            }
+        }
+
+        _quotaBurns = QuotaHistoryMap.ToBurnDown(rows);
+        _quotaBurnsAt = DateTimeOffset.UtcNow;
+        return _quotaBurns;
+    }
+
+    /// <summary>How stale a burn-down may be. Matches the idle refresh, so the series is re-read on the
+    /// timer and not on every transition.</summary>
+    private static readonly TimeSpan QuotaBurnMaxAge = TimeSpan.FromSeconds(60);
+
+    private IReadOnlyList<QuotaBurn>? _quotaBurns;
+    private DateTimeOffset _quotaBurnsAt;
+
+    /// <summary>Opens the item this row is about in the work queue.</summary>
+    /// <remarks>The overview's job is to find the row worth looking at; the queue's is to show it. Sending
+    /// the operator to the pane that already follows an item's output beats growing a second one here.</remarks>
+    public IRelayCommand<ItemTrace> OpenItemCommand { get; }
+
+    private void OpenItem(ItemTrace? trace)
+    {
+        if (trace is null)
+        {
+            return;
+        }
+
+        _openItem?.Invoke(trace.Item.Id);
+        Section = CodeyBoxSection.Queue;
+    }
+
+    /// <summary>
+    /// Gives a converging item more audit iterations rather than letting it hit its ceiling and be thrown
+    /// away.
+    /// </summary>
+    /// <remarks>
+    /// <para>The one action the overview offers that the queue does not, because it is the one the overview
+    /// is uniquely able to justify: near-ceiling-while-still-converging is a shape, not a field, and it is
+    /// the case where five more iterations preserve work that would otherwise be discarded.</para>
+    ///
+    /// <para><c>auditMaxIterations</c> is patchable on <c>PATCH /workitems/{id}</c> for any non-terminal
+    /// item — the audit-budget fields are explicitly exempted from the Queued-only rule the other editable
+    /// fields follow.</para>
+    /// </remarks>
+    public IAsyncRelayCommand<ItemTrace> ExtendCeilingCommand { get; }
+
+    /// <summary>How much headroom one press buys. Small enough to be a nudge rather than a decision to
+    /// stop measuring, which is what removing the ceiling would be.</summary>
+    private const int CeilingStep = 5;
+
+    private async Task ExtendCeilingAsync(ItemTrace? trace)
+    {
+        if (trace is null || trace.Ceiling <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await _client.PatchWorkItemAsync(
+                trace.Item.Id,
+                new { auditMaxIterations = trace.Ceiling + CeilingStep }).ConfigureAwait(false);
+            await LoadAsync(CodeyBoxSection.Dashboard, force: true).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report($"extend ceiling {trace.Item.ShortId}", ex);
+            await _toUi(() => SectionStatus = $"Couldn't extend {trace.Item.ShortId} — {ex.Message}")
+                .ConfigureAwait(false);
+        }
+    }
+
+    // ---- keeping the overview current -------------------------------------------------------------
+    // Two triggers, one loop, and both of them gated on the overview being the section on screen. The
+    // reasoning is the same one that makes every other section load lazily: this gather is a dozen
+    // requests plus one per live item, and running it for a panel nobody is looking at is pure load on an
+    // orchestrator that is busy doing the actual work.
+
+    /// <summary>How long to keep collecting transitions before re-reading. A single item moving emits
+    /// several events and a busy fleet moves constantly, so the window folds a burst into one gather.</summary>
+    private static readonly TimeSpan OverviewDebounce = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long the overview may sit untouched before it is re-read anyway. Some of what it shows
+    /// — a quota window reopening, a projection running down — moves without any item transitioning.</summary>
+    private static readonly TimeSpan OverviewIdleRefresh = TimeSpan.FromSeconds(60);
+
+    private readonly CancellationTokenSource _refresh = new();
+    private readonly SemaphoreSlim _nudged = new(0, 1);
+    private int _nudgePending;
+    private Task? _refreshLoop;
+
+    /// <summary>
+    /// Starts keeping the overview fresh. Safe to call more than once; does nothing until the overview is
+    /// the visible section.
+    /// </summary>
+    public void StartOverviewRefresh()
+    {
+        if (_refreshLoop is not null)
+        {
+            return;
+        }
+
+        _refreshLoop = Task.Run(RefreshOverviewLoopAsync);
+    }
+
+    /// <summary>
+    /// Told by the owner that the fleet moved. Coalesced rather than acted on: this is called once per feed
+    /// event and a transition emits several.
+    /// </summary>
+    public void NoteWorkItemsChanged()
+    {
+        if (Section != CodeyBoxSection.Dashboard)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _nudgePending, 1) == 0)
+        {
+            _nudged.Release();
+        }
+    }
+
+    private async Task RefreshOverviewLoopAsync()
+    {
+        while (!_refresh.IsCancellationRequested)
+        {
+            try
+            {
+                // Either a transition arrives or the idle period elapses; both end in the same read.
+                if (await _nudged.WaitAsync(OverviewIdleRefresh, _refresh.Token).ConfigureAwait(false))
+                {
+                    Interlocked.Exchange(ref _nudgePending, 0);
+                    await Task.Delay(OverviewDebounce, _refresh.Token).ConfigureAwait(false);
+
+                    // Drain whatever landed during the window, so the burst costs one gather and not two.
+                    while (await _nudged.WaitAsync(TimeSpan.Zero, _refresh.Token).ConfigureAwait(false))
+                    {
+                        Interlocked.Exchange(ref _nudgePending, 0);
+                    }
+                }
+
+                if (Section == CodeyBoxSection.Dashboard)
+                {
+                    await LoadAsync(CodeyBoxSection.Dashboard, force: true).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                Diagnostic.Report("overview-refresh", ex);
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _refresh.CancelAsync().ConfigureAwait(false);
+        _refresh.Dispose();
+        _nudged.Dispose();
+        _gathering.Dispose();
     }
 
     /// <summary>Per-agent quota headroom — the first thing to look at when the queue stops moving.</summary>

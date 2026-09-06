@@ -218,4 +218,147 @@ public class CodeyBoxClientTests
         Assert.Equal(10, project.QueuedCount);
         Assert.Equal("$12.5 / $100", project.Spend);
     }
+
+    [Fact]
+    public async Task A_probe_reads_the_shape_a_live_orchestrator_actually_sends()
+    {
+        // Both of these were modelled wrong and both took the WHOLE /quota response down with them —
+        // silently, because a failed read becomes an empty panel and an empty quota panel looks exactly
+        // like a host that does not probe. observedFailuresLast60m is an array of grouped counts, not a
+        // count, and availablePct is fractional for some providers.
+        var handler = new StubHandler
+        {
+            Respond = _ => (HttpStatusCode.OK, """
+                {"probes":[{"agent":"claude","agentInstanceId":"claude","billing":"Subscription",
+                  "modelId":"claude-opus-5","paused":false,"pausedReason":null,"wouldAllow":true,
+                  "observedFailuresLast60m":[
+                    {"projectId":"p1","modelId":"claude-opus-5","failureKind":"QuotaExhausted",
+                     "count":3,"latestObservedAt":"2026-09-06T01:00:00+00:00"},
+                    {"projectId":"p2","modelId":null,"failureKind":"QuotaExhausted",
+                     "count":1,"latestObservedAt":"2026-09-06T01:30:00+00:00"}],
+                  "latestSnapshot":{"availablePct":10.5,"isKnown":true,
+                                    "resetAt":"2026-09-06T03:30:00+00:00"}}]}
+                """),
+        };
+        await using var client = New(handler);
+
+        var probe = Assert.Single(await client.GetQuotaProbesAsync());
+
+        Assert.Equal(4, probe.ObservedFailuresLast60m);
+        Assert.Equal(10.5, probe.LatestSnapshot!.AvailablePct);
+        Assert.Equal(10, probe.Available);        // floored: a bar wants an integer and never a flattering one
+        Assert.True(probe.IsKnown);
+        Assert.True(probe.IsLow);
+    }
+
+    // ---- quota history -------------------------------------------------------------------------
+    // The body below is the shape a live orchestrator returns, trimmed to the rows the rules turn on:
+    // two windows plus the aggregated row for one agent, and a second agent that reports the aggregate
+    // only. Every field the plugin models is present, including the ones it deliberately ignores.
+
+    private const string QuotaHistoryBody = """
+        {"count":8,"rows":[
+          {"sampledAt":"2026-09-06T08:00:00+00:00","agent":"claude","modelId":"sonnet","overallPct":88,
+           "wouldAllow":true,"notes":null,"windowName":"five_hour","windowPct":72,
+           "windowResetAt":"2026-09-06T11:00:00+00:00","isKnown":true,"unknownReason":null},
+          {"sampledAt":"2026-09-06T09:00:00+00:00","agent":"claude","modelId":"sonnet","overallPct":80,
+           "wouldAllow":true,"notes":null,"windowName":"five_hour","windowPct":51,
+           "windowResetAt":"2026-09-06T11:00:00+00:00","isKnown":true,"unknownReason":null},
+          {"sampledAt":"2026-09-06T09:00:00+00:00","agent":"claude","modelId":"sonnet","overallPct":80,
+           "wouldAllow":true,"notes":null,"windowName":"seven_day","windowPct":64,
+           "windowResetAt":"2026-09-11T00:00:00+00:00","isKnown":true,"unknownReason":null},
+          {"sampledAt":"2026-09-06T09:00:00+00:00","agent":"claude","modelId":"sonnet","overallPct":80,
+           "wouldAllow":true,"notes":null,"windowName":"thirty_day","windowPct":91,
+           "windowResetAt":"2026-10-01T00:00:00+00:00","isKnown":true,"unknownReason":null},
+          {"sampledAt":"2026-09-06T09:00:00+00:00","agent":"claude","modelId":"sonnet","overallPct":80,
+           "wouldAllow":true,"notes":null,"windowName":null,"windowPct":null,
+           "windowResetAt":null,"isKnown":true,"unknownReason":null},
+          {"sampledAt":"2026-09-06T08:30:00+00:00","agent":"codex","modelId":"gpt-5.6-sol","overallPct":40,
+           "wouldAllow":true,"notes":null,"windowName":null,"windowPct":null,
+           "windowResetAt":null,"isKnown":true,"unknownReason":null},
+          {"sampledAt":"2026-09-06T09:30:00+00:00","agent":"codex","modelId":"gpt-5.6-sol","overallPct":25,
+           "wouldAllow":true,"notes":null,"windowName":null,"windowPct":null,
+           "windowResetAt":null,"isKnown":true,"unknownReason":null},
+          {"sampledAt":"2026-09-06T09:45:00+00:00","agent":"codex","modelId":"gpt-5.6-sol","overallPct":null,
+           "wouldAllow":null,"notes":null,"windowName":null,"windowPct":null,
+           "windowResetAt":null,"isKnown":false,"unknownReason":"probe_failed"}
+        ]}
+        """;
+
+    [Fact]
+    public async Task Quota_history_is_asked_for_by_agent_and_start_time()
+    {
+        var handler = new StubHandler { Respond = _ => (HttpStatusCode.OK, QuotaHistoryBody) };
+        await using var client = New(handler);
+
+        var rows = await client.GetQuotaHistoryAsync("claude", new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero));
+
+        var url = Assert.Single(handler.Requests).RequestUri!;
+        Assert.Equal("/quota/history", url.AbsolutePath);
+        Assert.Contains("agent=claude", url.Query, StringComparison.Ordinal);
+        Assert.Contains("2026-09-01T00", url.Query, StringComparison.Ordinal);
+        Assert.Equal(8, rows.Count);
+
+        // The two row families read from different columns, and reading the wrong one is how an
+        // aggregated row ends up drawn as a window at 0%.
+        Assert.Equal(72, rows[0].Pct);
+        Assert.Equal(80, rows[4].Pct);
+        Assert.False(rows[7].IsSample);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]   // the statistics plugin is not loaded on this host
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task A_host_without_the_statistics_plugin_reports_no_history_rather_than_failing(HttpStatusCode status)
+    {
+        var handler = new StubHandler { Respond = _ => (status, "") };
+        await using var client = New(handler);
+
+        Assert.Empty(await client.GetQuotaHistoryAsync("claude", DateTimeOffset.UtcNow.AddDays(-7)));
+    }
+
+    [Fact]
+    public async Task Burn_downs_prefer_the_windows_and_keep_the_two_nearest_their_reset()
+    {
+        var handler = new StubHandler { Respond = _ => (HttpStatusCode.OK, QuotaHistoryBody) };
+        await using var client = New(handler);
+
+        var burns = QuotaHistoryMap.ToBurnDown(
+            await client.GetQuotaHistoryAsync("all", DateTimeOffset.UtcNow.AddDays(-7)));
+
+        Assert.Equal(3, burns.Count);
+
+        // claude reports three windows and an aggregate: the aggregate loses to the windows, and
+        // thirty_day — the furthest from turning over — loses to the two that can bind first.
+        var claude = burns.Where(b => b.Agent == "claude").ToList();
+        Assert.Equal(["five_hour", "seven_day"], claude.Select(b => b.Window));
+
+        var fiveHour = claude[0];
+        Assert.Equal([72d, 51d], fiveHour.Samples.Select(s => s.Pct));   // oldest first
+        Assert.Equal(51, fiveHour.NowPct);
+        Assert.Equal(new DateTimeOffset(2026, 9, 6, 11, 0, 0, TimeSpan.Zero), fiveHour.ResetAt);
+        Assert.Equal("claude · five hour", fiveHour.Label);
+
+        // The projection and eligibility are not a sample's to know.
+        Assert.Null(fiveHour.ProjectedUnspentPct);
+        Assert.False(fiveHour.Eligible);
+
+        // codex reports no window at all, so its aggregate is kept — and its unknown row is not a sample.
+        var codex = Assert.Single(burns, b => b.Agent == "codex");
+        Assert.Null(codex.Window);
+        Assert.Equal([40d, 25d], codex.Samples.Select(s => s.Pct));
+        Assert.Null(codex.ResetAt);
+    }
+
+    [Fact]
+    public void A_series_with_no_readings_produces_no_burn_down()
+    {
+        var unknown = new QuotaHistoryRow(
+            DateTimeOffset.UtcNow, "claude", null, null, null, null, null, null, null,
+            IsKnown: false, UnknownReason: "probe_failed");
+
+        // Not a burn-down at 0%: "not measured" and "exhausted" are different facts and only one of them
+        // is a reason to stop dispatching.
+        Assert.Empty(QuotaHistoryMap.ToBurnDown([unknown]));
+    }
 }
