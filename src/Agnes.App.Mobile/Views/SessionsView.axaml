@@ -87,6 +87,11 @@
                       </Border>
                       <TextBlock Classes="caption" Text="{Binding CountsText}" VerticalAlignment="Center"
                                  IsVisible="{Binding HasCounts}" />
+
+                      <!-- This one has a screen you can watch. A glyph, not a word: the card is already
+                           carrying four facts and the fifth has to fit in the gaps. -->
+                      <c:Icon Data="{StaticResource IconMonitor}" Size="14" VerticalAlignment="Center"
+                              Stroke="{DynamicResource TextMuted}" IsVisible="{Binding HasDisplay}" />
                     </StackPanel>
                   </StackPanel>
                 </Grid>

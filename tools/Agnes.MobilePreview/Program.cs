@@ -144,6 +144,11 @@ public static class Program
             Settle(250);
         }
 
+        // 5c) A graphical session: the Screen segment, with a desktop in it and the trackpad's rules on
+        //     the strip below. The simulated host has no sandbox, so the display channel is faked — what
+        //     is under test is the surface (decode, letterbox, cursor, chrome), not the transport.
+        CaptureScreen(shell, window);
+
         // 6) The inbox, with that same request waiting in it — plus a device asking to join, which the
         //    simulated host can't produce, so it's injected directly into the collection the view binds.
         shell.SelectTab(ShellTab.Inbox);
@@ -210,6 +215,14 @@ public static class Program
         Settle(300);
         Shot(window, "10-more");
 
+        // 9b) Appearance, which is where the graphical session's data-saving switch lives.
+        shell.Push(new AppearancePageViewModel(shell));
+        Settle(400);
+        Shot(window, "10b-appearance");
+        shell.PopToRoot();
+        shell.SelectTab(ShellTab.More);
+        Settle(200);
+
         ThemeApplier.Apply("Light");
         Settle(400);
         Shot(window, "11-more-light");
@@ -220,6 +233,78 @@ public static class Program
 
         ThemeApplier.Apply("Dark");
         Settle(200);
+    }
+
+    /// <summary>
+    /// Opens a session marked as having a graphical sandbox, feeds its display a synthetic desktop, and
+    /// shoots both segments: the Screen itself, and the conversation with the live thumbnail above it.
+    /// </summary>
+    private static void CaptureScreen(ShellViewModel shell, Window window)
+    {
+        const int GuestWidth = 1280;
+        const int GuestHeight = 800;
+
+        var link = shell.Hosts.Links[0];
+        var host = link.ConnectAsync().GetAwaiter().GetResult();
+        if (host is null)
+        {
+            return;
+        }
+
+        var info = host.OpenSessionAsync("claude-code-native", "/home/you/projects/atlas")
+            .GetAwaiter().GetResult();
+        var view = host.SubscribeAsync(info.SessionId).GetAwaiter().GetResult();
+        var session = shell.Sessions.Build(host, view, "Atlas — browser check");
+        var saved = new SavedSession(
+            link.Name, link.Url, link.Saved.Token, info.SessionId, "claude-code-native",
+            "Atlas — browser check", info.WorkingDirectory, HasDisplay: true);
+        var entry = shell.Sessions.Adopt(link, session, saved, open: false);
+
+        shell.PopToRoot();
+        shell.Sessions.Open(entry);
+        Pump(() => shell.CurrentPage is SessionPageViewModel p && p.Entry == entry, 3000);
+        if (shell.CurrentPage is not SessionPageViewModel page)
+        {
+            return;
+        }
+
+        // The display is handed in rather than built from the session, so the frames come from the fake
+        // channel below instead of a sandbox that doesn't exist here.
+        var display = new FakeDisplayHost();
+        page.Display = new DisplayViewModel(display, info.SessionId, new MobileDispatcher());
+        page.ShowScreenCommand.ExecuteAsync(null);
+        Pump(() => page.Display!.IsConnected, 2000);
+
+        display.Channel.PushInfo(GuestWidth, GuestHeight, DisplayControlHolder.Agent);
+        display.Channel.PushFull(GuestWidth, GuestHeight, FakeDesktop.Jpeg(GuestWidth, GuestHeight, "atlas — build log"));
+        Settle(500);
+        Shot(window, "13-screen-agent-driving");
+
+        // Taking control is the whole point of the segment: the cursor appears, the chip turns amber and
+        // the key strip lights up.
+        display.Channel.Push(ControlNotice(DisplayControlHolder.User));
+        // A tile: one region repainted over the picture already there.
+        display.Channel.PushTile(120, 140, 520, 220, GuestWidth, GuestHeight,
+            FakeDesktop.Jpeg(520, 220, "terminal", hue: 60));
+        Settle(500);
+        Shot(window, "13b-screen-you-driving");
+
+        // Back to the conversation: the screen stays connected, and the thumbnail above the transcript is
+        // why that matters.
+        page.ShowTranscriptCommand.Execute(null);
+        Settle(400);
+        Shot(window, "13c-screen-thumbnail");
+
+        shell.PopToRoot();
+        Settle(200);
+    }
+
+    private static Agnes.Client.DisplayFrame ControlNotice(DisplayControlHolder holder)
+    {
+        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new DisplayControlNotice(holder, "preview-device"), DisplayWire.Json);
+        return new Agnes.Client.DisplayFrame(
+            new DisplayFrameHeader(DisplayFrameKind.Control, 3, 0, 0, 0, 0, 0, 0, (uint)json.Length), json);
     }
 
     /// <summary>Builds a shared-file transcript item and files it just after the newest event, so a link

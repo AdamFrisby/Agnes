@@ -84,7 +84,22 @@
             Notice="{StaticResource NoticeTemplate}" />
     </UserControl.Resources>
 
-    <Grid RowSpacing="8">
+    <!--
+      Transcript on the left, the guest's screen on the right when there is one. A toggle rather than a
+      splitter: WinUI has no GridSplitter in the box, and adding one is a bigger change to this
+      transitional head than the feature is worth. The column is zero-width until asked for, so a session
+      without a screen lays out exactly as it did.
+    -->
+    <Grid ColumnSpacing="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="ScreenColumn" Width="0" />
+        </Grid.ColumnDefinitions>
+
+        <c:DisplayPane Grid.Column="1" x:Name="Screen" Display="{Binding Display}"
+                       Visibility="Collapsed" />
+
+    <Grid Grid.Column="0" RowSpacing="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -108,7 +123,17 @@
                     <TextBlock Text="{Binding ActivityText}" FontSize="11" />
                 </Border>
             </StackPanel>
-            <ItemsControl Grid.Column="1" ItemsSource="{Binding Modes}"
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+            <!-- FallbackValue=Visible so the toggle exists before SessionViewModel grows HasDisplay;
+                 once it does, a session without a screen hides it properly. -->
+            <ToggleButton x:Name="ScreenToggle" Click="OnToggleScreen"
+                          Visibility="{Binding HasDisplay, Converter={StaticResource BoolToVisibility}, FallbackValue=Visible}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ic:SymbolIcon Symbol="Desktop" FontSize="15" VerticalAlignment="Center" />
+                    <TextBlock Text="Screen" />
+                </StackPanel>
+            </ToggleButton>
+            <ItemsControl ItemsSource="{Binding Modes}"
                           Visibility="{Binding HasModes, Converter={StaticResource BoolToVisibility}}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
@@ -121,6 +146,7 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+            </StackPanel>
         </Grid>
 
         <!-- Connection / session banner -->
@@ -200,5 +226,6 @@
             <Button Grid.Column="1" Content="Stop" Command="{Binding CancelCommand}" VerticalAlignment="Stretch"
                     Visibility="{Binding IsTurnActive, Converter={StaticResource BoolToVisibility}}" />
         </Grid>
+    </Grid>
     </Grid>
 </UserControl>

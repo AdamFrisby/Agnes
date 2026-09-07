@@ -110,6 +110,31 @@ public static class AndroidCapabilities
         }
     }
 
+    /// <summary>
+    /// Whether the network in use right now bills by the byte — cellular, or a hotspot the user has
+    /// flagged. Android is the only party that knows (a tethered Wi-Fi connection is metered and looks
+    /// exactly like any other Wi-Fi from the app's side), which is why this is a platform probe rather
+    /// than a guess about the SSID. A graphical session streams JPEG continuously, so this decides
+    /// between the two quality tiers rather than being a nicety.
+    /// </summary>
+    public static bool IsMetered
+    {
+        get
+        {
+            try
+            {
+                return AndroidHost.Context.GetSystemService(Context.ConnectivityService)
+                    is global::Android.Net.ConnectivityManager manager && manager.IsActiveNetworkMetered;
+            }
+            catch
+            {
+                // No permission, no connectivity service, a restricted profile: assume the cheap answer
+                // is wrong rather than the expensive one, and stream at full quality.
+                return false;
+            }
+        }
+    }
+
     public static void CopyToClipboard(string text)
     {
         try

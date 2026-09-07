@@ -55,6 +55,12 @@
   <StreamGeometry x:Key="IconShield">M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z</StreamGeometry>
   <StreamGeometry x:Key="IconServer">M5 2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM5 14h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2zM6 6h.01M6 18h.01</StreamGeometry>
   <StreamGeometry x:Key="IconBox">M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16zM3.3 7l8.7 5 8.7-5M12 22V12</StreamGeometry>
+  <!-- = graphical sandbox =
+       Lucide `monitor`, `keyboard` and `mouse-pointer-2`: a session with a screen, the soft keyboard
+       affordance over it, and the cursor the trackpad drives. -->
+  <StreamGeometry x:Key="IconMonitor">M4 3h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM8 21h8M12 16v5</StreamGeometry>
+  <StreamGeometry x:Key="IconKeyboard">M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2zM6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8</StreamGeometry>
+  <StreamGeometry x:Key="IconPointer">M4.04 4.04l5.66 15.16 2.3-6.8 6.8-2.3z</StreamGeometry>
   <StreamGeometry x:Key="IconGauge">M12 14l4-4M3.34 19a10 10 0 1 1 17.32 0</StreamGeometry>
   <StreamGeometry x:Key="IconZap">M4 14h7l-2 7 11-11h-7l2-7-11 11z</StreamGeometry>
   <StreamGeometry x:Key="IconSparkles">M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8zM5 3l.6 1.6L7 5l-1.4.4L5 7l-.6-1.6L3 5l1.4-.4z</StreamGeometry>

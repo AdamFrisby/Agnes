@@ -46,6 +46,14 @@ public sealed partial class AppearancePageViewModel : PageViewModel
             Shell.UpdateSettings(s => s with { ReducedMotion = !s.ReducedMotion });
             OnPropertyChanged(nameof(ReducedMotion));
         });
+        ToggleScreenDataCommand = new RelayCommand(() =>
+        {
+            Shell.UpdateSettings(s => s with
+            {
+                LowerScreenQualityOnMobileData = !s.LowerScreenQualityOnMobileData,
+            });
+            OnPropertyChanged(nameof(LowerScreenQualityOnMobileData));
+        });
     }
 
     private ShellViewModel Shell => (ShellViewModel)_shell;
@@ -57,6 +65,7 @@ public sealed partial class AppearancePageViewModel : PageViewModel
     public IRelayCommand<string> SetScaleCommand { get; }
     public IRelayCommand ToggleThinkingCommand { get; }
     public IRelayCommand ToggleMotionCommand { get; }
+    public IRelayCommand ToggleScreenDataCommand { get; }
 
     public bool ThemeSystem => _shell.Settings.Theme is not "Light" and not "Dark";
     public bool ThemeLight => _shell.Settings.Theme == "Light";
@@ -72,6 +81,11 @@ public sealed partial class AppearancePageViewModel : PageViewModel
     public bool ShowThinking => _shell.Settings.ShowThinking;
 
     public bool ReducedMotion => _shell.Settings.ReducedMotion;
+
+    /// <summary>Whether a graphical session drops to the cheap tier on a metered network. On by default:
+    /// a screen stream is the only thing in this app that can quietly spend a data plan, and the cheap
+    /// tier still answers "what is it doing".</summary>
+    public bool LowerScreenQualityOnMobileData => _shell.Settings.LowerScreenQualityOnMobileData;
 
     private void RaiseTheme()
     {

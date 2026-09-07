@@ -91,7 +91,8 @@ public sealed partial class HostSessionsPageViewModel : PageViewModel
                 Status = string.Empty;
                 var session = _sessions.Build(host, view, row.Title);
                 var saved = new SavedSession(_link.Name, _link.Url, _link.Saved.Token, row.SessionId,
-                    row.AdapterId, row.Title, row.WorkingDirectory);
+                    row.AdapterId, row.Title, row.WorkingDirectory,
+                    HasDisplay: row.Summary.HasDisplay);
                 _shell.Haptics.Success();
                 Catalog.MarkOpen(row.SessionId);
                 _sessions.Adopt(_link, session, saved);

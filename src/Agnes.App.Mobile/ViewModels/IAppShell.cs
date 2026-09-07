@@ -50,6 +50,13 @@ public interface IAppShell
     /// rather than shipping a button that does nothing.</summary>
     bool CanDictate { get; }
 
+    /// <summary>
+    /// Whether the network in use right now bills by the byte. Only the graphical-session screen asks:
+    /// it is the one surface that streams continuously, and the cheap tier is a real difference on a
+    /// train. False everywhere the platform can't say, including the headless harness.
+    /// </summary>
+    bool IsMeteredNetwork { get; }
+
     /// <summary>How this device names itself in a host's paired-device list, so a later revocation is
     /// an obvious choice rather than a guess.</summary>
     string DeviceName { get; }

@@ -15,7 +15,7 @@
     the important part: an approval is the highest-value thing you can do from a phone, so it is never
     something you have to scroll to find.
   -->
-  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
 
     <!-- ===================== app bar ===================== -->
     <Border Grid.Row="0" Background="{DynamicResource Surface1}">
@@ -126,8 +126,38 @@
       </StackPanel>
     </ScrollViewer>
 
+    <!-- ===================== segments =====================
+         Only a session with a graphical sandbox has two things to show, so the switch only exists then.
+         The composer stays pinned below whichever is picked: watching a screen and being unable to say
+         "stop, not that folder" without navigating away would be the worst possible version of this. -->
+    <Border Grid.Row="2" Background="{DynamicResource Surface1}" Padding="12,0,12,10"
+            IsVisible="{Binding HasDisplay}">
+      <Border Background="{DynamicResource Surface2}" CornerRadius="{StaticResource RadiusSm}" Padding="3">
+        <Grid ColumnDefinitions="*,*">
+          <RadioButton Grid.Column="0" GroupName="segment" Theme="{StaticResource SegmentButton}"
+                       IsChecked="{Binding IsTranscriptSegment, Mode=OneWay}"
+                       Command="{Binding ShowTranscriptCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <c:Icon Data="{StaticResource IconMessageSquare}" Size="15"
+                      Stroke="{Binding $parent[RadioButton].Foreground}" />
+              <TextBlock Text="Conversation" />
+            </StackPanel>
+          </RadioButton>
+          <RadioButton Grid.Column="1" GroupName="segment" Theme="{StaticResource SegmentButton}"
+                       IsChecked="{Binding IsScreenSegment, Mode=OneWay}"
+                       Command="{Binding ShowScreenCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <c:Icon Data="{StaticResource IconMonitor}" Size="15"
+                      Stroke="{Binding $parent[RadioButton].Foreground}" />
+              <TextBlock Text="Screen" />
+            </StackPanel>
+          </RadioButton>
+        </Grid>
+      </Border>
+    </Border>
+
     <!-- ===================== connection banner ===================== -->
-    <Border Grid.Row="2" Background="{DynamicResource WarningSoft}" Padding="14,10"
+    <Border Grid.Row="3" Background="{DynamicResource WarningSoft}" Padding="14,10"
             IsVisible="{Binding ShowBanner}">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <c:Icon Grid.Column="0" Data="{StaticResource IconWifiOff}" Size="18"
@@ -139,8 +169,41 @@
       </Grid>
     </Border>
 
-    <!-- ===================== transcript ===================== -->
-    <Panel Grid.Row="3">
+    <!-- ===================== the middle: conversation, or the screen ===================== -->
+    <Grid Grid.Row="4" RowDefinitions="Auto,*">
+
+      <!-- ===== live thumbnail =====
+           A graphical session is the one case where the transcript alone lies about what is happening:
+           the agent's tool calls say "moved the mouse", not what appeared. So the screen sits above the
+           conversation as a strip, at most one repaint a second, and tapping it opens the full segment.
+           Hidden until a frame has arrived, because a reserved grey rectangle is worse than nothing. -->
+      <Button Grid.Row="0" Theme="{StaticResource RowButton}" Padding="0" Margin="12,10,12,0"
+              Command="{Binding ShowScreenCommand}"
+              IsVisible="{Binding ShowThumbnail}">
+        <Border CornerRadius="{StaticResource RadiusMd}" ClipToBounds="True" Height="120"
+                Background="Black" BorderBrush="{DynamicResource Border}" BorderThickness="1">
+          <Panel>
+            <c:DisplayThumbnail Name="Thumbnail" Display="{Binding Display}" />
+
+            <TextBlock Text="Open Screen to watch this session" Classes="caption"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextMuted}"
+                       IsVisible="{Binding !Display.IsConnected, FallbackValue=True}" />
+
+            <!-- Who has the mouse, over the picture: the one fact you need before you reach for it. -->
+            <Border Classes="pill info" Margin="8" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    IsVisible="{Binding Display.IsAgentDriving, FallbackValue=False}">
+              <TextBlock Text="Agent is driving" />
+            </Border>
+            <Border Classes="pill needs" Margin="8" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    IsVisible="{Binding Display.IsUserDriving, FallbackValue=False}">
+              <TextBlock Text="You have control" />
+            </Border>
+          </Panel>
+        </Border>
+      </Button>
+
+      <Panel Grid.Row="1" IsVisible="{Binding IsTranscriptSegment}">
       <!-- MaxWidth pinned to the viewport, and the inset moved to the item list's margin: the transcript
            is measured with an unbounded width (a scroller's content always is), and the markdown engine
            sizes itself to its longest line rather than wrapping. Clamping here is what makes every reply
@@ -364,8 +427,101 @@
       </Button>
     </Panel>
 
+      <!-- ===================== screen =====================
+           The guest's display, letterboxed, with a trackpad over it. Input only flows while you hold
+           control, so watching can never nudge the agent's mouse — see Controls/DisplayTrackpad.cs for
+           the gesture rules and why a finger is not a mouse. -->
+      <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto" IsVisible="{Binding IsScreenSegment}">
+
+        <!-- Who is driving, and the button that changes it. -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="12,10,12,8">
+          <Border Grid.Column="0" Classes="pill info"
+                  IsVisible="{Binding Display.IsAgentDriving, FallbackValue=False}">
+            <TextBlock Text="{Binding Display.DriverLabel}" />
+          </Border>
+          <Border Grid.Column="0" Classes="pill needs"
+                  IsVisible="{Binding Display.IsUserDriving, FallbackValue=False}">
+            <TextBlock Text="{Binding Display.DriverLabel}" />
+          </Border>
+
+          <TextBlock Grid.Column="1" Text="{Binding Display.Status}" Classes="caption" Margin="10,0"
+                     VerticalAlignment="Center" MaxLines="1" TextTrimming="CharacterEllipsis" />
+
+          <Button Grid.Column="2" Theme="{StaticResource ChipButton}" MinHeight="32"
+                  Command="{Binding Display.TakeControlCommand}"
+                  IsVisible="{Binding !Display.IsUserDriving, FallbackValue=True}">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <c:Icon Data="{StaticResource IconPointer}" Size="14" Stroke="{DynamicResource Warning}" />
+              <TextBlock Text="Take control" />
+            </StackPanel>
+          </Button>
+          <Button Grid.Column="2" Theme="{StaticResource ChipButton}" MinHeight="32" Content="Hand back"
+                  Command="{Binding Display.ReleaseControlCommand}"
+                  IsVisible="{Binding Display.IsUserDriving, FallbackValue=False}" />
+        </Grid>
+
+        <Panel Grid.Row="1">
+          <c:DisplaySurface Name="Screen" Display="{Binding Display}"
+                            LetterboxBrush="Black" CursorBrush="{DynamicResource Warning}" />
+
+          <TextBlock Text="Connecting to the screen…" Classes="dim" TextAlignment="Center"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     IsVisible="{Binding !Display.IsConnected, FallbackValue=True}" />
+
+          <!--
+            The IME's landing pad. Android gives an app finished text, not keystrokes, so the only way to
+            reach the guest's keyboard is to hold a real TextBox, focus it to raise the soft keyboard, and
+            forward what comes out. One pixel and invisible: it must be focusable (a zero-size or collapsed
+            box is not) without ever being something you can see or tap by accident.
+          -->
+          <TextBox Name="ScreenIme" Width="1" Height="1" Opacity="0" IsTabStop="False"
+                   HorizontalAlignment="Left" VerticalAlignment="Top" />
+        </Panel>
+
+        <!-- The keys a soft keyboard has no room for. Modifier chords (ctrl+letter and friends) are
+             deliberately absent: they need a sticky-modifier model of their own, and half of one is
+             worse than none. -->
+        <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled"
+                      Background="{DynamicResource Surface1}">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="12,8"
+                      IsEnabled="{Binding Display.IsUserDriving, FallbackValue=False}">
+            <Button Theme="{StaticResource ChipButton}" Command="{Binding ShowScreenKeyboardCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <c:Icon Data="{StaticResource IconKeyboard}" Size="15" Stroke="{DynamicResource TextDim}" />
+                <TextBlock Text="Keyboard" />
+              </StackPanel>
+            </Button>
+            <Button Theme="{StaticResource ChipButton}" Content="esc"
+                    Command="{Binding SendScreenKeyCommand}" CommandParameter="Escape" />
+            <Button Theme="{StaticResource ChipButton}" Content="tab"
+                    Command="{Binding SendScreenKeyCommand}" CommandParameter="Tab" />
+            <Button Theme="{StaticResource ChipButton}" Command="{Binding SendScreenKeyCommand}"
+                    CommandParameter="Up">
+              <c:Icon Data="{StaticResource IconArrowUp}" Size="15" Stroke="{DynamicResource TextDim}" />
+            </Button>
+            <Button Theme="{StaticResource ChipButton}" Command="{Binding SendScreenKeyCommand}"
+                    CommandParameter="Down">
+              <c:Icon Data="{StaticResource IconArrowDown}" Size="15" Stroke="{DynamicResource TextDim}" />
+            </Button>
+            <Button Theme="{StaticResource ChipButton}" Command="{Binding SendScreenKeyCommand}"
+                    CommandParameter="Left">
+              <c:Icon Data="{StaticResource IconChevronLeft}" Size="15" Stroke="{DynamicResource TextDim}" />
+            </Button>
+            <Button Theme="{StaticResource ChipButton}" Command="{Binding SendScreenKeyCommand}"
+                    CommandParameter="Right">
+              <c:Icon Data="{StaticResource IconChevronRight}" Size="15" Stroke="{DynamicResource TextDim}" />
+            </Button>
+            <TextBlock Classes="caption" VerticalAlignment="Center" Margin="4,0,0,0"
+                       Text="Drag to move · tap to click · hold for right-click · two fingers scroll"
+                       IsVisible="{Binding Display.IsUserDriving, FallbackValue=False}" />
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+
     <!-- ===================== blocked: the pinned card ===================== -->
-    <Border Grid.Row="4" Background="{DynamicResource Surface1}" Padding="12,12,12,0"
+    <Border Grid.Row="5" Background="{DynamicResource Surface1}" Padding="12,12,12,0"
             IsVisible="{Binding HasPermission}">
       <Border BorderBrush="{DynamicResource Warning}" BorderThickness="1.5"
               CornerRadius="{StaticResource RadiusLg}" Background="{DynamicResource WarningSoft}"
@@ -428,7 +584,7 @@
     </Border>
 
     <!-- ===================== composer ===================== -->
-    <Border Grid.Row="5" Background="{DynamicResource Surface1}"
+    <Border Grid.Row="6" Background="{DynamicResource Surface1}"
             BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0">
       <StackPanel Margin="12,10,12,0" Spacing="9">
 

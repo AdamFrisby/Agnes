@@ -7,7 +7,6 @@ using Agnes.Ui.Core;
 using Agnes.Ui.Core.Transcript;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -22,11 +21,18 @@ namespace Agnes.Mobile.Tests;
 /// so this renders the real controls against the real theme — the same thing
 /// <c>tools/Agnes.MobilePreview</c> does, minus the PNGs.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class ReceivedFileRenderTests : IDisposable
 {
+    private readonly AvaloniaSession _avalonia;
+
     private readonly string _state = Path.Combine(Path.GetTempPath(), "agnes-mobile-tests-" + Guid.NewGuid().ToString("n"));
 
-    public ReceivedFileRenderTests() => JsonStore.UseDirectory(_state);
+    public ReceivedFileRenderTests(AvaloniaSession avalonia)
+    {
+        _avalonia = avalonia;
+        JsonStore.UseDirectory(_state);
+    }
 
     public void Dispose()
     {
@@ -43,8 +49,7 @@ public sealed class ReceivedFileRenderTests : IDisposable
     [Fact]
     public async Task An_image_and_a_text_file_both_render_as_cards_and_as_the_sheet()
     {
-        using var headless = HeadlessUnitTestSession.StartNew(typeof(TestAppBuilder));
-        await headless.Dispatch(
+        await _avalonia.Run(
             () =>
             {
                 var shell = new ShellViewModel(
@@ -92,8 +97,7 @@ public sealed class ReceivedFileRenderTests : IDisposable
 
                 Assert.IsType<ReceivedFileSheetViewModel>(shell.CurrentSheet);
                 Assert.Contains("The dashboard after the fix.", Texts(window));
-            },
-            CancellationToken.None);
+            });
     }
 
     private static SharedFileItem File(string name, string mime, string? caption)
@@ -123,16 +127,4 @@ public sealed class ReceivedFileRenderTests : IDisposable
     /// <summary>A 1×1 PNG — enough for <c>SharedImage</c> to decode and lay out.</summary>
     private static byte[] OnePixelPng => Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
-}
-
-/// <summary>
-/// The Avalonia app the render tests run in: the preview harness's application, which merges exactly the
-/// mobile head's tokens, icons, control themes and styles. Headless drawing — these assert on the visual
-/// tree, not on pixels.
-/// </summary>
-public static class TestAppBuilder
-{
-    /// <summary>Builds the headless app.</summary>
-    public static AppBuilder BuildAvaloniaApp()
-        => AppBuilder.Configure<PreviewApp>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
 }
