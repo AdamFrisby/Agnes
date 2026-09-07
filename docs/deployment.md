@@ -272,6 +272,36 @@ when a browser client is hosted elsewhere:
 
 By default no cross-origin browser is allowed (native clients are unaffected).
 
+## Agnes's own MCP tools (`agnes`)
+
+As well as wiring *other* MCP servers into an agent, the host offers its own tool set back to the agent it is
+running — `send_user_file`, `arm_goal`, `list_goals`, `disarm_goal` — as an MCP server named `agnes`. It is
+materialized into whatever config file that CLI reads, with a per-session bearer token; nothing is configured
+per session by hand.
+
+| Adapter | Sandboxed session | Unsandboxed session | Token carried as |
+|---|---|---|---|
+| `claude-code-native` | `~/.agnes/mcp.json`, passed as `--mcp-config` | temp JSON, passed as `--mcp-config` | `headers.Authorization` |
+| `copilot` | `~/.agnes/mcp.json`, passed as `--additional-mcp-config` | temp JSON, same flag | `headers.Authorization` |
+| `codex` | `~/.codex/config.toml` in the guest home | **not offered** — see below | `bearer_token_env_var` + `AGNES_MCP_BEARER` in the environment |
+| `opencode` (native) | inline config in the environment | not offered | `Authorization` header in the inline config |
+| `claude-code` / `opencode` (ACP) | inline config in the environment where the adapter supports it | not offered | as above |
+| `pi` | **never** — Pi ships no MCP client at all, by explicit design | never | — |
+| `antigravity` | **never** — no MCP config surface | never | — |
+
+Two gaps are deliberate rather than pending:
+
+- **Codex on the host.** Codex discovers its config at a fixed path in the *real* home directory. That file
+  is the operator's — their own servers, models and auth live in it — and Agnes writing or merging into it
+  would be editing someone's configuration behind their back. Only a config Agnes generates and *points* a
+  CLI at (a launch flag) is safe to write for an unsandboxed session. Run Codex sandboxed to get the tools.
+- **An operator-defined server already called `agnes`.** Yours wins; Agnes's own is not written, and the host
+  logs a warning naming the session. Rename yours to get the Agnes tools back.
+
+Adding an adapter to this table is the whole job of wiring it up — `SessionManager.McpTargetFor` is the one
+place that says which file, which format, and how a token is carried, and everything MCP-related for that
+adapter follows from it.
+
 ## Configuration reference (`Agnes:` section)
 
 | Key | Purpose |
@@ -294,6 +324,9 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 | `Copilot:FleetMode` | Starts each Copilot session in fleet mode (parallel subagent execution — its own UI calls it "autopilot + /fleet"). Off by default: a fleet session spends far more. Copilot exposes this only as the in-session `/fleet` command — no flag, no environment variable, no settings key — so Agnes invokes that command once as the session opens, best-effort. |
 | `Copilot:SubagentNames` | Which built-in Copilot subagents get pointed at the session's model. Defaults to the ones whose shipped definition pins one (`explore`, `task`, `research`) — under BYOK those ids resolve to nothing, so without this a session can only dispatch to the agents that pin nothing. Agnes merges `subagents.agents.<name>.model` into `~/.copilot/settings.json` at launch and again on every model switch, leaving every other setting in the file alone. Only applied when `Copilot:Provider:BaseUrl` is set; set this to `[]` to leave the file untouched entirely. |
 | `Sandbox:Provider` | `incus` to run agents in per-session VMs (see [sandbox-live-testing.md](sandbox-live-testing.md)). |
+| `Sandbox:GuestMcpBindUrl` / `Sandbox:GuestMcpUrl` | Where a **sandboxed** agent reaches Agnes's own MCP tools — the address the host binds on the sandbox bridge, and the same address as the guest sees it (e.g. `http://10.99.5.1:5099` and `http://10.99.5.1:5099/mcp-agnes`). Off unless the bind address is set. |
+| `Mcp:LocalEnabled` | Whether an agent running **on the host** (an unsandboxed session) is offered Agnes's own MCP tools over a loopback listener. Default **true**. Set false on a machine whose local users you don't trust — sessions then simply get no `agnes` server. |
+| `Mcp:LocalUrl` | Bind address for that loopback listener. Default `http://127.0.0.1:5117`. Change it if 5117 clashes (a second Agnes on the same box); if the port is already in use the host logs it and starts *without* the local endpoint rather than failing. Both MCP listeners are **added** to whichever listener you configured (`Kestrel:Endpoints` or `ASPNETCORE_URLS`); configure neither and they are skipped with a log line rather than displacing Kestrel's default. |
 | `Sharing:MaxBytes` | Largest file an agent may send the user with `send_user_file` (default 26214400 — 25 MB). Sending copies the file into the workspace and every connected client then downloads it, phones on mobile data included, so the cap turns "send you the build" into a refusal the agent can act on rather than a silent, very slow success. See [send-user-file.md](send-user-file.md). |
 
 ## Storage topology (event store)

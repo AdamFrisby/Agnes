@@ -31,6 +31,25 @@ public sealed class DeviceRegistryMcpAuthenticator : IMcpDeviceAuthenticator
     public string? ResolveCaller(string? token) => _devices.ResolveCallerId(token);
 }
 
+/// <summary>
+/// The outer wall in front of <c>/mcp-agnes</c>: which bearers are recognized at all.
+/// </summary>
+/// <remarks>
+/// Two kinds pass, and the difference between them is the security model. A <b>device</b> token is a paired
+/// human and may drive every session on the host. A <b>session</b> token is one agent: it is not a device
+/// token, carries none of that authority, and <see cref="AgnesMcpTools"/> refuses it for anything but its own
+/// session's goals and file-sharing.
+///
+/// Accepting only device tokens here rejects every agent before it reaches the tools — which is precisely
+/// what made the <c>agnes</c> server unreachable from the sessions its config was being written into. Pulled
+/// out of <c>Program</c> so that decision is testable rather than reachable only by starting a host.
+/// </remarks>
+public static class McpEndpointGate
+{
+    public static bool IsAccepted(string? token, DeviceRegistry devices, SessionMcpTokens sessions)
+        => devices.IsValid(token) || sessions.SessionFor(token) is not null;
+}
+
 /// <summary>Supplies the bearer token accompanying the current MCP request. Abstracted so tools can be
 /// exercised offline (a fixed token) without an HTTP context.</summary>
 public interface IMcpCallerTokenSource

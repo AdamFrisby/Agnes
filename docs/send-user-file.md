@@ -124,6 +124,22 @@ its existing workspace-file path.
 
 The tool is discovered by attribute from `AgnesMcpTools`, so no adapter carries a list of tool names that
 needs extending. What *does* gate availability is whether the `agnes` MCP server is offered to a given session
-at all — see `SessionManager.AddSandboxModel` and `Agnes:Sandbox:GuestMcpUrl`. Today that injection reaches
-sandboxed sessions whose adapter implements `IModelEnvironmentAdapter`; widening it to every adapter (and to
-unsandboxed sessions) is a separate piece of work on the MCP-config materialization, not on this feature.
+at all.
+
+It reaches a session two ways, and every adapter that can take an MCP server at all gets one of them:
+
+- **Sandboxed** — the entry is written into the config file that CLI reads inside its guest home
+  (`SessionManager.AddSandboxMcp`), pointing at the sandbox-bridge endpoint (`Agnes:Sandbox:GuestMcpUrl`).
+  Adapters that take their config through the environment instead (`IModelEnvironmentAdapter`, e.g. native
+  OpenCode) get it there (`AddSandboxModel`).
+- **Unsandboxed** — the entry goes into the generated config Agnes hands the CLI by launch flag
+  (`SessionManager.MaterializeHostMcpAsync`), pointing at a **loopback** endpoint on `127.0.0.1:5117`
+  (`Agnes:Mcp:LocalUrl`). Plain HTTP on purpose: the main listener is TLS an agent CLI cannot be told to
+  trust, and is authenticated by device tokens an agent must never hold. See `docs/security.md`.
+
+Either way the session's own bearer token travels with the entry — in `headers.Authorization` for the
+Claude/Copilot format, or as `bearer_token_env_var` plus `AGNES_MCP_BEARER` in the environment for Codex —
+and that token *is* the session's identity, which is why `sessionId` is omitted when the agent calls.
+
+Which adapters take it, and the two deliberate gaps (host-side Codex, and Pi/Antigravity having no MCP client
+at all), are tabulated in [deployment.md](deployment.md#agness-own-mcp-tools-agnes).
