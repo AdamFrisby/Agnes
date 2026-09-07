@@ -61,6 +61,104 @@ public sealed partial class DisplayViewModel : ObservableObject, IAsyncDisposabl
     [ObservableProperty]
     private string _status = string.Empty;
 
+    /// <summary>True while <see cref="ConnectCommand"/> is dialling, so a head can say "Connecting…" rather
+    /// than showing an empty panel that looks broken.</summary>
+    [ObservableProperty]
+    private bool _isBusy;
+
+    // ---- throughput, measured over a one-second window ----
+    // Not for pretty numbers: a display that is silently degrading (the host dropping for us, a slow link) is
+    // otherwise indistinguishable from a guest that simply isn't changing. Frames per second and bytes per
+    // second tell those two apart at a glance.
+
+    private readonly object _rateLock = new();
+    private DateTimeOffset _windowStart = DateTimeOffset.MinValue;
+    private int _windowFrames;
+    private long _windowBytes;
+
+    /// <summary>Image frames received in the last completed one-second window.</summary>
+    [ObservableProperty]
+    private double _fps;
+
+    /// <summary>Payload bytes received in the last completed one-second window.</summary>
+    [ObservableProperty]
+    private double _bytesPerSecond;
+
+    /// <summary>When the most recent image frame arrived, or null if none has.</summary>
+    [ObservableProperty]
+    private DateTimeOffset? _lastFrameAt;
+
+    /// <summary>The throughput readout a head shows in the corner: <c>"24 fps · 1.4 MB/s"</c>, or empty
+    /// before the first window closes.</summary>
+    public string RateLabel
+    {
+        get
+        {
+            if (Fps <= 0 && BytesPerSecond <= 0)
+            {
+                return string.Empty;
+            }
+
+            var rate = BytesPerSecond switch
+            {
+                >= 1024 * 1024 => $"{BytesPerSecond / (1024 * 1024):0.0} MB/s",
+                >= 1024 => $"{BytesPerSecond / 1024:0} kB/s",
+                _ => $"{BytesPerSecond:0} B/s",
+            };
+            return $"{Fps:0} fps · {rate}";
+        }
+    }
+
+    partial void OnFpsChanged(double value) => OnPropertyChanged(nameof(RateLabel));
+
+    partial void OnBytesPerSecondChanged(double value) => OnPropertyChanged(nameof(RateLabel));
+
+    /// <summary>
+    /// Folds one image frame into the rate window. Called off the UI thread (the pump), so the counters are
+    /// locked and only the closing of a window posts to the dispatcher.
+    /// </summary>
+    private void CountFrame(DisplayFrame frame, DateTimeOffset now)
+    {
+        double fps;
+        double bytes;
+        lock (_rateLock)
+        {
+            if (_windowStart == DateTimeOffset.MinValue)
+            {
+                _windowStart = now;
+            }
+
+            _windowFrames++;
+            _windowBytes += frame.Payload.Length;
+
+            var elapsed = (now - _windowStart).TotalSeconds;
+            if (elapsed < 1.0)
+            {
+                return;
+            }
+
+            fps = _windowFrames / elapsed;
+            bytes = _windowBytes / elapsed;
+            _windowStart = now;
+            _windowFrames = 0;
+            _windowBytes = 0;
+        }
+
+        _dispatcher.Post(() => { Fps = fps; BytesPerSecond = bytes; });
+    }
+
+    private void ResetRates()
+    {
+        lock (_rateLock)
+        {
+            _windowStart = DateTimeOffset.MinValue;
+            _windowFrames = 0;
+            _windowBytes = 0;
+        }
+
+        _dispatcher.Post(() => { Fps = 0; BytesPerSecond = 0; LastFrameAt = null; });
+    }
+
     /// <summary>Raised on the UI thread for every image frame, in order. Views that keep a bitmap
     /// subscribe here rather than diffing <see cref="LatestFrame"/>.</summary>
     public event Action<DisplayFrame>? FrameArrived;
@@ -94,23 +192,25 @@ public sealed partial class DisplayViewModel : ObservableObject, IAsyncDisposabl
 
     private async Task ConnectAsync()
     {
-        if (IsConnected)
+        if (IsConnected || IsBusy)
         {
             return;
         }
 
+        _dispatcher.Post(() => { IsBusy = true; Status = "Connecting…"; });
         try
         {
             _channel = await _host.OpenDisplayAsync(SessionId).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => Status = $"Couldn't open the display — {ex.Message}");
+            _dispatcher.Post(() => { IsBusy = false; Status = $"Couldn't open the display — {ex.Message}"; });
             return;
         }
 
+        ResetRates();
         _pump = new CancellationTokenSource();
-        _dispatcher.Post(() => { IsConnected = true; Status = string.Empty; });
+        _dispatcher.Post(() => { IsBusy = false; IsConnected = true; Status = string.Empty; });
         _ = PumpAsync(_channel, _pump.Token);
     }
 
@@ -139,7 +239,9 @@ public sealed partial class DisplayViewModel : ObservableObject, IAsyncDisposabl
 
                         break;
                     default:
-                        _dispatcher.Post(() => { LatestFrame = frame; FrameArrived?.Invoke(frame); });
+                        var at = DateTimeOffset.UtcNow;
+                        CountFrame(frame, at);
+                        _dispatcher.Post(() => { LatestFrame = frame; LastFrameAt = at; FrameArrived?.Invoke(frame); });
                         break;
                 }
             }
@@ -182,7 +284,10 @@ public sealed partial class DisplayViewModel : ObservableObject, IAsyncDisposabl
             await channel.DisposeAsync().ConfigureAwait(false);
         }
 
-        _dispatcher.Post(() => IsConnected = false);
+        // A stale "18 fps" under a disconnected panel is a lie about a live stream, so clear it with the
+        // connection rather than leaving the last window's numbers on screen.
+        ResetRates();
+        _dispatcher.Post(() => { IsConnected = false; IsBusy = false; });
     }
 
     public async ValueTask DisposeAsync()

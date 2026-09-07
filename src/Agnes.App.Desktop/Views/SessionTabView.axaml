@@ -231,6 +231,29 @@
                                 Content="Terminal" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Open a shell in the session's working directory" AutomationProperties.Name="Toggle terminal" />
 
+                        <!-- Screen: only ever offered on a session that has one (ScreenAvailable), because a
+                             button that opens an empty panel is worse than no button. -->
+                        <Button Classes="chip" Command="{Binding Session.ToggleDisplayCommand}"
+                                IsVisible="{Binding ScreenAvailable}"
+                                Padding="9,3" FontSize="11"
+                                ToolTip.Tip="Watch the graphical sandbox's screen — and take the mouse when you want it"
+                                AutomationProperties.Name="Toggle screen">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <ic:SymbolIcon Symbol="Desktop" FontSize="14" />
+                                <TextBlock Text="Screen" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Who is driving, while the panel is CLOSED. Someone at the keyboard of a screen you
+                             cannot see is exactly the state worth surfacing; with the panel open its own header
+                             says it and this disappears. Sky = the agent is in motion, amber = it is on you. -->
+                        <Border Classes="status" Padding="8,2" VerticalAlignment="Center"
+                                IsVisible="{Binding ShowScreenDriverChip}"
+                                Classes.working="{Binding ScreenDriverIsAgent}"
+                                Classes.attention="{Binding ScreenDriverIsUser}">
+                            <TextBlock Text="{Binding ScreenDriverChip}" FontSize="11" />
+                        </Border>
+
                         <!-- Agent console: the same CLI the session runs, in its interactive mode, for the
                              slash commands and one-off actions ACP does not carry. Beside Terminal because
                              they are siblings — that one gives you a shell where the agent lives, this one
@@ -836,6 +859,31 @@
                                         Classes.on="{Binding SandboxOn}" Classes="seg" />
                                 <Button Content="Off" Command="{Binding SetSandboxModeCommand}" CommandParameter="Off"
                                         Classes.on="{Binding SandboxOff}" Classes="seg" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Graphical sandbox: a screen inside the sandbox the agent can see and drive. Offered
+                         wherever a sandbox is, since there is no separate host capability flag for it yet — a
+                         host that doesn't allow one refuses the request and its reason lands in StatusText
+                         with every other start failure. -->
+                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                            CornerRadius="10" Padding="14,10" IsVisible="{Binding SandboxAvailable}">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <ic:SymbolIcon Grid.Column="0" Classes="lead" Symbol="Desktop" Margin="0,0,10,0" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold"
+                                               Text="Graphical sandbox (1280×800 display)" />
+                                    <ctl:InfoHint Description="Give the sandbox a desktop the agent can see and drive — for work that needs a browser or a GUI. You can watch it from the Screen panel and take the mouse whenever you want."
+                                                  Security="A display widens what the agent can do inside its sandbox to anything it can click, so it is off by default. The sandbox still contains it: only the mounted project is reachable." />
+                                </StackPanel>
+                                <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                           Text="Adds a screen to the sandbox. Watch it live, and take the mouse when you want it." />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <CheckBox IsChecked="{Binding GraphicalSandbox, Mode=TwoWay}"
+                                          AutomationProperties.Name="Graphical sandbox" />
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -2594,6 +2642,18 @@
                 Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0"
                 BoxShadow="-8 0 24 -12 #66120C2E">
             <views:FileBrowserView DataContext="{Binding Session.FileBrowser}" />
+        </Border>
+
+        <!-- The graphical sandbox's screen: a right-docked overlay beside the transcript, so you can watch the
+             agent work and the transcript that explains it at the same time. Right rather than bottom (where the
+             terminal goes) because a 1280x800 display letterboxed into a 260px strip is unreadable, and because
+             the two are genuinely useful together. Same computed gate as every other overlay, plus HasDisplay —
+             only a graphical sandbox has a screen at all. -->
+        <Border Grid.Row="1" HorizontalAlignment="Right" Width="620"
+                IsVisible="{Binding ScreenPanelVisible}"
+                Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0"
+                BoxShadow="-8 0 24 -12 #66120C2E">
+            <views:ScreenPanelView DataContext="{Binding Session.Display}" />
         </Border>
 
         <!-- Provider login terminal (platform/03): a bottom-docked, interactive terminal running a CLI's login,
