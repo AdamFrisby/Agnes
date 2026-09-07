@@ -262,10 +262,9 @@ public sealed partial class SessionsViewModel : ObservableObject
     private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
     {
         // This is the one place the app builds a session, so it is where the device's file handler joins
-        // one: when SessionViewModel grows its own `receivedFiles` parameter, `_shell.ReceivedFiles` is
-        // passed here and every session gets it. Until then the sheet reads the same handler off the shell,
-        // which is the single instance either way.
-        var session = new SessionViewModel(host, view, _shell.Dispatcher, title, _prompts, _policy);
+        // one: every session gets the shell's single Android handler, and the received-file sheet reads
+        // the same instance off the shell — one object either way.
+        var session = new SessionViewModel(host, view, _shell.Dispatcher, title, _prompts, _policy, receivedFiles: _shell.ReceivedFiles);
 
         // Files an agent sent are a live projection over the transcript, the way the blocked list is a live
         // projection over attention state — the Inbox subscribes to this rather than polling every session.
