@@ -7,6 +7,8 @@
 //       Starts the instance's private display bus and prints the two incus config values it needs.
 //   dotnet run --project tools/Agnes.DisplaySpike -- measure <instance> <outDir>
 //       Attaches, saves a PNG a second, injects input, and prints the numbers.
+//   dotnet run --project tools/Agnes.DisplaySpike -- cloudinit <width> <height>
+//       Prints the guest cloud-init a graphical sandbox is created with, for a scratch VM built by hand.
 //   dotnet run --project tools/Agnes.DisplaySpike -- provision <outDir>
 //       Bakes the graphical image if it is missing, then provisions a sandbox with a display
 //       entirely through IncusSandboxProvider and screenshots it. The whole path, no hand-holding.
@@ -35,6 +37,14 @@ var options = new IncusOptions
     StoragePoolName = "codeybox-zfs",
     Bridge = "cb-net",
 };
+
+if (mode == "cloudinit")
+{
+    var width = args.Length > 1 ? int.Parse(args[1], CultureInfo.InvariantCulture) : 1280;
+    var height = args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : 800;
+    Console.Write(IncusGuest.CloudInit(options, new GraphicalDisplay(width, height)));
+    return 0;
+}
 
 if (mode == "prepare")
 {
