@@ -658,8 +658,18 @@ public sealed partial class SessionDocument : Document, ITraySession
     public bool ScreenPanelVisible => IsLive && Session?.HasDisplay == true && Session?.IsDisplayVisible == true;
 
     /// <summary>Whether to offer the screen at all: only a graphical sandbox has one, so on every other
-    /// session the affordance is absent rather than present-and-broken.</summary>
+    /// session the affordance is absent rather than present-and-broken. The fact comes from the host — the
+    /// snapshot's <c>SessionInfo.HasDisplay</c>, then the catalogue — never from what this client asked for.</summary>
     public bool ScreenAvailable => IsLive && Session?.HasDisplay == true;
+
+    /// <summary>
+    /// This session asked for a screen and the host opened it without one. Worth saying out loud: the request
+    /// succeeded, the session is running, and the only sign anything differed from what was asked would
+    /// otherwise be a Screen button that never appeared — which reads as a client bug, not as a host that
+    /// has graphical sandboxes switched off.
+    /// </summary>
+    [ObservableProperty]
+    private bool _screenDeclined;
 
     /// <summary>
     /// The driver chip shown in the tab's status bar while the panel is CLOSED: someone is at the keyboard of

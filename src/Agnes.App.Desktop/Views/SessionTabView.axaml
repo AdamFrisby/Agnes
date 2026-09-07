@@ -231,18 +231,32 @@
                                 Content="Terminal" Padding="9,3" FontSize="11"
                                 ToolTip.Tip="Open a shell in the session's working directory" AutomationProperties.Name="Toggle terminal" />
 
-                        <!-- Screen: only ever offered on a session that has one (ScreenAvailable), because a
-                             button that opens an empty panel is worse than no button. -->
+                        <!-- Screen: only ever offered on a session that has one (ScreenAvailable, which is the
+                             host's own answer), because a button that opens an empty panel is worse than no
+                             button. Its presence IS "screen available"; its absence after asking for one is
+                             said in words by the chip below, because absence explains nothing on its own. -->
                         <Button Classes="chip" Command="{Binding Session.ToggleDisplayCommand}"
                                 IsVisible="{Binding ScreenAvailable}"
                                 Padding="9,3" FontSize="11"
-                                ToolTip.Tip="Watch the graphical sandbox's screen — and take the mouse when you want it"
+                                ToolTip.Tip="Screen available — watch the graphical sandbox's screen, and take the mouse when you want it"
                                 AutomationProperties.Name="Toggle screen">
                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                 <ic:SymbolIcon Symbol="Desktop" FontSize="14" />
                                 <TextBlock Text="Screen" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
+
+                        <!-- Asked for a screen, opened without one. Neutral, not a status hue: nothing is
+                             wrong, in motion, or waiting on you — the host simply didn't give this session a
+                             display, and saying so beats a missing button. -->
+                        <Border Classes="status" Padding="8,2" VerticalAlignment="Center"
+                                IsVisible="{Binding ScreenDeclined}"
+                                ToolTip.Tip="The host opened this session without a screen — graphical sandboxes may be switched off there. The session itself is running normally.">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <ic:SymbolIcon Symbol="DesktopOff" FontSize="14" />
+                                <TextBlock Text="No screen" FontSize="11" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
 
                         <!-- Who is driving, while the panel is CLOSED. Someone at the keyboard of a screen you
                              cannot see is exactly the state worth surfacing; with the panel open its own header

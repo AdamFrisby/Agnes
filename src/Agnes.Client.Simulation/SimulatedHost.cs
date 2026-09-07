@@ -182,7 +182,9 @@ public sealed class SimulatedHost : IAgnesHost
         session.Emit(new TurnEndedEvent(StopReason.EndTurn));
         session.RecordUsage(0, 0); // seed the context-window meter (same UsageReportedEvent a real agent emits)
         session.SkipPermissions = skipPermissions;
-        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id), skipPermissions));
+        // HasDisplay matches Summarize(): every simulated sandbox is graphical, so the offline host shows the
+        // screen affordance on the session it just opened as well as on the ones it lists.
+        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id), skipPermissions, HasDisplay: true));
     }
 
     /// <summary>
@@ -958,7 +960,7 @@ public sealed class SimulatedHost : IAgnesHost
             lock (_gate)
             {
                 return new SessionSnapshot(
-                    new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId, new SandboxStatus("incus", $"agnes-{Id}", "Running"), SkipPermissions),
+                    new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId, new SandboxStatus("incus", $"agnes-{Id}", "Running"), SkipPermissions, HasDisplay: true),
                     _log.ToArray(), _seq);
             }
         }

@@ -475,7 +475,14 @@ public sealed record SessionInfo(
     bool SkipPermissions = false,
     string? Project = null,
     bool ReadOnly = false,
-    string? CurrentModelId = null);
+    string? CurrentModelId = null,
+    /// <summary>Whether this session actually has a screen (see <c>docs/display-channel.md</c>). The host's
+    /// answer, not the client's request: asking for a graphical session is a request the host can decline —
+    /// the operator may have graphical sandboxes switched off, or a project default may have granted one
+    /// nobody asked for — and a client that assumed its own request was honoured would offer a screen that
+    /// isn't there, or hide one that is. Mirrors <see cref="SessionSummary.HasDisplay"/> for the session
+    /// just opened, which the catalogue would otherwise only reveal on the next listing.</summary>
+    bool HasDisplay = false);
 
 /// <summary>How busy a catalogued session is right now, as the host sees it. Deliberately coarse — it is
 /// derived from live state (is a turn running?) rather than stored, so it needs no new bookkeeping. "Needs a

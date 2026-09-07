@@ -3173,6 +3173,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 }
 
                 doc.AgentName = displayName;
+                // What the host actually did about the screen, from its own answer rather than from what we
+                // asked for. A host may refuse graphical sandboxes outright (that comes back as an exception),
+                // but it may also simply open the session without one — and then the only visible difference
+                // is a Screen button that never appears, which looks like a broken client.
+                doc.ScreenDeclined = graphical && !info.HasDisplay;
                 // Set the folder-derived base title BEFORE attaching, so if the session already carries an
                 // agent title (replayed from the snapshot) AttachSession's title wins instead of being clobbered.
                 doc.Title = title;

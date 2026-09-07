@@ -375,13 +375,28 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
                 var session = _sessions.Build(host, view, title);
                 var saved = new SavedSession(link.Name, link.Url, link.Saved.Token, info.SessionId,
                     agent.AdapterId, title, info.WorkingDirectory,
-                    HasDisplay: request.Graphical);
+                    // What the host DID, not what was asked for. Asking for a screen is a request: the
+                    // operator may forbid graphical sandboxes, an older host may not know the flag at all,
+                    // and a project default may hand one to a session that never asked. Believing the
+                    // request would leave the Screen tab wired to a display that does not exist — a
+                    // connection that fails with a 404 the person has no way to interpret.
+                    HasDisplay: info.HasDisplay);
 
                 ((ShellViewModel)_shell).UpdateSettings(s => s with { LastWorkingDirectory = directory });
                 IsStarting = false;
                 _shell.Haptics.Success();
                 _shell.Pop();
                 _sessions.Adopt(link, session, saved);
+
+                if (info.HasDisplay)
+                {
+                    _shell.Toast("Screen available — open it from the session's Screen tab.", ToastKind.Success);
+                }
+                else if (request.Graphical)
+                {
+                    _shell.Toast(
+                        "The host opened this session without a screen; it runs headless.", ToastKind.Warning);
+                }
             });
         }
         catch (Exception ex)
@@ -401,7 +416,8 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
     /// rather than as a pile of arguments, because that is what the host receives and it is the thing
     /// that carries <see cref="OpenSessionRequest.Graphical"/>. The host refuses a graphical launch the
     /// operator has not allowed, and that refusal surfaces as this page's error rather than as a session
-    /// with no screen.
+    /// with no screen. The quieter case — a host that opened the session but without a display — is read
+    /// back off <see cref="SessionInfo.HasDisplay"/> by the caller rather than assumed.
     /// </summary>
     private static Task<SessionInfo> OpenAsync(IAgnesHost host, OpenSessionRequest request)
         => host.OpenSessionAsync(

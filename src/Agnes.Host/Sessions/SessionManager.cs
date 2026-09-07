@@ -897,7 +897,10 @@ public sealed class SessionManager : IAsyncDisposable
         _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name, CurrentModelId: modelId);
+        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name, CurrentModelId: modelId,
+            // What the host actually did with the request for a screen — which is not always what was asked
+            // for (the operator may forbid it; a project default may grant it).
+            HasDisplay: DisplaySourceFor(sessionId) is not null);
     }
 
     /// <summary>Computes a fork plan for a live session: a proposed non-existing target folder (numeral-
@@ -2226,7 +2229,8 @@ public sealed class SessionManager : IAsyncDisposable
             var liveHead = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
             return new SessionInfo(sessionId, already.AdapterId, "/work", liveHead, already.Modes, already.CurrentModeId,
                 _sandboxBySession.TryGetValue(sessionId, out var s) ? MapSandbox(s) : null, false, null,
-                CurrentModelId: _catalog.TryGetValue(sessionId, out var arec) ? arec.ModelId : null);
+                CurrentModelId: _catalog.TryGetValue(sessionId, out var arec) ? arec.ModelId : null,
+                HasDisplay: DisplaySourceFor(sessionId) is not null);
         }
 
         var record = _sandboxRegistry?.Get(sessionId)
@@ -2258,7 +2262,10 @@ public sealed class SessionManager : IAsyncDisposable
         var project = StateOrNull(sessionId)?.Project;
         return new SessionInfo(sessionId, record.AdapterId, "/work", head, session.Modes, session.CurrentModeId,
             MapSandbox(sandbox), record.SkipPermissions, project?.Name,
-            CurrentModelId: _catalog.TryGetValue(sessionId, out var crec) ? crec.ModelId : null);
+            CurrentModelId: _catalog.TryGetValue(sessionId, out var crec) ? crec.ModelId : null,
+            // A resumed VM that was built graphical comes back graphical (the attach re-states the display),
+            // so the client that reopened it learns its screen is there without waiting for a catalogue poll.
+            HasDisplay: DisplaySourceFor(sessionId) is not null);
     }
 
     /// <summary>Re-resolves the project for a working directory (same rule as open).</summary>
@@ -3383,7 +3390,7 @@ public sealed class SessionManager : IAsyncDisposable
         var skipPermissions = _catalog.TryGetValue(sessionId, out var rec) && rec.SkipPermissions;
         var info = new SessionInfo(sessionId, adapterId, workingDirectory, head,
             live?.Modes, live?.CurrentModeId, GetSandboxStatus(sessionId), skipPermissions, Project: null, ReadOnly: IsReadOnly(sessionId),
-            CurrentModelId: rec?.ModelId);
+            CurrentModelId: rec?.ModelId, HasDisplay: DisplaySourceFor(sessionId) is not null);
         return new SessionSnapshot(info, events, head);
     }
 

@@ -216,6 +216,26 @@ public class DisplayViewModelTests
         Assert.False(display.IsConnected);
     }
 
+    /// <summary>
+    /// The snapshot is the first thing a client that just opened a session has, and it now carries the
+    /// host's answer about the screen. Learning it here rather than only from the catalogue is what lets a
+    /// freshly opened graphical session offer its screen immediately — and what stops a client from
+    /// believing its own request when the host quietly opened the session without one.
+    /// </summary>
+    [Fact]
+    public async Task A_session_learns_from_its_own_snapshot_that_it_has_a_screen()
+    {
+        var host = new DisplayHost { HasDisplayInCatalogue = false };  // the catalogue would say no
+        var view = new SessionView("s1");
+        view.ApplySnapshot(new SessionSnapshot(
+            new SessionInfo("s1", "opencode", "/work", 0, HasDisplay: true), [], 0));
+
+        await using var session = new SessionViewModel(host, view, ImmediateDispatcher.Instance, "OpenCode");
+
+        Assert.True(session.HasDisplay);   // straight off the snapshot, with no catalogue round trip
+        Assert.NotNull(session.Display);
+    }
+
     [Fact]
     public async Task A_session_without_a_screen_offers_none()
     {

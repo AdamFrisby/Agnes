@@ -168,6 +168,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // model axis, which hides the picker).
         _ = LoadModelsAsync(view.Info?.AdapterId);
         _sandbox = view.Info?.Sandbox;
+        // The host's own answer about the screen, straight off the snapshot: a session that just opened
+        // graphical says so here, without waiting for a catalogue round trip.
+        _hasDisplay = view.Info?.HasDisplay == true;
         PauseSandboxCommand = new AsyncRelayCommand(PauseSandboxAsync, () => HasSandbox && !SandboxPaused);
         ResumeSandboxCommand = new AsyncRelayCommand(ResumeSandboxAsync, () => HasSandbox && SandboxPaused);
         DeleteSandboxCommand = new AsyncRelayCommand(DeleteSandboxAsync, () => HasSandbox);
@@ -530,10 +533,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     // A session whose sandbox has a screen. Lazily built like the terminal, so a session without a display
     // (nearly all of them) pays nothing, and disposed with the session because it owns a WebSocket.
     //
-    // Whether there IS a display is a fact only the host holds, and the snapshot's SessionInfo does not carry
-    // it — SessionSummary does. So it is discovered from the catalogue, and also settable, so a shell that
-    // already had the summary in hand (opening from the catalogue list) can say so without a second round
-    // trip. Default false: a head must never offer a screen that isn't there.
+    // Whether there IS a display is a fact only the host holds. It arrives on the snapshot's SessionInfo
+    // (seeded in the constructor) and on the catalogue's SessionSummary, and is settable besides, so a shell
+    // that already had the summary in hand can say so without a round trip. Default false: a head must never
+    // offer a screen that isn't there.
     private DisplayViewModel? _display;
     private ICommand? _toggleDisplay;
     private bool _isDisplayVisible;
