@@ -612,6 +612,72 @@ public partial class SessionTabView : UserControl
         Apply(columns[4], columns[3], vm.ShowRightPanel, ref _rightWidth);
     }
 
+    // ---- inline previews for files the agent sent ----
+    // Decoded bitmaps, keyed by the shared file's id. Two reasons to keep them: the transcript virtualizes,
+    // so the same card is realized again every time it scrolls back into view, and a fetch costs a round
+    // trip to the host. The set is bounded by how many files one session received, which is small.
+    private readonly Dictionary<string, Avalonia.Media.Imaging.Bitmap> _sharedImages = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _sharedImagesLoading = new(StringComparer.Ordinal);
+
+    private async void OnSharedImageAttached(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        // The template realizes this element for every shared file and hides it for the ones that aren't
+        // images; attachment fires either way, so the kind is checked here or a pdf costs a pointless fetch.
+        if (sender is not Image image || image.DataContext is not SharedFileItem { IsImage: true } item)
+        {
+            return;
+        }
+
+        if (_sharedImages.TryGetValue(item.FileId, out var cached))
+        {
+            image.Source = cached;
+            return;
+        }
+
+        image.Source = null;
+        if (_session is null || !_sharedImagesLoading.Add(item.FileId))
+        {
+            return; // already in flight for this file; whoever started it will paint every card showing it
+        }
+
+        Avalonia.Media.Imaging.Bitmap? bitmap = null;
+        try
+        {
+            var content = await _session.PreviewSharedFileAsync(item);
+            if (content is { Bytes.Length: > 0 })
+            {
+                using var stream = new System.IO.MemoryStream(content.Bytes);
+                bitmap = new Avalonia.Media.Imaging.Bitmap(stream);
+            }
+        }
+        catch (Exception)
+        {
+            // A corrupt or oversized image decodes to nothing: the card keeps its placeholder rather than
+            // taking the transcript down. Same stance as the file browser's preview.
+            bitmap = null;
+        }
+        finally
+        {
+            _sharedImagesLoading.Remove(item.FileId);
+        }
+
+        if (bitmap is null)
+        {
+            return;
+        }
+
+        _sharedImages[item.FileId] = bitmap;
+        // The container may have been recycled onto a different file while the fetch was in flight — so
+        // paint by what each Image is currently showing, not by the one that started the load.
+        foreach (var target in this.GetVisualDescendants().OfType<Image>())
+        {
+            if (target.Name == "SharedImage" && target.DataContext is SharedFileItem shown && shown.FileId == item.FileId)
+            {
+                target.Source = bitmap;
+            }
+        }
+    }
+
     private async void OnBrowseWorkingDirectory(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (DataContext is not ViewModels.SessionDocument doc

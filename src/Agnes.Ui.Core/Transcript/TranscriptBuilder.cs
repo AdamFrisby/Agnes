@@ -264,6 +264,13 @@ public sealed class TranscriptBuilder
                 Items.Add(new NoticeItem(err.Message, isError: true) { AgentId = agentId });
                 break;
 
+            case FileSharedEvent f:
+                // A file the agent sent is a thing in its own right, not a line of chat: close whatever
+                // bubble was open so the card stands alone in the order it arrived.
+                CloseBubble();
+                Items.Add(new SharedFileItem(f) { AgentId = agentId });
+                break;
+
             case NoticeEvent notice:
                 CloseBubble();
                 Items.Add(new NoticeItem(notice.Message, notice.IsError) { AgentId = agentId });

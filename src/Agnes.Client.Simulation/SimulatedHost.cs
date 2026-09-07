@@ -52,6 +52,43 @@ public sealed class SimulatedHost : IAgnesHost
         + "| xargs -0 grep -ln 'defaultConfig' "
         + "| while read -r f; do sed -i.bak 's/retries: 3/retries: 5/g' \"$f\" && rm -f \"$f.bak\"; done";
 
+    /// <summary>
+    /// The bytes behind the one file the simulated agent sends. A real 240x150 PNG (the Agnes gradient over
+    /// a dark footer) rather than a placeholder path, because the point of the offline host is that the
+    /// screenshot tool and the headless render tests decode and lay out a genuine image — a card that says
+    /// "image" and shows nothing proves nothing.
+    /// </summary>
+    private const string SharedPngBase64 =
+        """
+        iVBORw0KGgoAAAANSUhEUgAAAPAAAACWCAIAAABvmpKCAAAEjklEQVR42u3S5VKWCQCAUa9hZ3/uFUk3HyGiiNiFiK7t2t3d3d3dip2ACIhI
+        IyIiIKH7fnsB+3dnds7McwXPnH5TM35Ny/g5PVzfjPS+mem9s8L1zE7vmZPe/Vda0I+5aV3z0rrmp3UGLUjrWBjqWBT6HrQ41L4k1L409G1p
+        qG1Zatvy1K8rwrWuTG1dlfpldUpQy5qUlrUpn9eFa16f0rQhuWljcmPQpuSGzckNW5Lrg7Ym1W1LqtueVLs9qWZHUs3OpE+7EoOqdydW70n8
+        uDdc1b7Eqv0JHw4kVAYdTKg4lFBxOKE86Ej8+6Px74/FlwUdj393Ir70ZFxQyam4ktNxxWfCvT0b9/Zc7Jvz4V5fiH11MfbVpdiXl2OCXlyJ
+        eXE15vm1cM+uxzy7Ef30Zrgnt6If345+fCf6UdDdqKJ7UUX3ox4GPYh68DDqQVHk/aLIe48i7z2OvPsk3J2nkXeeRdx+Hu7Wi4hbLyNuvoq4
+        EfS6//U3/a+/7X8tqDjianHEleKIyyWRl0oiL5ZEXSyNulAadb40+ty76LPvYoLOlMWcLos9VRZ78n3ciX86Xh5/rDz+aHnCkYpwhysSD1Um
+        HqxMOlCZtP9DUPK+D8l7q1L2VKXsDvqYuutj6s7q0I7q0Pbq0LZPaUFbP6VvqUnfXJO+qSZjU23GxtrMDbWZ6+sy19UNWBtUn7WmPmt1fdaq
+        hoErGwauaMhe0Zi9vDF7WeOgpU2DljQNDlrcnLOoOWdhc86Cz0PmB7XkzmvJnduS+9eXoXPC5c1uzZvVmjezddiMr8Omfx0eNK1t+NS2EX+2
+        jZjybWTQ5G8jC9tHTWofVdA+euL3cPnfx0zoGDO+Y+y4oM6xYzvHjekcN7pr/Kiu8SODfkwY8WPC8O78Yd35ed35Q3smBuX2FAzpLcjpLRjc
+        O2lw36RBfYXZfYUDfxZm/Zw8IOjXlMxfUzL6AQ000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQ
+        QAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBA
+        Aw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EAD
+        DTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMN
+        NNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAA/2fgv79tz+k/01AC2gJaAloCWgBLQEtAS0BLQEtoCWgJaAloCWgBbQEtAS0BLQE
+        tICWgJaAloCWgBbQEtAS0BLQEtACWgJaAloCWgJaQEtAS0BLQAtoFwS0BLQEtAS0gJaAloCWgJaAFtAS0BLQEtDSv/Y3EKq7vjDqRq8AAAAA
+        SUVORK5CYII=
+        """;
+
+    /// <summary>Workspace-relative path of that file, in the same <c>.agnes/shared/&lt;id&gt;/&lt;name&gt;</c>
+    /// shape a real host stores a sent file at, so clients reach it by the ordinary download path.</summary>
+    private const string SharedPngPath = ".agnes/shared/shot-1/gradient-preview.png";
+
+    // The simulated workspace: path -> bytes. Only the files the script actually hands out live here, so a
+    // client's DownloadFileAsync/ReadFileAsync work against the sim exactly as they do against a host.
+    private static readonly Dictionary<string, byte[]> WorkspaceFiles = new(StringComparer.Ordinal)
+    {
+        [SharedPngPath] = Convert.FromBase64String(SharedPngBase64),
+    };
+
     private const string LongAnswer =
         """
         ## Agent Client Protocol (ACP)
@@ -597,6 +634,29 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(CapabilityNegotiator.Reconcile(hostCaps, client));
     }
 
+    // ---- the simulated workspace's file surface ----
+    // Only the files the script hands out exist, but they are served through exactly the two calls a client
+    // uses for a shared file, so DownloadSharedFileAsync/PreviewSharedFileAsync work offline unchanged.
+
+    public Task<byte[]> DownloadFileAsync(string sessionId, string relativePath)
+        => Task.FromResult(WorkspaceFiles.TryGetValue(Normalize(relativePath), out var bytes) ? bytes : []);
+
+    public Task<FileContent> ReadFileAsync(string sessionId, string relativePath)
+    {
+        var path = Normalize(relativePath);
+        if (!WorkspaceFiles.TryGetValue(path, out var bytes))
+        {
+            throw new FileNotFoundException($"The simulated workspace has no file at '{path}'.", path);
+        }
+
+        return Task.FromResult(path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            ? new FileContent(path, FileContentKind.Image, null, bytes, "image/png", bytes.LongLength)
+            : new FileContent(path, FileContentKind.Text, System.Text.Encoding.UTF8.GetString(bytes), null, "text/plain", bytes.LongLength));
+    }
+
+    // Clients address workspace files POSIX-style; accept a Windows-separated path too rather than 404 on it.
+    private static string Normalize(string relativePath) => relativePath.Replace('\\', '/').TrimStart('/');
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     // ---- scripted behavior ----
@@ -642,6 +702,27 @@ public sealed class SimulatedHost : IAgnesHost
                     ], MultiSelect: true),
                 ]));
                 return; // wait for the client to answer (AnswerQuestionAsync continues the turn)
+            }
+
+            // "Here, look at this." The agent finishes a piece of work and hands over the artifact itself
+            // rather than describing it — the case the shared-file card exists for.
+            if (Mentions(prompt, "screenshot", "send me", "share the"))
+            {
+                session.Emit(new ToolCallEvent("tc-shot", "capture the rendered header", ToolKind.Execute, ToolCallStatus.Completed,
+                    [new TextContent("wrote .agnes/shared/shot-1/gradient-preview.png")]));
+                await Task.Delay(200, cancel).ConfigureAwait(false);
+                session.Emit(new FileSharedEvent(
+                    "shot-1",
+                    "gradient-preview.png",
+                    SharedPngPath,
+                    WorkspaceFiles[SharedPngPath].LongLength,
+                    "image/png",
+                    "The header after the palette change — violet through magenta to coral."));
+                await Task.Delay(120, cancel).ConfigureAwait(false);
+                session.Emit(new MessageChunkEvent(MessageRole.Assistant,
+                    new TextContent("Sent it over — open it full size if the ramp looks off to you.")));
+                session.Emit(new TurnEndedEvent(StopReason.EndTurn));
+                return;
             }
 
             if (Mentions(prompt, "explain", "detail", "describe", "overview"))

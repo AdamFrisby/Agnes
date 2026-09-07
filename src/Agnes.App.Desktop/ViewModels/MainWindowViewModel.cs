@@ -50,6 +50,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// <summary>Surfaces session notifications (toast / OS). Set by the shell once a window exists.</summary>
     public INotifier Notifier { get; set; } = NullNotifier.Instance;
 
+    /// <summary>
+    /// What this client does with a file an agent sends (save / open). Set by the shell for the same reason
+    /// as <see cref="Notifier"/>: both need a window, and this view model is constructed before there is one.
+    /// Every session opened from here is handed it, so a card's buttons match what the head can actually do.
+    /// </summary>
+    public IReceivedFileHandler ReceivedFiles { get; set; } = NullReceivedFileHandler.Instance;
+
     private ClientPluginSet? _clientPlugins;
 
     /// <summary>The reconciliation from the last successful capability negotiation (empty until one runs) —
@@ -2234,7 +2241,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// <summary>Creates a session view model and wires its notifications to the shell.</summary>
     private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
     {
-        var session = new SessionViewModel(host, view, _dispatcher, title, _prompts, _policy, EnsureClientPlugins().EventBus);
+        var session = new SessionViewModel(host, view, _dispatcher, title, _prompts, _policy, EnsureClientPlugins().EventBus, ReceivedFiles);
         session.NotificationRaised += n => _dispatcher.Post(() => Surface(n));
         _ = EnsureClientPlugins().EventBus.DispatchAsync(new SessionTabOpenedEvent(view.SessionId)); // observe-only
         return session;

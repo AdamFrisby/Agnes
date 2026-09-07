@@ -1,4 +1,5 @@
 using Agnes.Abstractions;
+using FluentIcons.Common;
 
 namespace Agnes.Ui.Core.Transcript;
 
@@ -38,6 +39,15 @@ public sealed class SharedFileItem : TranscriptItem
     public bool IsPdf => string.Equals(MimeType, "application/pdf", StringComparison.OrdinalIgnoreCase);
 
     public string Extension => System.IO.Path.GetExtension(FileName).TrimStart('.').ToUpperInvariant();
+
+    /// <summary>
+    /// The icon for this file's kind. View-model state rather than a constant in each head's view, because
+    /// it varies with the file — the one case the house rule says an icon belongs to the model.
+    /// </summary>
+    public Symbol Symbol => IsImage ? Symbol.Image
+        : IsPdf ? Symbol.DocumentPdf
+        : IsText ? Symbol.DocumentText
+        : Symbol.Document;
 
     /// <summary>"1.2 MB", "840 KB", "312 B".</summary>
     public string SizeText => Size switch
