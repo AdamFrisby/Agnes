@@ -15,7 +15,16 @@ namespace Agnes.Sandbox;
 public sealed record GraphicalDisplay(int Width, int Height, int Dpi = 96);
 
 /// <summary>The size a display session actually came up at, as reported by the capture backend.</summary>
-public readonly record struct DisplayGeometry(int Width, int Height, int Dpi);
+public readonly record struct DisplayGeometry(int Width, int Height, int Dpi)
+{
+    /// <summary>
+    /// Brings a coordinate onto the surface. Injection clamps rather than rejecting because the
+    /// alternative — an error a model has to notice and correct — turns a harmless off-by-one at the
+    /// edge of the screen into a stuck agent, and a click at the very edge is a thing people do.
+    /// </summary>
+    public (int X, int Y) Clamp(int x, int y)
+        => (Math.Clamp(x, 0, Math.Max(0, Width - 1)), Math.Clamp(y, 0, Math.Max(0, Height - 1)));
+}
 
 /// <summary>Byte layout of a <see cref="DisplayUpdate"/>'s pixels.</summary>
 /// <remarks>

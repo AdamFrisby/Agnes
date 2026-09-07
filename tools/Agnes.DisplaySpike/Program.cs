@@ -7,6 +7,9 @@
 //       Starts the instance's private display bus and prints the two incus config values it needs.
 //   dotnet run --project tools/Agnes.DisplaySpike -- measure <instance> <outDir>
 //       Attaches, saves a PNG a second, injects input, and prints the numbers.
+//   dotnet run --project tools/Agnes.DisplaySpike -- provision <outDir>
+//       Bakes the graphical image if it is missing, then provisions a sandbox with a display
+//       entirely through IncusSandboxProvider and screenshots it. The whole path, no hand-holding.
 using System.Diagnostics;
 using System.Globalization;
 using Agnes.Sandbox;
@@ -17,7 +20,9 @@ using SkiaSharp;
 
 var mode = args.Length > 0 ? args[0] : "measure";
 var instance = args.Length > 1 ? args[1] : "agnes-display-spike";
-var outDir = args.Length > 2 ? args[2] : "/tmp/agnes-display-spike";
+var outDir = mode == "provision"
+    ? (args.Length > 1 ? args[1] : "/tmp/agnes-display-spike")
+    : (args.Length > 2 ? args[2] : "/tmp/agnes-display-spike");
 
 using var loggerFactory = LoggerFactory.Create(b => b.AddSimpleConsole(o => o.SingleLine = true).SetMinimumLevel(LogLevel.Information));
 var logger = loggerFactory.CreateLogger("spike");
@@ -43,6 +48,39 @@ if (mode == "prepare")
 
 var display = new GraphicalDisplay(1280, 800);
 var provider = new IncusSandboxProvider(options, loggerFactory);
+
+if (mode == "provision")
+{
+    var manifest = new SandboxImageManifest { Agents = [] }.AsGraphical();
+    if (!await provider.ImageExistsAsync(manifest.Alias))
+    {
+        Console.WriteLine($"Baking {manifest.Alias} (this takes a few minutes)...");
+        await provider.BuildImageAsync(manifest, new Progress<string>(m => Console.WriteLine("  " + m)));
+    }
+
+    Console.WriteLine("Provisioning a graphical sandbox through the provider...");
+    var provisioned = await provider.CreateAsync(new SandboxSpec { Display = display });
+    Console.WriteLine("  instance " + provisioned.Id);
+    try
+    {
+        // The X session comes up a few seconds after the guest reports ready.
+        await Task.Delay(TimeSpan.FromSeconds(20));
+        await using var provisionedDisplay = await ((IDisplaySource)provisioned).OpenDisplayAsync();
+        Console.WriteLine($"  display {provisionedDisplay.Geometry.Width}x{provisionedDisplay.Geometry.Height}");
+        Directory.CreateDirectory(outDir);
+        await Task.Delay(TimeSpan.FromSeconds(5));
+        await SavePngAsync(provisionedDisplay, Path.Combine(outDir, "provisioned.png"));
+        Console.WriteLine("  screenshot in " + outDir);
+    }
+    finally
+    {
+        await provisioned.DeleteAsync();
+        Console.WriteLine("  deleted");
+    }
+
+    return 0;
+}
+
 var sandbox = await provider.AttachAsync(instance, new SandboxSpec { Display = display }, start: false);
 if (sandbox is not IDisplaySource source)
 {

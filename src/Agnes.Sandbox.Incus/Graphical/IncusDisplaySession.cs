@@ -1,6 +1,6 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -35,7 +35,6 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     internal const string ConsolePath = "/org/qemu/Display1/Console_0";
     internal const string ListenerPath = "/org/qemu/Display1/Listener";
     private const string ConsoleInterface = "org.qemu.Display1.Console";
-    private const string ListenerInterface = "org.qemu.Display1.Listener";
     private const string MouseInterface = "org.qemu.Display1.Mouse";
     private const string KeyboardInterface = "org.qemu.Display1.Keyboard";
     private const string PropertiesInterface = "org.freedesktop.DBus.Properties";
@@ -45,13 +44,9 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     private readonly Socket _listenerSocket;
     private readonly Channel<DisplayUpdate> _updates;
     private readonly ILogger _logger;
-    private readonly Lock _frameLock = new();
-    private readonly int _dpi;
+    private readonly DisplaySurface _surface;
     private readonly Action<TimeSpan>? _onFrameProcessed;
 
-    private byte[] _frame = [];
-    private DisplayGeometry _geometry;
-    private long _sequence;
     private bool _absolutePointer;
     private int _pointerX;
     private int _pointerY;
@@ -63,13 +58,13 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
         _bus = bus;
         _listener = listener;
         _listenerSocket = listenerSocket;
-        _dpi = dpi;
+        _surface = new DisplaySurface(dpi);
         _logger = logger;
         _onFrameProcessed = onFrameProcessed;
         _updates = Channel.CreateUnbounded<DisplayUpdate>(new UnboundedChannelOptions { SingleWriter = true });
     }
 
-    public DisplayGeometry Geometry => _geometry;
+    public DisplayGeometry Geometry => _surface.Geometry;
 
     public ChannelReader<DisplayUpdate> Updates => _updates.Reader;
 
@@ -119,7 +114,7 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
             session._absolutePointer = await session.ReadIsAbsoluteAsync(cancellationToken).ConfigureAwait(false);
             logger.LogInformation(
                 "Display session open: {Width}x{Height}, absolute pointer {Absolute}",
-                session._geometry.Width, session._geometry.Height, session._absolutePointer);
+                session.Geometry.Width, session.Geometry.Height, session._absolutePointer);
             return session;
         }
         catch
@@ -133,7 +128,7 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(timeout);
-        while (_geometry.Width == 0)
+        while (_surface.Geometry.Width == 0)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(20), cts.Token).ConfigureAwait(false);
         }
@@ -151,12 +146,7 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     // ---- IDisplaySession ----
 
     public Task<ReadOnlyMemory<byte>> SnapshotAsync(CancellationToken cancellationToken = default)
-    {
-        lock (_frameLock)
-        {
-            return Task.FromResult<ReadOnlyMemory<byte>>(_frame.AsSpan().ToArray());
-        }
-    }
+        => Task.FromResult<ReadOnlyMemory<byte>>(_surface.Snapshot());
 
     public async Task InjectAsync(DisplayInput input, CancellationToken cancellationToken = default)
     {
@@ -190,20 +180,18 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
 
     private async Task MoveAsync(int x, int y)
     {
-        var geometry = _geometry;
-        var cx = Math.Clamp(x, 0, Math.Max(0, geometry.Width - 1));
-        var cy = Math.Clamp(y, 0, Math.Max(0, geometry.Height - 1));
+        var (cx, cy) = _surface.Geometry.Clamp(x, y);
 
         if (_absolutePointer)
         {
-            await _bus.CallMethodAsync(CreatePointerMessage("SetAbsPosition", "uu", (uint)cx, (uint)cy)).ConfigureAwait(false);
+            await _bus.CallMethodAsync(CreateAbsolutePointerMessage(cx, cy)).ConfigureAwait(false);
         }
         else
         {
-            // A relative-only pointer (no usb-tablet) can't be placed, only nudged. We track where we
-            // believe it is and send the difference; it drifts if anything else moves the pointer, which
-            // is exactly why the graphical tier adds a tablet.
-            await _bus.CallMethodAsync(CreatePointerMessage("RelMotion", "ii", (uint)(cx - _pointerX), (uint)(cy - _pointerY))).ConfigureAwait(false);
+            // A relative-only pointer can't be placed, only nudged: we track where we believe it is and
+            // send the difference, which drifts if anything else moves it. Incus's VMs report
+            // IsAbsolute (they carry a vmmouse), so this is the fallback for a machine that doesn't.
+            await _bus.CallMethodAsync(CreateRelativePointerMessage(cx - _pointerX, cy - _pointerY)).ConfigureAwait(false);
         }
 
         _pointerX = cx;
@@ -272,21 +260,21 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
         return writer.CreateMessage();
     }
 
-    private MessageBuffer CreatePointerMessage(string member, string signature, uint first, uint second)
+    private MessageBuffer CreateAbsolutePointerMessage(int x, int y)
     {
         using var writer = _bus.GetMessageWriter();
-        writer.WriteMethodCallHeader(QemuService, ConsolePath, MouseInterface, member, signature);
-        if (signature == "uu")
-        {
-            writer.WriteUInt32(first);
-            writer.WriteUInt32(second);
-        }
-        else
-        {
-            writer.WriteInt32((int)first);
-            writer.WriteInt32((int)second);
-        }
+        writer.WriteMethodCallHeader(QemuService, ConsolePath, MouseInterface, "SetAbsPosition", "uu");
+        writer.WriteUInt32((uint)x);
+        writer.WriteUInt32((uint)y);
+        return writer.CreateMessage();
+    }
 
+    private MessageBuffer CreateRelativePointerMessage(int dx, int dy)
+    {
+        using var writer = _bus.GetMessageWriter();
+        writer.WriteMethodCallHeader(QemuService, ConsolePath, MouseInterface, "RelMotion", "ii");
+        writer.WriteInt32(dx);
+        writer.WriteInt32(dy);
         return writer.CreateMessage();
     }
 
@@ -465,8 +453,9 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     }
 
     /// <summary>
-    /// Copies a damage rectangle into the framebuffer and publishes it. The published copy is always
-    /// packed (<c>Stride == Width * 4</c>) whatever stride QEMU used, so a consumer has one rule.
+    /// Hands a damage rectangle to the surface and publishes whatever it makes of it. Everything about
+    /// how rectangles compose lives in <see cref="DisplaySurface"/>, which knows nothing about QEMU;
+    /// all that is left here is QEMU's pixel-format code.
     /// </summary>
     private void Blit(int x, int y, int width, int height, int stride, uint pixmanFormat, byte[] pixels, bool scanout)
     {
@@ -476,69 +465,24 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
             return;
         }
 
-        if (width <= 0 || height <= 0 || stride < width * 4)
+        var previous = _surface.Geometry;
+        var update = scanout
+            // The pixel array came fresh out of the D-Bus reader and nothing else will ever see it, so
+            // the surface is free to publish it rather than copy 4 MiB again.
+            ? _surface.ApplyScanout(width, height, stride, format, pixels, DateTimeOffset.UtcNow, mayAdoptPixels: true)
+            : _surface.ApplyUpdate(x, y, width, height, stride, format, pixels, DateTimeOffset.UtcNow, mayAdoptPixels: true);
+        if (update is null)
         {
-            _logger.LogWarning("Ignoring a malformed damage rectangle {W}x{H} stride {Stride}", width, height, stride);
+            _logger.LogWarning("Dropped a malformed damage rectangle {W}x{H}+{X}+{Y} stride {Stride}", width, height, x, y, stride);
             return;
         }
 
-        var packedStride = width * 4;
-        if (pixels.Length < ((height - 1) * stride) + packedStride)
+        if (previous != _surface.Geometry)
         {
-            _logger.LogWarning("Truncated damage rectangle: {Have} bytes for {W}x{H} stride {Stride}", pixels.Length, width, height, stride);
-            return;
+            _logger.LogInformation("Display surface is now {Width}x{Height}", width, height);
         }
 
-        // QEMU already packs an Update's rows (stride == width*4); a Scanout carries the surface's own
-        // stride, which may be padded. Re-pack only when it actually differs, so the common case is free.
-        byte[] packed;
-        if (stride == packedStride && pixels.Length == packedStride * height)
-        {
-            packed = pixels;
-        }
-        else
-        {
-            packed = new byte[packedStride * height];
-            for (var row = 0; row < height; row++)
-            {
-                pixels.AsSpan(row * stride, packedStride).CopyTo(packed.AsSpan(row * packedStride));
-            }
-        }
-
-        lock (_frameLock)
-        {
-            if (scanout && (_geometry.Width != width || _geometry.Height != height))
-            {
-                // The guest mode-set. Everything downstream keys off Geometry, and a full-surface update
-                // is riding along in this very call, so the resize needs no separate event.
-                _logger.LogInformation("Display surface is now {Width}x{Height}", width, height);
-                _geometry = new DisplayGeometry(width, height, _dpi);
-                _frame = new byte[width * height * 4];
-            }
-
-            var geometry = _geometry;
-            for (var row = 0; row < height; row++)
-            {
-                var destRow = y + row;
-                if (destRow < 0 || destRow >= geometry.Height)
-                {
-                    continue;
-                }
-
-                var destX = Math.Max(0, x);
-                var count = Math.Min(width - (destX - x), geometry.Width - destX) * 4;
-                if (count <= 0)
-                {
-                    continue;
-                }
-
-                packed.AsSpan((row * packedStride) + ((destX - x) * 4), count)
-                    .CopyTo(_frame.AsSpan(((destRow * geometry.Width) + destX) * 4));
-            }
-        }
-
-        var sequence = Interlocked.Increment(ref _sequence);
-        _updates.Writer.TryWrite(new DisplayUpdate(x, y, width, height, packedStride, format, packed, sequence, DateTimeOffset.UtcNow));
+        _updates.Writer.TryWrite(update);
     }
 
     /// <summary>

@@ -25,24 +25,6 @@ internal static class GraphicalGuest
     internal const string SessionUnitPath = "/etc/systemd/system/agnes-desktop.service";
     internal const string GeometryFile = "/etc/agnes-display-geometry";
 
-    /// <summary>apt packages the graphical image tier adds on top of the headless baseline.</summary>
-    /// <remarks>
-    /// <c>xserver-xorg-core</c> carries the <c>modesetting</c> driver, which is what drives virtio-gpu —
-    /// no vendor DDX is needed or wanted. <c>xserver-xorg-legacy</c> is deliberately absent: X runs as a
-    /// systemd service under root, not from a login session, so it needs no setuid wrapper.
-    /// </remarks>
-    internal static IReadOnlyList<string> AptPackages =>
-    [
-        "xserver-xorg-core",
-        "x11-xserver-utils",
-        "xinit",
-        "openbox",
-        "xterm",
-        "fonts-dejavu-core",
-        "dbus-x11",
-        "x11-utils",
-    ];
-
     internal static string XorgConf(GraphicalDisplay display) => $"""
         Section "Device"
             Identifier  "AgnesGPU"

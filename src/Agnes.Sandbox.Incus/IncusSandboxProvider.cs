@@ -18,6 +18,7 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
     private readonly IncusOptions _options;
     private readonly IIncusCliRunner _cli;
     private readonly ILogger<IncusSandboxProvider> _logger;
+    private readonly Graphical.DisplayBus _displayBus;
 
     public IncusSandboxProvider(IncusOptions options, ILoggerFactory loggerFactory)
         : this(options, loggerFactory, null)
@@ -30,6 +31,7 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         _options = options;
         _logger = loggerFactory.CreateLogger<IncusSandboxProvider>();
         _cli = cli ?? new IncusCliRunner(_logger);
+        _displayBus = new Graphical.DisplayBus(options, _logger);
     }
 
     public string Name => ProviderId;
@@ -84,20 +86,19 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
     /// </summary>
     private async Task ConfigureDisplayAsync(string name, CancellationToken cancellationToken)
     {
-        var bus = new Graphical.DisplayBus(_options, _logger);
-        await bus.EnsureRunningAsync(name, cancellationToken).ConfigureAwait(false);
+        await _displayBus.EnsureRunningAsync(name, cancellationToken).ConfigureAwait(false);
         await _cli.RunCheckedAsync("display raw.qemu",
-            IncusCommandBuilder.BuildConfigSet(_options, name, "raw.qemu", bus.RawQemuFor(name)),
+            IncusCommandBuilder.BuildConfigSet(_options, name, "raw.qemu", _displayBus.RawQemuFor(name)),
             cancellationToken: cancellationToken).ConfigureAwait(false);
         await _cli.RunCheckedAsync("display raw.apparmor",
-            IncusCommandBuilder.BuildConfigSet(_options, name, "raw.apparmor", bus.RawAppArmor()),
+            IncusCommandBuilder.BuildConfigSet(_options, name, "raw.apparmor", _displayBus.RawAppArmor()),
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private ISandbox CreateHandle(string name, GraphicalDisplay? display)
         => display is null
             ? new IncusSandbox(name, _options, _cli, _logger)
-            : new Graphical.GraphicalIncusSandbox(name, _options, _cli, _logger, new Graphical.DisplayBus(_options, _logger), display);
+            : new Graphical.GraphicalIncusSandbox(name, _options, _cli, _logger, _displayBus, display);
 
     public async Task<ISandbox> CloneAsync(string sourceVmName, string newHostWorkingDirectory, SandboxSpec spec, CancellationToken cancellationToken = default)
     {
@@ -154,12 +155,11 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         var sandbox = CreateHandle(vmName, spec.Display);
         if (start)
         {
-            if (sandbox is IStoppableSandbox stoppable and Graphical.GraphicalIncusSandbox)
+            if (spec.Display is not null)
             {
-                // Goes through the graphical handle so the bus is listening before QEMU looks for it.
-                await stoppable.StartAsync(cancellationToken).ConfigureAwait(false);
-                await WaitForGuestReadyAsync(vmName, cancellationToken).ConfigureAwait(false);
-                return sandbox;
+                // The bus has to be listening before QEMU starts: QEMU connects to it during display
+                // setup and the VM fails to boot at all if the socket is not there.
+                await _displayBus.EnsureRunningAsync(vmName, cancellationToken).ConfigureAwait(false);
             }
 
             // Tolerant start (RunAsync, not RunChecked) so an already-running VM doesn't throw; then wait

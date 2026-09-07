@@ -138,3 +138,48 @@ Committed under `recordings/`, usable as `RecordedHost` fixtures:
 
    Also: the native adapter's `DefaultArguments` needed `--print` — without it the
    CLI starts its interactive TUI and emits nothing on a pipe. Added.
+
+
+## Graphical sandboxes: gotchas found live
+
+Full write-up in [`graphical-sandbox.md`](graphical-sandbox.md); these are the
+things that cost time on *this* host and would cost it again.
+
+1. **`raw.qemu` only takes while the VM is stopped.** `incus config set` on a
+   running VM fails with `Key "raw.qemu" cannot be updated when VM is running`.
+   The provider sets it between `init` and `start`, which is the only window.
+
+2. **QEMU connects to the display bus as root, not as `incus`.** Incus launches
+   it with `-run-with user=incus`, but privileges are dropped *after* display
+   setup, so the D-Bus EXTERNAL auth carries uid 0 (the AppArmor denial even says
+   `fsuid=0 ouid=1000`). A bus policy that allows only `incus` refuses it with a
+   flat "The connection is closed". Allow root.
+
+3. **A 0700 `$XDG_RUNTIME_DIR` is not reachable.** `/run/user/1000/...` gives
+   `Could not connect: Permission denied` before AppArmor even gets a say. The
+   socket has to sit somewhere the QEMU uid can traverse; access control belongs
+   in the bus policy instead.
+
+4. **AppArmor denies it twice, in two different subsystems.** A file rule
+   (`/tmp/agnes-display/** rwk,`) gets past the kernel's `connect` check; you then
+   hit `dbus-daemon`'s *own* AppArmor mediation on `Hello`, which needs
+   `dbus (send, receive, bind) bus=session,`. Both go in `raw.apparmor`. Watch
+   `journalctl -k | grep DENIED` — `dmesg` is restricted for non-root here.
+
+5. **The guest's DRM node is `/dev/dri/card1`, not `card0`.** An `xorg.conf`
+   pinning `Option "kmsdev" "/dev/dri/card0"` fails with `(EE) No devices
+   detected` → `no screens found`. Leave `kmsdev` out; `modesetting` finds the
+   virtio-gpu on its own.
+
+6. **`incus config set <inst> <key> -` reads stdin** (with a deprecation warning
+   about the two-argument form) — but the `key=value` form used elsewhere in the
+   provider does *not*. Mixing them silently sets the literal string `-`.
+
+7. **`pkill -f` matches the shell you typed it in.** Killing a bus daemon with
+   `pkill -f 'dbus-daemon --config-file=/tmp/agnes-display/...'` kills the command
+   itself (exit 144). Use `pgrep -f '...disp[l]ay...' | xargs -r kill`.
+
+8. **The scratch instance** used for this was `agnes-display-spike`, created from
+   `images:ubuntu/24.04/cloud` on `codeybox-zfs` / `cb-net` with 4 vCPU, 4 GiB RAM
+   and a 20 GiB root, and deleted afterwards. It was never one of the live
+   `agnes-*` session VMs.
