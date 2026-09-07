@@ -583,31 +583,8 @@ builder.Services.AddSingleton<ICliFallback, Agnes.Host.Sessions.PortaPtyCliFallb
 // of allowed roots, and/or refuse to run any session outside a sandbox. Both default off (today's behaviour).
 // Enforced centrally in SessionManager's open path, so every entry (new / fork / cross-host handoff) is covered
 // regardless of what a client sends.
-builder.Services.AddSingleton(new Agnes.Host.Sessions.SessionSecurityOptions
-{
-    EnforceIsolationPolicy = !builder.Environment.IsDevelopment(),
-    WorkloadTrust = Enum.TryParse<Agnes.Host.Sessions.WorkloadTrust>(
-        builder.Configuration["Agnes:Security:WorkloadTrust"], ignoreCase: true, out var workloadTrust)
-            ? workloadTrust
-            : builder.Environment.IsDevelopment()
-                ? Agnes.Host.Sessions.WorkloadTrust.Trusted
-                : Agnes.Host.Sessions.WorkloadTrust.Untrusted,
-    AcknowledgeSharedKernelRisk = builder.Configuration.GetValue("Agnes:Security:AcknowledgeSharedKernelRisk", false),
-    AllowedSessionRoots = builder.Configuration.GetSection("Agnes:Security:AllowedSessionRoots").Get<string[]>() ?? [],
-    RequireSandbox = builder.Configuration.GetValue("Agnes:Security:RequireSandbox", false),
-    RequirePermissionPrompts = builder.Configuration.GetValue("Agnes:Security:RequirePermissionPrompts", false),
-    AllowUnsandboxedSkipPermissions = builder.Configuration.GetValue("Agnes:Security:AllowUnsandboxedSkipPermissions", false),
-    AllowedHostMcpServers = builder.Configuration.GetSection("Agnes:Security:AllowedHostMcpServers").Get<string[]>() ?? [],
-    HostMcpPolicy = Enum.TryParse<Agnes.Host.Sessions.HostMcpPolicy>(
-        builder.Configuration["Agnes:Security:HostMcpPolicy"], ignoreCase: true, out var hostMcpPolicy)
-            ? hostMcpPolicy
-            : Agnes.Host.Sessions.HostMcpPolicy.Legacy,
-    SessionIsolation = Enum.TryParse<Agnes.Host.Sessions.SessionIsolation>(
-        builder.Configuration["Agnes:Security:SessionIsolation"], ignoreCase: true, out var iso) ? iso : Agnes.Host.Sessions.SessionIsolation.Shared,
-    RestrictConfigToOwner = builder.Configuration.GetValue("Agnes:Security:RestrictConfigToOwner", false),
-    MaxConcurrentSandboxes = builder.Configuration.GetValue("Agnes:Security:MaxConcurrentSandboxes", 0),
-    TranscriptRetentionDays = builder.Configuration.GetValue("Agnes:Security:TranscriptRetentionDays", 0),
-});
+builder.Services.AddSingleton(Agnes.Host.Sessions.SessionSecurityOptions.FromConfiguration(
+    builder.Configuration, builder.Environment.IsDevelopment()));
 // ---- stalled-turn auto-continue (Agnes:AutoContinue:*) ----
 // Some agents end a turn reporting a normal completion while having produced nothing actionable — no
 // assistant message, no tool call, just reasoning (observed with OpenCode against a weak model: its agent
@@ -1115,6 +1092,17 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
             StoragePoolName = builder.Configuration["Agnes:Sandbox:Incus:StoragePool"] ?? "default",
             DefaultImage = builder.Configuration["Agnes:Sandbox:Incus:Image"] ?? "images:ubuntu/24.04/cloud",
             Bridge = builder.Configuration["Agnes:Sandbox:Incus:Bridge"] ?? "incusbr0",
+            // Two knobs a *second* daemon sharing one Incus needs, and nothing else does. Without the
+            // prefix its VMs are named `agnes-<id>` exactly like the operator's, so "the instance this
+            // daemon made" and "the instance somebody is working in" cannot be told apart from the
+            // outside and cleanup becomes a guess. The ready timeout is raised for the same situation:
+            // a machine already running other VMs boots one slower than a dedicated sandbox host.
+            InstancePrefix = builder.Configuration["Agnes:Sandbox:Incus:InstancePrefix"] is { Length: > 0 } prefix
+                ? prefix
+                : "agnes-",
+            GuestReadyTimeout = builder.Configuration.GetValue<int?>("Agnes:Sandbox:Incus:GuestReadySeconds") is { } readySeconds and > 0
+                ? TimeSpan.FromSeconds(readySeconds)
+                : TimeSpan.FromMinutes(3),
             // Default VM resource caps, overridable per project. Config is in friendly units (CPU cores,
             // RAM in GiB, disk in GiB); unset keeps the 2 / 12 / 16 defaults.
             DefaultLimits = SandboxLimitsFromConfig(builder.Configuration),

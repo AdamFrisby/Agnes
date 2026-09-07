@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Configuration;
 
 namespace Agnes.Host.Sessions;
 
@@ -111,6 +112,44 @@ public sealed record SessionSecurityOptions
     /// (see docs/security.md).
     /// </summary>
     public int TranscriptRetentionDays { get; init; }
+
+    /// <summary>
+    /// Binds the whole <c>Agnes:Security:*</c> section. Here rather than inline at the composition root
+    /// because a guardrail nobody reads is invisible: <see cref="AllowGraphicalSandboxes"/> shipped
+    /// documented, defaulted in <c>appsettings.json</c> and enforced by <c>SessionManager</c>, but never
+    /// actually read from configuration — so the only way to turn graphical sandboxes on was to construct
+    /// this record by hand, which only the tests did. A single factory is a thing a test can hold, and
+    /// <c>SessionSecurityOptionsBindingTests</c> now asserts every key reaches its field.
+    /// </summary>
+    /// <param name="isDevelopment">The host's environment; it decides the two defaults that differ there
+    /// (isolation policy is not enforced, and workloads are trusted, in Development).</param>
+    public static SessionSecurityOptions FromConfiguration(IConfiguration configuration, bool isDevelopment)
+        => new()
+        {
+            EnforceIsolationPolicy = !isDevelopment,
+            WorkloadTrust = Enum.TryParse<WorkloadTrust>(
+                configuration["Agnes:Security:WorkloadTrust"], ignoreCase: true, out var workloadTrust)
+                    ? workloadTrust
+                    : isDevelopment ? WorkloadTrust.Trusted : WorkloadTrust.Untrusted,
+            AcknowledgeSharedKernelRisk = configuration.GetValue("Agnes:Security:AcknowledgeSharedKernelRisk", false),
+            AllowedSessionRoots = configuration.GetSection("Agnes:Security:AllowedSessionRoots").Get<string[]>() ?? [],
+            RequireSandbox = configuration.GetValue("Agnes:Security:RequireSandbox", false),
+            RequirePermissionPrompts = configuration.GetValue("Agnes:Security:RequirePermissionPrompts", false),
+            AllowUnsandboxedSkipPermissions = configuration.GetValue("Agnes:Security:AllowUnsandboxedSkipPermissions", false),
+            AllowGraphicalSandboxes = configuration.GetValue("Agnes:Security:AllowGraphicalSandboxes", false),
+            AllowedHostMcpServers = configuration.GetSection("Agnes:Security:AllowedHostMcpServers").Get<string[]>() ?? [],
+            HostMcpPolicy = Enum.TryParse<HostMcpPolicy>(
+                configuration["Agnes:Security:HostMcpPolicy"], ignoreCase: true, out var hostMcpPolicy)
+                    ? hostMcpPolicy
+                    : HostMcpPolicy.Legacy,
+            SessionIsolation = Enum.TryParse<SessionIsolation>(
+                configuration["Agnes:Security:SessionIsolation"], ignoreCase: true, out var isolation)
+                    ? isolation
+                    : SessionIsolation.Shared,
+            RestrictConfigToOwner = configuration.GetValue("Agnes:Security:RestrictConfigToOwner", false),
+            MaxConcurrentSandboxes = configuration.GetValue("Agnes:Security:MaxConcurrentSandboxes", 0),
+            TranscriptRetentionDays = configuration.GetValue("Agnes:Security:TranscriptRetentionDays", 0),
+        };
 
     /// <summary>True when <see cref="AllowedSessionRoots"/> actually constrains anything.</summary>
     [JsonIgnore]
