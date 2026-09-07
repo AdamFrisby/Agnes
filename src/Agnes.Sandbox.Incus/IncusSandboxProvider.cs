@@ -385,10 +385,15 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         _ => SandboxState.Stopped,
     };
 
-    internal static string CreateInstanceName()
+    internal string CreateInstanceName()
     {
         Span<byte> bytes = stackalloc byte[10];
         RandomNumberGenerator.Fill(bytes);
-        return "agnes-" + Convert.ToHexStringLower(bytes);
+        var name = _options.InstancePrefix + Convert.ToHexStringLower(bytes);
+        // Validated here, at the one place names are minted, rather than in whichever incus command is
+        // handed the bad name first: a prefix that can't make a legal instance name is a configuration
+        // error, and it should say so before a VM is half-created.
+        IncusInputValidation.ValidateInstanceName(name);
+        return name;
     }
 }

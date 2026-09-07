@@ -100,6 +100,32 @@ public class ImageBakeTests
         Assert.Contains(m.Agents, a => a.AdapterId == "opencode" && a.Source == "copy:opencode");
     }
 
+    /// <summary>
+    /// Instance names carry the configured prefix. On a shared Incus, "agnes-*" is the operator's real
+    /// sessions; a probe or a second daemon that names its VMs the same way makes cleanup a guess.
+    /// </summary>
+    [Fact]
+    public async Task Instances_are_named_with_the_configured_prefix()
+    {
+        var runner = new RecordingRunner();
+        var provider = new IncusSandboxProvider(
+            new IncusOptions { InstancePrefix = "agnes-probe-" }, NullLoggerFactory.Instance, runner);
+
+        var sandbox = await provider.CreateAsync(new SandboxSpec());
+
+        Assert.StartsWith("agnes-probe-", sandbox.Id, StringComparison.Ordinal);
+        Assert.Contains(runner.Calls, c => c.Contains("init") && c.Contains(sandbox.Id));
+    }
+
+    [Fact]
+    public async Task An_instance_prefix_that_cannot_make_a_legal_name_is_refused_up_front()
+    {
+        var provider = new IncusSandboxProvider(
+            new IncusOptions { InstancePrefix = "agnes probe/" }, NullLoggerFactory.Instance, new RecordingRunner());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => provider.CreateAsync(new SandboxSpec()));
+    }
+
     [Fact]
     public void Fingerprint_changes_when_the_manifest_changes()
     {

@@ -140,6 +140,38 @@ Committed under `recordings/`, usable as `RecordedHost` fixtures:
    CLI starts its interactive TUI and emits nothing on a pipe. Added.
 
 
+## The graphical probe: all four layers at once
+
+`tests/Agnes.Integration.Tests/LiveGraphicalDisplayProbe.cs` is the end-to-end test for the
+display feature. It is inert — silently passing — unless Incus answers *and*
+`AGNES_LIVE_GRAPHICAL=1`, so it lives in the normal test project and costs CI nothing:
+
+```bash
+AGNES_LIVE_GRAPHICAL=1 dotnet test tests/Agnes.Integration.Tests \
+  --filter FullyQualifiedName~LiveGraphicalDisplayProbe --logger 'console;verbosity=detailed'
+```
+
+What it does, in order: bakes `agnes-graphical` if it is missing (minutes, progress logged, and it
+is **left behind** — it is the tier every graphical session launches from); provisions **one**
+sandbox with `GraphicalDisplay.Default` through the real `IncusSandboxProvider`; stands up an
+in-process host with the real `DisplayBrokerRegistry` + `/display/{sessionId}` endpoint; connects
+the real `DisplayChannelClient`; then asserts the Info frame's geometry, a decodable 1280×800 JPEG,
+a person taking control, a right-click producing a new frame, and the `computer_*` MCP tools taking
+a screenshot, typing into the guest's xterm (verified by reading the file back through
+`incus exec`), and being locked out while a person holds control.
+
+Two settings are deliberately not the daemon's defaults. It names its instance with
+`IncusOptions.InstancePrefix = "agnes-probe-"`, so its VM can never be confused with a session VM
+somebody is working in, and it deletes exactly that instance in a `finally`. And it allows eight
+minutes for the guest to report ready rather than three: on a developer machine sharing a pool with
+other VMs, a first boot legitimately took longer than the daemon's default, and a probe that gives
+up early reports "the feature is broken" when the truth is "the laptop was busy".
+
+`AGNES_LIVE_GRAPHICAL_OUT` sets where it writes the frames it captured (default
+`$TMPDIR/agnes-live-display`): the first frame, the frame after the injected click, the agent's
+screenshot, and the `computer_frames` contact sheet — worth looking at, since "a JPEG arrived" and
+"the desktop is actually drawn" are different claims.
+
 ## Graphical sandboxes: gotchas found live
 
 Full write-up in [`graphical-sandbox.md`](graphical-sandbox.md); these are the

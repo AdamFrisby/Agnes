@@ -28,6 +28,8 @@
     <ProjectReference Include="..\..\src\Agnes.Host\Agnes.Host.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Client\Agnes.Client.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
+    <!-- LiveGraphicalDisplayProbe drives the real Incus backend; it is inert without a live Incus. -->
+    <ProjectReference Include="..\..\src\Agnes.Sandbox.Incus\Agnes.Sandbox.Incus.csproj" />
     <!-- The relay end-to-end test runs the in-process blind relay broker between host and client. -->
     <ProjectReference Include="..\..\src\Agnes.Relay\Agnes.Relay.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Relay.Protocol\Agnes.Relay.Protocol.csproj" />

@@ -8,6 +8,14 @@ public sealed record IncusOptions
     public string StoragePoolName { get; init; } = "default";
     public string DefaultImage { get; init; } = "images:ubuntu/24.04/cloud";
 
+    /// <summary>
+    /// Prefix for the names of the instances this provider creates (a random suffix follows). Configurable
+    /// so a live probe — or a second daemon sharing one Incus — can name its VMs apart from the operator's
+    /// real session VMs: with a single prefix, "the instance this test made" and "the instance somebody is
+    /// working in" are indistinguishable from the outside, and cleanup is a guess.
+    /// </summary>
+    public string InstancePrefix { get; init; } = "agnes-";
+
     /// <summary>Host bridge for the sandbox NIC.</summary>
     public string Bridge { get; init; } = "incusbr0";
 
