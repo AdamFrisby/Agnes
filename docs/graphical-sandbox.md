@@ -158,7 +158,11 @@ The apt packages are the graphical **image tier**: `SandboxImageManifest.AsGraph
 publishes the baseline plus `xserver-xorg-core`, `x11-xserver-utils`, `xinit`,
 `openbox`, `xterm`, `fonts-dejavu-core`, `dbus-x11`, `x11-utils` under the alias
 `agnes-graphical`. A host that never asks for a display never bakes or pays for
-it. Sandboxes with a display also get a **24 GiB** root volume rather than 16
+it: `SandboxImageManager.EnsureGraphicalAsync` bakes it on the first graphical
+session and `SessionManager` launches that session from the alias it returns.
+**A graphical session must not launch from a headless image** — it boots a guest
+with no X server, and the capture then waits for a first scanout that will never
+come, which is a failure that reports itself nowhere. Sandboxes with a display also get a **24 GiB** root volume rather than 16
 (`IncusOptions.GraphicalResourceOverride`), because Incus refuses at *launch* time
 to put an image into a smaller volume.
 

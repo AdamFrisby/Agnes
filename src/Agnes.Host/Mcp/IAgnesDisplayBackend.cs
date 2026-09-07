@@ -32,6 +32,14 @@ public interface IAgnesDisplayBackend
     Task InjectAsync(string sessionId, IReadOnlyList<DisplayInput> inputs, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Types a string. Separate from <see cref="InjectAsync"/> because typing is budgeted per <em>keystroke</em>
+    /// and bounded by <see cref="Display.DisplayOptions.MaxTypeBytes"/>, not by the per-call event ceiling: a
+    /// character expands to two key events (four when shifted), so charging it as a chord would cap
+    /// <c>computer_type</c> at sixteen characters and make its own byte ceiling unreachable.
+    /// </summary>
+    Task TypeAsync(string sessionId, string text, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Presses a key chord. Takes the <see cref="Display.KeyChord"/> rather than the events it expands to, so
     /// the operator's blocked-chord policy is applied where it is decided (the arbiter) instead of being
     /// re-derived from a flat list of key events in the tool layer.

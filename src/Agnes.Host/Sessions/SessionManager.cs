@@ -820,10 +820,21 @@ public sealed class SessionManager : IAsyncDisposable
 
                 // Ensure the image exists (bake if missing) before launching from it — the resolved
                 // project's own sandbox image when we have a project, else the legacy global baseline.
+                //
+                // A session with a screen launches from the GRAPHICAL tier instead, and must: the headless
+                // images carry no X server, so a graphical session booted from one comes up with a guest
+                // that renders nothing and a capture path that waits forever for a first scanout. The
+                // graphical tier is one image per host (alias `agnes-graphical`, matching the Incus
+                // backend's own default) rather than one per project — a desktop is a big, slow bake and
+                // nothing in it is project-specific yet.
                 var image = string.Empty;
                 if (_images is not null)
                 {
-                    if (project is not null)
+                    if (graphical)
+                    {
+                        image = await _images.EnsureGraphicalAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    else if (project is not null)
                     {
                         image = await _images.EnsureForProjectAsync(project, cancellationToken).ConfigureAwait(false);
                     }

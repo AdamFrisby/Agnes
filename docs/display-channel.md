@@ -137,9 +137,17 @@ frames). The motivating interceptor: refuse `type` while a password field has fo
 | Limit | Default | Applies to |
 | --- | --- | --- |
 | Input events per rolling minute | 240 | The session — agent and people together. The resource is the guest's input queue, and it does not care who filled it. |
-| Input events per tool call | 32 | The agent. Checked **before** anything is injected, so a refused call injects nothing rather than half a keystroke leaving a modifier stuck down. |
-| `computer_type` bytes | 4096 | The agent. |
+| Input events per tool call | 32 | The agent, **except `computer_type`**. Checked **before** anything is injected, so a refused call injects nothing rather than half a keystroke leaving a modifier stuck down. |
+| `computer_type` bytes | 4096 | The agent. Typing is the exception to the per-call ceiling and is budgeted **per keystroke**, not per key event. |
 | Blocked chords | `super`, `super+*`, `meta`, `meta+*`, `ctrl+alt+*`, `alt+F2`, `ctrl+shift+i` | **The agent only.** |
+
+**Why typing is charged differently.** A character expands to two key events, four when it needs shift.
+Charged and capped like a chord, `computer_type` would refuse anything past sixteen characters — shorter
+than a URL, a filename or any shell command worth typing — and its own 4096-byte ceiling would be
+unreachable by a factor of 256. So the per-call ceiling does not apply to it (the byte ceiling is that
+tool's limit, checked before the text is expanded) and the rolling budget counts **keystrokes**, which is
+the unit of intent "input events per minute" is trying to bound. This was found by typing a shell command
+at a real guest; every unit test until then typed two characters.
 
 Chord matching is on a normalized form: modifiers lower-cased and canonically ordered, so
 `alt+ctrl+Delete` and `ctrl+alt+Delete` cannot be two different answers to the same question. A

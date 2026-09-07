@@ -51,6 +51,15 @@ public sealed class BrokerDisplayBackend : IAgnesDisplayBackend
         await broker.InjectAgentAsync(inputs, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task TypeAsync(string sessionId, string text, CancellationToken cancellationToken = default)
+    {
+        // Expanded first, so text that cannot be typed is refused before a capture connection is opened for
+        // it; charged by characters, because the guest sees key events but the budget counts keystrokes.
+        var inputs = TypedText.ToInputs(text);
+        var broker = await BrokerAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        await broker.InjectAgentTypedAsync(inputs, text.Length, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task PressChordAsync(string sessionId, KeyChord chord, int count, CancellationToken cancellationToken = default)
     {
         var broker = await BrokerAsync(sessionId, cancellationToken).ConfigureAwait(false);

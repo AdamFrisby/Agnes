@@ -190,8 +190,9 @@ public sealed partial class AgnesMcpTools
                 nameof(text));
         }
 
-        var inputs = TypedText.ToInputs(text);
-        await _display.InjectAsync(target, inputs, cancellationToken).ConfigureAwait(false);
+        // Typing goes through its own path: budgeted per keystroke and bounded by MaxTypeBytes above, rather
+        // than by the per-call event ceiling that governs chords and drags — see IAgnesDisplayBackend.TypeAsync.
+        await _display.TypeAsync(target, text, cancellationToken).ConfigureAwait(false);
         return $"Typed {text.Length} characters.";
     }
 

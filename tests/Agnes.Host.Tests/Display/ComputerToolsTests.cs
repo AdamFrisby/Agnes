@@ -193,13 +193,42 @@ public class ComputerToolsTests : IAsyncLifetime
             Injected);
     }
 
+    /// <summary>
+    /// Typing is bounded by its own byte ceiling, not by the per-call event ceiling. A character is two key
+    /// events (four shifted), so charging typing like a chord would cap <c>computer_type</c> at sixteen
+    /// characters — shorter than a URL, a filename or any shell command worth typing.
+    /// </summary>
     [Fact]
-    public async Task Typing_more_than_one_call_of_input_events_is_refused_whole()
+    public async Task Typing_a_whole_command_is_not_capped_by_the_per_call_event_ceiling()
     {
-        // 32 events per call by default; "aaaaaaaaaaaaaaaaa" is 34.
-        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => _tools.ComputerType(new string('a', 17)));
-        Assert.Contains("the limit is", refused.Message, StringComparison.Ordinal);
-        Assert.Empty(Injected);
+        const string Command = "echo hello > /tmp/agnes-typed.txt\n";   // 34 chars, 70+ key events
+
+        await _tools.ComputerType(Command);
+
+        Assert.Equal(new KeyPress("e", true), Injected[0]);
+        Assert.Equal(new KeyPress("Return", false), Injected[^1]);
+        Assert.True(Injected.Count > DisplayFixture.Options().InputEventsPerToolCall);
+    }
+
+    /// <summary>…but it is still budgeted, per keystroke: the resource is the guest's input queue, and one
+    /// character is one thing the person or the model meant to do.</summary>
+    [Fact]
+    public async Task Typing_is_charged_one_keystroke_per_character_against_the_minute_budget()
+    {
+        var sessions = new StubSessionSource();
+        var source = DisplayFixture.NewSource(sessions, "budgeted", width: 64, height: 48);
+        var options = DisplayFixture.Options() with { InputEventsPerMinute = 10 };
+        await using var registry = DisplayFixture.Registry(sessions, options);
+        var tokens = new SessionMcpTokens();
+        var tools = new AgnesMcpTools(
+            new FakeAgnesMcpBackend(), new FakeMcpAuthenticator("device-token"),
+            new FixedTokenSource(tokens.Issue("budgeted")), tokens, new BrokerDisplayBackend(registry, options));
+
+        await tools.ComputerType("eight ch");   // 8 characters = 8 of the minute's 10, not 16 events
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => tools.ComputerType("more"));
+        Assert.Contains("minute", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(16, source.Session.Snapshot().Count);   // the refused call typed nothing
     }
 
     [Fact]

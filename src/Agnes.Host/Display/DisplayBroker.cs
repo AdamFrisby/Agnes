@@ -262,15 +262,37 @@ public sealed class DisplayBroker : IAsyncDisposable
     /// </summary>
     /// <exception cref="InvalidOperationException">A person holds the display, the per-call or per-minute
     /// budget is exhausted, or an interceptor vetoed the input. Every message is written for the model.</exception>
-    public async Task InjectAgentAsync(IReadOnlyList<DisplayInput> inputs, CancellationToken cancellationToken = default)
+    public Task InjectAgentAsync(IReadOnlyList<DisplayInput> inputs, CancellationToken cancellationToken = default)
     {
         Arbiter.CheckAgentCall(inputs.Count);
+        return InjectAgentCoreAsync(inputs, inputs.Count, cancellationToken);
+    }
 
+    /// <summary>
+    /// Types a prepared key sequence, budgeted by <paramref name="keystrokes"/> — the number of characters —
+    /// rather than by the key events it expands to.
+    /// </summary>
+    /// <remarks>
+    /// Typing is the one action whose size is set by the text and not by the caller, and it expands to two
+    /// events per character (four for a shifted one). Charged and capped like a chord, the 32-events-per-call
+    /// ceiling would make <c>computer_type</c> refuse anything past sixteen characters — a URL, a filename, a
+    /// shell command — and the documented 4096-byte ceiling would be unreachable by a factor of 256. So the
+    /// per-call ceiling does not apply here (the byte ceiling is this tool's own limit, checked before the
+    /// text is ever expanded) and the rolling budget is charged per keystroke, which is the unit of intent a
+    /// budget of "input events per minute" is actually trying to bound.
+    /// </remarks>
+    public Task InjectAgentTypedAsync(
+        IReadOnlyList<DisplayInput> inputs, int keystrokes, CancellationToken cancellationToken = default)
+        => InjectAgentCoreAsync(inputs, Math.Max(keystrokes, 1), cancellationToken);
+
+    private async Task InjectAgentCoreAsync(
+        IReadOnlyList<DisplayInput> inputs, int budgetCost, CancellationToken cancellationToken)
+    {
         await _injectGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var claimed = Arbiter.ClaimForAgent();
-            Arbiter.SpendBudget(inputs.Count);
+            Arbiter.SpendBudget(budgetCost);
             if (claimed is not null)
             {
                 await PublishControlAsync(claimed, cancellationToken).ConfigureAwait(false);
