@@ -151,10 +151,12 @@ public static partial class OverviewModel
             // The orchestrator can hold slots for items between phases (an audit being dispatched while
             // the item still reads WorkComplete). Saying "nothing in flight" beside "2 of 2 slots busy"
             // would contradict itself, so the slots are named for what they are.
+            // As the trailing status behind a lead clause that already named the slots, the slots are
+            // not named again.
             var flightless = counts.SlotsBusy > 0
-                ? Inv($"{counts.SlotsBusy} {(counts.SlotsBusy == 1 ? "slot" : "slots")} busy between phases")
-                : "nothing in flight";
-            var waiting = Inv($"{counts.Queued} queued, {flightless}, {counts.Landed7d} landed this week.");
+                ? (primary ? Inv($", {counts.SlotsBusy} {(counts.SlotsBusy == 1 ? "slot" : "slots")} busy between phases") : string.Empty)
+                : ", nothing in flight";
+            var waiting = Inv($"{counts.Queued} queued{flightless}, {counts.Landed7d} landed this week.");
             return (primary ? "Waiting. " + waiting : waiting, counts.SlotsBusy > 0 ? TileTone.Active : TileTone.Neutral);
         }
 
