@@ -1,7 +1,9 @@
 using System.Collections.Specialized;
+using Agnes.App.Mobile.Controls;
 using Agnes.App.Mobile.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 
@@ -23,6 +25,8 @@ public partial class SessionPageView : UserControl
     private ScrollViewer _scroll = null!;
     private ItemsControl _transcript = null!;
     private Avalonia.Controls.Button _jump = null!;
+    private DisplaySurface _screen = null!;
+    private TextBox _ime = null!;
     private SessionPageViewModel? _page;
     private INotifyCollectionChanged? _watched;
 
@@ -33,8 +37,16 @@ public partial class SessionPageView : UserControl
         _transcript = this.FindControl<ItemsControl>("Transcript")!;
         _jump = this.FindControl<Avalonia.Controls.Button>("JumpToLatest")!;
 
+        _screen = this.FindControl<DisplaySurface>("Screen")!;
+        _ime = this.FindControl<TextBox>("ScreenIme")!;
+
         _jump.Click += (_, _) => ScrollToEnd();
         _scroll.ScrollChanged += (_, _) => _jump.IsVisible = !IsAtTail;
+
+        // The IME hands over finished text, one insertion at a time. Forward it as keysyms and clear the
+        // box immediately — it is a funnel, not a field, and anything left in it would be re-sent.
+        _ime.AddHandler(TextInputEvent, OnImeText, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        _ime.KeyDown += OnImeKey;
 
         DataContextChanged += (_, _) => Bind(DataContext as SessionPageViewModel);
     }
@@ -54,6 +66,8 @@ public partial class SessionPageView : UserControl
         {
             _page.ScrollToBottomRequested -= ScrollToEnd;
             _page.ScrollToRequested -= ScrollToAnchor;
+            _page.ScreenKeyboardRequested -= RaiseKeyboard;
+            _page.ScreenKeyRequested -= _screen.PressKey;
         }
 
         Detach();
@@ -66,12 +80,25 @@ public partial class SessionPageView : UserControl
 
         page.ScrollToBottomRequested += ScrollToEnd;
         page.ScrollToRequested += ScrollToAnchor;
+        page.ScreenKeyboardRequested += RaiseKeyboard;
+        page.ScreenKeyRequested += _screen.PressKey;
+
+        // What the host is asked to send is a promise about what this panel can show, so it comes from
+        // the panel: device-independent width times the scaling, i.e. real pixels.
+        page.ScreenPixelWidth = (int)Math.Round(
+            Bounds.Width > 0 ? Bounds.Width * (TopLevel.GetTopLevel(this)?.RenderScaling ?? 1) : 960);
         Watch(page);
         page.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(SessionPageViewModel.Session))
             {
                 Watch(page);
+            }
+            else if (e.PropertyName is nameof(SessionPageViewModel.Segment) && page.IsScreenSegment)
+            {
+                // Entering the screen always starts fit-to-view. Landing mid-zoom on a corner of someone
+                // else's desktop, with the gesture to get back not yet discovered, is disorienting.
+                _screen.ResetView();
             }
         };
 
@@ -119,6 +146,41 @@ public partial class SessionPageView : UserControl
             _scroll.ScrollToEnd();
             _jump.IsVisible = false;
         }, DispatcherPriority.Background);
+
+    /// <summary>Brings up the soft keyboard over the screen by focusing the hidden funnel.</summary>
+    private void RaiseKeyboard() => Dispatcher.UIThread.Post(() => _ime.Focus());
+
+    private void OnImeText(object? sender, TextInputEventArgs e)
+    {
+        if (e.Text is { Length: > 0 } text)
+        {
+            _screen.TypeText(text);
+        }
+
+        _ime.Text = string.Empty;
+        e.Handled = true;
+    }
+
+    private void OnImeKey(object? sender, KeyEventArgs e)
+    {
+        // Return and Backspace never arrive as text input, on any platform. Everything else the soft
+        // keyboard produces does, and is handled above.
+        var keysym = e.Key switch
+        {
+            Key.Return or Key.Enter => DisplayKeysyms.Return,
+            Key.Back => DisplayKeysyms.BackSpace,
+            Key.Escape => DisplayKeysyms.Escape,
+            Key.Tab => DisplayKeysyms.Tab,
+            _ => null,
+        };
+
+        if (keysym is not null)
+        {
+            _screen.PressKey(keysym);
+            _ime.Text = string.Empty;
+            e.Handled = true;
+        }
+    }
 
     /// <summary>Scrolls to a transcript item by anchor id (search hit, review jump).</summary>
     private void ScrollToAnchor(string anchorId) => Dispatcher.UIThread.Post(() =>

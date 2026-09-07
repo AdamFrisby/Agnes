@@ -12,7 +12,10 @@ public sealed record MobileSettings(
     bool ReducedMotion = false,
     bool ShowThinking = false,
     string LastWorkingDirectory = "",
-    bool DemoSeeded = false)
+    bool DemoSeeded = false,
+    // Graphical sessions are the one screen that can spend a megabyte a second. Android tells us when
+    // the active network is metered; this says what to do about it.
+    bool LowerScreenQualityOnMobileData = true)
 {
     public static MobileSettings Load() => JsonStore.Load("mobile-settings.json", new MobileSettings());
 
@@ -51,7 +54,11 @@ public sealed record SavedSession(
     string AdapterId,
     string Title,
     string WorkingDirectory = "",
-    bool Pinned = false);
+    bool Pinned = false,
+    // Whether this session has a graphical sandbox to watch. Learned from the host's catalogue
+    // (SessionSummary.HasDisplay) or from having asked for one at launch, and saved so the Screen
+    // segment is offered the moment the card is opened rather than one round trip later.
+    bool HasDisplay = false);
 
 /// <summary>
 /// Sessions this device was told to stop showing. Discovery lists what the <b>host</b> has, so without
