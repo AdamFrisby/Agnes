@@ -28,7 +28,12 @@ internal static class IncusGuest
         exec setpriv --no-new-privs --reuid={{o.GuestUserId}} --regid={{o.GuestGroupId}} --clear-groups -- env -i -- "${envs[@]}" "$@"
         """;
 
-    internal static string CloudInit(IncusOptions o) => $$"""
+    /// <summary>
+    /// Cloud-init for a session VM. When <paramref name="display"/> is set the guest also gets the X
+    /// server and session units from <see cref="Graphical.GraphicalGuest"/>, enabled at boot — the
+    /// packages themselves come from the graphical image tier, so nothing here needs egress.
+    /// </summary>
+    internal static string CloudInit(IncusOptions o, Agnes.Sandbox.GraphicalDisplay? display = null) => $$"""
         #cloud-config
         package_update: true
         packages:
@@ -43,7 +48,7 @@ internal static class IncusGuest
             permissions: '0755'
             content: |
         {{Indent(RunWrapper(o), 6)}}
-        runcmd:
+        {{GraphicalWriteFiles(o, display)}}runcmd:
           - [ mkdir, -p, /run/agnes ]
           - [ chmod, '0755', /run/agnes ]
           - [ mkdir, -p, "{{o.GuestHome}}" ]
@@ -52,7 +57,41 @@ internal static class IncusGuest
           # host working directory isn't bind-mounted (an unset/invalid dir); the mount overlays it
           # when present. Without this the agent never starts and the first prompt breaks its pipe.
           - [ mkdir, -p, /work ]
-          - [ touch, /run/agnes/ready ]
+        {{GraphicalRunCmd(display)}}  - [ touch, /run/agnes/ready ]
+        """;
+
+    /// <summary>The <c>write_files</c> entries a graphical session adds (empty when headless).</summary>
+    private static string GraphicalWriteFiles(IncusOptions o, Agnes.Sandbox.GraphicalDisplay? display)
+    {
+        if (display is null)
+        {
+            return string.Empty;
+        }
+
+        return string.Concat(
+            FileEntry(Graphical.GraphicalGuest.GeometryFile, "0644", Graphical.GraphicalGuest.Geometry(display)),
+            FileEntry(Graphical.GraphicalGuest.XorgConfPath, "0644", Graphical.GraphicalGuest.XorgConf(display)),
+            FileEntry(Graphical.GraphicalGuest.SessionScriptPath, "0755", Graphical.GraphicalGuest.SessionScript),
+            FileEntry(Graphical.GraphicalGuest.XUnitPath, "0644", Graphical.GraphicalGuest.XUnit),
+            FileEntry(Graphical.GraphicalGuest.SessionUnitPath, "0644", Graphical.GraphicalGuest.SessionUnit(o)));
+    }
+
+    private static string GraphicalRunCmd(Agnes.Sandbox.GraphicalDisplay? display)
+        => display is null
+            ? string.Empty
+            : """
+                - [ systemctl, daemon-reload ]
+                - [ systemctl, enable, --now, agnes-x.service ]
+                - [ systemctl, enable, --now, agnes-desktop.service ]
+
+              """;
+
+    private static string FileEntry(string path, string mode, string content) => $"""
+          - path: {path}
+            permissions: '{mode}'
+            content: |
+        {Indent(content.TrimEnd('\n'), 6)}
+
         """;
 
     /// <summary>

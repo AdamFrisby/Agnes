@@ -126,6 +126,16 @@ internal static class IncusCommandBuilder
         return r;
     }
 
+    /// <summary>Sets a config key to a literal value. The value is one argv element, never shell-parsed,
+    /// so a <c>raw.qemu</c> line with spaces in it needs no quoting.</summary>
+    internal static IReadOnlyList<string> BuildConfigSet(IncusOptions o, string instance, string key, string value)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateIdentifier(key, nameof(key), allowDotUnderscore: true);
+        IncusInputValidation.ValidateConfigValue(value, nameof(value), 8192);
+        return Prefix(o, "config", "set", instance, $"{key}={value}");
+    }
+
     /// <summary>Sets a config key with the value read from stdin (used for cloud-init user-data).</summary>
     internal static IReadOnlyList<string> BuildConfigSetStdin(IncusOptions o, string instance, string key)
     {

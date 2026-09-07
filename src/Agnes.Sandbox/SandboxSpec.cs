@@ -23,6 +23,11 @@ public sealed record SandboxSpec
     /// <summary>Named network profile selecting the egress policy (resolved to a bridge by the provider's
     /// profile→bridge map). Null = the provider's default profile. Overridden by <see cref="NetworkBridge"/>.</summary>
     public string? NetworkProfile { get; init; }
+
+    /// <summary>A graphical display for this sandbox (virtual GPU + X session at this size), or null
+    /// for headless. Set it and the provider launches the VM from the graphical image tier and exposes
+    /// <see cref="IDisplaySource"/> on the sandbox; leave it null and nothing about the VM changes.</summary>
+    public GraphicalDisplay? Display { get; init; }
 }
 
 /// <summary>Resource caps for a sandbox VM. Defaults match CodeyBox (2 CPU / 12 GiB / 16 GiB).</summary>

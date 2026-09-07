@@ -38,18 +38,30 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
 
     public async Task<ISandbox> CreateAsync(SandboxSpec spec, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(spec);
         var name = CreateInstanceName();
-        var image = string.IsNullOrWhiteSpace(spec.ImageReference) ? _options.DefaultImage : spec.ImageReference;
+        var display = spec.Display;
+        var image = string.IsNullOrWhiteSpace(spec.ImageReference)
+            ? (display is null ? _options.DefaultImage : _options.GraphicalImage)
+            : spec.ImageReference;
         var bridge = _options.ResolveBridge(spec.NetworkBridge, spec.NetworkProfile);
 
-        // Resolve resource caps: the host-configured defaults, with any per-session override applied on top.
-        var limits = _options.DefaultLimits.With(spec.ResourceOverride);
+        // Resolve resource caps: the host-configured defaults, the graphical floor if a display was asked
+        // for (a bigger image needs a bigger volume — Incus refuses to launch otherwise), then any
+        // per-session override on top, which stays the last word.
+        var limits = _options.DefaultLimits
+            .With(display is null ? null : _options.GraphicalResourceOverride)
+            .With(spec.ResourceOverride);
 
         _logger.LogInformation("Provisioning Incus sandbox {Name} ({Image}) — {Cpu} CPU / {MemGiB} GiB / {DiskGiB} GiB",
             name, image, limits.CpuCount, limits.MemoryBytes / (1024 * 1024 * 1024), limits.DiskBytes / (1024 * 1024 * 1024));
         await _cli.RunCheckedAsync("init", IncusCommandBuilder.BuildInit(_options, image, name, limits), cancellationToken: cancellationToken).ConfigureAwait(false);
         await _cli.RunCheckedAsync("nic add", IncusCommandBuilder.BuildNicAdd(_options, name, bridge), cancellationToken: cancellationToken).ConfigureAwait(false);
-        await _cli.RunCheckedAsync("cloud-init", IncusCommandBuilder.BuildConfigSetStdin(_options, name, "user.user-data"), IncusGuest.CloudInit(_options), cancellationToken).ConfigureAwait(false);
+        await _cli.RunCheckedAsync("cloud-init", IncusCommandBuilder.BuildConfigSetStdin(_options, name, "user.user-data"), IncusGuest.CloudInit(_options, display), cancellationToken).ConfigureAwait(false);
+        if (display is not null)
+        {
+            await ConfigureDisplayAsync(name, cancellationToken).ConfigureAwait(false);
+        }
 
         // Optional bind mount of the host working directory.
         if (spec.HostWorkingDirectory is { Length: > 0 } hostDir && Directory.Exists(hostDir))
@@ -62,8 +74,30 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         await _cli.RunCheckedAsync("start", IncusCommandBuilder.BuildStart(_options, name), cancellationToken: cancellationToken).ConfigureAwait(false);
         await WaitForGuestReadyAsync(name, cancellationToken).ConfigureAwait(false);
 
-        return new IncusSandbox(name, _options, _cli, _logger);
+        return CreateHandle(name, display);
     }
+
+    /// <summary>
+    /// Points this instance's QEMU at its own private D-Bus display, and widens the AppArmor profile
+    /// Incus generates just enough to let it get there. Both keys are applied while the VM is stopped:
+    /// <c>raw.qemu</c> is only read at start, and a profile change needs a reload anyway.
+    /// </summary>
+    private async Task ConfigureDisplayAsync(string name, CancellationToken cancellationToken)
+    {
+        var bus = new Graphical.DisplayBus(_options, _logger);
+        await bus.EnsureRunningAsync(name, cancellationToken).ConfigureAwait(false);
+        await _cli.RunCheckedAsync("display raw.qemu",
+            IncusCommandBuilder.BuildConfigSet(_options, name, "raw.qemu", bus.RawQemuFor(name)),
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        await _cli.RunCheckedAsync("display raw.apparmor",
+            IncusCommandBuilder.BuildConfigSet(_options, name, "raw.apparmor", bus.RawAppArmor()),
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    private ISandbox CreateHandle(string name, GraphicalDisplay? display)
+        => display is null
+            ? new IncusSandbox(name, _options, _cli, _logger)
+            : new Graphical.GraphicalIncusSandbox(name, _options, _cli, _logger, new Graphical.DisplayBus(_options, _logger), display);
 
     public async Task<ISandbox> CloneAsync(string sourceVmName, string newHostWorkingDirectory, SandboxSpec spec, CancellationToken cancellationToken = default)
     {
@@ -93,6 +127,13 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
+        // A graphical clone inherited raw.qemu pointing at the *source's* bus socket, which belongs to a
+        // different VM. Re-point it at its own before it ever starts.
+        if (spec.Display is not null)
+        {
+            await ConfigureDisplayAsync(name, cancellationToken).ConfigureAwait(false);
+        }
+
         await _cli.RunCheckedAsync("start", IncusCommandBuilder.BuildStart(_options, name), cancellationToken: cancellationToken).ConfigureAwait(false);
 
         // Cloud-init already ran on the source (once per instance-id), so it won't re-run on the clone —
@@ -104,14 +145,23 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
             IncusCommandBuilder.BuildExec(_options, name, ["sh", "-c", "mkdir -p /run/agnes && chmod 0755 /run/agnes && touch /run/agnes/ready"], workingDirectory: null, asUser: false),
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        return new IncusSandbox(name, _options, _cli, _logger);
+        return CreateHandle(name, spec.Display);
     }
 
     public async Task<ISandbox> AttachAsync(string vmName, SandboxSpec spec, bool start, CancellationToken cancellationToken = default)
     {
-        var sandbox = new IncusSandbox(vmName, _options, _cli, _logger);
+        ArgumentNullException.ThrowIfNull(spec);
+        var sandbox = CreateHandle(vmName, spec.Display);
         if (start)
         {
+            if (sandbox is IStoppableSandbox stoppable and Graphical.GraphicalIncusSandbox)
+            {
+                // Goes through the graphical handle so the bus is listening before QEMU looks for it.
+                await stoppable.StartAsync(cancellationToken).ConfigureAwait(false);
+                await WaitForGuestReadyAsync(vmName, cancellationToken).ConfigureAwait(false);
+                return sandbox;
+            }
+
             // Tolerant start (RunAsync, not RunChecked) so an already-running VM doesn't throw; then wait
             // for the guest to come up before we re-attach the agent.
             _logger.LogInformation("Reconnecting to Incus sandbox {Name} (start)", vmName);
