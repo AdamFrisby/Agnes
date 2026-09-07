@@ -172,6 +172,49 @@ up early reports "the feature is broken" when the truth is "the laptop was busy"
 screenshot, and the `computer_frames` contact sheet — worth looking at, since "a JPEG arrived" and
 "the desktop is actually drawn" are different claims.
 
+## The apps against a live screen
+
+The probe stops at the client library. Both screenshot harnesses have a **live mode** that carries the
+same session all the way into the shipping UI — the desktop's Screen panel and the phone's Screen
+segment, painted from a real guest's framebuffer:
+
+```bash
+# 1. A host of your own, with the switch on and its VMs named apart from yours.
+Agnes__Security__AllowGraphicalSandboxes=true \
+Agnes__Sandbox__Provider=incus \
+Agnes__Sandbox__Incus__Project=default \
+Agnes__Sandbox__Incus__StoragePool=codeybox-zfs \
+Agnes__Sandbox__Incus__Bridge=cb-net \
+Agnes__Sandbox__Incus__InstancePrefix=agnes-shot- \
+ASPNETCORE_URLS=https://127.0.0.1:5997 \
+  dotnet run --project src/Agnes.Host       # logs a pairing code and its cert fingerprint
+
+# 2. Pair, as a client would.
+curl -sk -X POST https://127.0.0.1:5997/pair -H 'Content-Type: application/json' \
+  -d '{"code":"ABCD-EF23","deviceName":"screenshots"}'
+
+# 3. Open a graphical session and shoot the desktop app against it. --stop closes it afterwards.
+dotnet run --project tools/Agnes.Screenshots -- --host https://127.0.0.1:5997 \
+  --token <device token> --fingerprint <sha-256> --agent opencode --cwd /tmp/work \
+  --out shots/live --stop
+
+# …or join one that is already open (and shoot the Android head at the same session).
+dotnet run --project tools/Agnes.MobilePreview -- --host https://127.0.0.1:5997 \
+  --token <device token> --fingerprint <sha-256> --session <session id> --out shots/live
+```
+
+Both take `--session <id>` to join instead of opening, so one VM can serve both heads — and pointing
+them at the same session is also how you see the two sharing one capture. The agent only has to
+*start*: `opencode` waits for a prompt with no provider key, which is all a screenshot of a screen
+needs.
+
+Two things this found that nothing offline could. `Agnes:Security:AllowGraphicalSandboxes` was never
+read from configuration — documented, defaulted in `appsettings.json`, enforced by `SessionManager`,
+and bound nowhere, so graphical sandboxes could not be turned on at all (`SessionSecurityOptions.
+FromConfiguration` + `SessionSecurityOptionsBindingTests` now cover the whole section). And the mobile
+harness's `GetAwaiter().GetResult()` on a host call, which the in-memory demo tolerates, deadlocks the
+headless dispatcher against a real one — live mode pumps while it waits.
+
 ## Graphical sandboxes: gotchas found live
 
 Full write-up in [`graphical-sandbox.md`](graphical-sandbox.md); these are the

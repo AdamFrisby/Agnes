@@ -25,14 +25,16 @@ namespace Agnes.App.Mobile.Preview;
 public static class Program
 {
     /// <summary>A common Android phone in device-independent pixels (≈ Pixel 7).</summary>
-    private const int PhoneWidth = 412;
-    private const int PhoneHeight = 915;
+    internal const int PhoneWidth = 412;
+    internal const int PhoneHeight = 915;
 
     private static string _outDir = "screenshots/mobile";
 
     public static void Main(string[] args)
     {
-        _outDir = args.Length > 0 ? args[0] : Path.Combine(Directory.GetCurrentDirectory(), "screenshots", "mobile");
+        _outDir = args.Length > 0 && !args[0].StartsWith("--", StringComparison.Ordinal)
+            ? args[0]
+            : Path.Combine(Directory.GetCurrentDirectory(), "screenshots", "mobile");
         Directory.CreateDirectory(_outDir);
 
         // Never touch real device state from a render.
@@ -43,6 +45,18 @@ public static class Program
         }
 
         JsonStore.UseDirectory(state);
+
+        // Live mode (--host …) renders the same shell against a REAL host and a session it is really
+        // running; see LivePreview for why a fake display channel cannot stand in for that.
+        if (LivePreview.TryParse(args) is { } live)
+        {
+            _outDir = live.OutDir;
+            Directory.CreateDirectory(_outDir);
+            using var liveSession = HeadlessUnitTestSession.StartNew(typeof(PreviewAppBuilder));
+            liveSession.Dispatch(() => LivePreview.Run(live), CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"Done. {Directory.GetFiles(_outDir, "*.png").Length} screens in {_outDir}");
+            return;
+        }
 
         using var session = HeadlessUnitTestSession.StartNew(typeof(PreviewAppBuilder));
         session.Dispatch(Capture, CancellationToken.None).GetAwaiter().GetResult();
@@ -355,7 +369,7 @@ public static class Program
 
     // ---- headless plumbing ----
 
-    private static void Shot(Window window, string name)
+    internal static void Shot(Window window, string name)
     {
         Settle(120);
         var path = Path.Combine(_outDir, name + ".png");
@@ -377,7 +391,7 @@ public static class Program
 
     /// <summary>Runs the dispatcher and the render loop for a wall-clock interval, so background work in
     /// the simulated host (which streams on a timer) actually lands before a capture.</summary>
-    private static void Settle(int milliseconds)
+    internal static void Settle(int milliseconds)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(milliseconds);
         while (DateTime.UtcNow < deadline)
@@ -389,7 +403,7 @@ public static class Program
         Dispatcher.UIThread.RunJobs();
     }
 
-    private static void Pump(Func<bool> until, int timeoutMs)
+    internal static void Pump(Func<bool> until, int timeoutMs)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (DateTime.UtcNow < deadline && !until())

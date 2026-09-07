@@ -27,6 +27,18 @@ public static class Program
 
     public static void Main(string[] args)
     {
+        // Live mode (--host …) renders the same window against a REAL host instead of the simulator; see
+        // LiveCapture for why that is worth a mode of its own. Everything else is the simulated tour.
+        if (LiveCapture.TryParse(args) is { } live)
+        {
+            _outDir = live.OutDir;
+            Directory.CreateDirectory(_outDir);
+            using var liveSession = HeadlessUnitTestSession.StartNew(typeof(HeadlessApp));
+            liveSession.Dispatch(() => LiveCapture.Run(live), CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"Done. Screenshots in {_outDir}");
+            return;
+        }
+
         _outDir = args.Length > 0 ? args[0] : Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
         Directory.CreateDirectory(_outDir);
 
@@ -398,7 +410,7 @@ public static class Program
     private static IEnumerable<SessionDocument> Tabs(MainWindowViewModel vm)
         => Dock(vm).VisibleDockables!.OfType<SessionDocument>();
 
-    private static SessionDocument? LastTab(MainWindowViewModel vm) => Tabs(vm).LastOrDefault();
+    internal static SessionDocument? LastTab(MainWindowViewModel vm) => Tabs(vm).LastOrDefault();
 
     private static SessionDocument OpenSession(MainWindowViewModel vm, string adapterId)
     {
@@ -420,7 +432,7 @@ public static class Program
         Pump(() => doc.Session!.Items.OfType<MessageBubbleItem>().Any(m => m.IsUser));
     }
 
-    private static void Pump(Func<bool> condition, int timeoutMs = 10000)
+    internal static void Pump(Func<bool> condition, int timeoutMs = 10000)
     {
         var start = DateTime.UtcNow;
         while (!condition() && (DateTime.UtcNow - start).TotalMilliseconds < timeoutMs)
@@ -433,7 +445,7 @@ public static class Program
         Dispatcher.UIThread.RunJobs();
     }
 
-    private static void Settle(int ms)
+    internal static void Settle(int ms)
     {
         var start = DateTime.UtcNow;
         while ((DateTime.UtcNow - start).TotalMilliseconds < ms)
@@ -444,7 +456,7 @@ public static class Program
         }
     }
 
-    private static void Capture(Window window, string name)
+    internal static void Capture(Window window, string name)
     {
         Settle(250);
         Dispatcher.UIThread.RunJobs();
