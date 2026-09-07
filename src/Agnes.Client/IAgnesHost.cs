@@ -157,6 +157,11 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Writes raw input bytes (keystrokes/paste) to an open fallback terminal. Default no-op.</summary>
     Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data) => Task.CompletedTask;
 
+    /// <summary>Opens the session's display channel (see <see cref="DisplayWire"/>). Only meaningful when the
+    /// session summary says <c>HasDisplay</c>; a host without the feature throws.</summary>
+    Task<IDisplayChannel> OpenDisplayAsync(string sessionId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not offer a display channel.");
+
     /// <summary>Resizes an open fallback terminal. Default no-op.</summary>
     Task ResizeTerminalAsync(string sessionId, string terminalId, int columns, int rows) => Task.CompletedTask;
 

@@ -513,7 +513,9 @@ public sealed record SessionSummary(
     string? CurrentModeId = null,
     string? CurrentModelId = null,
     bool ReadOnly = false,
-    bool Sandboxed = false)
+    bool Sandboxed = false,
+    // Whether the session's sandbox has a display a client may open over the display channel.
+    bool HasDisplay = false)
 {
     /// <summary>Whether this session is waiting on a human (one or more unanswered permission requests).</summary>
     public bool IsBlocked => OpenApprovals > 0;
@@ -748,7 +750,10 @@ public sealed record SessionSnapshot(
 /// pre-model callers keep compiling.</param>
 public sealed record OpenSessionRequest(
     string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false,
-    string McpApproval = "Ask", string GitCredentialMode = "Off", bool UseSandbox = true, string? ModelId = null);
+    string McpApproval = "Ask", string GitCredentialMode = "Off", bool UseSandbox = true, string? ModelId = null,
+    // A graphical sandbox: a fixed 1280×800 display the agent can see and drive and a person can watch.
+    // Implies UseSandbox; refused unless the operator allows graphical sandboxes.
+    bool Graphical = false);
 
 /// <summary>
 /// A named, reusable bundle of new-session launch options — pick it once, reuse it forever. It captures the
