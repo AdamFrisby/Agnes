@@ -354,7 +354,17 @@ public static partial class OverviewModel
 
         if ((item.IsActive || Array.IndexOf(LivePhases, item.State) >= 0) && since > WedgeAfter)
         {
-            return new MotionReading(Motion.Wedged, Inv($"quiet for {Duration(since)}"), NeedsPerson: false);
+            // A phase boundary says which slot it never got; the board uses the same words, so the two
+            // screens describe one item one way.
+            var waitingFor = item.State switch
+            {
+                "WorkComplete" => "waiting for an audit slot, ",
+                "AuditPassed" => "waiting to merge, ",
+                "Merged" => "waiting to push, ",
+                "PlanApproved" => "plan approved, waiting for a slot, ",
+                _ => string.Empty,
+            };
+            return new MotionReading(Motion.Wedged, Inv($"{waitingFor}quiet for {Duration(since)}"), NeedsPerson: false);
         }
 
         // Moving. A queued item that is genuinely eligible is moving too — it is waiting for the

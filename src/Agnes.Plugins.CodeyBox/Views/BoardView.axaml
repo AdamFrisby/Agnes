@@ -53,9 +53,9 @@
             <!-- A Grid, not a horizontal StackPanel: a StackPanel measures the title unbounded, so
                  trimming never fires and a long title runs under the reason text. Here the title takes
                  what is left after the agent and project, and trims. -->
-            <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="8">
+            <Grid Grid.Column="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBlock Grid.Column="0" Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="520" />
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left" />
               <TextBlock Grid.Column="1" Text="{Binding Agent}" Foreground="{DynamicResource FgFaint}" FontSize="10"
                          VerticalAlignment="Center" />
               <TextBlock Grid.Column="2" Text="{Binding ProjectId}" Foreground="{DynamicResource FgFaint}" FontSize="10"
@@ -323,7 +323,7 @@
             <TextBlock Classes="horizonhead" Text="{Binding Board.NowHeader}" />
           </Expander.Header>
           <StackPanel>
-            <TextBlock Classes="nothing" Text="Nothing running." IsVisible="{Binding !Board.HasNow}" />
+            <TextBlock Classes="nothing" Text="{Binding Board.NowEmptyText}" IsVisible="{Binding !Board.HasNow}" />
             <ItemsControl ItemsSource="{Binding Board.Now}" ItemTemplate="{StaticResource ChainRow}" />
           </StackPanel>
         </Expander>

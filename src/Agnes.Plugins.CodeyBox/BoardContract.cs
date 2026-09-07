@@ -173,7 +173,8 @@ public sealed record Board(
     public const int LandedWindowDays = 7;
 
     public int NowCount => Now.Count;
-    public int NextCount => Next.Sum(c => c.Count);
+    /// <summary>Queue entries, not chain members: a 32-step chain is one thing waiting for one slot.</summary>
+    public int NextCount => Next.Count;
     public int WaitingCount => Waiting.Sum(g => g.Count);
     public int LandedCount => Landed.Sum(d => d.Count);
     public bool HasNow => Now.Count > 0;
@@ -181,6 +182,16 @@ public sealed record Board(
     public bool HasWaiting => Waiting.Count > 0;
     public bool HasLanded => Landed.Count > 0;
     public string NowHeader => Slots.Total > 0 ? $"Now  ·  {Slots.Busy} of {Slots.Total} slots" : "Now";
+
+    /// <summary>
+    /// What to say under Now when no item reports a running phase. The orchestrator can hold a slot for
+    /// an item that is between phases (its audit is being dispatched while the item still reads
+    /// WorkComplete), so "busy slots, nothing running" is a real state and must be said as one rather than
+    /// left as a header that contradicts the empty list under it.
+    /// </summary>
+    public string NowEmptyText => Slots.Busy > 0
+        ? $"{Slots.Busy} {(Slots.Busy == 1 ? "slot is" : "slots are")} busy, but no item reports a running phase — the orchestrator is between phases."
+        : "Nothing running.";
     public string NextHeader => $"Next  ·  {NextCount} in dispatch order";
     public string WaitingHeader => $"Waiting  ·  {WaitingCount}";
     public string LandedHeader => $"Landed  ·  {LandedCount} in the last {LandedWindowDays} days";
