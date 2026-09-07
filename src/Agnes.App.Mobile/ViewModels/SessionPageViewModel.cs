@@ -86,6 +86,13 @@ public sealed partial class SessionPageViewModel : PageViewModel
                 _shell.ShowSheet(new DetailSheetViewModel(_shell, item.Speaker, item.Text, markdown: true));
             }
         });
+        OpenSharedFileCommand = new RelayCommand<SharedFileItem>(item =>
+        {
+            if (item is not null && Session is { } live)
+            {
+                _shell.ShowSheet(new ReceivedFileSheetViewModel(_shell, live, item));
+            }
+        });
         AnswerQuestionCommand = new RelayCommand<QuestionItem>(item =>
         {
             if (item is not null && Session is not null)
@@ -141,6 +148,9 @@ public sealed partial class SessionPageViewModel : PageViewModel
     public IRelayCommand<ToolCallItem> OpenToolCommand { get; }
     public IRelayCommand<MessageBubbleItem> OpenMessageCommand { get; }
     public IRelayCommand<QuestionItem> AnswerQuestionCommand { get; }
+
+    /// <summary>Opens the sheet for a file the agent sent: the preview, then share / save / open.</summary>
+    public IRelayCommand<SharedFileItem> OpenSharedFileCommand { get; }
 
     public bool CanDictate => _shell.CanDictate;
 

@@ -1,12 +1,15 @@
+using Agnes.Abstractions;
 using Agnes.App.Mobile.Services;
 using Agnes.App.Mobile.ViewModels;
 using Agnes.App.Mobile.Views;
 using Agnes.Protocol;
 using Agnes.Ui.Core.Transcript;
+using Agnes.Ui.Core.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 
 namespace Agnes.App.Mobile.Preview;
@@ -53,7 +56,12 @@ public static class Program
             new MobileConnector(),
             new MobileDispatcher(),
             new MobileSettings(),
-            deviceName: "Preview (headless)");
+            deviceName: "Preview (headless)",
+            // Android's handler is a platform type this harness can't link, and the null one reports it
+            // can do nothing — which would render the received-file sheet with no buttons at all and hide
+            // the very thing worth screenshotting. This one says yes and writes into the harness's own
+            // scratch directory.
+            receivedFiles: new PreviewReceivedFileHandler());
 
         var window = new Window
         {
@@ -111,6 +119,31 @@ public static class Program
             }
         }
 
+        // 5b) A file the agent sent: the transcript card (with the picture inline), then the sheet over
+        //     it with the three verbs. The simulated host serves no file bytes, so the image is seeded
+        //     into the same cache a real fetch would fill — the card and the sheet are the thing under
+        //     test, not the download.
+        if (shell.CurrentPage is SessionPageViewModel filePage && filePage.Session is { } withFiles)
+        {
+            var shot = SamplePng(720, 380);
+            var image = Shared(withFiles, "screenshot.png", "shared/screenshot.png", shot.Length, "image/png",
+                "The dashboard after the fix — the p95 line is the one that moved.");
+            SharedFilePreviews.Seed(withFiles, image, shot);
+            withFiles.Items.Add(image);
+
+            withFiles.Items.Add(Shared(withFiles, "coverage.txt", "shared/coverage.txt", 4_812, "text/plain",
+                "Coverage for the touched files, if you want the numbers."));
+
+            Settle(400);
+            Shot(window, "06b-shared-file");
+
+            filePage.OpenSharedFileCommand.Execute(image);
+            Settle(700);
+            Shot(window, "06c-received-file");
+            shell.CloseSheet();
+            Settle(250);
+        }
+
         // 6) The inbox, with that same request waiting in it — plus a device asking to join, which the
         //    simulated host can't produce, so it's injected directly into the collection the view binds.
         shell.SelectTab(ShellTab.Inbox);
@@ -121,7 +154,11 @@ public static class Program
                 DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch.AddMinutes(10))));
         Settle(300);
         Shot(window, "07-inbox");
+
+        // 6b) The same tab with the join request answered, so the "Sent to you" section is above the fold.
         shell.Inbox.PendingDevices.Clear();
+        Settle(300);
+        Shot(window, "07b-inbox-files");
 
         // 7) Starting a session.
         shell.SelectTab(ShellTab.Sessions);
@@ -185,6 +222,52 @@ public static class Program
         Settle(200);
     }
 
+    /// <summary>Builds a shared-file transcript item and files it just after the newest event, so a link
+    /// or an inbox row can address it the way a real one would.</summary>
+    private static SharedFileItem Shared(
+        SessionViewModel session, string name, string path, long size, string mime, string caption)
+        => new(new FileSharedEvent(name, name, path, size, mime, caption))
+        {
+            Sequence = session.Items.LastOrDefault()?.Sequence + 1 ?? 1,
+            Timestamp = DateTimeOffset.Now.AddMinutes(-2),
+        };
+
+    /// <summary>
+    /// A PNG to stand in for whatever the agent actually produced — drawn rather than checked in, so the
+    /// harness stays a single project with no binary fixtures. Bands of the brand ramp: enough for the
+    /// card's inline preview and the sheet's full-width one to be legible in a screenshot.
+    /// </summary>
+    private static byte[] SamplePng(int width, int height)
+    {
+        var bitmap = new WriteableBitmap(
+            new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+
+        using (var buffer = bitmap.Lock())
+        {
+            var row = new byte[buffer.RowBytes];
+            for (var y = 0; y < height; y++)
+            {
+                var shade = 0.45 + (0.55 * (1 - (y / (double)height)));
+                for (var x = 0; x < width; x++)
+                {
+                    // Violet → magenta → coral across x, darkened toward the bottom. BGRA byte order.
+                    var t = x / (double)width;
+                    row[(x * 4) + 0] = (byte)(((0xEE * (1 - t)) + (0x66 * t)) * shade);
+                    row[(x * 4) + 1] = (byte)(((0x55 * (1 - t)) + (0x73 * t)) * shade);
+                    row[(x * 4) + 2] = (byte)(((0x8A * (1 - t)) + (0xF9 * t)) * shade);
+                    row[(x * 4) + 3] = 0xFF;
+                }
+
+                System.Runtime.InteropServices.Marshal.Copy(
+                    row, 0, buffer.Address + (y * buffer.RowBytes), buffer.RowBytes);
+            }
+        }
+
+        using var stream = new MemoryStream();
+        bitmap.Save(stream, new PngBitmapEncoderOptions());
+        return stream.ToArray();
+    }
+
     // ---- headless plumbing ----
 
     private static void Shot(Window window, string name)
@@ -232,6 +315,34 @@ public static class Program
 
         Dispatcher.UIThread.RunJobs();
     }
+}
+
+/// <summary>
+/// Stands in for Android's Downloads / share sheet / open-with so the received-file sheet renders with
+/// its three real buttons. Saving actually writes, into the harness's temp directory — a screenshot tool
+/// that lies about what a button does is worse than one that has no buttons.
+/// </summary>
+public sealed class PreviewReceivedFileHandler : Agnes.Ui.Core.IReceivedFileHandler
+{
+    public bool CanSave => true;
+
+    public bool CanOpen => true;
+
+    public bool CanShare => true;
+
+    public Task SaveAsync(Agnes.Ui.Core.ReceivedFile file, CancellationToken cancellationToken = default)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "agnes-mobile-preview", "downloads");
+        Directory.CreateDirectory(directory);
+        return File.WriteAllBytesAsync(
+            Path.Combine(directory, ReceivedFileNaming.Sanitize(file.FileName)), file.Bytes, cancellationToken);
+    }
+
+    public Task OpenAsync(Agnes.Ui.Core.ReceivedFile file, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public Task ShareAsync(Agnes.Ui.Core.ReceivedFile file, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
 }
 
 /// <summary>AppBuilder for the headless session: real Skia drawing, so the frames have pixels.</summary>

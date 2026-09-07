@@ -52,7 +52,8 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Func<string, Task<string?>>? dictate = null,
         Action<string>? copyToClipboard = null,
         Action<string>? openUrl = null,
-        Action<string>? clearNotification = null)
+        Action<string>? clearNotification = null,
+        IReceivedFileHandler? receivedFiles = null)
     {
         _connector = connector;
         Dispatcher = dispatcher;
@@ -60,6 +61,9 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         DeviceName = deviceName;
         Haptics = haptics ?? NullHaptics.Instance;
         Notifier = notifier ?? NullNotifier.Instance;
+        // Null rather than "unsupported": the handler reports what it can do, and the sheet shows only the
+        // buttons that are real. The headless preview and the tests get this one.
+        ReceivedFiles = receivedFiles ?? NullReceivedFileHandler.Instance;
         _dictate = dictate;
         _copy = copyToClipboard;
         _openUrl = openUrl;
@@ -93,6 +97,9 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     public IHaptics Haptics { get; }
 
     public INotifier Notifier { get; }
+
+    /// <inheritdoc />
+    public IReceivedFileHandler ReceivedFiles { get; }
 
     public HostBook Hosts { get; }
 
@@ -372,13 +379,33 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Sessions.OpenById(link, sessionId, sequence);
     }
 
-    /// <summary>Opens a session by id if this device knows it (used by notification taps).</summary>
-    public void OpenSessionById(string sessionId)
+    /// <summary>
+    /// Opens a session by id if this device knows it (used by notification taps).
+    /// </summary>
+    /// <param name="anchorId">The transcript item the notification was about, if it named one. Resolved to
+    /// its event sequence here rather than passed around as an anchor, because an anchor is a per-render
+    /// GUID: it only means anything to the client that minted it, and after a cold start (which is exactly
+    /// when a notification is tapped) that client is gone. A sequence survives the restart.</param>
+    public void OpenSessionById(string sessionId, string? anchorId = null)
     {
         var entry = Sessions.All.FirstOrDefault(s => s.SessionId == sessionId);
-        if (entry is not null)
+        if (entry is null)
         {
-            SelectTab(ShellTab.Sessions);
+            return;
+        }
+
+        SelectTab(ShellTab.Sessions);
+
+        var sequence = anchorId is { Length: > 0 }
+            ? entry.Session?.Items.FirstOrDefault(i => i.AnchorId == anchorId)?.Sequence ?? 0
+            : 0;
+
+        if (sequence > 0)
+        {
+            Sessions.OpenAt(entry, sequence);
+        }
+        else
+        {
             Sessions.Open(entry);
         }
     }

@@ -261,7 +261,23 @@ public sealed partial class SessionsViewModel : ObservableObject
     /// <summary>Builds a session view model wired to this app's stores, policy and notifier.</summary>
     private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
     {
+        // This is the one place the app builds a session, so it is where the device's file handler joins
+        // one: when SessionViewModel grows its own `receivedFiles` parameter, `_shell.ReceivedFiles` is
+        // passed here and every session gets it. Until then the sheet reads the same handler off the shell,
+        // which is the single instance either way.
         var session = new SessionViewModel(host, view, _shell.Dispatcher, title, _prompts, _policy);
+
+        // Files an agent sent are a live projection over the transcript, the way the blocked list is a live
+        // projection over attention state — the Inbox subscribes to this rather than polling every session.
+        session.Items.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset
+                || e.NewItems?.OfType<Agnes.Ui.Core.Transcript.SharedFileItem>().Any() == true)
+            {
+                _shell.Dispatcher.Post(() => SharedFilesChanged?.Invoke());
+            }
+        };
+
         session.NotificationRaised += n =>
         {
             _notifier.Notify(n);
@@ -278,6 +294,12 @@ public sealed partial class SessionsViewModel : ObservableObject
                     case NotificationKind.Error:
                         _shell.Haptics.Alert();
                         _shell.Toast(n.Body, ToastKind.Danger);
+                        break;
+                    case NotificationKind.File:
+                        // A file arriving while you're looking at another session is worth a line: the card
+                        // that carries it is somewhere off-screen, and the Inbox row is a tab away.
+                        _shell.Haptics.Success();
+                        _shell.Toast(n.Body, ToastKind.Info);
                         break;
                     default:
                         _shell.Haptics.Success();
@@ -365,6 +387,20 @@ public sealed partial class SessionsViewModel : ObservableObject
                 await Task.Delay(250).ConfigureAwait(false);
             }
         });
+    }
+
+    /// <summary>
+    /// Opens a session and lands on one moment in it — an inbox row for a file, a notification tap, a
+    /// shared link. Same path as <see cref="Open"/>, then the same retrying scroll a link uses, because the
+    /// session is usually still attaching when the page appears.
+    /// </summary>
+    public void OpenAt(SessionEntry entry, long sequence)
+    {
+        Open(entry);
+        if (sequence > 0)
+        {
+            RevealSequence(entry, sequence);
+        }
     }
 
     public void StartNew()
@@ -510,4 +546,8 @@ public sealed partial class SessionsViewModel : ObservableObject
 
     /// <summary>Raised when the blocked-session count may have changed (drives the Inbox badge).</summary>
     public event Action? AttentionChanged;
+
+    /// <summary>Raised when any open session's list of received files may have changed (drives the Inbox's
+    /// "Sent to you" section).</summary>
+    public event Action? SharedFilesChanged;
 }

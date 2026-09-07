@@ -76,6 +76,15 @@ public sealed partial class InboxViewModel : ObservableObject
                 _sessions.Open(row.Entry);
             }
         });
+        OpenSharedFileCommand = new RelayCommand<SharedFileRow>(row =>
+        {
+            if (row is not null)
+            {
+                // Land on the card, not the top of the transcript: the row exists because you were told
+                // about one file, and "here it is" is the whole point of the tap.
+                _sessions.OpenAt(row.Entry, row.Sequence);
+            }
+        });
         AllowCommand = new RelayCommand<BlockerRow>(row => Answer(row, allow: true));
         DenyCommand = new RelayCommand<BlockerRow>(row => Answer(row, allow: false));
         ApproveDeviceCommand = new AsyncRelayCommand<PendingDeviceRow>(row => DecideAsync(row, approve: true));
@@ -84,6 +93,10 @@ public sealed partial class InboxViewModel : ObservableObject
         // The blocked list is a live projection of the sessions list, so it re-derives whenever any
         // session's attention state moves rather than being polled.
         _sessions.AttentionChanged += () => _shell.Dispatcher.Post(Rebuild);
+
+        // Files ride the same live-projection idea: an arrival changes no attention state, so it gets its
+        // own signal rather than being noticed by accident on the next approval.
+        _sessions.SharedFilesChanged += () => _shell.Dispatcher.Post(RebuildSharedFiles);
 
         // The join-requests section tracks its own collection, so anything that touches it — a refresh,
         // an answered request — updates the header and the empty state without a second call.
@@ -104,7 +117,12 @@ public sealed partial class InboxViewModel : ObservableObject
     /// the inbox for the same reason approvals do: it is a thing waiting on a human.</summary>
     public ObservableCollection<PendingDeviceRow> PendingDevices { get; } = [];
 
+    /// <summary>Files agents sent, newest first, across every session and host.</summary>
+    public ObservableCollection<SharedFileRow> SharedFiles { get; } = [];
+
     public bool HasPendingDevices => PendingDevices.Count > 0;
+
+    public bool HasSharedFiles => SharedFiles.Count > 0;
 
     public IAsyncRelayCommand<PendingDeviceRow> ApproveDeviceCommand { get; }
 
@@ -115,6 +133,9 @@ public sealed partial class InboxViewModel : ObservableObject
     public IRelayCommand<BlockerRow> AllowCommand { get; }
     public IRelayCommand<BlockerRow> DenyCommand { get; }
 
+    /// <summary>Opens the session a received file came from, scrolled to its card.</summary>
+    public IRelayCommand<SharedFileRow> OpenSharedFileCommand { get; }
+
     [ObservableProperty]
     private bool _isRefreshing;
 
@@ -124,7 +145,11 @@ public sealed partial class InboxViewModel : ObservableObject
 
     public bool HasFinished => Finished.Count > 0;
 
-    public bool IsEmpty => !HasBlocked && !HasFinished && !HasPendingDevices && !IsRefreshing;
+    public bool IsEmpty => !HasBlocked && !HasFinished && !HasPendingDevices && !HasSharedFiles && !IsRefreshing;
+
+    /// <summary>How many rows the "Sent to you" section keeps. It's a recent-things list, not an archive —
+    /// the session itself is where a file from last Tuesday lives.</summary>
+    private const int SharedFileLimit = 20;
 
     /// <summary>Rebuilds the blocked list from what the live sessions currently report.</summary>
     private void Rebuild()
@@ -153,6 +178,28 @@ public sealed partial class InboxViewModel : ObservableObject
 
         OnPropertyChanged(nameof(BlockedCount));
         OnPropertyChanged(nameof(HasBlocked));
+        OnPropertyChanged(nameof(IsEmpty));
+
+        RebuildSharedFiles();
+    }
+
+    /// <summary>Re-derives the received-files list from what the live sessions currently hold.</summary>
+    private void RebuildSharedFiles()
+    {
+        var rows = _sessions.All
+            .Where(e => e.Session is not null)
+            .SelectMany(e => SharedFileAccess.Of(e.Session!).Select(f => new SharedFileRow(e, f)))
+            .OrderByDescending(r => r.When)
+            .Take(SharedFileLimit)
+            .ToList();
+
+        SharedFiles.Clear();
+        foreach (var row in rows)
+        {
+            SharedFiles.Add(row);
+        }
+
+        OnPropertyChanged(nameof(HasSharedFiles));
         OnPropertyChanged(nameof(IsEmpty));
     }
 
