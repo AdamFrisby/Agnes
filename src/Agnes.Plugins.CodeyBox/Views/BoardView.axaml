@@ -50,24 +50,27 @@
             <c:StepDot Grid.Column="0" Width="9" Height="9" Margin="0,0,9,0" VerticalAlignment="Center"
                        State="{Binding Converter={x:Static v:BoardConverters.HeadState}}" />
 
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-              <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-              <TextBlock Text="{Binding Agent}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+            <!-- A Grid, not a horizontal StackPanel: a StackPanel measures the title unbounded, so
+                 trimming never fires and a long title runs under the reason text. Here the title takes
+                 what is left after the agent and project, and trims. -->
+            <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="520" />
+              <TextBlock Grid.Column="1" Text="{Binding Agent}" Foreground="{DynamicResource FgFaint}" FontSize="10"
                          VerticalAlignment="Center" />
-              <TextBlock Text="{Binding ProjectId}" Foreground="{DynamicResource FgFaint}" FontSize="10"
+              <TextBlock Grid.Column="2" Text="{Binding ProjectId}" Foreground="{DynamicResource FgFaint}" FontSize="10"
                          VerticalAlignment="Center" />
-            </StackPanel>
+            </Grid>
 
             <!-- Why it is where it is. Pink only where something is broken, amber only where it is
                  waiting on a person; a chain that is merely queued states a fact and stays dim. -->
-            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource StatusError}"
+            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource StatusError}" MaxWidth="360"
                        Text="{Binding Why}"
                        IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyIsError}}" />
-            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource StatusAttention}"
+            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource StatusAttention}" MaxWidth="360"
                        Text="{Binding Why}"
                        IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyNeedsPerson}}" />
-            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource FgDim}"
+            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource FgDim}" MaxWidth="360"
                        Text="{Binding Why}"
                        IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyIsPlain}}" />
           </Grid>

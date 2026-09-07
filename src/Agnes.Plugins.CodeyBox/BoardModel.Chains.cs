@@ -68,8 +68,13 @@ public static partial class BoardModel
     {
         "Done" => StepState.Done,
         _ when row.IsActive => StepState.Running,
-        "WorkComplete" or "AuditPassed" or "Merged" or "UpstreamPushing"
-            or "Planning" or "PlanReview" or "PlanApproved" or "ReworkingForConflict" => StepState.Running,
+        // A phase boundary is not a running agent: the work phase finished and the item is waiting for
+        // an audit slot (or to merge, or to push). Nothing is executing, so it is READY — it will move
+        // when a slot frees — and the dispatcher takes these ahead of fresh queued work, which is why
+        // the Next ordering puts them first. Drawing them as running made "0 of 2 slots" sit above ten
+        // rows that said "running", and hid the fleet's actual bottleneck.
+        _ when IsPhaseBoundary(row) => StepState.Ready,
+        "UpstreamPushing" or "Planning" or "PlanReview" or "ReworkingForConflict" => StepState.Running,
         "Queued" => row.DependsOnSatisfied ? StepState.Ready : StepState.Blocked,
         "WaitingForQuotaReset" or "WaitingForAgentResume" or "WaitingForTransientRetry" => StepState.Parked,
         "NeedsOperatorInput" => StepState.NeedsPerson,
@@ -79,6 +84,23 @@ public static partial class BoardModel
         // unknown live one as Running is the interpretation that cannot hide work: neither is ever
         // quietly filed as Done, and neither drops off the runway into Landed.
         _ => row.IsTerminal ? StepState.Failed : StepState.Running,
+    };
+
+    /// <summary>Whether the item sits between phases: finished one, not yet picked up for the next.</summary>
+    internal static bool IsPhaseBoundary(WorkItemRow row)
+        => row.State is "WorkComplete" or "AuditPassed" or "Merged" or "PlanApproved";
+
+    /// <summary>
+    /// Where a phase boundary sits in the dispatcher's preference: finishing phases outrank starting ones
+    /// so the queue can drain (CodeyBox #198), and the closer to landed, the sooner it goes.
+    /// </summary>
+    internal static int PhaseOrder(WorkItemRow row) => row.State switch
+    {
+        "Merged" => 0,
+        "AuditPassed" => 1,
+        "WorkComplete" => 2,
+        "PlanApproved" => 3,
+        _ => 4,
     };
 
     /// <summary>Every chain in the list, each with its members in dependency order.</summary>

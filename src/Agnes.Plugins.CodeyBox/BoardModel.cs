@@ -44,12 +44,20 @@ public static partial class BoardModel
 
         // Exactly the dispatcher's own comparator. This list is a prediction, and a prediction that
         // sorts by anything else is a lie the operator will act on.
+        // Phase boundaries first: an item that has finished its work phase and waits for an audit slot is
+        // taken ahead of fresh queued work so the queue drains (finishing phases outrank starting ones),
+        // and within them the closer to landed the sooner. Then the dispatcher's own comparator.
         var next = rows
             .Where(r => r.Horizon == Horizon.Next)
-            .OrderByDescending(r => r.Head.Priority)
+            .OrderBy(r => PhaseOrder(r.Head))
+            .ThenByDescending(r => r.Head.Priority)
             .ThenBy(r => r.Head.CreatedAt)
             .ThenBy(r => r.Head.Id, StringComparer.Ordinal)
-            .Select((r, i) => r with { DispatchRank = i, Why = WhyNext(i) })
+            .Select((r, i) => r with
+            {
+                DispatchRank = i,
+                Why = IsPhaseBoundary(r.Head) ? WhyBoundary(r.Head, now) : WhyNext(i),
+            })
             .ToList();
 
         var waiting = rows.Where(r => r.Horizon == Horizon.Waiting).ToList();

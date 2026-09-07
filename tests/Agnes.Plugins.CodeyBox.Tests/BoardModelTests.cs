@@ -127,7 +127,9 @@ public sealed class BoardModelTests
     [InlineData("Done", StepState.Done)]
     [InlineData("Working", StepState.Running)]
     [InlineData("Auditing", StepState.Running)]
-    [InlineData("WorkComplete", StepState.Running)]
+    [InlineData("WorkComplete", StepState.Ready)]
+    [InlineData("AuditPassed", StepState.Ready)]
+    [InlineData("Merged", StepState.Ready)]
     [InlineData("PlanReview", StepState.Running)]
     [InlineData("UpstreamPushing", StepState.Running)]
     [InlineData("WaitingForQuotaReset", StepState.Parked)]
@@ -577,5 +579,35 @@ public sealed class BoardModelTests
 
         Assert.Equal(10, board.Now.Count);
         Assert.True(watch.ElapsedMilliseconds < 1000, $"took {watch.ElapsedMilliseconds} ms");
+    }
+
+    // ---- phase boundaries: finished a phase, waiting for the next slot ----
+
+    [Fact]
+    public void A_phase_boundary_is_next_ahead_of_fresh_queued_work_and_says_which_slot_it_waits_for()
+    {
+        var fresh = Item("fresh", "Queued", priority: 900, createdMinutesAgo: 60);
+        var audit = Item("audit", "WorkComplete", priority: 0, createdMinutesAgo: 180, updatedMinutesAgo: 10);
+        var merge = Item("merge", "AuditPassed", priority: 0, createdMinutesAgo: 120, updatedMinutesAgo: 5);
+
+        var board = Build(fresh, audit, merge);
+
+        // Merge-ready first, then audit-ready, then the highest-priority fresh item — the dispatcher's
+        // own preference, not ours: finishing phases outrank starting ones.
+        Assert.Equal(["merge", "audit", "fresh"], board.Next.Select(c => c.Head.Id));
+        Assert.Equal("audit passed, waiting to merge", board.Next[0].Why);
+        Assert.Equal("waiting for an audit slot", board.Next[1].Why);
+        Assert.Equal("3rd in line", board.Next[2].Why);
+        Assert.Empty(board.Now); // nothing is executing, and the header must not claim otherwise
+    }
+
+    [Fact]
+    public void A_phase_boundary_that_has_waited_too_long_says_for_how_long()
+    {
+        var stale = Item("stale", "WorkComplete", createdMinutesAgo: 24 * 60, updatedMinutesAgo: 15 * 60 + 31);
+
+        var board = Build(stale);
+
+        Assert.Equal("waiting for an audit slot for 15h 31m", board.Next.Single().Why);
     }
 }

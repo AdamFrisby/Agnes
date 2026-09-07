@@ -159,6 +159,37 @@ public static partial class BoardModel
 
     internal static string WhyNext(int rank) => rank == 0 ? "next up" : $"{Ordinal(rank + 1)} in line";
 
+    /// <summary>Past which a phase boundary with no movement is worth saying so — the operator's own
+    /// wedge threshold, shared with the overview.</summary>
+    internal static readonly TimeSpan BoundaryPatience = TimeSpan.FromMinutes(45);
+
+    /// <summary>
+    /// A phase boundary says which slot it is waiting for, and — once it has waited longer than anyone
+    /// would expect a slot to take — for how long. The duration is the whole point: ten items "waiting
+    /// for an audit slot" is a queue; ten items waiting for one "for 15h" with no slot in use is the
+    /// fleet's bottleneck, and the row should read that way without the operator doing the arithmetic.
+    /// </summary>
+    internal static string WhyBoundary(WorkItemRow head, DateTimeOffset now)
+    {
+        var what = head.State switch
+        {
+            "WorkComplete" => "waiting for an audit slot",
+            "AuditPassed" => "audit passed, waiting to merge",
+            "Merged" => "merged, waiting to push",
+            "PlanApproved" => "plan approved, waiting for a slot",
+            _ => "waiting for a slot",
+        };
+
+        var quiet = now - head.UpdatedAt;
+        return quiet > BoundaryPatience ? $"{what} for {Humanise(quiet)}" : what;
+    }
+
+    private static string Humanise(TimeSpan span) => span.TotalHours >= 48
+        ? $"{(int)span.TotalDays}d {span.Hours}h"
+        : span.TotalMinutes >= 60
+            ? $"{(int)span.TotalHours}h {span.Minutes:00}m"
+            : $"{(int)span.TotalMinutes}m";
+
     private static string WhyParent(Step? blocker)
     {
         if (blocker is null)
