@@ -21,6 +21,7 @@ historical behaviour, so upgrading changes nothing until you turn it on.
 | `RequireSandbox` | bool | `false` | The host **refuses any session that would run outside a sandbox** (sandbox opted out, or no provider configured). Fails loud instead of silently running the agent on the host. |
 | `RequirePermissionPrompts` | bool | `false` | The host **forbids autonomous / `--dangerously-skip-permissions` sessions** entirely — every tool call must be prompted. The strongest autonomy control. |
 | `AllowUnsandboxedSkipPermissions` | bool | `false` | Whether autonomous mode may run **outside** a sandbox. Default `false`: dangerous autonomous mode is confined to a sandbox unless you explicitly opt in. |
+| `AllowGraphicalSandboxes` | bool | `false` | Whether a session may ask for a **graphical** sandbox — a VM with a real display the agent can see and drive over `computer_*`, and a person can watch over the display channel. Default `false`, and deliberately so: a screen is a second, much wider interface into the guest than a shell; capture means the host is continuously holding pixels of whatever the guest is showing (a logged-in browser session, a password manager); and an agent that can move a mouse can click through confirmations no permission prompt ever sees. Implies a sandbox — the display exists at the VM boundary, so "a screen but on the host" is refused rather than silently downgraded. See [display-channel.md](display-channel.md) for the channel's own auth, the control arbiter and the input budget. |
 | `AllowedHostMcpServers` | string[] | `[]` (unrestricted) | Allowlist (by MCP server **name**, case-insensitive) of the only servers permitted to run with `RunAt=Host` — i.e. execute a command **on the host, outside the sandbox**. A non-allowlisted host server is dropped from the session's MCP set (with a visible notice) on both the direct and the sandbox-forward paths. Sandbox-run servers are unaffected. |
 | `SessionIsolation` | `Shared` \| `PerUser` \| `PerGroup` | `Shared` | How sessions are scoped to callers. `Shared` = today's behaviour (host owner sees all; others need an explicit share). `PerUser` also lets a caller reach the sessions **they own** (matched across their devices). `PerGroup` also lets **group members** reach a session (read/drive, not manage) via an `IGroupProvider`. The host owner stays an admin super-user in every mode; these are additive grants on top of shares. |
 | `RestrictConfigToOwner` | bool | `false` | Restricts host-wide config mutations — sandbox image manifest, project config, MCP registry, sandbox delete/reap — to the **host owner** rather than any paired device. |
@@ -283,7 +284,9 @@ the host. Handing one to an agent would be strictly worse than plaintext on loop
 - **Path allowlist, first in the pipeline.** `GuestMcpEndpoint.IsAllowedPath` refuses everything but
   `/mcp-agnes` on these ports, and the middleware runs *before* authentication — registered later, the auth
   layer would answer `/agnes` with a 401, which both admits the hub is there and would serve it outright to
-  anyone holding a device token. The hub, the REST API and the web head are unreachable on both ports.
+  anyone holding a device token. The hub, the REST API, the web head **and the display channel** are
+  unreachable on both ports — a plaintext, unauthenticated socket onto a session's screen is exactly what
+  that allowlist exists to prevent, so do not widen it.
 - **No device authority crosses them.** The only credential that works is a per-session token
   (`SessionMcpTokens`) which *is* that session's identity to the tool layer: an agent presenting one can act
   only on its own session, cannot name another, and is explicitly refused by the tools that need a paired

@@ -12,23 +12,26 @@ namespace Agnes.Host.Mcp;
 /// rejected. This is the "Agnes as MCP server" seam; voice is one consumer of it.
 /// </summary>
 [McpServerToolType]
-public sealed class AgnesMcpTools
+public sealed partial class AgnesMcpTools
 {
     private readonly IAgnesMcpBackend _backend;
     private readonly IMcpDeviceAuthenticator _authenticator;
     private readonly IMcpCallerTokenSource _tokenSource;
     private readonly SessionMcpTokens _sessionTokens;
+    private readonly IAgnesDisplayBackend _display;
 
     public AgnesMcpTools(
         IAgnesMcpBackend backend,
         IMcpDeviceAuthenticator authenticator,
         IMcpCallerTokenSource tokenSource,
-        SessionMcpTokens sessionTokens)
+        SessionMcpTokens sessionTokens,
+        IAgnesDisplayBackend display)
     {
         _backend = backend;
         _authenticator = authenticator;
         _tokenSource = tokenSource;
         _sessionTokens = sessionTokens;
+        _display = display;
     }
 
     /// <summary>Authenticates the current request and returns the caller id, or throws so the tool call is

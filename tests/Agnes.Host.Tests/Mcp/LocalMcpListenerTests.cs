@@ -39,6 +39,7 @@ public sealed class LocalMcpListenerTests : IAsyncLifetime
         builder.Services.AddSingleton<IAgnesMcpBackend>(new FakeAgnesMcpBackend());
         builder.Services.AddSingleton<IMcpDeviceAuthenticator>(new FakeMcpAuthenticator("device-token"));
         builder.Services.AddSingleton<IMcpCallerTokenSource, HttpContextMcpTokenSource>();
+        builder.Services.AddSingleton(Agnes.Host.Tests.Display.DisplayFixture.NoDisplays());
         builder.Services.AddMcpServer().WithHttpTransport(o => o.Stateless = true).WithTools<AgnesMcpTools>();
 
         _app = builder.Build();
@@ -158,7 +159,7 @@ public sealed class LocalMcpListenerTests : IAsyncLifetime
         // neither a session (SessionFor) nor a device (the token was never a device token).
         Assert.Null(_tokens.SessionFor(token));
         var tools = new AgnesMcpTools(
-            new FakeAgnesMcpBackend(), new FakeMcpAuthenticator("device-token"), new FixedTokenSource(token), _tokens);
+            new FakeAgnesMcpBackend(), new FakeMcpAuthenticator("device-token"), new FixedTokenSource(token), _tokens, Agnes.Host.Tests.Display.DisplayFixture.NoDisplays());
         await Assert.ThrowsAsync<McpUnauthenticatedException>(() => tools.SendUserFile("out.txt", null, null));
     }
 
@@ -189,9 +190,10 @@ public sealed class LocalMcpListenerTests : IAsyncLifetime
     [Fact]
     public async Task The_plaintext_port_serves_nothing_but_the_mcp_path()
     {
-        // The hub, the REST API and the web head all carry device tokens; on a port with no TLS and no
-        // device authentication they must not exist at all.
-        foreach (var path in new[] { "/agnes", "/", "/devices" })
+        // The hub, the REST API, the web head and the display channel all carry device tokens; on a port with
+        // no TLS and no device authentication they must not exist at all. The display path especially: an
+        // unauthenticated plaintext socket onto a session's screen is precisely what this allowlist prevents.
+        foreach (var path in new[] { "/agnes", "/", "/devices", Agnes.Protocol.DisplayWire.Path + "/sess-1" })
         {
             using var response = await _http.GetAsync(path);
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);

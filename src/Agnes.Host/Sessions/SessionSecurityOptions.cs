@@ -56,6 +56,16 @@ public sealed record SessionSecurityOptions
     public bool AllowUnsandboxedSkipPermissions { get; init; }
 
     /// <summary>
+    /// Whether a session may ask for a <b>graphical</b> sandbox — a VM with a real display the agent can see
+    /// and drive, and a person can watch over the display channel. Defaults to <c>false</c>, and deliberately
+    /// so: a screen is a second, much wider interface into the guest than a shell, capture means the host is
+    /// continuously holding pixels of whatever the guest is showing (a logged-in browser session, a password
+    /// manager), and an agent that can move a mouse can click through confirmations no permission prompt ever
+    /// sees. An operator turns this on knowingly. See <c>docs/display-channel.md</c>.
+    /// </summary>
+    public bool AllowGraphicalSandboxes { get; init; }
+
+    /// <summary>
     /// If non-empty, an allowlist (by MCP server <em>name</em>, case-insensitive) of the only servers permitted
     /// to run with <c>RunAt=Host</c> — i.e. execute a command on the host, outside any sandbox. A host-run
     /// server whose name isn't listed is silently dropped from a session's MCP set (a notice is surfaced), on
