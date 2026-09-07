@@ -266,7 +266,9 @@ public sealed partial class SessionPageViewModel : PageViewModel
             // and a DisplayViewModel per conversation is a connection waiting to be opened by accident.
             if (_display is null && HasDisplay && Session is { } session)
             {
-                _display = new DisplayViewModel(session.Host, session.SessionId, _shell.Dispatcher);
+                // The session's own display when it has one — one channel per session, however many
+                // surfaces show it — else this page opens its own.
+                _display = session.Display ?? new DisplayViewModel(session.Host, session.SessionId, _shell.Dispatcher);
             }
 
             return _display;

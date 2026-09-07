@@ -399,20 +399,16 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
     ///
     /// The request is built as an <see cref="OpenSessionRequest"/> — the wire contract's own record —
     /// rather than as a pile of arguments, because that is what the host receives and it is the thing
-    /// that carries <see cref="OpenSessionRequest.Graphical"/>. The client library's typed helper
-    /// predates that field and has no parameter for it, so a graphical launch is refused here, loudly,
-    /// instead of quietly starting a session with no screen and leaving the person to wonder where the
-    /// Screen segment went. When <c>IAgnesHost.OpenSessionAsync</c> grows the flag this becomes one more
-    /// named argument and the refusal goes away.
+    /// that carries <see cref="OpenSessionRequest.Graphical"/>. The host refuses a graphical launch the
+    /// operator has not allowed, and that refusal surfaces as this page's error rather than as a session
+    /// with no screen.
     /// </summary>
     private static Task<SessionInfo> OpenAsync(IAgnesHost host, OpenSessionRequest request)
-        => request.Graphical
-            ? throw new InvalidOperationException(
-                "this client build can't request a graphical sandbox yet — start it from the desktop app")
-            : host.OpenSessionAsync(
-                request.AdapterId,
-                request.WorkingDirectory,
-                skipPermissions: request.SkipPermissions,
-                gitCredentialMode: request.GitCredentialMode,
-                useSandbox: request.UseSandbox);
+        => host.OpenSessionAsync(
+            request.AdapterId,
+            request.WorkingDirectory,
+            skipPermissions: request.SkipPermissions,
+            gitCredentialMode: request.GitCredentialMode,
+            useSandbox: request.UseSandbox,
+            graphical: request.Graphical);
 }

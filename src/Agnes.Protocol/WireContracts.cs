@@ -522,7 +522,7 @@ public sealed record SessionSummary(
 }
 
 /// <summary>The per-session defaults a project suggests.</summary>
-public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask");
+public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask", bool Graphical = false);
 
 /// <summary>
 /// A project as the client sees it: the per-repo bundle of sandbox contents, MCP servers, GitHub

@@ -108,7 +108,7 @@ public sealed class FakeDisplayHost : IAgnesHost
     public Task<SessionInfo> OpenSessionAsync(
         string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false,
         string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true,
-        string? modelId = null) => throw Unused();
+        string? modelId = null, bool graphical = false) => throw Unused();
 
     public Task<SessionView> SubscribeAsync(string sessionId, long since = 0) => throw Unused();
 
