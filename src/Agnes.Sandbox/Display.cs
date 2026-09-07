@@ -2,52 +2,44 @@ using System.Threading.Channels;
 
 namespace Agnes.Sandbox;
 
-/// <summary>
-/// A graphical display asked for on a sandbox: the guest gets a virtual GPU, an X server and a
-/// session at exactly this size. Null on <see cref="SandboxSpec.Display"/> means headless.
-/// </summary>
-/// <remarks>
-/// The size is fixed for the life of the VM. It is applied once at guest start (the session unit's
-/// <c>xrandr</c>), because a resize mid-session is a whole extra protocol — the guest has to
-/// re-mode-set, every client has to re-lay-out, and an agent that has already reasoned about
-/// coordinates would be looking at a stale map. One size, decided when the sandbox is created.
-/// </remarks>
-public sealed record GraphicalDisplay(int Width, int Height, int Dpi = 96);
+// ---------------------------------------------------------------------------------------------------
+// THE DISPLAY SEAM
+//
+// A graphical sandbox has one logical display, fixed at launch. Capture and input happen at the VM
+// boundary — QEMU's D-Bus display on Incus — so the guest runs no Agnes software for this and the
+// bytes come from host-trusted code; the guest controls only what is drawn. Everything above this
+// file (the host broker, the MCP tools, the clients) is guest-agnostic: a Windows guest is a new
+// implementation of IDisplaySource, not a change anywhere else.
+//
+// Coordinates everywhere are GUEST pixels. Scaling for a model or a phone is the consumer's job, and
+// the consumer states the transform it used.
+// ---------------------------------------------------------------------------------------------------
 
-/// <summary>The size a display session actually came up at, as reported by the capture backend.</summary>
-public readonly record struct DisplayGeometry(int Width, int Height, int Dpi)
+/// <summary>The display a graphical sandbox is launched with. Null on a <see cref="SandboxSpec"/> means headless.</summary>
+/// <param name="Width">Guest pixels. 1280×800 is the default: inside every current model's screenshot
+/// guidance, so an agent's screenshot needs no downscaling.</param>
+public sealed record GraphicalDisplay(int Width = 1280, int Height = 800, int Dpi = 96)
 {
-    /// <summary>
-    /// Brings a coordinate onto the surface. Injection clamps rather than rejecting because the
-    /// alternative — an error a model has to notice and correct — turns a harmless off-by-one at the
-    /// edge of the screen into a stuck agent, and a click at the very edge is a thing people do.
-    /// </summary>
-    public (int X, int Y) Clamp(int x, int y)
-        => (Math.Clamp(x, 0, Math.Max(0, Width - 1)), Math.Clamp(y, 0, Math.Max(0, Height - 1)));
+    public static readonly GraphicalDisplay Default = new();
 }
 
-/// <summary>Byte layout of a <see cref="DisplayUpdate"/>'s pixels.</summary>
-/// <remarks>
-/// Names describe memory order, little-endian: <see cref="Bgrx8888"/> is B,G,R,pad — what QEMU's
-/// <c>PIXMAN_x8r8g8b8</c> and every ARGB32 surface on x86 actually holds, and what SkiaSharp's
-/// <c>Bgra8888</c> expects. Anything else the backend must convert before it reaches this seam.
-/// </remarks>
+/// <summary>Pixel layout of a <see cref="DisplayUpdate"/>. QEMU hands out BGRx (little-endian xRGB) in practice.</summary>
 public enum DisplayPixelFormat
 {
-    /// <summary>32bpp, bytes B,G,R,unused.</summary>
-    Bgrx8888,
-
-    /// <summary>32bpp, bytes B,G,R,A.</summary>
-    Bgra8888,
+    /// <summary>4 bytes per pixel, blue first, top byte unused.</summary>
+    Bgrx32,
+    /// <summary>4 bytes per pixel, red first, top byte unused.</summary>
+    Rgbx32,
 }
 
+/// <summary>The display's fixed geometry.</summary>
+public sealed record DisplayGeometry(int Width, int Height, DisplayPixelFormat Format);
+
 /// <summary>
-/// A rectangle of new pixels. A full scanout (the surface was created or replaced) arrives as an
-/// update covering the whole surface, so a consumer that only understands rectangles is complete:
-/// there is no separate "scanout" event to special-case.
+/// One damaged region of the display, or the whole surface (a scanout) when it covers it. Pixels are
+/// rows of <see cref="Stride"/> bytes; the region is <see cref="Width"/>×<see cref="Height"/> at
+/// (<see cref="X"/>, <see cref="Y"/>) in guest pixels.
 /// </summary>
-/// <param name="Stride">Bytes per row *within <paramref name="Pixels"/>*, not within the surface.</param>
-/// <param name="Sequence">Monotonic per session, from 1 — lets a client tell "no updates" from "missed updates".</param>
 public sealed record DisplayUpdate(
     int X,
     int Y,
@@ -57,67 +49,59 @@ public sealed record DisplayUpdate(
     DisplayPixelFormat Format,
     ReadOnlyMemory<byte> Pixels,
     long Sequence,
-    DateTimeOffset At);
+    DateTimeOffset At)
+{
+    public bool IsFullFrame(DisplayGeometry g) => X == 0 && Y == 0 && Width == g.Width && Height == g.Height;
+}
 
-/// <summary>Which pointer button an input event is about.</summary>
+/// <summary>Which pointer button.</summary>
 public enum PointerButtonKind
 {
     Left,
     Middle,
     Right,
-    Back,
-    Forward,
 }
 
-/// <summary>One input event to inject into a display session. A closed union — see the records below.</summary>
+/// <summary>Input injected into the guest as emulated hardware. The guest cannot tell it from a real device.</summary>
 public abstract record DisplayInput;
 
-/// <summary>Move the pointer to an absolute surface coordinate.</summary>
+/// <summary>Absolute pointer move, guest pixels.</summary>
 public sealed record PointerMove(int X, int Y) : DisplayInput;
 
-/// <summary>Press or release a pointer button (at wherever the pointer currently is).</summary>
 public sealed record PointerButton(PointerButtonKind Button, bool Down) : DisplayInput;
 
-/// <summary>Scroll at a position. <paramref name="Dx"/>/<paramref name="Dy"/> are wheel detents, not pixels;
-/// positive <paramref name="Dy"/> scrolls down (the direction a wheel is pushed away from you).</summary>
+/// <summary>Wheel movement at a position; positive <paramref name="Dy"/> scrolls down.</summary>
 public sealed record PointerScroll(int X, int Y, int Dx, int Dy) : DisplayInput;
 
 /// <summary>
-/// Press or release one key, named by its X keysym — <c>Return</c>, <c>ctrl</c>, <c>a</c>, <c>KP_0</c>,
-/// the same vocabulary <c>xdotool key</c> takes and the one Anthropic's computer-use tool speaks.
+/// A key, named the way X and xdotool name it (<c>Return</c>, <c>ctrl</c>, <c>a</c>, <c>KP_0</c>,
+/// <c>F5</c>). That vocabulary is what every model with computer-use training has seen, so it passes
+/// through untranslated from tool to display; the implementation owns the table to QEMU keycodes.
 /// </summary>
-/// <remarks>
-/// A keysym name, not a scancode, on purpose: it is the only spelling that is stable across capture
-/// backends and that a model can be expected to produce. Translating it to whatever the backend wants
-/// (QEMU key numbers, for the Incus backend) is the implementation's job, not the caller's.
-/// </remarks>
 public sealed record KeyPress(string Key, bool Down) : DisplayInput;
 
 /// <summary>
-/// A live capture of a sandbox's framebuffer, with input injection. Disposing detaches the capture;
-/// it does not touch the sandbox.
+/// A live connection to a sandbox's display: updates out, input in. One per sandbox; every consumer
+/// (the human stream, the agent's screenshot) shares it, so two connections can never drift into two
+/// displays by accident.
 /// </summary>
 public interface IDisplaySession : IAsyncDisposable
 {
-    /// <summary>The surface size this session is delivering.</summary>
     DisplayGeometry Geometry { get; }
 
-    /// <summary>Damage rectangles as they happen. Completes when the session ends.</summary>
+    /// <summary>Damaged regions as they happen. The first item after opening is always a full frame.</summary>
     ChannelReader<DisplayUpdate> Updates { get; }
 
-    /// <summary>Injects one input event. Coordinates are clamped to the surface by the implementation.</summary>
-    Task InjectAsync(DisplayInput input, CancellationToken cancellationToken = default);
-
-    /// <summary>The whole current surface, top-left origin, <see cref="DisplayPixelFormat.Bgrx8888"/>,
-    /// <c>Geometry.Width * 4</c> bytes per row. A copy — safe to hold.</summary>
+    /// <summary>The current whole surface, <see cref="DisplayGeometry.Format"/>, tightly packed (stride = width × 4).</summary>
     Task<ReadOnlyMemory<byte>> SnapshotAsync(CancellationToken cancellationToken = default);
+
+    Task InjectAsync(DisplayInput input, CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// A sandbox whose framebuffer can be read and driven. Optional capability on <see cref="ISandbox"/>,
-/// present only when the sandbox was created with <see cref="SandboxSpec.Display"/> set.
-/// </summary>
+/// <summary>A sandbox that has a display. Optional capability, alongside <see cref="IPausableSandbox"/> and friends.</summary>
 public interface IDisplaySource
 {
+    GraphicalDisplay Display { get; }
+
     Task<IDisplaySession> OpenDisplayAsync(CancellationToken cancellationToken = default);
 }

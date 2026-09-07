@@ -38,7 +38,7 @@ public interface ITabController
 
     /// <summary>Whether a host can be removed by the user (built-in Simulated/Recorded hosts can't).</summary>
     bool IsForgettableHost(string url);
-    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
+    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false);
 
     /// <summary>Finds sessions a CLI created outside Agnes for the tab's working directory (from the CLI's own
     /// on-disk logs) and lists them on the tab for a read-only "Watch" (sessions/02).</summary>

@@ -719,6 +719,15 @@ internal sealed class HostSession : IAsyncDisposable
     public Task<SessionEvent> RecordFileSharedAsync(FileSharedEvent shared)
         => AppendAndPublishAsync(shared);
 
+    /// <summary>
+    /// Records that control of the session's display changed hands. It takes the same path as everything
+    /// else here for the same reason: a client that joins tomorrow must be able to read, from the log alone,
+    /// that a person drove the screen between two of the agent's tool calls. The person's actual pointer and
+    /// keystrokes are never recorded — this handover is the whole trace they leave.
+    /// </summary>
+    public Task<SessionEvent> RecordDisplayControlAsync(DisplayControlChangedEvent changed)
+        => AppendAndPublishAsync(changed);
+
     public async ValueTask DisposeAsync()
     {
         // Session teardown: any still-queued message can no longer be delivered, so move it to the discarded

@@ -24,9 +24,7 @@ public sealed record SandboxSpec
     /// profile→bridge map). Null = the provider's default profile. Overridden by <see cref="NetworkBridge"/>.</summary>
     public string? NetworkProfile { get; init; }
 
-    /// <summary>A graphical display for this sandbox (virtual GPU + X session at this size), or null
-    /// for headless. Set it and the provider launches the VM from the graphical image tier and exposes
-    /// <see cref="IDisplaySource"/> on the sandbox; leave it null and nothing about the VM changes.</summary>
+    /// <summary>The display to launch with, or null for a headless sandbox (the default). See <c>Display.cs</c>.</summary>
     public GraphicalDisplay? Display { get; init; }
 }
 

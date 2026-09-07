@@ -78,6 +78,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(SessionTitleEvent), "session_title")]
 [JsonDerivedType(typeof(PendingQueueEvent), "pending_queue")]
 [JsonDerivedType(typeof(FileSharedEvent), "file_shared")]
+[JsonDerivedType(typeof(DisplayControlChangedEvent), "display_control")]
 public abstract record SessionEvent : Events.IAgnesEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -279,3 +280,23 @@ public sealed record FileSharedEvent(
     long Size,
     string? MimeType,
     string? Caption) : SessionEvent;
+
+/// <summary>Who holds the display of a graphical session.</summary>
+public enum DisplayControlHolder
+{
+    /// <summary>Nobody is driving; the agent may take input when its next turn starts.</summary>
+    None,
+    /// <summary>The agent drives; its input rides the log as tool calls.</summary>
+    Agent,
+    /// <summary>A person has taken the mouse. Agent input tools refuse until it is handed back.</summary>
+    User,
+}
+
+/// <summary>
+/// Control of a graphical session's display changed hands. This is the only trace a human's use of the
+/// display leaves in the log: their pointer and keystrokes are never recorded (they are routinely the
+/// credential the person took control in order to type), and frames are not facts, so they never ride
+/// the log either.
+/// </summary>
+/// <param name="DeviceId">The device that took or released control; null for the agent or a timeout.</param>
+public sealed record DisplayControlChangedEvent(DisplayControlHolder Holder, string? DeviceId) : SessionEvent;

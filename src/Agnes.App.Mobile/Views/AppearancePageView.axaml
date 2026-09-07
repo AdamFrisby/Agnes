@@ -69,6 +69,21 @@
                               IsChecked="{Binding ReducedMotion, Mode=OneWay}" VerticalAlignment="Center" />
               </Grid>
             </Button>
+            <Border Classes="divider" />
+            <!-- A graphical session is the only screen here that streams continuously; on cellular that
+                 is a real number. On by default. -->
+            <Button Theme="{StaticResource RowButton}" Command="{Binding ToggleScreenDataCommand}">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                  <TextBlock Text="Lower screen quality on mobile data" />
+                  <TextBlock Classes="caption"
+                             Text="Smaller, slower frames for a graphical session on a metered network." />
+                </StackPanel>
+                <ToggleButton Grid.Column="1" Theme="{StaticResource MobileSwitch}" IsHitTestVisible="False"
+                              IsChecked="{Binding LowerScreenQualityOnMobileData, Mode=OneWay}"
+                              VerticalAlignment="Center" />
+              </Grid>
+            </Button>
           </StackPanel>
         </Border>
 

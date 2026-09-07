@@ -16,6 +16,10 @@ public sealed class HostConnection : IAgnesHost
     private readonly HubConnection _hub;
     private readonly ConcurrentDictionary<string, SessionView> _views = new();
 
+    // Kept because the display channel dials its own socket and has to present the same device token the hub
+    // did; SignalR baked it into the hub URL and does not hand it back.
+    private readonly string _token;
+
     /// <param name="pinnedFingerprint">
     /// Lower-case hex SHA-256 of the host's TLS certificate, learned at pairing. When present and the
     /// address is a direct <c>https://</c> one, the host is authenticated against this pin instead of the
@@ -30,6 +34,7 @@ public sealed class HostConnection : IAgnesHost
     {
         HostUrl = hostUrl.TrimEnd('/');
         PinnedFingerprint = string.IsNullOrWhiteSpace(pinnedFingerprint) ? null : pinnedFingerprint;
+        _token = token;
 
         // A relay address (agnes-relay://relay/hostId?fp=...) tunnels the same SignalR wire + bearer token
         // through the blind relay to the host, pinning the host's advertised cert fingerprint (AC2/AC4/AC5).
@@ -171,8 +176,8 @@ public sealed class HostConnection : IAgnesHost
     public Task<NegotiatedCapabilities> NegotiateAsync(ClientCapabilities client)
         => _hub.InvokeAsync<NegotiatedCapabilities>(nameof(IAgnesServer.Negotiate), client);
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
-        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox, modelId));
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false)
+        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox || graphical, modelId, graphical));
 
     public Task<IReadOnlyList<SessionSummary>> ListSessionsAsync()
         => _hub.InvokeAsync<IReadOnlyList<SessionSummary>>(nameof(IAgnesServer.ListSessions));
@@ -226,6 +231,28 @@ public sealed class HostConnection : IAgnesHost
 
     public Task ResizeTerminalAsync(string sessionId, string terminalId, int columns, int rows)
         => _hub.InvokeAsync(nameof(IAgnesServer.ResizeTerminal), sessionId, terminalId, columns, rows);
+
+    /// <summary>
+    /// Opens the session's display over its own pinned-TLS WebSocket, beside the hub rather than through it.
+    /// </summary>
+    /// <remarks>
+    /// A relay address tunnels the hub's HTTP+WebSocket through the blind relay by way of
+    /// <see cref="RelayClientTransport"/>'s custom transport, which SignalR lets us substitute and a bare
+    /// <see cref="System.Net.WebSockets.ClientWebSocket"/> does not. Rather than half-supporting it, a relayed
+    /// host says so plainly: the display needs a direct address until the relay carries a second stream.
+    /// </remarks>
+    public async Task<IDisplayChannel> OpenDisplayAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        if (RelayClientTransport.IsRelayAddress(HostUrl))
+        {
+            throw new NotSupportedException(
+                "The display channel needs a direct connection to the host; it is not carried over an Agnes relay yet.");
+        }
+
+        return await DisplayChannelClient
+            .ConnectAsync(HostUrl, sessionId, _token, PinnedFingerprint, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public Task<string> BeginProviderLoginAsync(string adapterId)
         => _hub.InvokeAsync<string>(nameof(IAgnesServer.BeginProviderLogin), adapterId);

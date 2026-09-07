@@ -262,7 +262,7 @@ async Task<IDisplaySession> OpenWithMetricsAsync()
     var bus = new DisplayBus(options, logger);
     await bus.EnsureRunningAsync(instance);
     return await IncusDisplaySession.OpenAsync(
-        bus.AddressFor(instance), display.Dpi, TimeSpan.FromSeconds(30), logger, CancellationToken.None,
+        bus.AddressFor(instance), TimeSpan.FromSeconds(30), logger, CancellationToken.None,
         elapsed =>
         {
             lock (processing)

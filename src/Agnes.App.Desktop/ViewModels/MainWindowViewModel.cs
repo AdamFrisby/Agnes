@@ -2652,6 +2652,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             new("Open dashboard", "Ctrl+Shift+D", () => OpenDashboardCommand.Execute(null)),
             new("Show onboarding tour", "help", () => Showcase.Show()),
         };
+
+        // Panel toggles for the tab in front. Offered only where they apply — a "Screen" entry on a session
+        // with no display would be a command that does nothing, which is worse than one that isn't listed.
+        if (ActiveTab is { IsLive: true, Session: { } active } document)
+        {
+            all.Add(new PaletteItem("Terminal", "panel", () => active.ToggleTerminalCommand.Execute(null)));
+            if (document.ScreenAvailable)
+            {
+                all.Add(new PaletteItem("Screen", "panel", () => active.ToggleDisplayCommand.Execute(null)));
+            }
+        }
+
         all.AddRange(AllDocuments().Select(t => new PaletteItem(
             string.IsNullOrWhiteSpace(t.Title) ? "New session" : t.Title,
             IsFloating(t) ? "window" : "session",
@@ -3124,7 +3136,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
-    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
+    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false)
     {
         if (doc.Host is null)
         {
@@ -3150,7 +3162,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode, useSandbox: useSandbox, modelId: modelId);
+            var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode, useSandbox: useSandbox, modelId: modelId, graphical: graphical);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             var title = ProjectTitle(info.WorkingDirectory, displayName);
             _dispatcher.Post(() =>

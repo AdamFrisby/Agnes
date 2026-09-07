@@ -545,6 +545,33 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Refuses a graphical session unless the operator has opted in (<c>Agnes:Security:AllowGraphicalSandboxes</c>).
+    /// A no-op for a headless session. Loud rather than silent: a caller that asked for a screen and got a
+    /// blank one would burn a whole turn discovering it.
+    /// </summary>
+    private void EnforceGraphicalPolicy(string sessionId, bool graphical)
+    {
+        if (!graphical)
+        {
+            return;
+        }
+
+        if (!_security.AllowGraphicalSandboxes)
+        {
+            _logger.LogWarning("Refused a graphical session {SessionId}: graphical sandboxes are disabled on this host.", sessionId);
+            throw new SessionSecurityException(
+                "Refused a graphical session: this host does not allow graphical sandboxes "
+                + "(set Agnes:Security:AllowGraphicalSandboxes=true to enable them).");
+        }
+
+        if (_sandboxes is null)
+        {
+            throw new SessionSecurityException(
+                "Refused a graphical session: a graphical display lives at the sandbox boundary, and no sandbox provider is configured on this host.");
+        }
+    }
+
     /// <summary>Which host-level plugin-point capabilities are actually populated right now (AC2/AC3 of
     /// .ideas/00-plugin-architecture.md) — queried live rather than cached, so it reflects the current
     /// registry state if plugins are ever installed/enabled/disabled without a restart.</summary>
@@ -554,7 +581,7 @@ public sealed class SessionManager : IAsyncDisposable
         new HostCapability(HostCapabilityIds.SandboxProvider, SandboxAvailable, FailClosed: false),
     ];
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, string? owner = null, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, string? owner = null, bool graphical = false, CancellationToken cancellationToken = default)
     {
         // Event spine: a plugin may redirect the adapter/working directory or veto the open.
         var open = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionOpenEvent(adapterId, workingDirectory), cancellationToken).ConfigureAwait(false);
@@ -588,7 +615,8 @@ public sealed class SessionManager : IAsyncDisposable
 
         var info = await OpenSessionCoreAsync(
             sessionId, adapterId, effectiveDirectory, skipPermissions, mcpApproval, gitCredentialMode,
-            useSandbox, modelId, existingSandbox: null, worktree: useWorktree, cancellationToken, owner: owner).ConfigureAwait(false);
+            useSandbox, modelId, existingSandbox: null, worktree: useWorktree, cancellationToken, owner: owner,
+            graphical: graphical).ConfigureAwait(false);
         await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionOpenedEvent(info.SessionId, adapterId), cancellationToken).ConfigureAwait(false);
         return info;
     }
@@ -683,7 +711,8 @@ public sealed class SessionManager : IAsyncDisposable
     private async Task<SessionInfo> OpenSessionCoreAsync(
         string sessionId, string adapterId, string effectiveDirectory,
         bool skipPermissions, string mcpApproval, string gitCredentialMode, bool useSandbox, string? modelId,
-        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken, string? resumeSessionId = null, string? owner = null)
+        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken, string? resumeSessionId = null, string? owner = null,
+        bool graphical = false)
     {
         var adapter = _adapters.Find(adapterId);
         if (adapter is null)
@@ -694,6 +723,15 @@ public sealed class SessionManager : IAsyncDisposable
         // Host policy, checked here at the single shared open path so every entry — new, fork, cross-host
         // handoff — is covered, and before any project checkout / credential work happens. `willSandbox` is
         // whether this session will actually run inside a sandbox (an adopted / CoW-cloned VM counts).
+        // A graphical session is a sandboxed session by construction: the display exists at the VM boundary,
+        // so "give the agent a screen but run it on the host" is not a thing that can be built, and silently
+        // dropping the flag would be worse than refusing.
+        EnforceGraphicalPolicy(sessionId, graphical);
+        if (graphical)
+        {
+            useSandbox = true;
+        }
+
         var willSandbox = existingSandbox is not null || (_sandboxes is not null && useSandbox);
         if (_security.EnforceIsolationPolicy
             && _security.WorkloadTrust == WorkloadTrust.Untrusted
@@ -740,6 +778,16 @@ public sealed class SessionManager : IAsyncDisposable
             State(sessionId).Project = project;
             _logger.LogInformation("Session {SessionId} uses project '{Project}' ({Scope}).",
                 sessionId, project.Name, repoKey.Length == 0 ? "default" : repoKey);
+
+            // A project may ask for a screen by default (a repo whose work IS a UI). It can only ever raise
+            // the floor: the operator guardrail is re-checked, so a project file can't turn on a capability
+            // the host has switched off.
+            if (!graphical && project.Defaults.Graphical && _security.AllowGraphicalSandboxes && _sandboxes is not null)
+            {
+                graphical = true;
+                useSandbox = true;
+                willSandbox = true;
+            }
         }
 
         // Auto-checkout: if the project declares a repo and the working dir is empty, clone it (host-side,
@@ -787,7 +835,15 @@ public sealed class SessionManager : IAsyncDisposable
                 }
 
                 sandbox = await _sandboxes.CreateAsync(
-                    new SandboxSpec { HostWorkingDirectory = effectiveDirectory, ImageReference = image, ResourceOverride = project?.SandboxResources }, cancellationToken).ConfigureAwait(false);
+                    new SandboxSpec
+                    {
+                        HostWorkingDirectory = effectiveDirectory,
+                        ImageReference = image,
+                        ResourceOverride = project?.SandboxResources,
+                        // Null = headless, which is every session that didn't ask. The display is fixed at
+                        // launch because the guest's framebuffer is: it cannot be added to a running VM.
+                        Display = graphical ? GraphicalDisplay.Default : null,
+                    }, cancellationToken).ConfigureAwait(false);
             }
 
             _sandboxBySession[sessionId] = sandbox;
@@ -797,7 +853,7 @@ public sealed class SessionManager : IAsyncDisposable
             _sandboxRegistry?.Upsert(new SandboxRecord(
                 sessionId, sandbox.Id, sandbox.Info.Provider, adapterId, effectiveDirectory,
                 project?.Name, SandboxTitle(project, effectiveDirectory), "running", now, now,
-                skipPermissions, mcpApproval, gitCredentialMode));
+                skipPermissions, mcpApproval, gitCredentialMode, graphical));
 
             // (Re-)stamp this session's own credentials + MCP + forward token into the sandbox. Critical
             // for a clone: it inherited the SOURCE session's tokens, which must be overwritten here.
@@ -1555,7 +1611,15 @@ public sealed class SessionManager : IAsyncDisposable
             else if (sandboxRecord is not null)
             {
                 sandbox = await _sandboxes.AttachAsync(
-                    sandboxRecord.VmName, new SandboxSpec { HostWorkingDirectory = effectiveDirectory }, start: true, cancellationToken).ConfigureAwait(false);
+                    sandboxRecord.VmName,
+                    new SandboxSpec
+                    {
+                        HostWorkingDirectory = effectiveDirectory,
+                        // The VM was built graphical; re-attaching without saying so would hand back a
+                        // handle with no display and quietly break every computer_* tool on resume.
+                        Display = sandboxRecord.Graphical ? GraphicalDisplay.Default : null,
+                    },
+                    start: true, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -2828,6 +2892,45 @@ public sealed class SessionManager : IAsyncDisposable
         return Files.WorkspacePaths.ResolveWithin(workspace, candidate);
     }
 
+    // ---- the graphical sandbox's display (see docs/display-channel.md) ----
+
+    /// <summary>
+    /// The session's sandbox as a display source, or null when the session is headless, unsandboxed, or gone.
+    /// The capability test is the sandbox <em>implementing</em> <see cref="IDisplaySource"/> — the same
+    /// optional-capability shape as <c>IPausableSandbox</c> — so a provider that cannot capture a screen
+    /// simply never offers one, rather than there being a flag to disagree with.
+    /// </summary>
+    public IDisplaySource? DisplaySourceFor(string sessionId)
+        => _sandboxBySession.TryGetValue(sessionId, out var sandbox) ? sandbox as IDisplaySource : null;
+
+    /// <summary>Whether an agent turn is running — the display broker's other half of "is anyone using this".</summary>
+    public bool IsTurnActive(string sessionId)
+        => _sessions.TryGetValue(sessionId, out var live) && live.IsTurnActive;
+
+    /// <summary>
+    /// Appends a display-control handover on exactly the path <see cref="ShareFileAsync"/> uses: persisted,
+    /// broadcast to every subscribed client, and dispatched on the spine. A control change is a fact about the
+    /// session, so it belongs in the log even though the frames it governs never do.
+    /// </summary>
+    public async Task<SessionEvent> AppendDisplayControlAsync(
+        string sessionId, DisplayControlChangedEvent changed, CancellationToken cancellationToken = default)
+    {
+        if (_sessions.TryGetValue(sessionId, out var live))
+        {
+            return await live.RecordDisplayControlAsync(changed).ConfigureAwait(false);
+        }
+
+        var gate = await _bus.DispatchAsync(new BeforeAgentEventEvent(sessionId, changed)).ConfigureAwait(false);
+        var stored = await _store.AppendAsync(sessionId, changed, cancellationToken).ConfigureAwait(false);
+        if (!gate.IsCanceled)
+        {
+            await _broadcaster.PublishAsync(sessionId, stored).ConfigureAwait(false);
+        }
+
+        await _bus.DispatchAsync(stored).ConfigureAwait(false);
+        return stored;
+    }
+
     /// <summary>Appends the shared-file fact on the same path an agent's own events take.</summary>
     private async Task<FileSharedEvent> AppendFileSharedAsync(
         string sessionId, FileSharedEvent shared, CancellationToken cancellationToken)
@@ -3331,7 +3434,11 @@ public sealed class SessionManager : IAsyncDisposable
                 CurrentModeId: live?.CurrentModeId,
                 CurrentModelId: record?.ModelId,
                 ReadOnly: IsReadOnly(id),
-                Sandboxed: record?.Sandboxed ?? false));
+                Sandboxed: record?.Sandboxed ?? false,
+                // Asked of the live sandbox, not of a stored flag: a client offering a "watch the screen"
+                // affordance must be told what is actually connectable right now, and a dormant session's VM
+                // has no display until it is resumed.
+                HasDisplay: DisplaySourceFor(id) is not null));
         }
 
         return result;

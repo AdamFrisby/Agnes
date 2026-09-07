@@ -173,7 +173,7 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(info);
     }
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false)
     {
         var id = $"sim-{Interlocked.Increment(ref _counter):x4}";
         var session = _sessions.GetOrAdd(id, _ => new SimSession(id, adapterId, workingDirectory));
@@ -196,7 +196,7 @@ public sealed class SimulatedHost : IAgnesHost
         new("sim-prior-1", "claude-code-native", "/home/you/projects/agnes", "Port the Oceanic theme",
             SessionRunState.Working, HeadSequence: 184, OpenApprovals: 0,
             StartedAt: null, LastActivityAt: null, CurrentModeId: "code", CurrentModelId: null,
-            ReadOnly: false, Sandboxed: true),
+            ReadOnly: false, Sandboxed: true, HasDisplay: true),
         new("sim-prior-2", "opencode", "/home/you/projects/storefront", "Fix the checkout race",
             SessionRunState.Idle, HeadSequence: 96, OpenApprovals: 1,
             StartedAt: null, LastActivityAt: null, CurrentModeId: "ask", CurrentModelId: null,
@@ -223,6 +223,14 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult<IReadOnlyList<SessionSummary>>(
             _sessions.Values.Select(s => s.Summarize()).Concat(prior).ToArray());
     }
+
+    /// <summary>
+    /// Opens the simulated session's screen. Every simulated sandbox is graphical (see <see cref="SimSession.Summarize"/>),
+    /// so this always succeeds — the offline host's job is to make the panel real, not to reproduce the host's
+    /// refusals.
+    /// </summary>
+    public Task<IDisplayChannel> OpenDisplayAsync(string sessionId, CancellationToken cancellationToken = default)
+        => Task.FromResult<IDisplayChannel>(new SimulatedDisplayChannel());
 
     public Task<ForkPlan?> ProposeForkAsync(string sessionId)
     {
@@ -972,7 +980,11 @@ public sealed class SimulatedHost : IAgnesHost
                     StartedAt: _log.Count > 0 ? _log[0].Timestamp : null,
                     LastActivityAt: _log.Count > 0 ? _log[^1].Timestamp : null,
                     CurrentModeId: CurrentModeId,
-                    Sandboxed: true);
+                    Sandboxed: true,
+                    // Every simulated sandbox is graphical. The offline host exists to make surfaces visible —
+                    // a screen you can only see on one demo session out of three is a surface that mostly isn't
+                    // there, and the screenshot tool and the headless tests both need it on the session they open.
+                    HasDisplay: true);
             }
         }
     }

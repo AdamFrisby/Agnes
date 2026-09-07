@@ -40,6 +40,11 @@ public sealed partial class SessionEntry : ObservableObject
 
     public bool IsHostOnline => Host.IsOnline;
 
+    /// <summary>Whether this session has a graphical sandbox — a screen to watch beside the transcript.
+    /// From the saved pointer rather than the live session, so the card can show the glyph before the
+    /// subscription lands and the Screen segment is offered the instant the page opens.</summary>
+    public bool HasDisplay => Saved.HasDisplay;
+
     /// <summary>The live session, once <see cref="SessionsViewModel"/> has subscribed to it.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLive))]

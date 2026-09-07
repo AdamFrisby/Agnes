@@ -11,7 +11,7 @@ public sealed class AgnesMcpToolsTests
     private const string ValidToken = "good-token";
 
     private static AgnesMcpTools Build(FakeAgnesMcpBackend backend, string? presentedToken = ValidToken)
-        => new(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(presentedToken), new SessionMcpTokens());
+        => new(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(presentedToken), new SessionMcpTokens(), Display.DisplayFixture.NoDisplays());
 
     [Fact]
     public void ToolsList_exposes_the_expected_tool_set_with_schemas()
@@ -22,7 +22,13 @@ public sealed class AgnesMcpToolsTests
         Assert.Equal(
             new[]
             {
-                "arm_goal", "disarm_goal", "get_session_status", "list_goals", "list_open_approvals",
+                "arm_goal",
+                // The computer_* set: one tool per action, always advertised, refusing on a session that has
+                // no display. See docs/display-channel.md.
+                "computer_click", "computer_cursor_position", "computer_drag", "computer_frames",
+                "computer_hold_key", "computer_key", "computer_move", "computer_screenshot",
+                "computer_scroll", "computer_type", "computer_wait",
+                "disarm_goal", "get_session_status", "list_goals", "list_open_approvals",
                 "list_sessions", "read_session_transcript", "respond_permission", "send_prompt",
                 "send_user_file", "set_mode",
             },
@@ -124,7 +130,7 @@ public sealed class AgnesMcpToolsTests
 
     private static IReadOnlyList<McpServerTool> BuildToolDescriptors()
     {
-        var instance = new AgnesMcpTools(new FakeAgnesMcpBackend(), new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(ValidToken), new SessionMcpTokens());
+        var instance = new AgnesMcpTools(new FakeAgnesMcpBackend(), new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(ValidToken), new SessionMcpTokens(), Display.DisplayFixture.NoDisplays());
         var options = new McpServerToolCreateOptions();
         return typeof(AgnesMcpTools)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance)
@@ -141,7 +147,7 @@ public sealed class AgnesMcpToolsTests
         var tokens = new SessionMcpTokens();
         var sessionToken = tokens.Issue(sessionId);
         // Authenticator deliberately rejects it: the ONLY thing vouching for this caller is the session token.
-        var tools = new AgnesMcpTools(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(sessionToken), tokens);
+        var tools = new AgnesMcpTools(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(sessionToken), tokens, Display.DisplayFixture.NoDisplays());
         return (tools, tokens, sessionToken);
     }
 

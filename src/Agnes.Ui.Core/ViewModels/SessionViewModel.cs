@@ -16,7 +16,7 @@ namespace Agnes.Ui.Core.ViewModels;
 /// prompt-history persistence, tool-output collapse, full-screen review, and clear connection/
 /// session state banners (offline / reconnecting / interrupted / stale).
 /// </summary>
-public sealed class SessionViewModel : ObservableObject
+public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly IAgnesHost _host;
     private readonly Agnes.Abstractions.Events.IEventBus _bus;
@@ -297,6 +297,23 @@ public sealed class SessionViewModel : ObservableObject
         ModifiedFiles.CollectionChanged += (_, _) => SyncReviewDiffs();
         _ = ReviewComments.LoadAsync();
         _ = LoadPromptTemplatesAsync();
+        _ = RefreshDisplayAvailabilityAsync();
+    }
+
+    /// <summary>
+    /// Releases what this session holds outside itself: the host subscriptions, and the display's WebSocket.
+    /// Everything else is managed state that the GC reclaims when the shell drops the view model.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        _view.EventAppended -= OnEvent;
+        _host.StateChanged -= OnHostStateChanged;
+        _host.ReadStateChanged -= OnReadStateChanged;
+        if (_display is { } display)
+        {
+            _display = null;
+            await display.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -508,6 +525,90 @@ public sealed class SessionViewModel : ObservableObject
 
     /// <summary>Shows/hides the terminal panel.</summary>
     public ICommand ToggleTerminalCommand => _toggleTerminal ??= new RelayCommand(() => IsTerminalVisible = !IsTerminalVisible);
+
+    // ---- graphical sandbox display ----
+    // A session whose sandbox has a screen. Lazily built like the terminal, so a session without a display
+    // (nearly all of them) pays nothing, and disposed with the session because it owns a WebSocket.
+    //
+    // Whether there IS a display is a fact only the host holds, and the snapshot's SessionInfo does not carry
+    // it — SessionSummary does. So it is discovered from the catalogue, and also settable, so a shell that
+    // already had the summary in hand (opening from the catalogue list) can say so without a second round
+    // trip. Default false: a head must never offer a screen that isn't there.
+    private DisplayViewModel? _display;
+    private ICommand? _toggleDisplay;
+    private bool _isDisplayVisible;
+    private bool _hasDisplay;
+
+    /// <summary>Whether this session has a graphical sandbox whose screen a client may open.</summary>
+    public bool HasDisplay
+    {
+        get => _hasDisplay;
+        set
+        {
+            if (SetProperty(ref _hasDisplay, value))
+            {
+                OnPropertyChanged(nameof(Display));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The session's screen, or null when it has none. Built on first use once <see cref="HasDisplay"/> is
+    /// true; the view model does not connect until a head asks it to, so an unopened panel costs no bandwidth.
+    /// </summary>
+    public DisplayViewModel? Display => HasDisplay ? _display ??= new DisplayViewModel(_host, SessionId, _dispatcher) : null;
+
+    /// <summary>Whether the screen panel is shown for this session. Showing it connects the channel; hiding it
+    /// disconnects, because a hidden screen that keeps pulling frames is pure waste on both ends.</summary>
+    public bool IsDisplayVisible
+    {
+        get => _isDisplayVisible;
+        set
+        {
+            if (!SetProperty(ref _isDisplayVisible, value))
+            {
+                return;
+            }
+
+            if (Display is not { } display)
+            {
+                return;
+            }
+
+            if (value)
+            {
+                display.ConnectCommand.Execute(null);
+            }
+            else
+            {
+                display.DisconnectCommand.Execute(null);
+            }
+        }
+    }
+
+    /// <summary>Shows/hides the screen panel.</summary>
+    public ICommand ToggleDisplayCommand => _toggleDisplay ??= new RelayCommand(() => IsDisplayVisible = !IsDisplayVisible);
+
+    /// <summary>
+    /// Asks the host's catalogue whether this session has a display. Best-effort and silent: a host that
+    /// predates graphical sandboxes simply never reports one, and the panel stays unavailable.
+    /// </summary>
+    public async Task RefreshDisplayAvailabilityAsync()
+    {
+        try
+        {
+            var sessions = await _host.ListSessionsAsync().ConfigureAwait(false);
+            var mine = sessions.FirstOrDefault(s => s.SessionId == SessionId);
+            if (mine is { HasDisplay: true })
+            {
+                _dispatcher.Post(() => HasDisplay = true);
+            }
+        }
+        catch
+        {
+            // No catalogue, no display — the same outcome as a host that has none.
+        }
+    }
 
     // ---- agent console ----
     // The agent's own CLI, run interactively in a PTY wherever the agent runs, for the slash commands and

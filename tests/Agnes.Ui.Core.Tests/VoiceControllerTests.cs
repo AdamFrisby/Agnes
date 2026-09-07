@@ -376,7 +376,7 @@ internal sealed class RecordingHost : IAgnesHost
     public Task ConnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task<HostInfo> GetHostInfoAsync() => Task.FromResult(new HostInfo("h", "Host", "1.0"));
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync() => Task.FromResult<IReadOnlyList<AgentInfo>>([]);
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false)
         => Task.FromResult(new SessionInfo("s", adapterId, workingDirectory, 0));
     public Task CancelAsync(string sessionId) => Task.CompletedTask;
     public Task<GitStatus> GetGitStatusAsync(string sessionId) => Task.FromResult(new GitStatus(false, null, false, []));

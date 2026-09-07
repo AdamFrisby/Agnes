@@ -6,6 +6,7 @@ using Agnes.Host.Projects;
 using Agnes.Host.Sessions;
 using Agnes.Protocol;
 using Microsoft.AspNetCore.SignalR;
+using AccessKind = Agnes.Host.Sharing.SessionAccessKind;
 
 namespace Agnes.Host.Hosting;
 
@@ -37,8 +38,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly Sharing.SessionAccessAuthorizer _access;
     private readonly Sharing.PublicLinkStore _publicLinks;
     private readonly Sharing.PublicViewerTracker _publicViewers;
+    private readonly Sharing.SessionAccessDecider _decider;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, Sessions.SessionGoalManager goals, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.CollaboratorService collaborators, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers, Git.CheckoutManager checkouts)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, Sessions.SessionGoalManager goals, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.CollaboratorService collaborators, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers, Git.CheckoutManager checkouts, Sharing.SessionAccessDecider decider)
     {
         _checkouts = checkouts;
         _collaborators = collaborators;
@@ -46,6 +48,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         _access = access;
         _publicLinks = publicLinks;
         _publicViewers = publicViewers;
+        _decider = decider;
         _launchProfiles = launchProfiles;
         _pushRegistrations = pushRegistrations;
         _views = views;
@@ -144,7 +147,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     }
 
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
-        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox, request.ModelId, owner: CallerOwnerId());
+        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox, request.ModelId, owner: CallerOwnerId(), graphical: request.Graphical);
 
     /// <summary>
     /// What is already running on this host, filtered to what the caller may actually subscribe to. The gate is
@@ -190,7 +193,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         var profile = _launchProfiles.Find(request.ProfileId)
             ?? throw new InvalidOperationException($"No launch profile with id '{request.ProfileId}'.");
         var open = profile.ToOpenSessionRequest(request.WorkingDirectoryOverride);
-        return _sessions.OpenSessionAsync(open.AdapterId, open.WorkingDirectory, open.UseWorktree, open.SkipPermissions, open.McpApproval, open.GitCredentialMode, open.UseSandbox, open.ModelId, owner: CallerOwnerId());
+        return _sessions.OpenSessionAsync(open.AdapterId, open.WorkingDirectory, open.UseWorktree, open.SkipPermissions, open.McpApproval, open.GitCredentialMode, open.UseSandbox, open.ModelId, owner: CallerOwnerId(), graphical: open.Graphical);
     }
     public Task<IReadOnlyList<Abstractions.ExternalSessionInfo>> DiscoverExternalSessions(string workspaceDirectory)
         => _sessions.DiscoverExternalSessionsAsync(workspaceDirectory);
@@ -252,17 +255,35 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         await _sessions.PromptAsync(request.SessionId, request.Content).ConfigureAwait(false);
     }
 
-    public Task<string> OpenTerminal(string sessionId, OpenTerminalRequest request)
-        => _sessions.OpenTerminalAsync(sessionId, request.Command, request.Arguments, request.WorkingDirectory, request.Columns, request.Rows);
+    // A terminal is the session's shell. Opening one, typing into one, or resizing one are all writes on the
+    // session, so each takes the same CanEdit-or-higher check Prompt takes. These went unauthorized until the
+    // display channel forced an audit of every path that reaches a session: a view-only recipient — or any
+    // public-link viewer, who holds no device identity at all — could spawn a PTY in the session's working
+    // directory and run whatever they liked. The gate belongs here, server-side, not in whether the UI shows
+    // the panel.
+    public async Task<string> OpenTerminal(string sessionId, OpenTerminalRequest request)
+    {
+        await RequireWriteAsync(sessionId, AccessKind.Prompt, "You do not have permission to open a terminal on this session.").ConfigureAwait(false);
+        return await _sessions.OpenTerminalAsync(sessionId, request.Command, request.Arguments, request.WorkingDirectory, request.Columns, request.Rows).ConfigureAwait(false);
+    }
 
-    public Task WriteTerminal(string sessionId, string terminalId, byte[] data)
-        => _sessions.WriteTerminalAsync(sessionId, terminalId, data);
+    public async Task WriteTerminal(string sessionId, string terminalId, byte[] data)
+    {
+        await RequireWriteAsync(sessionId, AccessKind.Prompt, "You do not have permission to use a terminal on this session.").ConfigureAwait(false);
+        await _sessions.WriteTerminalAsync(sessionId, terminalId, data).ConfigureAwait(false);
+    }
 
-    public Task ResizeTerminal(string sessionId, string terminalId, int columns, int rows)
-        => _sessions.ResizeTerminalAsync(sessionId, terminalId, columns, rows);
+    public async Task ResizeTerminal(string sessionId, string terminalId, int columns, int rows)
+    {
+        await RequireWriteAsync(sessionId, AccessKind.Prompt, "You do not have permission to use a terminal on this session.").ConfigureAwait(false);
+        await _sessions.ResizeTerminalAsync(sessionId, terminalId, columns, rows).ConfigureAwait(false);
+    }
 
-    public Task<string?> OpenAgentConsole(string sessionId, int columns, int rows)
-        => _sessions.OpenAgentConsoleAsync(sessionId, columns, rows);
+    public async Task<string?> OpenAgentConsole(string sessionId, int columns, int rows)
+    {
+        await RequireWriteAsync(sessionId, AccessKind.Prompt, "You do not have permission to open a console on this session.").ConfigureAwait(false);
+        return await _sessions.OpenAgentConsoleAsync(sessionId, columns, rows).ConfigureAwait(false);
+    }
 
     public Task<string> BeginProviderLogin(string adapterId)
         => _sessions.BeginProviderLoginAsync(adapterId);
@@ -789,11 +810,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
 
     // Resolves the connection's identities (device id + GitHub login + owner flag) as the sharing layer sees it.
     private Sharing.SharingCaller CallerContext()
-    {
-        var token = Context.GetHttpContext()?.Request.Query[WireProtocol.TokenParameter].ToString();
-        var deviceId = _tokens.ResolveCallerId(token);
-        return new Sharing.SharingCaller(deviceId, _tokens.ResolveGitHubLogin(token), _tokens.IsOwner(deviceId));
-    }
+        => _decider.CallerFor(Context.GetHttpContext()?.Request.Query[WireProtocol.TokenParameter].ToString());
 
     // The stable principal id to stamp as a new session's owner: the caller's GitHub login when known (so all
     // their devices match), else the device id. Matches the identities SharingCaller.Identities() yields, so the
@@ -804,33 +821,11 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         return _tokens.ResolveGitHubLogin(token) ?? _tokens.ResolveCallerId(token);
     }
 
-    private enum AccessKind { Subscribe, Prompt, Approve, Manage }
-
-    // The one access decision the hub consults, folding in session-isolation grants (owner / group) when
-    // isolation is on. When isolation is off (the common case) it's the original synchronous share/host-owner
-    // check with no ownership lookup — so PerUser/PerGroup add cost only when actually enabled.
+    // The hub speaks the shared access vocabulary directly; the decision itself lives in
+    // Sharing.SessionAccessDecider, because the display channel's WebSocket has to reach the SAME policy
+    // without being a hub method — and a policy written in two places eventually becomes two policies.
     private async Task<bool> DecideAsync(string sessionId, AccessKind kind, Sharing.SharingCaller caller, CancellationToken cancellationToken = default)
-    {
-        if (_access.IsolationDisabled)
-        {
-            return kind switch
-            {
-                AccessKind.Subscribe => _access.CanSubscribe(sessionId, caller),
-                AccessKind.Prompt => _access.CanPrompt(sessionId, caller),
-                AccessKind.Approve => _access.CanApprovePermissions(sessionId, caller),
-                _ => _access.CanManage(sessionId, caller),
-            };
-        }
-
-        var (owner, group) = _sessions.GetOwnership(sessionId);
-        return kind switch
-        {
-            AccessKind.Subscribe => await _access.CanSubscribeAsync(sessionId, owner, group, caller, cancellationToken).ConfigureAwait(false),
-            AccessKind.Prompt => await _access.CanPromptAsync(sessionId, owner, group, caller, cancellationToken).ConfigureAwait(false),
-            AccessKind.Approve => await _access.CanApprovePermissionsAsync(sessionId, owner, group, caller, cancellationToken).ConfigureAwait(false),
-            _ => await _access.CanManageAsync(sessionId, owner, group, caller, cancellationToken).ConfigureAwait(false),
-        };
-    }
+        => await _decider.DecideAsync(sessionId, kind, caller, cancellationToken).ConfigureAwait(false);
 
     // Rejects a write on a session unless the caller passes the given access check. A public-link viewer never
     // holds a device identity, so it fails every write check here — the read-only guarantee is structural.

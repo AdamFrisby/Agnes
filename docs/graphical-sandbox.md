@@ -38,9 +38,18 @@ Two connections, because QEMU insists on two:
 Incus or D-Bus type: a `GraphicalDisplay` size on `SandboxSpec`, an
 `IDisplaySource` capability on a sandbox that has one, an `IDisplaySession` with a
 channel of `DisplayUpdate`s, `SnapshotAsync`, and `InjectAsync`.
-`src/Agnes.Sandbox/DisplaySurface.cs` holds the framebuffer and the rules for
-composing rectangles, backend-free and unit-tested.
+`src/Agnes.Sandbox/CapturedSurface.cs` holds the framebuffer and the rules for
+composing rectangles, backend-free and unit-tested — distinct from the host's own
+`Agnes.Host.Display.DisplaySurface` one layer up, which exists to be encoded and
+fanned out; this one exists because `SnapshotAsync` has to be answerable from
+inside a backend, and a backend cannot reach into the host.
 `src/Agnes.Sandbox.Incus/Graphical/` is the QEMU implementation.
+
+**This document stops at the seam.** Everything above it — the host broker, the
+wire channel, the input arbiter, the `computer_*` MCP tools and the client
+panels — is [`display-channel.md`](display-channel.md). The division is the point:
+a Windows guest, or a different hypervisor, is a new `IDisplaySource` and no change
+anywhere else.
 
 Input is spoken in **X keysym names** — `Return`, `ctrl`, `a`, `KP_0`, the same
 vocabulary `xdotool key` and Anthropic's computer-use tool take. Translating one

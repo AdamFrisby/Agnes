@@ -17,17 +17,22 @@ namespace Agnes.TestKit.Display;
 /// </remarks>
 public sealed class ScriptedDisplaySource : IDisplaySource
 {
-    private readonly GraphicalDisplay _display;
-
     public ScriptedDisplaySource(GraphicalDisplay? display = null)
-        => _display = display ?? new GraphicalDisplay(1280, 800);
+        => Display = display ?? GraphicalDisplay.Default;
+
+    /// <inheritdoc />
+    public GraphicalDisplay Display { get; }
+
+    /// <summary>How many times a consumer has opened this source — the probe for "one capture connection".</summary>
+    public int Opens { get; private set; }
 
     /// <summary>The session handed out by the last <see cref="OpenDisplayAsync"/>, for assertions.</summary>
     public ScriptedDisplaySession? Current { get; private set; }
 
     public Task<IDisplaySession> OpenDisplayAsync(CancellationToken cancellationToken = default)
     {
-        var session = new ScriptedDisplaySession(_display);
+        Opens++;
+        var session = new ScriptedDisplaySession(Display);
         Current = session;
         return Task.FromResult<IDisplaySession>(session);
     }
@@ -51,7 +56,7 @@ public sealed class ScriptedDisplaySession : IDisplaySession
     private static readonly Rect SubmitButton = new(360, 444, 180, 48);
     private static readonly Rect Spinner1 = new(360, 540, 560, 40);
 
-    private readonly DisplaySurface _surface;
+    private readonly CapturedSurface _surface;
     private readonly Channel<DisplayUpdate> _updates = Channel.CreateUnbounded<DisplayUpdate>();
     private readonly List<DisplayInput> _injected = [];
     private readonly Lock _gate = new();
@@ -63,12 +68,12 @@ public sealed class ScriptedDisplaySession : IDisplaySession
 
     internal ScriptedDisplaySession(GraphicalDisplay display)
     {
-        Geometry = new DisplayGeometry(display.Width, display.Height, display.Dpi);
-        _surface = new DisplaySurface(display.Dpi);
+        Geometry = new DisplayGeometry(display.Width, display.Height, DisplayPixelFormat.Bgrx32);
+        _surface = new CapturedSurface();
         var frame = new byte[display.Width * display.Height * 4];
         PaintPage(frame, display.Width);
         _updates.Writer.TryWrite(_surface.ApplyScanout(
-            display.Width, display.Height, display.Width * 4, DisplayPixelFormat.Bgrx8888, frame, DateTimeOffset.UtcNow));
+            display.Width, display.Height, display.Width * 4, frame, DateTimeOffset.UtcNow));
     }
 
     public DisplayGeometry Geometry { get; }
@@ -261,7 +266,7 @@ public sealed class ScriptedDisplaySession : IDisplaySession
 
             var update = _surface.ApplyUpdate(
                 rect.X, rect.Y, rect.Width, rect.Height, rect.Width * 4,
-                DisplayPixelFormat.Bgrx8888, pixels, DateTimeOffset.UtcNow, mayAdoptPixels: true);
+                pixels, DateTimeOffset.UtcNow, mayAdoptPixels: true);
             if (update is not null)
             {
                 _updates.Writer.TryWrite(update);

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Threading;
+using Agnes.Abstractions;
 using Agnes.App.Desktop.Persistence;
 using Agnes.Client;
 using Agnes.Protocol;
@@ -479,6 +480,28 @@ public sealed partial class SessionDocument : Document, ITraySession
 
     public IRelayCommand<string> SetSandboxModeCommand { get; }
 
+    /// <summary>
+    /// New-session choice: give the sandbox a 1280×800 display the agent can see and drive. Offered only where
+    /// a sandbox is (a graphical sandbox is a sandbox with a screen in it), and turning it on turns the sandbox
+    /// on, because the host would refuse the combination anyway.
+    /// </summary>
+    /// <remarks>
+    /// There is no separate host capability flag for this yet, so the checkbox is shown wherever sandboxing is
+    /// available and a host that doesn't allow graphical sandboxes refuses the request — its message lands in
+    /// <see cref="StatusText"/> like every other start failure. Better a visible option that can be refused
+    /// with a reason than a hidden one nobody can find.
+    /// </remarks>
+    [ObservableProperty]
+    private bool _graphicalSandbox;
+
+    partial void OnGraphicalSandboxChanged(bool value)
+    {
+        if (value)
+        {
+            UseSandbox = true;
+        }
+    }
+
     [ObservableProperty]
     private bool _isRenaming;
 
@@ -630,6 +653,35 @@ public sealed partial class SessionDocument : Document, ITraySession
     /// <see cref="TerminalPanelVisible"/>.</summary>
     public bool AgentConsolePanelVisible => IsLive && Session?.IsAgentConsoleVisible == true;
 
+    /// <summary>Whether the screen overlay should show — same live-and-toggled gate as
+    /// <see cref="TerminalPanelVisible"/>, plus the session actually having a display to show.</summary>
+    public bool ScreenPanelVisible => IsLive && Session?.HasDisplay == true && Session?.IsDisplayVisible == true;
+
+    /// <summary>Whether to offer the screen at all: only a graphical sandbox has one, so on every other
+    /// session the affordance is absent rather than present-and-broken.</summary>
+    public bool ScreenAvailable => IsLive && Session?.HasDisplay == true;
+
+    /// <summary>
+    /// The driver chip shown in the tab's status bar while the panel is CLOSED: someone is at the keyboard of
+    /// a screen you can't currently see, which is exactly when you want telling. Empty when the panel is open
+    /// (its own header says it) or when nobody is driving.
+    /// </summary>
+    public string ScreenDriverChip => ScreenAvailable && !ScreenPanelVisible && Session?.Display is { } display
+        ? display.Holder switch
+        {
+            DisplayControlHolder.Agent => "Agent is driving the screen",
+            DisplayControlHolder.User => "You have the screen",
+            _ => string.Empty,
+        }
+        : string.Empty;
+
+    public bool ShowScreenDriverChip => ScreenDriverChip.Length > 0;
+
+    /// <summary>Sky when the agent is driving (something is in motion), amber when you are (it is on you).</summary>
+    public bool ScreenDriverIsAgent => Session?.Display?.IsAgentDriving == true;
+
+    public bool ScreenDriverIsUser => Session?.Display?.IsUserDriving == true;
+
     /// <summary>Whether to offer the agent console at all: hidden once the host has said this agent has
     /// none, rather than leaving a button that quietly does nothing.</summary>
     public bool AgentConsoleAvailable => IsLive && Session?.AgentConsoleUnavailable != true;
@@ -648,6 +700,17 @@ public sealed partial class SessionDocument : Document, ITraySession
         OnPropertyChanged(nameof(FileBrowserPanelVisible));
         OnPropertyChanged(nameof(AgentConsolePanelVisible));
         OnPropertyChanged(nameof(AgentConsoleAvailable));
+        RaiseScreenFlags();
+    }
+
+    private void RaiseScreenFlags()
+    {
+        OnPropertyChanged(nameof(ScreenPanelVisible));
+        OnPropertyChanged(nameof(ScreenAvailable));
+        OnPropertyChanged(nameof(ScreenDriverChip));
+        OnPropertyChanged(nameof(ShowScreenDriverChip));
+        OnPropertyChanged(nameof(ScreenDriverIsAgent));
+        OnPropertyChanged(nameof(ScreenDriverIsUser));
     }
 
     // ---- agent picking: select (highlight) then Start (open) ----
@@ -685,7 +748,7 @@ public sealed partial class SessionDocument : Document, ITraySession
             return Task.CompletedTask;
         }
 
-        return _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode, SandboxAvailable && UseSandbox, EffectiveModelId);
+        return _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode, SandboxAvailable && UseSandbox, EffectiveModelId, SandboxAvailable && GraphicalSandbox);
     }
 
     private async Task SaveProfileAsync()
@@ -774,11 +837,36 @@ public sealed partial class SessionDocument : Document, ITraySession
         }
     }
 
+    // The display view model is created lazily and only once the host's catalogue says the session has a
+    // screen, which can be after the tab is already live — so this is idempotent and called from both places.
+    private DisplayViewModel? _watchedDisplay;
+
+    private void AttachDisplay()
+    {
+        if (Session?.Display is not { } display || ReferenceEquals(display, _watchedDisplay))
+        {
+            return;
+        }
+
+        _watchedDisplay = display;
+        display.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(DisplayViewModel.Holder)
+                or nameof(DisplayViewModel.IsUserDriving)
+                or nameof(DisplayViewModel.IsAgentDriving))
+            {
+                RaiseScreenFlags();
+            }
+        };
+        RaiseScreenFlags();
+    }
+
     public void AttachSession(SessionViewModel session)
     {
         Session = session;
         Stage = TabStage.Live;
         StatusText = "Connected";
+        AttachDisplay();
 
         session.PropertyChanged += (_, e) =>
         {
@@ -810,6 +898,13 @@ public sealed partial class SessionDocument : Document, ITraySession
             else if (e.PropertyName is nameof(SessionViewModel.AgentConsoleUnavailable))
             {
                 OnPropertyChanged(nameof(AgentConsoleAvailable));
+            }
+            else if (e.PropertyName is nameof(SessionViewModel.IsDisplayVisible) or nameof(SessionViewModel.HasDisplay))
+            {
+                RaiseScreenFlags();
+                // HasDisplay arriving late (it comes from the host's catalogue, after the session is already
+                // on screen) is what first attaches the driver-chip listener, so re-run the attach.
+                AttachDisplay();
             }
             else if (e.PropertyName is nameof(SessionViewModel.Usage)
                 or nameof(SessionViewModel.UsageSummary))

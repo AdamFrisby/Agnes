@@ -18,13 +18,16 @@ public static class ProjectMapping
         SandboxImageMapping.ToDto(project.Sandbox),
         project.McpServers,
         project.CredentialAccount,
-        new ProjectDefaultsDto(project.Defaults.SkipPermissions, project.Defaults.GitCredentialMode, project.Defaults.McpApproval),
+        new ProjectDefaultsDto(project.Defaults.SkipPermissions, project.Defaults.GitCredentialMode, project.Defaults.McpApproval, project.Defaults.Graphical),
         project.Repo,
         project.SandboxResources?.CpuCount,
         ToGiB(project.SandboxResources?.MemoryBytes),
         ToGiB(project.SandboxResources?.DiskBytes));
 
-    public static Project ToProject(ProjectDto dto) => new()
+    /// <param name="existing">The stored project this DTO is replacing, when there is one. Fields a future
+    /// wire DTO cannot yet express are carried across from it, so editing a project from a client that
+    /// predates a field doesn't silently erase it.</param>
+    public static Project ToProject(ProjectDto dto, Project? existing = null) => new()
     {
         Id = dto.Id,
         Name = dto.Name,
@@ -33,7 +36,11 @@ public static class ProjectMapping
         McpServers = dto.McpServers,
         CredentialAccount = dto.CredentialAccount,
         Repo = dto.Repo,
-        Defaults = new ProjectDefaults(dto.Defaults.SkipPermissions, dto.Defaults.GitCredentialMode, dto.Defaults.McpApproval),
+        Defaults = new ProjectDefaults(
+            dto.Defaults.SkipPermissions,
+            dto.Defaults.GitCredentialMode,
+            dto.Defaults.McpApproval,
+            dto.Defaults.Graphical),
         SandboxResources = ToOverride(dto),
     };
 

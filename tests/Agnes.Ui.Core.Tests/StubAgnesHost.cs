@@ -33,7 +33,7 @@ public abstract class StubAgnesHost : IAgnesHost
 
     public virtual Task<SessionInfo> OpenSessionAsync(
         string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false,
-        string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
+        string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false)
         => throw new NotSupportedException();
 
     public virtual Task<SessionView> SubscribeAsync(string sessionId, long since = 0)

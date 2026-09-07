@@ -15,7 +15,6 @@ internal sealed class GraphicalIncusSandbox : IncusSandbox, IDisplaySource
     private readonly IncusOptions _options;
     private readonly DisplayBus _bus;
     private readonly ILogger _logger;
-    private readonly GraphicalDisplay _display;
 
     internal GraphicalIncusSandbox(
         string id, IncusOptions options, IIncusCliRunner cli, ILogger logger, DisplayBus bus, GraphicalDisplay display)
@@ -24,8 +23,11 @@ internal sealed class GraphicalIncusSandbox : IncusSandbox, IDisplaySource
         _options = options;
         _bus = bus;
         _logger = logger;
-        _display = display;
+        Display = display;
     }
+
+    /// <inheritdoc />
+    public GraphicalDisplay Display { get; }
 
     public async Task<IDisplaySession> OpenDisplayAsync(CancellationToken cancellationToken = default)
     {
@@ -35,7 +37,7 @@ internal sealed class GraphicalIncusSandbox : IncusSandbox, IDisplaySource
         // ensures one exists — a VM whose QEMU lost its bus needs a restart to be capturable again.
         await _bus.EnsureRunningAsync(Id, cancellationToken).ConfigureAwait(false);
         return await IncusDisplaySession.OpenAsync(
-            _bus.AddressFor(Id), _display.Dpi, _options.DisplayReadyTimeout, _logger, cancellationToken).ConfigureAwait(false);
+            _bus.AddressFor(Id), _options.DisplayReadyTimeout, _logger, cancellationToken).ConfigureAwait(false);
     }
 
     public override async Task StartAsync(CancellationToken cancellationToken = default)

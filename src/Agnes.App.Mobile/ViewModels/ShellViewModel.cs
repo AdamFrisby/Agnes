@@ -41,6 +41,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     private readonly Action<string>? _copy;
     private readonly Action<string>? _openUrl;
     private readonly Action<string>? _clearNotification;
+    private readonly Func<bool>? _isMetered;
 
     public ShellViewModel(
         IAgnesConnector connector,
@@ -53,7 +54,8 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Action<string>? copyToClipboard = null,
         Action<string>? openUrl = null,
         Action<string>? clearNotification = null,
-        IReceivedFileHandler? receivedFiles = null)
+        IReceivedFileHandler? receivedFiles = null,
+        Func<bool>? isMeteredNetwork = null)
     {
         _connector = connector;
         Dispatcher = dispatcher;
@@ -68,6 +70,9 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         _copy = copyToClipboard;
         _openUrl = openUrl;
         _clearNotification = clearNotification;
+        // Android's ConnectivityManager, injected rather than reached for: the harness and the tests get
+        // no probe and so always report an unmetered connection.
+        _isMetered = isMeteredNetwork;
 
         _prompts = new FilePromptStore(JsonStore.PathFor("prompts.json"));
         _policy = new FilePermissionPolicy(JsonStore.PathFor("permission-policy.json"));
@@ -102,6 +107,9 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     public IReceivedFileHandler ReceivedFiles { get; }
 
     public HostBook Hosts { get; }
+
+    /// <inheritdoc />
+    public bool IsMeteredNetwork => _isMetered?.Invoke() ?? false;
 
     public MobileSettings Settings { get; private set; }
 

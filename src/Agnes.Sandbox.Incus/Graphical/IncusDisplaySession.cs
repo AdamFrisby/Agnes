@@ -44,7 +44,7 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     private readonly Socket _listenerSocket;
     private readonly Channel<DisplayUpdate> _updates;
     private readonly ILogger _logger;
-    private readonly DisplaySurface _surface;
+    private readonly CapturedSurface _surface;
     private readonly Action<TimeSpan>? _onFrameProcessed;
 
     private bool _absolutePointer;
@@ -53,18 +53,21 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     private bool _disposed;
 
     private IncusDisplaySession(
-        DBusConnection bus, DBusConnection listener, Socket listenerSocket, int dpi, ILogger logger, Action<TimeSpan>? onFrameProcessed)
+        DBusConnection bus, DBusConnection listener, Socket listenerSocket, ILogger logger, Action<TimeSpan>? onFrameProcessed)
     {
         _bus = bus;
         _listener = listener;
         _listenerSocket = listenerSocket;
-        _surface = new DisplaySurface(dpi);
+        _surface = new CapturedSurface();
         _logger = logger;
         _onFrameProcessed = onFrameProcessed;
         _updates = Channel.CreateUnbounded<DisplayUpdate>(new UnboundedChannelOptions { SingleWriter = true });
     }
 
-    public DisplayGeometry Geometry => _surface.Geometry;
+    /// <summary>The surface size, known once the first scanout has arrived — which OpenAsync waits for,
+    /// so it is never null on a session a caller has been handed.</summary>
+    public DisplayGeometry Geometry => _surface.Geometry
+        ?? throw new InvalidOperationException("The display session has not received its first frame.");
 
     public ChannelReader<DisplayUpdate> Updates => _updates.Reader;
 
@@ -79,7 +82,7 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     /// took from arrival to published update. Injected rather than hooked so the session stays a
     /// function of its inputs; it is what the capture spike measures with.</param>
     internal static async Task<IncusDisplaySession> OpenAsync(
-        string busAddress, int dpi, TimeSpan firstFrameTimeout, ILogger logger, CancellationToken cancellationToken,
+        string busAddress, TimeSpan firstFrameTimeout, ILogger logger, CancellationToken cancellationToken,
         Action<TimeSpan>? onFrameProcessed = null)
     {
         var bus = new DBusConnection(busAddress);
@@ -89,7 +92,7 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
         var stream = new ListenerHandshakeStream(new NetworkStream(ours, ownsSocket: false));
         var listener = new DBusConnection(new StreamConnectionOptions(stream));
 
-        var session = new IncusDisplaySession(bus, listener, ours, dpi, logger, onFrameProcessed);
+        var session = new IncusDisplaySession(bus, listener, ours, logger, onFrameProcessed);
         try
         {
             // The ordering here is forced, and it is the one subtle thing in this file.
@@ -128,7 +131,7 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(timeout);
-        while (_surface.Geometry.Width == 0)
+        while (_surface.Geometry is null)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(20), cts.Token).ConfigureAwait(false);
         }
@@ -180,7 +183,7 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
 
     private async Task MoveAsync(int x, int y)
     {
-        var (cx, cy) = _surface.Geometry.Clamp(x, y);
+        var (cx, cy) = Geometry.Clamp(x, y);
 
         if (_absolutePointer)
         {
@@ -290,8 +293,6 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
         PointerButtonKind.Left => 0,
         PointerButtonKind.Middle => 1,
         PointerButtonKind.Right => 2,
-        PointerButtonKind.Back => 5,
-        PointerButtonKind.Forward => 6,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported pointer button."),
     };
 
@@ -459,7 +460,7 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     /// </summary>
     private void Blit(int x, int y, int width, int height, int stride, uint pixmanFormat, byte[] pixels, bool scanout)
     {
-        if (!TryMapFormat(pixmanFormat, out var format))
+        if (!IsSupportedFormat(pixmanFormat))
         {
             _logger.LogWarning("Ignoring a {Kind} in unsupported pixman format 0x{Format:x8}", scanout ? "scanout" : "update", pixmanFormat);
             return;
@@ -469,8 +470,8 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
         var update = scanout
             // The pixel array came fresh out of the D-Bus reader and nothing else will ever see it, so
             // the surface is free to publish it rather than copy 4 MiB again.
-            ? _surface.ApplyScanout(width, height, stride, format, pixels, DateTimeOffset.UtcNow, mayAdoptPixels: true)
-            : _surface.ApplyUpdate(x, y, width, height, stride, format, pixels, DateTimeOffset.UtcNow, mayAdoptPixels: true);
+            ? _surface.ApplyScanout(width, height, stride, pixels, DateTimeOffset.UtcNow, mayAdoptPixels: true)
+            : _surface.ApplyUpdate(x, y, width, height, stride, pixels, DateTimeOffset.UtcNow, mayAdoptPixels: true);
         if (update is null)
         {
             _logger.LogWarning("Dropped a malformed damage rectangle {W}x{H}+{X}+{Y} stride {Stride}", width, height, x, y, stride);
@@ -486,28 +487,22 @@ internal sealed class IncusDisplaySession : IDisplaySession, IPathMethodHandler
     }
 
     /// <summary>
-    /// Decodes a pixman format code. The encoding is
-    /// <c>(bpp&lt;&lt;24)|(type&lt;&lt;16)|(a&lt;&lt;12)|(r&lt;&lt;8)|(g&lt;&lt;4)|b</c>, so
-    /// <c>PIXMAN_x8r8g8b8</c> is 0x20020888 and <c>PIXMAN_a8r8g8b8</c> is 0x20028888 — both of which are
-    /// B,G,R,x/A in memory on a little-endian host, i.e. exactly what we hand out.
+    /// Whether a pixman format code is one we can hand on as <see cref="DisplayPixelFormat.Bgrx32"/>.
+    /// The encoding is <c>(bpp&lt;&lt;24)|(type&lt;&lt;16)|(a&lt;&lt;12)|(r&lt;&lt;8)|(g&lt;&lt;4)|b</c>, so
+    /// <c>PIXMAN_x8r8g8b8</c> is 0x20020888 and <c>PIXMAN_a8r8g8b8</c> is 0x20028888. Both are B,G,R,x/A
+    /// in memory on a little-endian host — the seam's BGRx, byte for byte, with the alpha byte simply
+    /// ignored where there is one. Anything else (16bpp, RGB-ordered) is dropped rather than silently
+    /// reinterpreted: wrong colours are worse than a missing frame, because a model would act on them.
     /// </summary>
-    private static bool TryMapFormat(uint pixmanFormat, out DisplayPixelFormat format)
+    private static bool IsSupportedFormat(uint pixmanFormat)
     {
         var bpp = (pixmanFormat >> 24) & 0xFF;
         var type = (pixmanFormat >> 16) & 0xFF;
-        var alpha = (pixmanFormat >> 12) & 0xF;
         var red = (pixmanFormat >> 8) & 0xF;
         var green = (pixmanFormat >> 4) & 0xF;
         var blue = pixmanFormat & 0xF;
         const uint PixmanTypeArgb = 2;
-        if (bpp == 32 && type == PixmanTypeArgb && red == 8 && green == 8 && blue == 8)
-        {
-            format = alpha == 8 ? DisplayPixelFormat.Bgra8888 : DisplayPixelFormat.Bgrx8888;
-            return true;
-        }
-
-        format = default;
-        return false;
+        return bpp == 32 && type == PixmanTypeArgb && red == 8 && green == 8 && blue == 8;
     }
 
     private static readonly ReadOnlyMemory<byte> ListenerIntrospectionXml = Encoding.UTF8.GetBytes("""

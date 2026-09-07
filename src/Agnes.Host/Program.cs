@@ -1,5 +1,6 @@
 using Agnes.Abstractions;
 using Agnes.Acp;
+using Agnes.Host.Display;
 using Agnes.Host.Attention;
 using Agnes.Host.Channels;
 using Agnes.Agents.ClaudeCode;
@@ -632,6 +633,42 @@ builder.Services.AddSingleton(new Agnes.Host.Sessions.SharingOptions
 builder.Services.AddHostedService<Agnes.Host.Sessions.UsageReporter>();
 builder.Services.AddHostedService<Agnes.Host.Events.TranscriptRetentionService>();
 builder.Services.AddSingleton<SessionManager>();
+
+// The one access decision both front doors ask: the SignalR hub, and the display channel's WebSocket.
+builder.Services.AddSingleton<Agnes.Host.Sharing.SessionAccessDecider>();
+
+// ---- the graphical sandbox's display channel (Agnes:Display:*, docs/display-channel.md) ----
+// One broker per graphical session owns the single capture connection; watching clients arrive over a
+// dedicated WebSocket and the agent's computer_* tools read and drive the same surface. Registered
+// unconditionally and cheap when unused: no broker exists until a consumer asks for one, and a host with no
+// graphical sessions runs one dictionary scan every fifteen seconds and nothing else.
+builder.Services.AddSingleton(new Agnes.Host.Display.DisplayOptions
+{
+    ControlIdleSeconds = builder.Configuration.GetValue("Agnes:Display:ControlIdleSeconds", 60),
+    MaxFps = builder.Configuration.GetValue("Agnes:Display:MaxFps", 15),
+    JpegQuality = builder.Configuration.GetValue("Agnes:Display:JpegQuality", 75),
+    FullFrameThresholdPercent = builder.Configuration.GetValue("Agnes:Display:FullFrameThresholdPercent", 40),
+    InputEventsPerMinute = builder.Configuration.GetValue("Agnes:Display:InputEventsPerMinute", 240),
+    InputEventsPerToolCall = builder.Configuration.GetValue("Agnes:Display:InputEventsPerToolCall", 32),
+    MaxTypeBytes = builder.Configuration.GetValue("Agnes:Display:MaxTypeBytes", 4096),
+    MaxWaitMs = builder.Configuration.GetValue("Agnes:Display:MaxWaitMs", 10_000),
+    BlockedChords = builder.Configuration.GetSection("Agnes:Display:BlockedChords").Get<string[]>()
+        ?? Agnes.Host.Display.DisplayOptions.DefaultBlockedChords,
+});
+builder.Services.AddSingleton<Agnes.Host.Display.SessionManagerDisplayBridge>();
+builder.Services.AddSingleton<Agnes.Host.Display.IDisplaySessionSource>(sp =>
+    sp.GetRequiredService<Agnes.Host.Display.SessionManagerDisplayBridge>());
+builder.Services.AddSingleton<Agnes.Host.Display.IDisplayControlSink>(sp =>
+    sp.GetRequiredService<Agnes.Host.Display.SessionManagerDisplayBridge>());
+builder.Services.AddSingleton(sp => new Agnes.Host.Display.DisplayBrokerRegistry(
+    sp.GetRequiredService<Agnes.Host.Display.IDisplaySessionSource>(),
+    sp.GetRequiredService<Agnes.Host.Display.DisplayOptions>(),
+    sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
+    sp.GetRequiredService<Agnes.Host.Display.IDisplayControlSink>(),
+    sp.GetRequiredService<ILoggerFactory>(),
+    TimeProvider.System));
+builder.Services.AddSingleton<Agnes.Host.Mcp.IAgnesDisplayBackend, Agnes.Host.Mcp.BrokerDisplayBackend>();
+builder.Services.AddHostedService<Agnes.Host.Display.DisplayIdleSweeper>();
 
 // ---- Agnes AS an MCP server (see .ideas/voice/01-voice-assistant.md) ----
 // The reverse of Agnes's MCP *management* feature (where Agnes consumes other MCP servers): here Agnes exposes
@@ -1470,10 +1507,31 @@ if (webFiles is not null)
 // Throttle the auth bootstrap endpoints (per-IP + global); every other request is unlimited.
 app.UseRateLimiter();
 
+// WebSockets, for the display channel only. It goes AFTER the plaintext MCP listeners' path gate (installed
+// above) and after the rate limiter, so a request on a guest/loopback port is already 404'd before it can be
+// upgraded — an unauthenticated plaintext socket into a session's screen is exactly what that gate exists to
+// prevent. It goes BEFORE the auth middleware below, because the gate has to see a normal HTTP request; the
+// upgrade itself happens later still, inside the endpoint, after both auth and authorization have passed.
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
+
 // Reject unauthorized clients at the negotiate level so the connection never establishes.
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments(WireProtocol.HubPath))
+    {
+        var token = context.Request.Query[WireProtocol.TokenParameter].ToString();
+        if (!tokens.IsValid(token))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+    }
+
+    // The display channel authenticates exactly as the hub does — the device token in the access_token
+    // query — and is rejected here, before the WebSocket upgrade, so an unauthenticated client gets an HTTP
+    // 401 it can read rather than a socket that closes for no stated reason. A public link is deliberately
+    // NOT accepted: it grants a read-only transcript, never a live screen of a machine somebody is working on.
+    if (context.Request.Path.StartsWithSegments(Agnes.Protocol.DisplayWire.Path))
     {
         var token = context.Request.Query[WireProtocol.TokenParameter].ToString();
         if (!tokens.IsValid(token))
@@ -1502,6 +1560,11 @@ app.Use(async (context, next) =>
 });
 
 app.MapHub<AgnesHub>(WireProtocol.HubPath);
+
+// The graphical sandbox's display channel: /display/{sessionId}, one binary WebSocket per watching client.
+// Not routed over the hub on purpose — see DisplayChannelEndpoint. The relay transport does not carry it yet;
+// docs/display-channel.md says so.
+app.MapDisplayChannel();
 
 // Map the Agnes MCP server (Streamable HTTP). Authenticated by the middleware above; tools authorize per call.
 app.MapMcp(Agnes.Host.Mcp.AgnesMcpEndpoints.Path);
@@ -2216,7 +2279,7 @@ app.MapPut("/projects/{id}", (HttpContext ctx, string id, ProjectDto dto) =>
 {
     if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (projects is null) return Results.NotFound();
-    var saved = projects.Save(Agnes.Host.Projects.ProjectMapping.ToProject(dto with { Id = id }));
+    var saved = projects.Save(Agnes.Host.Projects.ProjectMapping.ToProject(dto with { Id = id }, projects.Get(id)));
     _ = images?.RebuildForProjectAsync(saved); // re-bake the project's sandbox image in the background
     return Results.Ok(Agnes.Host.Projects.ProjectMapping.ToDto(saved));
 });

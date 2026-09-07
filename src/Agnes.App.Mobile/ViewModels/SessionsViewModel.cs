@@ -192,7 +192,8 @@ public sealed partial class SessionsViewModel : ObservableObject
                     string.IsNullOrWhiteSpace(r.Title)
                         ? (string.IsNullOrWhiteSpace(r.WorkingDirectory) ? r.SessionId : r.WorkingDirectory)
                         : r.Title!,
-                    r.WorkingDirectory))
+                    r.WorkingDirectory,
+                    HasDisplay: r.HasDisplay))
                 .ToList();
 
             if (added.Count == 0)

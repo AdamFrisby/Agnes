@@ -195,6 +195,18 @@ public static class Program
         tools.Session!.ResumeSandboxCommand.Execute(null);
         Pump(() => !tools.Session!.SandboxPaused);
 
+        // 4sc) The graphical sandbox's Screen panel: the simulated sandbox streams a synthetic desktop, so this
+        // shot shows a real decoded frame beside the transcript rather than an empty placeholder.
+        Pump(() => tools.Session!.HasDisplay);
+        tools.Session!.IsDisplayVisible = true;
+        Pump(() => tools.Session!.Display?.LastFrameAt is not null);
+        // Past a second, so the fps/bandwidth readout has closed its first window and is showing something.
+        Pump(() => tools.Session!.Display?.Fps > 0, timeoutMs: 4000);
+        Settle(200);
+        Capture(window, "04sc-screen-panel.png");
+        tools.Session!.IsDisplayVisible = false;
+        Settle(120);
+
         // 4d) Clear session-state banner (offline / reconnecting / interrupted / stale).
         tools.Session!.MarkStale();
         Pump(() => tools.Session!.ShowBanner);

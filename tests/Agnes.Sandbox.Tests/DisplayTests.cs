@@ -129,7 +129,7 @@ public class DisplayKeyMapTests
     }
 }
 
-public class DisplayGeometryTests
+public class DisplayClampTests
 {
     [Theory]
     [InlineData(0, 0, 0, 0)]
@@ -139,7 +139,7 @@ public class DisplayGeometryTests
     [InlineData(640, 400, 640, 400)]
     public void Coordinates_are_clamped_onto_the_surface(int x, int y, int expectedX, int expectedY)
     {
-        var (cx, cy) = new DisplayGeometry(1280, 800, 96).Clamp(x, y);
+        var (cx, cy) = new DisplayGeometry(1280, 800, DisplayPixelFormat.Bgrx32).Clamp(x, y);
         Assert.Equal(expectedX, cx);
         Assert.Equal(expectedY, cy);
     }
@@ -147,11 +147,11 @@ public class DisplayGeometryTests
     [Fact]
     public void A_surface_with_no_size_clamps_to_the_origin()
     {
-        Assert.Equal((0, 0), default(DisplayGeometry).Clamp(100, 100));
+        Assert.Equal((0, 0), new DisplayGeometry(0, 0, DisplayPixelFormat.Bgrx32).Clamp(100, 100));
     }
 }
 
-public class DisplaySurfaceTests
+public class CapturedSurfaceTests
 {
     private static byte[] Solid(int width, int height, byte value)
     {
@@ -163,22 +163,23 @@ public class DisplaySurfaceTests
     [Fact]
     public void A_scanout_defines_the_surface_and_arrives_as_a_full_update()
     {
-        var surface = new DisplaySurface();
-        var update = surface.ApplyScanout(4, 3, 16, DisplayPixelFormat.Bgrx8888, Solid(4, 3, 0x11), DateTimeOffset.UnixEpoch);
+        var surface = new CapturedSurface();
+        var update = surface.ApplyScanout(4, 3, 16, Solid(4, 3, 0x11), DateTimeOffset.UnixEpoch);
 
-        Assert.Equal(new DisplayGeometry(4, 3, 96), surface.Geometry);
+        Assert.Equal(new DisplayGeometry(4, 3, DisplayPixelFormat.Bgrx32), surface.Geometry);
         Assert.Equal((0, 0, 4, 3), (update.X, update.Y, update.Width, update.Height));
         Assert.Equal(16, update.Stride);
         Assert.Equal(1, update.Sequence);
+        Assert.True(update.IsFullFrame(surface.Geometry!));
         Assert.All(update.Pixels.ToArray(), b => Assert.Equal(0x11, b));
     }
 
     [Fact]
     public void Updates_compose_onto_the_scanout_and_are_visible_in_the_snapshot()
     {
-        var surface = new DisplaySurface();
-        surface.ApplyScanout(4, 3, 16, DisplayPixelFormat.Bgrx8888, Solid(4, 3, 0x11), DateTimeOffset.UnixEpoch);
-        var update = surface.ApplyUpdate(1, 1, 2, 1, 8, DisplayPixelFormat.Bgrx8888, Solid(2, 1, 0x99), DateTimeOffset.UnixEpoch);
+        var surface = new CapturedSurface();
+        surface.ApplyScanout(4, 3, 16, Solid(4, 3, 0x11), DateTimeOffset.UnixEpoch);
+        var update = surface.ApplyUpdate(1, 1, 2, 1, 8, Solid(2, 1, 0x99), DateTimeOffset.UnixEpoch);
 
         Assert.NotNull(update);
         Assert.Equal(2, update!.Sequence);
@@ -194,7 +195,7 @@ public class DisplaySurfaceTests
     [Fact]
     public void A_padded_stride_is_repacked_so_consumers_see_one_rule()
     {
-        var surface = new DisplaySurface();
+        var surface = new CapturedSurface();
         // 2x2 surface delivered with a 3-pixel stride: the third pixel of each row is padding.
         var padded = new byte[3 * 4 * 2];
         Array.Fill(padded, (byte)0x55);
@@ -203,7 +204,7 @@ public class DisplaySurfaceTests
             Array.Fill(padded, (byte)0xEE, (row * 12) + 8, 4);   // the padding column
         }
 
-        var update = surface.ApplyScanout(2, 2, 12, DisplayPixelFormat.Bgrx8888, padded, DateTimeOffset.UnixEpoch);
+        var update = surface.ApplyScanout(2, 2, 12, padded, DateTimeOffset.UnixEpoch);
 
         Assert.Equal(8, update.Stride);
         Assert.Equal(16, update.Pixels.Length);
@@ -213,10 +214,10 @@ public class DisplaySurfaceTests
     [Fact]
     public void A_rectangle_hanging_off_the_edge_is_clipped_not_dropped()
     {
-        var surface = new DisplaySurface();
-        surface.ApplyScanout(4, 4, 16, DisplayPixelFormat.Bgrx8888, Solid(4, 4, 0x11), DateTimeOffset.UnixEpoch);
+        var surface = new CapturedSurface();
+        surface.ApplyScanout(4, 4, 16, Solid(4, 4, 0x11), DateTimeOffset.UnixEpoch);
 
-        var update = surface.ApplyUpdate(3, 3, 4, 4, 16, DisplayPixelFormat.Bgrx8888, Solid(4, 4, 0x77), DateTimeOffset.UnixEpoch);
+        var update = surface.ApplyUpdate(3, 3, 4, 4, 16, Solid(4, 4, 0x77), DateTimeOffset.UnixEpoch);
 
         Assert.NotNull(update);
         var frame = surface.Snapshot();
@@ -227,13 +228,13 @@ public class DisplaySurfaceTests
     [Fact]
     public void A_malformed_or_short_rectangle_costs_one_update_not_the_session()
     {
-        var surface = new DisplaySurface();
-        surface.ApplyScanout(4, 4, 16, DisplayPixelFormat.Bgrx8888, Solid(4, 4, 0x11), DateTimeOffset.UnixEpoch);
+        var surface = new CapturedSurface();
+        surface.ApplyScanout(4, 4, 16, Solid(4, 4, 0x11), DateTimeOffset.UnixEpoch);
 
-        Assert.Null(surface.ApplyUpdate(0, 0, 0, 2, 0, DisplayPixelFormat.Bgrx8888, [], DateTimeOffset.UnixEpoch));
-        Assert.Null(surface.ApplyUpdate(0, 0, 4, 4, 8, DisplayPixelFormat.Bgrx8888, Solid(4, 4, 0x22), DateTimeOffset.UnixEpoch));
-        Assert.Null(surface.ApplyUpdate(0, 0, 4, 4, 16, DisplayPixelFormat.Bgrx8888, Solid(4, 1, 0x22), DateTimeOffset.UnixEpoch));
-        Assert.Null(surface.ApplyUpdate(-10, -10, 4, 4, 16, DisplayPixelFormat.Bgrx8888, Solid(4, 4, 0x22), DateTimeOffset.UnixEpoch));
+        Assert.Null(surface.ApplyUpdate(0, 0, 0, 2, 0, [], DateTimeOffset.UnixEpoch));
+        Assert.Null(surface.ApplyUpdate(0, 0, 4, 4, 8, Solid(4, 4, 0x22), DateTimeOffset.UnixEpoch));
+        Assert.Null(surface.ApplyUpdate(0, 0, 4, 4, 16, Solid(4, 1, 0x22), DateTimeOffset.UnixEpoch));
+        Assert.Null(surface.ApplyUpdate(-10, -10, 4, 4, 16, Solid(4, 4, 0x22), DateTimeOffset.UnixEpoch));
 
         Assert.Equal(1, surface.Sequence);              // nothing was published
         Assert.All(surface.Snapshot(), b => Assert.Equal(0x11, b));
@@ -242,11 +243,11 @@ public class DisplaySurfaceTests
     [Fact]
     public void A_scanout_at_a_new_size_resizes_the_surface_in_place()
     {
-        var surface = new DisplaySurface();
-        surface.ApplyScanout(4, 4, 16, DisplayPixelFormat.Bgrx8888, Solid(4, 4, 0x11), DateTimeOffset.UnixEpoch);
-        var resized = surface.ApplyScanout(8, 2, 32, DisplayPixelFormat.Bgrx8888, Solid(8, 2, 0x33), DateTimeOffset.UnixEpoch);
+        var surface = new CapturedSurface();
+        surface.ApplyScanout(4, 4, 16, Solid(4, 4, 0x11), DateTimeOffset.UnixEpoch);
+        var resized = surface.ApplyScanout(8, 2, 32, Solid(8, 2, 0x33), DateTimeOffset.UnixEpoch);
 
-        Assert.Equal(new DisplayGeometry(8, 2, 96), surface.Geometry);
+        Assert.Equal(new DisplayGeometry(8, 2, DisplayPixelFormat.Bgrx32), surface.Geometry);
         Assert.Equal(8, resized.Width);
         Assert.Equal(8 * 2 * 4, surface.Snapshot().Length);
     }
@@ -260,7 +261,7 @@ public class ScriptedDisplaySourceTests
         var source = new ScriptedDisplaySource();
         await using var session = (ScriptedDisplaySession)await source.OpenDisplayAsync();
 
-        Assert.Equal(new DisplayGeometry(1280, 800, 96), session.Geometry);
+        Assert.Equal(new DisplayGeometry(1280, 800, DisplayPixelFormat.Bgrx32), session.Geometry);
         Assert.True(session.Updates.TryRead(out var scanout));
         Assert.Equal(1280 * 800 * 4, scanout!.Pixels.Length);   // opening publishes the whole surface
 

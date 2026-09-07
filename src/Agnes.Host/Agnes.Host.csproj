@@ -60,6 +60,15 @@
          the .NET 10 BCL still lacks (it exposes only composite ML-DSA-with-Ed25519). Verification is constant-time
          by construction; no hand-rolled curve math. Used only by DiscordBridge inbound. -->
     <PackageReference Include="NSec.Cryptography" Version="24.4.0" />
+    <!-- JPEG encoding for the graphical-sandbox display channel: the host turns a guest's raw BGRx surface
+         into the one format every client and every model already decodes. SkiaSharp is Microsoft/mono-published
+         (mono/SkiaSharp, MIT) and is already the renderer under every Avalonia head in this tree, so it adds no
+         new supply-chain surface. The native asset packages carry libSkiaSharp for each host RID build.sh
+         publishes (linux-x64, win-x64, osx-arm64/x64). See docs/display-channel.md. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="3.119.4" />
   </ItemGroup>
 
   <ItemGroup>
