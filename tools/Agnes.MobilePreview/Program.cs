@@ -89,6 +89,22 @@ public static class Program
         // 1) First launch, before anything is seeded: the empty state that teaches the model.
         Shot(window, "01-empty");
 
+        // 1a) The same empty screen on a host that has told this phone it is a member — the case that
+        //     used to look identical to a broken host. The address is a closed local port so the connect
+        //     attempt fails at once; what is under the lens is the wording, not the connection.
+        shell.Hosts.Add(new SavedHost("workshop", "https://127.0.0.1:1", "preview", null, DeviceRole.Member));
+        shell.Sessions.RefreshCommand.Execute(null);
+        Pump(() => shell.Sessions.HasMemberNotice, 6000);
+        Settle(300);
+        Shot(window, "01a-member-empty");
+        foreach (var stranger in shell.Hosts.Real.ToList())
+        {
+            shell.Hosts.Remove(stranger);
+        }
+
+        shell.Sessions.RefreshCommand.Execute(null);
+        Settle(300);
+
         // Seed the demo exactly as a first launch would.
         shell.StartAsync().GetAwaiter().GetResult();
         Pump(() => shell.Sessions.All.Count > 0, 4000);
@@ -257,6 +273,33 @@ public static class Program
         shell.Push(new AppearancePageViewModel(shell));
         Settle(400);
         Shot(window, "10b-appearance");
+        shell.PopToRoot();
+        shell.SelectTab(ShellTab.More);
+        Settle(200);
+
+        // 9c) Paired devices, as an owner sees it: each device's role, how it was admitted and when it
+        //     was last used, plus the controls only an owner gets. The list is staged directly — the
+        //     simulated host has no device registry to answer /devices with.
+        var devices = new DevicesPageViewModel(shell)
+        {
+            IsRoleKnown = true,
+            CanManage = true,
+            Status = "3 paired with workshop.",
+        };
+        var seen = DateTimeOffset.Now;
+        devices.Devices.Clear();
+        devices.Devices.Add(new MobileDeviceRow(
+            new DeviceInfo("d1", "Workshop desktop", seen.AddDays(-92), seen.AddMinutes(-1), null, false,
+                DeviceRole.Owner, "pairing"), seen, isLastOwner: false));
+        devices.Devices.Add(new MobileDeviceRow(
+            new DeviceInfo("d2", "Pixel 9 (this phone)", seen.AddDays(-11), seen, null, true,
+                DeviceRole.Owner, "approval"), seen, isLastOwner: false));
+        devices.Devices.Add(new MobileDeviceRow(
+            new DeviceInfo("d3", "Ada's laptop", seen.AddDays(-40), seen.AddDays(-38), null, false,
+                DeviceRole.Member, "keypair"), seen, isLastOwner: false));
+        shell.Push(devices);
+        Settle(400);
+        Shot(window, "10c-devices");
         shell.PopToRoot();
         shell.SelectTab(ShellTab.More);
         Settle(200);

@@ -36,6 +36,10 @@ public interface ITabController
     /// <summary>Remove a saved host from the picker (and persistence), then refresh the tab's host list.</summary>
     Task ForgetHostAsync(SessionDocument doc, KnownHost host);
 
+    /// <summary>Opens the Settings tab on the Devices page — where a member is told to go, and therefore
+    /// where the notice that tells it should be able to take it.</summary>
+    void OpenDevicesSettings();
+
     /// <summary>Whether a host can be removed by the user (built-in Simulated/Recorded hosts can't).</summary>
     bool IsForgettableHost(string url);
     Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false);

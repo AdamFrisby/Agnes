@@ -63,7 +63,7 @@ public sealed class PairApprovalEndpointTests
         Assert.Equal("Pixel 9", offered.DeviceName);
         Assert.Equal(pending.VerificationCode, offered.VerificationCode);
 
-        await PairingManagement.ApproveAsync("http://localhost", ApproverToken, offered.RequestId, http);
+        await PairingManagement.ApproveAsync("http://localhost", ApproverToken, offered.RequestId, httpClient: http);
 
         var approved = await PairingApproval.PollAsync("http://localhost", pending.RequestId, http);
         Assert.Equal(PairApprovalState.Approved, approved.State);

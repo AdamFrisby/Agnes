@@ -126,6 +126,22 @@ public sealed partial class DashboardViewModel : ObservableObject, IDisposable
     public bool IsEmpty => Live.Count == 0 && Elsewhere.Count == 0 && !Catalog.IsLoading;
 
     /// <summary>
+    /// The role explanation, when one of the open tabs' hosts has told this device it is a member.
+    ///
+    /// An owner's empty dashboard means the hosts really are idle; a member's may only mean it can't see
+    /// what is running. Those look identical, so the second one says which it is. Read off the tabs rather
+    /// than held here, so it can never disagree with what a tab is showing.
+    /// </summary>
+    public string MemberNotice => _owner.OpenSessions
+        .Select(d => d.HostRoleNotice)
+        .FirstOrDefault(n => n.Length > 0) ?? string.Empty;
+
+    public bool HasMemberNotice => IsEmpty && MemberNotice.Length > 0;
+
+    /// <summary>Opens the page the notice names.</summary>
+    public IRelayCommand OpenDevicesSettingsCommand => _owner.OpenDevicesSettingsCommand;
+
+    /// <summary>
     /// Re-asks the hosts for approvals and their session catalogue, then rebuilds the three sections from what
     /// this window currently holds. Cheap and idempotent — it reads, it never opens or resumes anything.
     /// </summary>
@@ -194,6 +210,8 @@ public sealed partial class DashboardViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasNotices));
         OnPropertyChanged(nameof(HasAttention));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(MemberNotice));
+        OnPropertyChanged(nameof(HasMemberNotice));
     }
 
     public void Dispose()

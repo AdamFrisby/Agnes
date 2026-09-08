@@ -59,7 +59,7 @@ public static class CloudflareAccessSignIn
                 });
             }
 
-            return await response.Content.ReadFromJsonAsync<PairResponse>(cancellationToken).ConfigureAwait(false)
+            return await response.Content.ReadFromJsonAsync<PairResponse>(DeviceRoleJson.Read, cancellationToken).ConfigureAwait(false)
                    ?? throw new CloudflareAccessRefusedException(response.StatusCode, "Cloudflare Access returned no device token.");
         }
         finally

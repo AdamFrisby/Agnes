@@ -72,6 +72,33 @@ would want you to skim past. The card leads with the six digits that must match 
 screen — see [security.md](security.md) for why those digits are what makes the approval mean
 anything.
 
+**And letting one in is two different decisions.** The card's primary action is **Let in as member** —
+a device that can open sessions and see its own. **Let in as owner** hands over the run of the host, so
+it is a separate, differently-worded button below the pair, and it appears only when *this* phone is
+itself an owner: a member's attempt would be refused host-side, and a button whose only outcome is a
+refusal teaches nothing. Decline stays exactly as cheap as it was.
+
+**A member is told it is one.** A device that can see none of the host's sessions looks exactly like a
+broken host, which is how a newly-paired phone ended up staring at an empty list with no explanation.
+So: pairing says what it granted before the screen moves on (a member gets a card — "Paired as member",
+plus the one line on what that means — and taps Continue; an owner has nothing to learn and goes
+straight through); an empty Sessions list on a host that called this phone a member replaces the usual
+teaching line with "This device is a member on *host*. It sees the sessions it starts and any shared
+with it. An owner can make it an owner in More › Devices", and offers the button that goes there. The
+role is remembered against the saved host so the sentence is on screen before the round trip that
+confirms it — but only once a host has actually said so. Null means "not asked", and an owner must
+never be told, even for a moment, that it is a member.
+
+**More › Devices is a management page, not a list.** Each row carries the device's role as a plain pill
+(never a status tint — those already mean needs-you / running / failed), how it was admitted in words
+("paired with code", "vouched for by a device", "authorized key", "GitHub"), and when it was last used,
+which is the field you came here for when you meant to revoke something. An owner also gets **Make
+owner** / **Make member** per row — disabled on the only owner left, because the host refuses that
+demotion and offering it would be a button whose purpose is to fail — and a prune that names the number
+before it acts (first tap arms and counts, second removes; a phone has no hover and no undo). A member
+sees the same list read-only under "Only an owner can change roles.", because who else is on the host is
+not a secret; changing it is a permission.
+
 **Send never means two things silently.** The same gesture sends when idle and queues while a turn is
 running; the composer says which, above the field, whenever it isn't obvious. Stop appears beside Send
 only while there is something to stop, so the destructive action is never where your thumb rests.

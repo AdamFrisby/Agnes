@@ -232,8 +232,17 @@
                 <StackPanel Spacing="6" HorizontalAlignment="Center">
                     <TextBlock Text="Nothing is running yet" Foreground="{DynamicResource Fg}" FontSize="14"
                                FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <!-- An owner's empty dashboard means the hosts are idle. A member's may only mean it
+                         can't see what's running — identical screens, different facts, so say which. -->
                     <TextBlock Text="Open a tab and start a session — it'll show up here."
+                               IsVisible="{Binding !HasMemberNotice}"
                                Foreground="{DynamicResource FgDim}" FontSize="12" HorizontalAlignment="Center" />
+                    <StackPanel Name="DashboardMemberNotice" Spacing="8" IsVisible="{Binding HasMemberNotice}" MaxWidth="440">
+                        <TextBlock Text="{Binding MemberNotice}" Foreground="{DynamicResource FgDim}" FontSize="12"
+                                   TextWrapping="Wrap" TextAlignment="Center" />
+                        <Button Classes="seg" HorizontalAlignment="Center" FontSize="11" Padding="10,4"
+                                Content="Open Settings › Devices" Command="{Binding OpenDevicesSettingsCommand}" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
