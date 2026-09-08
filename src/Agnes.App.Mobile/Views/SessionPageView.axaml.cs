@@ -27,6 +27,7 @@ public partial class SessionPageView : UserControl
     private Avalonia.Controls.Button _jump = null!;
     private DisplaySurface _screen = null!;
     private TextBox _ime = null!;
+    private TextBox _composer = null!;
     private SessionPageViewModel? _page;
     private INotifyCollectionChanged? _watched;
 
@@ -39,6 +40,17 @@ public partial class SessionPageView : UserControl
 
         _screen = this.FindControl<DisplaySurface>("Screen")!;
         _ime = this.FindControl<TextBox>("ScreenIme")!;
+        _composer = this.FindControl<TextBox>("Composer")!;
+
+        // "You are here now": what takes the away band down.
+        //
+        // Gestures, not ScrollChanged. The page scrolls itself to the tail on arrival, so a scroll
+        // event would dismiss the band in the same frame it appeared — the band would be a flicker
+        // nobody ever read. A pointer press (a tap, and the start of every drag-scroll), a wheel, or a
+        // keystroke in the composer are all unambiguously a person.
+        _scroll.AddHandler(PointerPressedEvent, OnUserPresent, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        _scroll.AddHandler(PointerWheelChangedEvent, OnUserPresent, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        _composer.AddHandler(TextInputEvent, OnUserPresent, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         _jump.Click += (_, _) => ScrollToEnd();
         _scroll.ScrollChanged += (_, _) => _jump.IsVisible = !IsAtTail;
@@ -146,6 +158,9 @@ public partial class SessionPageView : UserControl
             _scroll.ScrollToEnd();
             _jump.IsVisible = false;
         }, DispatcherPriority.Background);
+
+    private void OnUserPresent(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _page?.NoteUserInteraction();
 
     /// <summary>Brings up the soft keyboard over the screen by focusing the hidden funnel.</summary>
     private void RaiseKeyboard() => Dispatcher.UIThread.Post(() => _ime.Focus());

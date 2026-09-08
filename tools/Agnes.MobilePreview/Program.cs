@@ -93,15 +93,39 @@ public static class Program
         shell.StartAsync().GetAwaiter().GetResult();
         Pump(() => shell.Sessions.All.Count > 0, 4000);
         Settle(1400); // let the scripted turn stream in (plan, tool calls, a diff)
+
+        // 1b) Two more cards carrying the agent's own status line — the thing the list is read for.
+        //     One fresh, one from an agent that has gone quiet mid-run, which is the case the wording
+        //     exists to make visible. Saved pointers rather than live sessions, because that is exactly
+        //     the state the list is opened in: cold, before any host has answered.
+        SeedStatusCards(shell);
+        Settle(300);
         Shot(window, "02-sessions");
 
-        var entry = shell.Sessions.All[0];
+        var entry = shell.Sessions.All.First(e => e.Session is not null);
 
         // 2) The session screen with a real transcript.
         shell.Sessions.Open(entry);
         Pump(() => shell.CurrentPage is SessionPageViewModel, 2000);
         Settle(700);
         Shot(window, "03-session");
+
+        // 2b) Coming back to a session that ran while the phone was in a pocket: the header carries the
+        //     agent's own line, and the band above the transcript carries what it said while nobody was
+        //     looking. Handed in rather than derived, because "you weren't here" is a state a live
+        //     simulated session will not enter on request.
+        if (shell.CurrentPage is SessionPageViewModel away)
+        {
+            away.StatusSource = new PreviewAgentStatus(
+                new AgentStatus(
+                    "Terminal panel is reflowing correctly at 80 cols; wiring the resize handler next.",
+                    DateTimeOffset.Now.AddMinutes(-3)),
+                isUnattended: true,
+                awayStatus: "Rebased onto main and re-ran the suite — the reflow tests pass, two sandbox probes still red.");
+            away.OnAppearing();
+            Settle(500);
+            Shot(window, "03b-session-away");
+        }
 
         // 3) A sheet over it: the files the agent changed.
         if (shell.CurrentPage is SessionPageViewModel page)
@@ -311,6 +335,35 @@ public static class Program
 
         shell.PopToRoot();
         Settle(200);
+    }
+
+    /// <summary>
+    /// Two cards whose agents have reported: the running demo session, which last said anything twelve
+    /// minutes ago — where the age stops being a timestamp and starts reading "no update for 12 min" —
+    /// and a second, cold from its saved pointer, that spoke three minutes back.
+    /// </summary>
+    private static void SeedStatusCards(ShellViewModel shell)
+    {
+        var link = shell.Hosts.Links[0];
+
+        // The stale one has to be the *running* card: "no update for 12 min" is a claim about an agent
+        // that is still going, and on an idle session it would be a complaint about nothing.
+        shell.Sessions.All[0].AdoptStatus(new AgentStatus(
+            "Narrowed the flake to the tail cursor after a reconnect; bisecting the last twelve commits.",
+            DateTimeOffset.Now.AddMinutes(-12)));
+
+        Add("Reflow the terminal panel", "/home/you/projects/agnes",
+            "Terminal panel reflows correctly at 80 cols; wiring the resize handler next.", minutesAgo: 3);
+
+        void Add(string title, string folder, string status, int minutesAgo)
+        {
+            var saved = new SavedSession(
+                link.Name, link.Url, link.Saved.Token, "preview-" + Guid.NewGuid().ToString("n"),
+                "claude-code", title, folder,
+                LatestStatus: status,
+                LatestStatusAt: DateTimeOffset.Now.AddMinutes(-minutesAgo));
+            shell.Sessions.All.Add(new SessionEntry(saved, link));
+        }
     }
 
     private static Agnes.Client.DisplayFrame ControlNotice(DisplayControlHolder holder)

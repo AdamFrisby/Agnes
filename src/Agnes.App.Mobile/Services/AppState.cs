@@ -58,7 +58,12 @@ public sealed record SavedSession(
     // Whether this session has a graphical sandbox to watch. Learned from the host's catalogue
     // (SessionSummary.HasDisplay) or from having asked for one at launch, and saved so the Screen
     // segment is offered the moment the card is opened rather than one round trip later.
-    bool HasDisplay = false);
+    bool HasDisplay = false,
+    // The agent's own one-line report of what it is doing, and when it said it. Saved for the same
+    // reason the title is: the sessions list is read at a glance, and a card that says nothing until
+    // the host answers is a card that says nothing in the moment it is actually looked at.
+    string? LatestStatus = null,
+    DateTimeOffset? LatestStatusAt = null);
 
 /// <summary>
 /// Sessions this device was told to stop showing. Discovery lists what the <b>host</b> has, so without

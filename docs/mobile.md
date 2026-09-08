@@ -128,6 +128,42 @@ cache and hand out a `content://` URI from `AgnesFileProvider` — a `file://` U
 `Services/AndroidReceivedFileHandler.cs` and `Resources/xml/file_paths.xml`, which between them expose
 exactly one directory and nothing else.
 
+### The status line
+
+An agent reports, rarely and in its own words, what it is doing — "found the leak in the tail cursor;
+rewriting the resume path so a reconnect can't replay" — through the host's status tool
+(`AgentStatusEvent`, surfaced on the wire as `SessionSummary.LatestStatus`). It is the only line in the
+app that is the agent's own account of itself rather than a derivative of its output, which is why the
+**Sessions list** is where it belongs: one card per session, and now each card says what its agent is
+doing, without opening any of them. That is the thing a phone is genuinely better at.
+
+The rules, all in `ViewModels/AgentStatusLine.cs`:
+
+- **Two lines, wrapped, then ellipsis.** A status is a sentence, and a phone card that clips it after
+  eight words shows the setup and eats the point. There is no tooltip on a phone and a long-press to
+  reveal is a gesture nobody discovers, so the line simply gets the room it needs — no more.
+- **No status, no row.** A card whose agent has never reported grows nothing. A blank row would read as
+  "idle", which is a different and wrong claim.
+- **The age carries the staleness.** "4m" while things are moving; once a *working* agent has been quiet
+  for ten minutes it reads **"no update for 12 min"** instead — because "12m" beside a running session
+  looks like progress, and the whole reason for the line is to say when there hasn't been any. An idle
+  session is never stale: nothing is overdue there.
+- **Both fields are persisted** on `SavedSession`, like the title, so the list is right the second it is
+  opened cold rather than one round trip later.
+
+The session screen carries the same line under its app bar, in its own row rather than a third line in
+the fixed 56dp bar. Above the transcript it also gets a **"while you were away"** band: when the session
+was unattended and the agent said something in the meantime, one slim band in the sky hue — *in motion*,
+never amber, because nothing here is blocked on you — with the line and its age. It is captured on
+arrival and taken down by the first scroll, tap or keystroke (or a tap on the band itself). Two details
+that are easy to get wrong: opening the page is *itself* the end of being away, so the band snapshots
+the state before marking the session attended; and dismissal listens for pointer and text gestures, not
+`ScrollChanged`, because the page scrolls itself to the tail on arrival and would otherwise dismiss the
+band in the frame it appeared.
+
+There is deliberately **no notification** for a status. A status is not a page: it is what you read when
+you chose to look.
+
 **No terminal.** The desktop head embeds a VT terminal; a phone does not get one. A 40-column terminal
 behind a soft keyboard is worse than useless, and the things you'd use it for are covered by the git
 sheet and the tool timeline.

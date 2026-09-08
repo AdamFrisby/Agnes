@@ -76,6 +76,7 @@ public sealed partial class SessionPageViewModel : PageViewModel
         ShowActionsCommand = new RelayCommand(() => _shell.ShowSheet(new SessionActionsSheetViewModel(_shell, _sessions, Entry)));
         ShowQueueCommand = new RelayCommand(() => Sheet(s => new QueueSheetViewModel(_shell, s)));
         ShowTranscriptCommand = new RelayCommand(() => Segment = SessionSegment.Transcript);
+        DismissAwayCommand = new RelayCommand(NoteUserInteraction);
         ShowScreenCommand = new AsyncRelayCommand(ShowScreenAsync);
         SendScreenKeyCommand = new RelayCommand<string>(key =>
         {
@@ -219,6 +220,89 @@ public sealed partial class SessionPageViewModel : PageViewModel
         ? permission.Options.Where(o => o.Kind is not (PermissionOptionKind.AllowOnce or PermissionOptionKind.RejectOnce)).ToList()
         : [];
 
+    // ---- the agent's own status ----
+
+    /// <summary>
+    /// Where the status facts come from. The live session normally; settable so a test (or the preview
+    /// harness) can put the page into the state that matters — "you weren't here and this happened" —
+    /// which a live session will not enter on request.
+    /// </summary>
+    public IAgentStatusSource StatusSource
+    {
+        get => _statusSource ?? new LiveAgentStatus(Session);
+        set
+        {
+            _statusSource = value;
+            RaiseStatus();
+        }
+    }
+
+    private IAgentStatusSource? _statusSource;
+
+    /// <summary>What the agent last said it was doing, under the title.</summary>
+    public string? LatestStatus => StatusSource.Status.Line;
+
+    public bool HasStatus => StatusSource.Status.HasLine;
+
+    /// <summary>"4m", or "no update for 12 min" once a working agent has gone quiet.</summary>
+    public string StatusAge => StatusLine.Age(StatusSource.Status, IsTurnActive);
+
+    public bool StatusIsStale => StatusLine.IsStale(StatusSource.Status, IsTurnActive);
+
+    // ---- while you were away ----
+
+    /// <summary>
+    /// What the agent reported while nobody was looking, captured the moment the page opened.
+    ///
+    /// Captured rather than bound live, because opening the page is itself the end of being away: the
+    /// band has to survive the interaction that dismisses the state it describes.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowAwayBand))]
+    private string? _awayStatus;
+
+    /// <summary>How long ago that was.</summary>
+    [ObservableProperty]
+    private string _awayAge = string.Empty;
+
+    public bool ShowAwayBand => !string.IsNullOrWhiteSpace(AwayStatus);
+
+    /// <summary>Dismisses the band. Bound to the band itself — tapping the thing you have just read is
+    /// the most obvious way to be done with it.</summary>
+    public IRelayCommand DismissAwayCommand { get; }
+
+    /// <summary>
+    /// A human just did something here: scrolled, typed, tapped the transcript. Ends the unattended
+    /// stretch on the session and takes the band down.
+    /// </summary>
+    public void NoteUserInteraction()
+    {
+        StatusSource.NoteUserInteraction();
+        AwayStatus = null;
+    }
+
+    /// <summary>
+    /// Reads the away state once, on arrival, and then immediately marks the session attended. Order
+    /// matters: the snapshot is taken before the interaction that invalidates it, which is why this is
+    /// one method rather than a binding.
+    /// </summary>
+    private void CaptureAway()
+    {
+        var source = StatusSource;
+        AwayStatus = source.IsUnattended ? source.AwayStatus : null;
+        AwayAge = StatusLine.Age(source.Status, working: false);
+        source.NoteUserInteraction();
+        RaiseStatus();
+    }
+
+    private void RaiseStatus()
+    {
+        OnPropertyChanged(nameof(LatestStatus));
+        OnPropertyChanged(nameof(HasStatus));
+        OnPropertyChanged(nameof(StatusAge));
+        OnPropertyChanged(nameof(StatusIsStale));
+    }
+
     // ---- the screen ----
 
     /// <summary>
@@ -344,6 +428,7 @@ public sealed partial class SessionPageViewModel : PageViewModel
     public override void OnAppearing()
     {
         Session?.SetActive(true);
+        CaptureAway();
         ScrollToBottomRequested?.Invoke();
     }
 
@@ -366,6 +451,9 @@ public sealed partial class SessionPageViewModel : PageViewModel
     {
         Session = session;
         Bind(session);
+        // The page was pushed before the subscription landed, so this is the first moment there is an
+        // away state to read at all — OnAppearing found an empty source.
+        CaptureAway();
         RaiseDerived();
     }
 
@@ -563,5 +651,6 @@ public sealed partial class SessionPageViewModel : PageViewModel
         OnPropertyChanged(nameof(HasDisplay));
         OnPropertyChanged(nameof(ShowThumbnail));
         OnPropertyChanged(nameof(Display));
+        RaiseStatus();
     }
 }

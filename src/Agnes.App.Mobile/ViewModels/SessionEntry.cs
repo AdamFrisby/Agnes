@@ -145,6 +145,34 @@ public sealed partial class SessionEntry : ObservableObject
     /// <summary>When the session last did anything, as "now / 4m / 2h / 3d".</summary>
     public string Age => RelativeTime.Format(Session?.Items.LastOrDefault()?.Timestamp);
 
+    // ---- the agent's own status ----
+
+    /// <summary>
+    /// What the agent last said it was doing. The live session when there is one, else what the device
+    /// remembered — the whole value of this line is being right at the instant the list is opened, and
+    /// waiting for a subscription would blank exactly that instant.
+    /// </summary>
+    public AgentStatus AgentStatus
+    {
+        get
+        {
+            var live = new LiveAgentStatus(Session).Status;
+            return live.HasLine ? live : new AgentStatus(Saved.LatestStatus, Saved.LatestStatusAt);
+        }
+    }
+
+    public string? LatestStatus => AgentStatus.Line;
+
+    /// <summary>Whether the card shows a status row at all. A session whose agent has never reported
+    /// gets no empty row — silence is not a state worth a line.</summary>
+    public bool HasStatus => AgentStatus.HasLine;
+
+    /// <summary>The age at the end of the status line: "4m", or "no update for 12 min" once a working
+    /// agent has gone quiet.</summary>
+    public string StatusAge => StatusLine.Age(AgentStatus, IsRunning);
+
+    public bool StatusIsStale => StatusLine.IsStale(AgentStatus, IsRunning);
+
     public int FileCount => Session?.ModifiedFiles.Count ?? 0;
 
     public int ToolCount => Session?.ToolActivity.Count ?? 0;
@@ -189,6 +217,32 @@ public sealed partial class SessionEntry : ObservableObject
         RaiseAll();
     }
 
+    /// <summary>Copies the live session's status onto the saved pointer, so a cold start shows it before
+    /// the host has answered. Called by the list when the agent reports.</summary>
+    public void AdoptLiveStatus() => AdoptStatus(new LiveAgentStatus(Session).Status);
+
+    /// <summary>Records a status on the saved pointer. A blank one is ignored rather than stored: a card
+    /// that once had something to say does not lose it because a later report was empty.</summary>
+    public void AdoptStatus(AgentStatus status)
+    {
+        if (status.HasLine)
+        {
+            Saved = Saved with { LatestStatus = status.Line, LatestStatusAt = status.At };
+        }
+
+        RaiseStatus();
+    }
+
+    /// <summary>Re-raises just the status line and its age.</summary>
+    public void RaiseStatus()
+    {
+        OnPropertyChanged(nameof(AgentStatus));
+        OnPropertyChanged(nameof(LatestStatus));
+        OnPropertyChanged(nameof(HasStatus));
+        OnPropertyChanged(nameof(StatusAge));
+        OnPropertyChanged(nameof(StatusIsStale));
+    }
+
     /// <summary>Records a new title for the session (the agent named the conversation).</summary>
     public void UpdateSavedTitle(string title)
     {
@@ -222,11 +276,19 @@ public sealed partial class SessionEntry : ObservableObject
         OnPropertyChanged(nameof(ToolCount));
         OnPropertyChanged(nameof(HasCounts));
         OnPropertyChanged(nameof(CountsText));
+        RaiseStatus();
         Changed?.Invoke(this);
     }
 
     /// <summary>Re-raises just the relative timestamp, ticked once a minute by the list.</summary>
-    public void RaiseAge() => OnPropertyChanged(nameof(Age));
+    public void RaiseAge()
+    {
+        OnPropertyChanged(nameof(Age));
+        // "no update for 12 min" is a claim about the clock, not about the session: it has to keep
+        // counting on the minute tick or a wedged agent looks fine until something else happens.
+        OnPropertyChanged(nameof(StatusAge));
+        OnPropertyChanged(nameof(StatusIsStale));
+    }
 
     /// <summary>Raised whenever anything the list sorts on may have changed.</summary>
     public event Action<SessionEntry>? Changed;

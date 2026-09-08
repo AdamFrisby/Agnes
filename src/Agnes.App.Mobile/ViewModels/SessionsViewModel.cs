@@ -193,7 +193,9 @@ public sealed partial class SessionsViewModel : ObservableObject
                         ? (string.IsNullOrWhiteSpace(r.WorkingDirectory) ? r.SessionId : r.WorkingDirectory)
                         : r.Title!,
                     r.WorkingDirectory,
-                    HasDisplay: r.HasDisplay))
+                    HasDisplay: r.HasDisplay,
+                    LatestStatus: r.LatestStatus,
+                    LatestStatusAt: r.LatestStatusAt))
                 .ToList();
 
             if (added.Count == 0)
@@ -319,8 +321,19 @@ public sealed partial class SessionsViewModel : ObservableObject
                 entry.UpdateSavedTitle(session.AgentTitle!);
                 Persist();
             }
+            else if (e.PropertyName == LiveStatusProperty)
+            {
+                // Saved for the same reason the title is: the list is read cold, on a phone that has been
+                // in a pocket, and the status is the one line worth being right before the host answers.
+                entry.AdoptLiveStatus();
+                Persist();
+            }
         };
     }
+
+    /// <summary>The shared session view model's status property, by name — this head persists what it
+    /// reports without owning the member. See <see cref="LiveAgentStatus"/> for why it is a string.</summary>
+    private const string LiveStatusProperty = "LatestStatus";
 
     // ---- opening / creating ----
 

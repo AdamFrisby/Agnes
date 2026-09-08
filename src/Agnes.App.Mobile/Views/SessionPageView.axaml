@@ -47,6 +47,19 @@
           <c:Icon Data="{StaticResource IconMoreVertical}" Size="22" Stroke="{DynamicResource TextDim}" />
         </Button>
       </Grid>
+
+      <!-- ===== the agent's own status =====
+           A row of its own rather than a third line in the bar: the bar is a fixed 56dp and a status is
+           a sentence, so squeezing it in there would either clip it or push the title around. Two lines,
+           wrapped, and only present once the agent has actually said something. -->
+      <Grid Margin="14,0,14,10" ColumnDefinitions="*,Auto" IsVisible="{Binding HasStatus}">
+        <TextBlock Grid.Column="0" Text="{Binding LatestStatus}"
+                   Foreground="{DynamicResource TextDim}" FontSize="{StaticResource TextSm}"
+                   LineHeight="19" TextWrapping="Wrap" MaxLines="2"
+                   TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="1" Classes="caption" Text="{Binding StatusAge}"
+                   Margin="10,0,0,0" VerticalAlignment="Top" />
+      </Grid>
       </StackPanel>
     </Border>
 
@@ -170,14 +183,41 @@
     </Border>
 
     <!-- ===================== the middle: conversation, or the screen ===================== -->
-    <Grid Grid.Row="4" RowDefinitions="Auto,*">
+    <Grid Grid.Row="4" RowDefinitions="Auto,Auto,*">
+
+      <!-- ===== while you were away =====
+           A phone is checked, not watched. Coming back to a session that ran for an hour, the useful
+           thing is not the tail of the transcript but the agent's own account of what it did — so that
+           account gets one slim band at the top, in the sky hue that means "in motion" everywhere else
+           in the app, never amber: nothing here is blocked on you.
+           It is captured on arrival and taken down by the first scroll, tap or keystroke (including a
+           tap on the band itself), because a notice that survives being read is an obstruction. -->
+      <Button Grid.Row="0" Theme="{StaticResource RowButton}" Padding="0" Margin="12,10,12,0"
+              Command="{Binding DismissAwayCommand}" IsVisible="{Binding ShowAwayBand}">
+        <Border Background="{DynamicResource InfoSoft}" CornerRadius="{StaticResource RadiusMd}"
+                Padding="12,9">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <c:Icon Grid.Column="0" Data="{StaticResource IconInfo}" Size="16" Margin="0,1,10,0"
+                    Stroke="{DynamicResource Info}" VerticalAlignment="Top" />
+            <StackPanel Grid.Column="1" Spacing="2">
+              <TextBlock Text="While you were away" Classes="caption" FontWeight="SemiBold"
+                         Foreground="{DynamicResource Info}" />
+              <TextBlock Text="{Binding AwayStatus}" TextWrapping="Wrap" MaxLines="3"
+                         TextTrimming="CharacterEllipsis" FontSize="{StaticResource TextSm}"
+                         LineHeight="19" Foreground="{DynamicResource Text}" />
+            </StackPanel>
+            <TextBlock Grid.Column="2" Classes="caption" Text="{Binding AwayAge}" Margin="10,0,0,0"
+                       VerticalAlignment="Top" />
+          </Grid>
+        </Border>
+      </Button>
 
       <!-- ===== live thumbnail =====
            A graphical session is the one case where the transcript alone lies about what is happening:
            the agent's tool calls say "moved the mouse", not what appeared. So the screen sits above the
            conversation as a strip, at most one repaint a second, and tapping it opens the full segment.
            Hidden until a frame has arrived, because a reserved grey rectangle is worse than nothing. -->
-      <Button Grid.Row="0" Theme="{StaticResource RowButton}" Padding="0" Margin="12,10,12,0"
+      <Button Grid.Row="1" Theme="{StaticResource RowButton}" Padding="0" Margin="12,10,12,0"
               Command="{Binding ShowScreenCommand}"
               IsVisible="{Binding ShowThumbnail}">
         <Border CornerRadius="{StaticResource RadiusMd}" ClipToBounds="True" Height="120"
@@ -203,7 +243,7 @@
         </Border>
       </Button>
 
-      <Panel Grid.Row="1" IsVisible="{Binding IsTranscriptSegment}">
+      <Panel Grid.Row="2" IsVisible="{Binding IsTranscriptSegment}">
       <!-- MaxWidth pinned to the viewport, and the inset moved to the item list's margin: the transcript
            is measured with an unbounded width (a scroller's content always is), and the markdown engine
            sizes itself to its longest line rather than wrapping. Clamping here is what makes every reply
@@ -431,7 +471,7 @@
            The guest's display, letterboxed, with a trackpad over it. Input only flows while you hold
            control, so watching can never nudge the agent's mouse — see Controls/DisplayTrackpad.cs for
            the gesture rules and why a finger is not a mouse. -->
-      <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto" IsVisible="{Binding IsScreenSegment}">
+      <Grid Grid.Row="2" RowDefinitions="Auto,*,Auto" IsVisible="{Binding IsScreenSegment}">
 
         <!-- Who is driving, and the button that changes it. -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="12,10,12,8">
@@ -652,7 +692,7 @@
               <c:Icon Data="{StaticResource IconMic}" Size="20" Stroke="{DynamicResource TextDim}" />
             </Button>
 
-            <TextBox Grid.Column="1" Theme="{StaticResource ComposerTextBox}"
+            <TextBox Grid.Column="1" Name="Composer" Theme="{StaticResource ComposerTextBox}"
                      Text="{Binding Session.PromptText, Mode=TwoWay}"
                      PlaceholderText="Ask for something" Margin="6,0" />
 

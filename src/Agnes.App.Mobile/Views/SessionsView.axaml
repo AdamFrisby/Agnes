@@ -48,7 +48,7 @@
               <Button Theme="{StaticResource CardButton}" Margin="0,0,0,10"
                       Command="{Binding $parent[UserControl].DataContext.OpenCommand}"
                       CommandParameter="{Binding}">
-                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto,Auto">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto,Auto">
 
                   <!-- state + name + age -->
                   <Border Grid.Row="0" Grid.Column="0" Classes="dot" Margin="0,0,10,0"
@@ -73,8 +73,25 @@
                              Margin="0,3,0,0" TextTrimming="CharacterEllipsis" MaxLines="1"
                              Foreground="{DynamicResource TextMuted}" Text="{Binding ProjectLine}" />
 
+                  <!-- ===== the agent's own status =====
+                       The one line in the app the agent wrote about itself, rather than something derived
+                       from its output — so it sits directly under the identity, above the transcript's
+                       last words. Two lines, not one: a status is a sentence, and a phone card that
+                       clips it after eight words shows the setup and eats the point. Absent when the
+                       agent has never reported; a blank row would read as "idle", which is a different
+                       and wrong claim. The age carries the staleness — see StatusLine. -->
+                  <Grid Name="StatusRow" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,7,0,0"
+                        ColumnDefinitions="*,Auto" IsVisible="{Binding HasStatus}">
+                    <TextBlock Grid.Column="0" Text="{Binding LatestStatus}"
+                               Foreground="{DynamicResource TextDim}" FontSize="{StaticResource TextSm}"
+                               LineHeight="19" TextWrapping="Wrap" MaxLines="2"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" Classes="caption" Text="{Binding StatusAge}"
+                               Margin="8,0,0,0" VerticalAlignment="Top" />
+                  </Grid>
+
                   <!-- last line + status -->
-                  <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,10,0,0" Spacing="10">
+                  <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,10,0,0" Spacing="10">
                     <TextBlock Text="{Binding Preview}" Classes="dim" MaxLines="2"
                                TextTrimming="CharacterEllipsis" FontSize="{StaticResource TextSm}"
                                LineHeight="20" />
