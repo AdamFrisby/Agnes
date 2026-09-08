@@ -52,6 +52,13 @@ public interface IAgnesMcpBackend
     /// missing, is too large, or an interceptor vetoes it — the message is the agent's error text.
     /// </summary>
     Task<FileSharedEvent> ShareFileAsync(string sessionId, string path, string? caption, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records the agent's one-line status. Returns what was actually kept — the line, and whether it was
+    /// clipped or cut to its first line — so the tool can tell the agent rather than truncating it silently.
+    /// Throws when the report is empty or an interceptor refused it; the message is the agent's error text.
+    /// </summary>
+    Task<Sessions.StatusReportResult> ReportStatusAsync(string sessionId, string status, CancellationToken cancellationToken = default);
 }
 
 /// <summary>An open/known session as an MCP client sees it.</summary>

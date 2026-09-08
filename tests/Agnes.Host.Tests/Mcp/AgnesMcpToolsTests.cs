@@ -29,8 +29,8 @@ public sealed class AgnesMcpToolsTests
                 "computer_hold_key", "computer_key", "computer_move", "computer_screenshot",
                 "computer_scroll", "computer_type", "computer_wait",
                 "disarm_goal", "get_session_status", "list_goals", "list_open_approvals",
-                "list_sessions", "read_session_transcript", "respond_permission", "send_prompt",
-                "send_user_file", "set_mode",
+                "list_sessions", "read_session_transcript", "report_status", "respond_permission",
+                "send_prompt", "send_user_file", "set_mode",
             },
             names);
 
@@ -284,5 +284,119 @@ public sealed class AgnesMcpToolsTests
         var required = tool.ProtocolTool.InputSchema.GetProperty("required")
             .EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToArray();
         Assert.Equal(["path"], required);
+    }
+
+    // ---- report_status ----
+
+    [Fact]
+    public async Task Report_status_acts_on_the_calling_session_and_ignores_a_named_one()
+    {
+        // Same rule as the goal tools and send_user_file: the token IS the identity, so an agent naming
+        // somebody else's session reports into its own.
+        var backend = new FakeAgnesMcpBackend();
+        var (tools, _, _) = BuildForSession(backend, "s1");
+
+        var ack = await tools.ReportStatus("Found the leak; patching it.", sessionId: "s2-somebody-else");
+
+        Assert.Equal(("s1", "Found the leak; patching it."), Assert.Single(backend.Statuses));
+        Assert.Equal("Noted.", ack);
+    }
+
+    [Fact]
+    public async Task Report_status_with_a_device_token_requires_a_session()
+    {
+        var backend = new FakeAgnesMcpBackend();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => Build(backend).ReportStatus("no target"));
+        Assert.Empty(backend.Statuses);
+    }
+
+    [Fact]
+    public async Task Report_status_with_a_device_token_reports_for_the_named_session()
+    {
+        var backend = new FakeAgnesMcpBackend();
+
+        await Build(backend).ReportStatus("On it.", sessionId: "s9");
+
+        Assert.Equal("s9", Assert.Single(backend.Statuses).SessionId);
+    }
+
+    [Fact]
+    public async Task An_unauthenticated_report_is_rejected()
+    {
+        var backend = new FakeAgnesMcpBackend();
+
+        await Assert.ThrowsAsync<McpUnauthenticatedException>(
+            () => Build(backend, presentedToken: null).ReportStatus("hello", sessionId: "s1"));
+        Assert.Empty(backend.Statuses);
+    }
+
+    [Fact]
+    public async Task A_clipped_report_is_told_so_rather_than_truncated_in_silence()
+    {
+        // The whole point of the acknowledgement carrying the limit: a model that reads "Noted." after losing
+        // two thirds of its sentence has no reason to write a shorter one next time.
+        var backend = new FakeAgnesMcpBackend
+        {
+            StatusResult = _ => new Agnes.Host.Sessions.StatusReportResult(
+                "Rewrote the index scan and…", Clipped: true, TrimmedToFirstLine: false, MaxChars: 240),
+        };
+        var (tools, _, _) = BuildForSession(backend, "s1");
+
+        var ack = await tools.ReportStatus(new string('x', 900));
+
+        Assert.Equal(
+            "Noted the first 240 characters: \"Rewrote the index scan and…\". "
+            + "Keep future reports to one or two sentences under 240 characters.",
+            ack);
+    }
+
+    [Fact]
+    public async Task A_multi_line_report_is_told_that_only_the_first_line_was_kept()
+    {
+        var backend = new FakeAgnesMcpBackend
+        {
+            StatusResult = _ => new Agnes.Host.Sessions.StatusReportResult(
+                "Starting the refactor.", Clipped: false, TrimmedToFirstLine: true, MaxChars: 240),
+        };
+        var (tools, _, _) = BuildForSession(backend, "s1");
+
+        Assert.Equal(
+            "Kept the first line; reports are a single line.",
+            await tools.ReportStatus("Starting the refactor.\n- and then this"));
+    }
+
+    [Fact]
+    public async Task A_veto_reason_reaches_the_agent_as_the_status_tool_error()
+    {
+        var backend = new FakeAgnesMcpBackend
+        {
+            StatusFailure = new InvalidOperationException("That status wasn't recorded: it names a customer."),
+        };
+        var (tools, _, _) = BuildForSession(backend, "s1");
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => tools.ReportStatus("…"));
+
+        Assert.Contains("it names a customer", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Report_status_states_the_limit_in_its_description_and_takes_an_optional_session()
+    {
+        var tool = BuildToolDescriptors().Single(t => t.ProtocolTool.Name == "report_status");
+
+        // The model has to be able to read the budget off the tool, not discover it by being clipped.
+        Assert.Contains(
+            Agnes.Host.Sessions.StatusOptions.DefaultMaxCharsText,
+            tool.ProtocolTool.Description ?? string.Empty,
+            StringComparison.Ordinal);
+
+        var properties = tool.ProtocolTool.InputSchema.GetProperty("properties");
+        Assert.True(properties.TryGetProperty("status", out _));
+        Assert.True(properties.TryGetProperty("sessionId", out _));
+
+        var required = tool.ProtocolTool.InputSchema.GetProperty("required")
+            .EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToArray();
+        Assert.Equal(["status"], required);
     }
 }

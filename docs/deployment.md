@@ -275,9 +275,14 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 ## Agnes's own MCP tools (`agnes`)
 
 As well as wiring *other* MCP servers into an agent, the host offers its own tool set back to the agent it is
-running — `send_user_file`, `arm_goal`, `list_goals`, `disarm_goal` — as an MCP server named `agnes`. It is
-materialized into whatever config file that CLI reads, with a per-session bearer token; nothing is configured
-per session by hand.
+running — `send_user_file`, `report_status`, `arm_goal`, `list_goals`, `disarm_goal` — as an MCP server named
+`agnes`. It is materialized into whatever config file that CLI reads, with a per-session bearer token;
+nothing is configured per session by hand.
+
+The server also states one **standing instruction** in its MCP `ServerInstructions`, which clients put in the
+model's context: call `report_status` every few minutes with one line about what you found, what you are
+doing, and how it fits the plan. Adapters whose CLI takes a system prompt get the same sentence appended
+there too — see [agent-status.md](agent-status.md).
 
 | Adapter | Sandboxed session | Unsandboxed session | Token carried as |
 |---|---|---|---|
@@ -333,6 +338,8 @@ adapter follows from it.
 | `Display:{ControlIdleSeconds,MaxFps,JpegQuality,FullFrameThresholdPercent}` | The display channel's stream shape: how long an untouched human hold survives before control falls back (60 s), the per-subscriber frame-rate ceiling (15), JPEG quality (75), and the damage share at which a Tile becomes a Full frame (40 %). |
 | `Display:{InputEventsPerMinute,InputEventsPerToolCall,MaxTypeBytes,MaxWaitMs}` | What may be injected into a graphical guest: a per-session rolling budget across the agent and every person (240/min), what one agent tool call may expand to (32), the `computer_type` ceiling (4096 bytes), and the `computer_wait` ceiling (10 s). |
 | `Display:BlockedChords` | Key chords the **agent** may not press, e.g. `["super", "super+*", "ctrl+alt+*", "alt+F2", "ctrl+shift+i"]` (the default). Agent-only: what it stops is an agent leaving the application it is working in. A person driving the display is already authorized to do anything the guest allows. |
+| `Status:MaxChars` | Longest one-line status an agent may report with `report_status` (default 240, about two sentences). A longer report is **kept up to the limit**, cut at a word boundary — never refused — and the agent is told what was kept, so the next one is shorter. A non-positive value falls back to the default. See [agent-status.md](agent-status.md). |
+| `Status:MinIntervalSeconds` | Coalescing window for status reports (default 20). At most one line per window reaches the log; a report inside the window *replaces* whatever was pending and is written when the window closes, so the latest line always lands and a chatty agent can't bury its own transcript. `0` writes every report. |
 | `Sharing:MaxBytes` | Largest file an agent may send the user with `send_user_file` (default 26214400 — 25 MB). Sending copies the file into the workspace and every connected client then downloads it, phones on mobile data included, so the cap turns "send you the build" into a refusal the agent can act on rather than a silent, very slow success. See [send-user-file.md](send-user-file.md). |
 
 ## Storage topology (event store)

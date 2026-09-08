@@ -32,6 +32,12 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
     private readonly AutoContinueOptions _autoContinue;
     private readonly SharingOptions _sharing;
+    private readonly StatusOptions _status;
+    // Injected so the status window is testable without waiting on wall-clock time. Everything else in this
+    // class still reads DateTimeOffset.UtcNow directly; only the coalescing window needs a movable clock.
+    private readonly TimeProvider _time;
+    // Cancels the deferred status flushes at teardown, so a disposed manager stops writing to its store.
+    private readonly CancellationTokenSource _statusFlushes = new();
     private readonly Mcp.SessionMcpTokens _sessionMcpTokens;
 
     /// <summary>Where a sandboxed agent reaches Agnes's own MCP endpoint (bridge-local plain HTTP), or null
@@ -103,6 +109,25 @@ public sealed class SessionManager : IAsyncDisposable
         // Direct/watch session: a read-only live tail of a CLI session Agnes did not start (sessions/02). Its
         // agent handle only tails an on-disk log — sending to it is rejected, and no crash-recovery is wired.
         public bool ReadOnly;
+
+        // Whether this session was actually handed Agnes's own MCP server at launch. Set by the two
+        // materialization paths (config file / inline environment); read when composing the system prompt,
+        // so a model is only ever nudged about a tool it can really call.
+        public bool HasAgnesTools;
+
+        // The agent's latest one-line status and when it said it, so ListSessionSummariesAsync can answer
+        // without re-scanning the log; StatusScanned records that the one-time backfill has happened (a
+        // session restored from the catalogue has a status in its log but nothing in memory yet).
+        public string? LatestStatus;
+        public DateTimeOffset? LatestStatusAt;
+        public bool StatusScanned;
+
+        // The status coalescing window (Agnes:Status:MinIntervalSeconds). Guarded by StatusGate: reports can
+        // arrive from an agent's tool call and from the deferred flush at the same moment.
+        public readonly object StatusGate = new();
+        public DateTimeOffset? LastStatusWrittenAt;
+        public string? PendingStatus;
+        public bool StatusFlushScheduled;
     }
 
     /// <summary>The session's metadata entry, created on first write.</summary>
@@ -161,7 +186,9 @@ public sealed class SessionManager : IAsyncDisposable
         Mcp.SessionMcpTokens? sessionMcpTokens = null,
         GuestMcpOptions? guestMcp = null,
         SharingOptions? sharing = null,
-        Mcp.LocalMcpOptions? localMcp = null)
+        Mcp.LocalMcpOptions? localMcp = null,
+        StatusOptions? status = null,
+        TimeProvider? timeProvider = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -174,6 +201,8 @@ public sealed class SessionManager : IAsyncDisposable
         _security = security ?? new SessionSecurityOptions();
         _autoContinue = autoContinue ?? new AutoContinueOptions();
         _sharing = sharing ?? new SharingOptions();
+        _status = status ?? new StatusOptions();
+        _time = timeProvider ?? TimeProvider.System;
         _sessionMcpTokens = sessionMcpTokens ?? new Mcp.SessionMcpTokens();
         _guestMcp = guestMcp?.Url;
         _localMcp = localMcp?.Url;
@@ -889,9 +918,7 @@ public sealed class SessionManager : IAsyncDisposable
                 // A native-fork handoff (connectivity/03) resumes the CLI's own conversation from the token
                 // the source host exported; a plain open passes null and starts fresh.
                 ResumeSessionId = resumeSessionId,
-                // Prepend the library's enabled system-prompt additions; adapters whose CLI accepts a
-                // system-prompt flag (e.g. Claude Code's --append-system-prompt) thread this through.
-                SystemPrompt = _prompts?.AssembleSystemPromptAdditions(),
+                SystemPrompt = ComposeSystemPrompt(sessionId),
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -1392,6 +1419,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         entries.Add(entry);
+        State(sessionId).HasAgnesTools = true;
     }
 
     // A RunAt=Host server, as the sandbox sees it: launch the forward shim, which tunnels to the host.
@@ -1457,6 +1485,9 @@ public sealed class SessionManager : IAsyncDisposable
     internal async Task<string?> MaterializeHostMcpAsync(
         string adapterId, string sessionId, Projects.Project? project, string? workspaceId, CancellationToken cancellationToken)
     {
+        // Re-decided from scratch on every launch — see the note on the sandbox path.
+        State(sessionId).HasAgnesTools = false;
+
         // A CLI that discovers its config at a fixed path in the real home directory is excluded here — see
         // McpTarget.SupportsHostSessions. Writing there would edit the operator's own configuration.
         if (McpTargetFor(adapterId) is not { SupportsHostSessions: true } target)
@@ -1667,6 +1698,10 @@ public sealed class SessionManager : IAsyncDisposable
                 // Only resume when the agent reported a real session id (a UUID); the pre-init placeholder
                 // (a dash-less GUID) would make `--resume` fail, so start fresh in that case.
                 ResumeSessionId = LooksResumable(record.AgentSessionId) ? record.AgentSessionId : null,
+                // A relaunch is a fresh CLI process with a fresh system prompt, so it needs the same
+                // composition the open did — without this, a resumed session quietly lost the operator's
+                // prompt-library additions and the status nudge along with them.
+                SystemPrompt = ComposeSystemPrompt(sessionId),
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -2027,7 +2062,8 @@ public sealed class SessionManager : IAsyncDisposable
         if (_guestMcp is { Length: > 0 } guestMcpUrl)
         {
             var token = _sessionMcpTokens.Issue(sessionId);
-            servers = [new InlineMcpServer("agnes", guestMcpUrl, $"Bearer {token}")];
+            servers = [new InlineMcpServer(AgnesMcpServerName, guestMcpUrl, $"Bearer {token}")];
+            State(sessionId).HasAgnesTools = true;
         }
 
         foreach (var (key, value) in adapter.InlineConfigEnvironment(modelId, servers))
@@ -2186,6 +2222,10 @@ public sealed class SessionManager : IAsyncDisposable
         var env = new Dictionary<string, string>();
         var files = new List<SandboxCredentialFile>();
 
+        // Re-decided from scratch on every provision (open, resume, model switch), so a session that loses
+        // the agnes server — an operator's own server took the name, the endpoint went away — also stops
+        // being told about tools it no longer has.
+        State(sessionId).HasAgnesTools = false;
         AddSandboxModel(adapterId, modelId, sessionId, env);
 
         var credentialProvider = _credentialProviders.FirstOrDefault(p => p.Handles(adapterId));
@@ -2910,6 +2950,225 @@ public sealed class SessionManager : IAsyncDisposable
         return Files.WorkspacePaths.ResolveWithin(workspace, candidate);
     }
 
+    // ---- the agent's one-line status (see docs/agent-status.md) ----
+
+    /// <summary>
+    /// The system-prompt append a session launches with: the prompt library's enabled additions, plus the
+    /// status nudge when this session was actually handed Agnes's own MCP server. Null when there is nothing
+    /// to say, so an adapter that takes a system prompt isn't passed an empty flag.
+    /// </summary>
+    /// <remarks>
+    /// The nudge is gated on <see cref="SessionState.HasAgnesTools"/> rather than added unconditionally
+    /// because telling a model to call a tool it does not have is worse than saying nothing: it will try,
+    /// fail, and spend a turn deciding what to do about the failure. Only adapters whose CLI accepts a
+    /// system-prompt flag see any of this (Claude Code's <c>--append-system-prompt</c>); every other adapter
+    /// gets the same sentence from the MCP server's own <c>ServerInstructions</c>, which is why the text is
+    /// one constant in <see cref="Mcp.AgentStatusNudge"/> and not two.
+    /// </remarks>
+    internal string? ComposeSystemPrompt(string sessionId)
+    {
+        var additions = _prompts?.AssembleSystemPromptAdditions();
+        var nudge = StateOrNull(sessionId)?.HasAgnesTools == true ? Mcp.AgentStatusNudge.Text : null;
+        return (additions, nudge) switch
+        {
+            ({ Length: > 0 }, { Length: > 0 }) => additions + "\n\n" + nudge,
+            ({ Length: > 0 }, _) => additions,
+            (_, { Length: > 0 }) => nudge,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Records the agent's own answer to "what are you doing?" — one line, appended to the session log like
+    /// any other fact about the session, so every client that is watching sees it and every client that opens
+    /// the session tomorrow replays it.
+    /// <para>
+    /// Three things happen to a report before it lands. It is <b>normalised</b> (first line, collapsed
+    /// whitespace, clipped at a word boundary to <see cref="StatusOptions.EffectiveMaxChars"/>) — the caller
+    /// gets back what was kept and whether anything was cut, because an agent that isn't told it was
+    /// truncated writes the same paragraph again. It is put to the <b>spine</b> as a
+    /// <see cref="BeforeStatusReportedEvent"/>, so a plugin can redact or refuse it. And it is
+    /// <b>coalesced</b>: at most one line per <see cref="StatusOptions.MinInterval"/> reaches the log, with a
+    /// report arriving inside the window replacing whatever was pending and being written when the window
+    /// closes. Coalescing never drops the newest line, which is the only one anybody reads.
+    /// </para>
+    /// </summary>
+    /// <returns>What was kept, so the caller can tell the agent. Never null — an unusable report throws.</returns>
+    /// <exception cref="ArgumentException">The report is empty once normalised.</exception>
+    /// <exception cref="InvalidOperationException">An interceptor vetoed it; the message carries the reason,
+    /// because it is shown to the agent as the tool's error text.</exception>
+    public async Task<StatusReportResult> ReportStatusAsync(
+        string sessionId, string status, CancellationToken cancellationToken = default)
+    {
+        var normalized = AgentStatusText.Normalize(status, _status.EffectiveMaxChars)
+            ?? throw new ArgumentException("A status report needs some text in it.", nameof(status));
+
+        // The veto/rewrite point, dispatched for EVERY report rather than only the ones that get written:
+        // an interceptor that redacts a secret must see the line the agent actually wrote, and a veto must
+        // reach the agent as an error now, not silently at flush time.
+        var gate = await _bus.DispatchAsync(
+            new BeforeStatusReportedEvent(sessionId, normalized.Status), cancellationToken).ConfigureAwait(false);
+        if (gate.IsCanceled)
+        {
+            throw new InvalidOperationException(
+                $"That status wasn't recorded: {gate.CancelReason ?? "no reason given"}.");
+        }
+
+        // A rewrite is re-normalised so the invariant (one line, within the limit) holds however careless the
+        // interceptor was — quietly, since the agent is not the author of that text and can't act on it. An
+        // interceptor that rewrites the line away entirely (a redactor finding nothing safe to keep) records
+        // nothing; the agent is still told what its own text would have become.
+        var effective = normalized;
+        if (!string.Equals(gate.Status, normalized.Status, StringComparison.Ordinal))
+        {
+            if (AgentStatusText.Normalize(gate.Status, _status.EffectiveMaxChars) is not { } rewritten)
+            {
+                return normalized;
+            }
+
+            effective = rewritten with
+            {
+                Clipped = normalized.Clipped,
+                TrimmedToFirstLine = normalized.TrimmedToFirstLine,
+            };
+        }
+
+        var state = State(sessionId);
+        var window = _status.MinInterval;
+        DateTimeOffset? flushAt = null;
+        var writeNow = false;
+        lock (state.StatusGate)
+        {
+            var now = _time.GetUtcNow();
+            if (window <= TimeSpan.Zero || state.LastStatusWrittenAt is not { } last || now - last >= window)
+            {
+                state.LastStatusWrittenAt = now;
+                state.PendingStatus = null;
+                writeNow = true;
+            }
+            else
+            {
+                // Inside the window: the newest line replaces whatever was waiting (nobody wants the stale
+                // one) and a single flush is scheduled for the moment the window closes.
+                state.PendingStatus = effective.Status;
+                if (!state.StatusFlushScheduled)
+                {
+                    state.StatusFlushScheduled = true;
+                    flushAt = last + window;
+                }
+            }
+        }
+
+        if (writeNow)
+        {
+            await AppendStatusAsync(sessionId, effective.Status, cancellationToken).ConfigureAwait(false);
+        }
+        else if (flushAt is { } due)
+        {
+            ScheduleStatusFlush(sessionId, due);
+        }
+
+        return effective;
+    }
+
+    /// <summary>Waits out the rest of the coalescing window, then writes whatever the latest pending line is.
+    /// Fire-and-forget by design: the agent's tool call returns as soon as the report is accepted, and the
+    /// write is the host's business from then on.</summary>
+    private void ScheduleStatusFlush(string sessionId, DateTimeOffset due)
+        => _ = Task.Run(async () =>
+        {
+            try
+            {
+                var delay = due - _time.GetUtcNow();
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay, _time, _statusFlushes.Token).ConfigureAwait(false);
+                }
+
+                await FlushPendingStatusAsync(sessionId, _statusFlushes.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Host shutting down; the pending line dies with the process, which is the right outcome.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Session {SessionId}: deferred status write failed", sessionId);
+            }
+        });
+
+    /// <summary>Writes the line held back by the coalescing window, if there still is one. Internal so a test
+    /// can drive the flush directly instead of racing a timer.</summary>
+    internal async Task<SessionEvent?> FlushPendingStatusAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        if (StateOrNull(sessionId) is not { } state)
+        {
+            return null;
+        }
+
+        string? pending;
+        lock (state.StatusGate)
+        {
+            state.StatusFlushScheduled = false;
+            pending = state.PendingStatus;
+            state.PendingStatus = null;
+            if (pending is not null)
+            {
+                state.LastStatusWrittenAt = _time.GetUtcNow();
+            }
+        }
+
+        return pending is null ? null : await AppendStatusAsync(sessionId, pending, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Appends the status fact on the path every other session fact takes, and refreshes the cached
+    /// line the session catalogue reads (so a listing never has to go back to the log for it).</summary>
+    private async Task<SessionEvent> AppendStatusAsync(string sessionId, string status, CancellationToken cancellationToken)
+    {
+        var fact = new AgentStatusEvent(status);
+        var stored = _sessions.TryGetValue(sessionId, out var live)
+            ? await live.RecordAgentStatusAsync(fact).ConfigureAwait(false)
+            : await AppendDormantFactAsync(sessionId, fact, cancellationToken).ConfigureAwait(false);
+
+        var state = State(sessionId);
+        state.LatestStatus = status;
+        state.LatestStatusAt = stored.Timestamp;
+        state.StatusScanned = true;
+        _logger.LogDebug("Session {SessionId} status: {Status}", sessionId, status);
+        return stored;
+    }
+
+    /// <summary>
+    /// The session's latest status line, from the in-memory cache — backfilled once from the log for a
+    /// session this process has not seen report yet (a restored, dormant session has a status in its log and
+    /// nothing in memory). The scan happens at most once per session per host lifetime; every later listing
+    /// is free, because <see cref="AppendStatusAsync"/> keeps the cache current.
+    /// </summary>
+    private async Task<(string? Status, DateTimeOffset? At)> LatestStatusAsync(
+        string sessionId, long head, CancellationToken cancellationToken)
+    {
+        var state = State(sessionId);
+        if (state.StatusScanned || head <= 0)
+        {
+            state.StatusScanned = true;
+            return (state.LatestStatus, state.LatestStatusAt);
+        }
+
+        var events = await _store.ReadSinceAsync(sessionId, 0, cancellationToken).ConfigureAwait(false);
+        for (var i = events.Count - 1; i >= 0; i--)
+        {
+            if (events[i] is AgentStatusEvent latest)
+            {
+                state.LatestStatus = latest.Status;
+                state.LatestStatusAt = latest.Timestamp;
+                break;
+            }
+        }
+
+        state.StatusScanned = true;
+        return (state.LatestStatus, state.LatestStatusAt);
+    }
+
     // ---- the graphical sandbox's display (see docs/display-channel.md) ----
 
     /// <summary>
@@ -2933,13 +3192,23 @@ public sealed class SessionManager : IAsyncDisposable
     public async Task<SessionEvent> AppendDisplayControlAsync(
         string sessionId, DisplayControlChangedEvent changed, CancellationToken cancellationToken = default)
     {
-        if (_sessions.TryGetValue(sessionId, out var live))
-        {
-            return await live.RecordDisplayControlAsync(changed).ConfigureAwait(false);
-        }
+        return _sessions.TryGetValue(sessionId, out var live)
+            ? await live.RecordDisplayControlAsync(changed).ConfigureAwait(false)
+            : await AppendDormantFactAsync(sessionId, changed, cancellationToken).ConfigureAwait(false);
+    }
 
-        var gate = await _bus.DispatchAsync(new BeforeAgentEventEvent(sessionId, changed)).ConfigureAwait(false);
-        var stored = await _store.AppendAsync(sessionId, changed, cancellationToken).ConfigureAwait(false);
+    /// <summary>
+    /// Appends a fact about a session with no live handle: the same three steps <see cref="HostSession"/>
+    /// takes for an agent's own events — interceptor gate, append + broadcast, dispatch the fact on the
+    /// spine — rather than waking an agent process purely to write one row. One copy, because a fourth
+    /// hand-written version of these six lines is how the display path and the sharing path would quietly
+    /// stop agreeing about what "appending" means.
+    /// </summary>
+    private async Task<SessionEvent> AppendDormantFactAsync(
+        string sessionId, SessionEvent fact, CancellationToken cancellationToken)
+    {
+        var gate = await _bus.DispatchAsync(new BeforeAgentEventEvent(sessionId, fact)).ConfigureAwait(false);
+        var stored = await _store.AppendAsync(sessionId, fact, cancellationToken).ConfigureAwait(false);
         if (!gate.IsCanceled)
         {
             await _broadcaster.PublishAsync(sessionId, stored).ConfigureAwait(false);
@@ -2953,23 +3222,10 @@ public sealed class SessionManager : IAsyncDisposable
     private async Task<FileSharedEvent> AppendFileSharedAsync(
         string sessionId, FileSharedEvent shared, CancellationToken cancellationToken)
     {
-        if (_sessions.TryGetValue(sessionId, out var live))
-        {
-            return (FileSharedEvent)await live.RecordFileSharedAsync(shared).ConfigureAwait(false);
-        }
-
-        // No live handle — a dormant session shared from a paired device. Take the same three steps
-        // HostSession does (gate, append + broadcast, dispatch the fact) rather than waking an agent process
-        // purely to write one row.
-        var gate = await _bus.DispatchAsync(new BeforeAgentEventEvent(sessionId, shared)).ConfigureAwait(false);
-        var stored = await _store.AppendAsync(sessionId, shared, cancellationToken).ConfigureAwait(false);
-        if (!gate.IsCanceled)
-        {
-            await _broadcaster.PublishAsync(sessionId, stored).ConfigureAwait(false);
-        }
-
-        await _bus.DispatchAsync(stored).ConfigureAwait(false);
-        return (FileSharedEvent)stored;
+        // No live handle — a dormant session shared from a paired device — takes the shared dormant path.
+        return (FileSharedEvent)(_sessions.TryGetValue(sessionId, out var live)
+            ? await live.RecordFileSharedAsync(shared).ConfigureAwait(false)
+            : await AppendDormantFactAsync(sessionId, shared, cancellationToken).ConfigureAwait(false));
     }
 
     // ---- file browser (see .ideas/git-and-files/03-attachments-and-file-browser.md) ----
@@ -3439,6 +3695,7 @@ public sealed class SessionManager : IAsyncDisposable
                 : live.IsTurnActive ? SessionRunState.Working
                 : SessionRunState.Idle;
             var head = await _store.GetHeadAsync(id, cancellationToken).ConfigureAwait(false);
+            var (latestStatus, latestStatusAt) = await LatestStatusAsync(id, head, cancellationToken).ConfigureAwait(false);
             result.Add(new SessionSummary(
                 id,
                 adapterId,
@@ -3456,7 +3713,11 @@ public sealed class SessionManager : IAsyncDisposable
                 // Asked of the live sandbox, not of a stored flag: a client offering a "watch the screen"
                 // affordance must be told what is actually connectable right now, and a dormant session's VM
                 // has no display until it is resumed.
-                HasDisplay: DisplaySourceFor(id) is not null));
+                HasDisplay: DisplaySourceFor(id) is not null,
+                // The agent's own sentence about what it is doing, so a list of twenty sessions reads without
+                // opening any of them. Null until the agent has reported at least once.
+                LatestStatus: latestStatus,
+                LatestStatusAt: latestStatusAt));
         }
 
         return result;
@@ -3557,6 +3818,10 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Stop the deferred status flushes before the store goes: a pending line is worth less than a write
+        // into a disposed store.
+        await _statusFlushes.CancelAsync().ConfigureAwait(false);
+
         foreach (var session in _sessions.Values)
         {
             await session.DisposeAsync().ConfigureAwait(false);
@@ -3576,5 +3841,6 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         _attachGate.Dispose();
+        _statusFlushes.Dispose();
     }
 }
