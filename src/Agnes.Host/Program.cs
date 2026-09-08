@@ -38,7 +38,7 @@ builder.Services.AddSingleton<ITransportProvider>(sp =>
 // Agnes relay: dial out to a self-hosted blind relay so a host behind NAT is reachable with no inbound port
 // (Agnes:Transport:Provider=agnes-relay). TLS terminates at Kestrel with a pinned self-signed host cert; the
 // relay and the host's loopback pump only move already-encrypted bytes. See .ideas/connectivity/01-relay-and-tunneling.md.
-var agnesHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+var agnesHome = AgnesHome.Resolve(builder.Configuration);
 var relayTransportOptions = new RelayTransportOptions
 {
     Url = builder.Configuration["Agnes:Transport:Relay:Url"] ?? "",
@@ -124,7 +124,7 @@ builder.Services.AddSingleton(new HostIdentity(
 // apply and the registry would try to persist to an empty path. Treat blank as unset.
 var devicesFile = builder.Configuration["Agnes:DevicesFile"] is { Length: > 0 } configuredDevicesFile
     ? configuredDevicesFile
-    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "devices.json");
+    : Path.Combine(agnesHome, "devices.json");
 builder.Services.AddSingleton(sp => new DeviceRegistry(
     builder.Configuration["Agnes:PairingToken"], devicesFile,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<DeviceRegistry>(),
@@ -154,7 +154,7 @@ var keypairAuthOptions = new KeypairAuthOptions
 {
     Enabled = builder.Configuration.GetValue("Agnes:Auth:Keypair:Enabled", false),
     AuthorizedKeysFile = builder.Configuration["Agnes:Auth:Keypair:AuthorizedKeysFile"]
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "authorized_keys"),
+        ?? Path.Combine(agnesHome, "authorized_keys"),
 };
 builder.Services.AddSingleton(sp => new KeypairAuth(
     keypairAuthOptions, sp.GetRequiredService<ILoggerFactory>().CreateLogger<KeypairAuth>()));
@@ -246,13 +246,13 @@ builder.Services.AddRateLimiter(o => AuthRateLimit.Configure(o, authRateLimit));
 
 // ---- MCP server registry (configured from the UI, persisted to ~/.agnes/mcp.json) ----
 var mcpFile = builder.Configuration["Agnes:McpFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "mcp.json");
+    ?? Path.Combine(agnesHome, "mcp.json");
 builder.Services.AddSingleton(sp => new McpRegistry(
     mcpFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpRegistry>()));
 
 // ---- Local model provider (Copilot BYOK), configured from the UI ----
 var localProviderFile = builder.Configuration["Agnes:LocalProviderFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "local-provider.json");
+    ?? Path.Combine(agnesHome, "local-provider.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.LocalProviderRegistry(
     localProviderFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.LocalProviderRegistry>()));
 
@@ -275,7 +275,7 @@ builder.Services.AddPluginPoint<IMcpCatalogProvider>(p => p.Id);
 
 // ---- projects: per-repo bundles (sandbox + MCP + GitHub account + defaults) a session inherits ----
 var projectsFile = builder.Configuration["Agnes:ProjectsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "projects.json");
+    ?? Path.Combine(agnesHome, "projects.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ProjectStore(
     projectsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ProjectStore>()));
 
@@ -283,7 +283,7 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ProjectStore(
 //      connectivity/05). A separate store from projects (working copies vs. per-repo session config); the
 //      manager reuses GitService's clone/worktree/branch/status primitives rather than reinventing git. ----
 var checkoutsFile = builder.Configuration["Agnes:CheckoutsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "checkouts.json");
+    ?? Path.Combine(agnesHome, "checkouts.json");
 builder.Services.AddSingleton<Agnes.Host.Git.GitService>();
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.CheckoutStore(
     checkoutsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.CheckoutStore>()));
@@ -294,13 +294,13 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Git.CheckoutManager(
 
 // ---- review comments: file+line feedback anchored to a project, durable across sessions ----
 var reviewCommentsFile = builder.Configuration["Agnes:ReviewCommentsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "review-comments.json");
+    ?? Path.Combine(agnesHome, "review-comments.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ReviewCommentStore(
     reviewCommentsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ReviewCommentStore>()));
 
 // ---- prompt library: host-persisted saved prompts + slash-token templates ("stop retyping prompts") ----
 var promptLibraryDir = builder.Configuration["Agnes:PromptLibraryDir"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+    ?? agnesHome;
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.PromptLibrary(
     promptLibraryDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.PromptLibrary>()));
 
@@ -358,7 +358,7 @@ builder.Services.AddPluginPoint<IPromptRegistryProvider>(p => p.Id);
 // plugin point end-to-end; a real provider (GitHub/Linear/…) is added as another IConnectedServiceProvider
 // with NO change to the broker. The profile store holds identity/routing only — never a secret.
 var connectedServicesDir = builder.Configuration["Agnes:ConnectedServicesDir"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+    ?? agnesHome;
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.ConnectedServiceProfileStore(
     connectedServicesDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.ConnectedServiceProfileStore>()));
 var templateServiceSecret = builder.Configuration["Agnes:ConnectedServices:Template:Token"];
@@ -412,7 +412,7 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.QuotaService(
 // clock is a seam under test.
 builder.Services.AddSingleton(TimeProvider.System);
 var attentionFile = builder.Configuration["Agnes:AttentionRequestsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "attention-requests.json");
+    ?? Path.Combine(agnesHome, "attention-requests.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Attention.AttentionRequestStore(
     attentionFile, sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Attention.AttentionRequestStore>()));
@@ -436,7 +436,7 @@ builder.Services.AddHostedService(sp => new Agnes.Host.Attention.AttentionTimeou
 // existing commit/credential behaviour is unchanged until a gate is explicitly configured. Config shape:
 //   "Agnes:Approvals:Gated": [ { "ActionId": "git.commit", "Surface": "SessionAgent" }, ... ]
 var approvalsFile = builder.Configuration["Agnes:ApprovalRequestsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "approval-requests.json");
+    ?? Path.Combine(agnesHome, "approval-requests.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Approvals.ApprovalRequestStore(
     approvalsFile, sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Approvals.ApprovalRequestStore>()));
@@ -458,7 +458,7 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Approvals.ApprovalGateService
 // Reuses the security/02 GitHub identity/membership lookup for all live checks. The grant + authorizer pair
 // is the seam collaboration/02 session-sharing consumes. See .ideas/collaboration/01-collaborators-and-social.md.
 var socialDir = builder.Configuration["Agnes:SocialDir"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+    ?? agnesHome;
 builder.Services.AddSingleton(sp => new Agnes.Host.Social.CollaboratorStore(
     socialDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Social.CollaboratorStore>()));
 builder.Services.AddSingleton(sp => new Agnes.Host.Social.GrantStore(
@@ -502,7 +502,7 @@ builder.Services.AddSingleton<Agnes.Host.Sharing.PublicViewerTracker>();
 
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
 var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandboxes.json");
+    ?? Path.Combine(agnesHome, "sandboxes.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Sessions.SandboxRegistry(
     sandboxesFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxRegistry>()));
 
@@ -821,7 +821,7 @@ if (Agnes.Host.Channels.WhatsAppBridgeOptions.FromConfiguration(builder.Configur
 
 builder.Services.AddPluginPoint<IChannelBridge>(b => b.Id);
 var channelLinksFile = builder.Configuration["Agnes:ChannelLinksFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "channel-links.json");
+    ?? Path.Combine(agnesHome, "channel-links.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Channels.ChannelLinkStore(
     channelLinksFile, sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.ChannelLinkStore>()));
@@ -883,7 +883,7 @@ else
 
 builder.Services.AddPluginPoint<INotificationChannel>(c => c.Id);
 var pushRegistrationsFile = builder.Configuration["Agnes:PushRegistrationsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "push-registrations.json");
+    ?? Path.Combine(agnesHome, "push-registrations.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Notifications.PushRegistrationStore(
     pushRegistrationsFile,
     sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
@@ -907,7 +907,7 @@ builder.Services.AddSingleton<IAutomationTrigger, IntervalAutomationTrigger>();
 builder.Services.AddSingleton<IAutomationTrigger, CronAutomationTrigger>();
 builder.Services.AddPluginPoint<IAutomationTrigger>(t => t.Kind);
 var scheduledTasksFile = builder.Configuration["Agnes:ScheduledTasksFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "scheduled-tasks.json");
+    ?? Path.Combine(agnesHome, "scheduled-tasks.json");
 builder.Services.AddSingleton(sp => new ScheduledTaskManager(
     sp.GetRequiredService<IPluginRegistry<IAutomationTrigger>>(),
     sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
@@ -920,7 +920,7 @@ builder.Services.AddHostedService<ScheduledRunner>();
 // self-prompting is a runaway. Persisted, so an armed goal survives a host restart.
 builder.Services.AddSingleton(sp => new SessionGoalManager(
     builder.Configuration["Agnes:GoalsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "session-goals.json")));
+    ?? Path.Combine(agnesHome, "session-goals.json")));
 builder.Services.AddHostedService<GoalWatcher>();
 
 // ---- liveness watchdog: say when a turn stops getting anywhere ----
@@ -1179,7 +1179,7 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
     builder.Services.AddSingleton<Agnes.Sandbox.ISandboxImageBuilder>(
         sp => sp.GetRequiredService<Agnes.Sandbox.Incus.IncusSandboxProvider>());
     var imageManifestFile = builder.Configuration["Agnes:Sandbox:ImageManifest"]
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandbox-image.json");
+        ?? Path.Combine(agnesHome, "sandbox-image.json");
     builder.Services.AddSingleton(sp => new Agnes.Host.Sessions.SandboxImageManager(
         sp.GetRequiredService<Agnes.Sandbox.ISandboxImageBuilder>(), imageManifestFile,
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxImageManager>()));
@@ -1193,7 +1193,8 @@ builder.Services.AddPluginPoint<Agnes.Sandbox.ISandboxProvider>(p => p.Name);
 // Credential sources + the Connect-GitHub flow are always available (a user can link GitHub before
 // they ever open a sandbox); the broker above only consumes what's registered here.
 builder.Services.AddSingleton<Agnes.Host.Hosting.CredentialSourceRegistry>();
-builder.Services.AddSingleton(_ => new Agnes.Host.Hosting.GitHubAppStore());
+builder.Services.AddSingleton(_ => new Agnes.Host.Hosting.GitHubAppStore(
+    builder.Configuration["Agnes:GitHubAppFile"] ?? Path.Combine(agnesHome, "github-app.json")));
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.GitHubConnectFlow(
     sp.GetRequiredService<Agnes.Host.Hosting.GitHubAppStore>(),
     sp.GetRequiredService<Agnes.Host.Hosting.CredentialSourceRegistry>(),
@@ -1365,9 +1366,9 @@ builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPackageVerifier>(sp =>
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.NuGetSignatureVerifier>()));
 
 var pluginsRoot = builder.Configuration["Agnes:Plugins:Directory"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "plugins");
+    ?? Path.Combine(agnesHome, "plugins");
 var pluginStateFile = builder.Configuration["Agnes:Plugins:StateFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "plugins.json");
+    ?? Path.Combine(agnesHome, "plugins.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginStateStore(
     pluginStateFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.PluginStateStore>()));
 

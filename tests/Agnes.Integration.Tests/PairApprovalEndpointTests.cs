@@ -26,11 +26,28 @@ public sealed class PairApprovalEndpointTests
 
     private sealed class Factory : WebApplicationFactory<Program>
     {
+        // Every host-state default hangs off Agnes:Home; pointing it at a temp directory is what keeps a
+        // test run out of the operator's real ~/.agnes. See Agnes.TestKit.IsolatedHostHome.
+        private readonly Agnes.TestKit.IsolatedHostHome _home = new();
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                _home.Dispose();
+            }
+        }
+
+        /// <summary>Where this host kept its state — so a test can prove the run wrote here and nowhere else.</summary>
+        public string HomePath => _home.Path;
+
         protected override IHost CreateHost(IHostBuilder builder)
         {
             builder.ConfigureHostConfiguration(config =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
+                    ["Agnes:Home"] = _home.Path,
                     // Stands in for the first device, already paired by whatever bootstrap the operator used.
                     ["Agnes:PairingToken"] = ApproverToken,
                 }));

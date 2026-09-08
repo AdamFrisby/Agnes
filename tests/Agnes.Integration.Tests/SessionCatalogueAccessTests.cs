@@ -88,6 +88,8 @@ public class SessionCatalogueAccessTests : IClassFixture<SessionCatalogueAccessT
 
         // Throwaway device/mcp state so the test never touches the real ~/.agnes/*, and never inherits a
         // device list from another test run (which would decide who the "owner" is behind our backs).
+        private readonly Agnes.TestKit.IsolatedHostHome _home = new();
+
         public string DeviceFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-devices-cat-{Guid.NewGuid():n}.json");
         public string McpFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-mcp-cat-{Guid.NewGuid():n}.json");
 
@@ -96,6 +98,7 @@ public class SessionCatalogueAccessTests : IClassFixture<SessionCatalogueAccessT
             builder.ConfigureHostConfiguration(config =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
+                    ["Agnes:Home"] = _home.Path,
                     ["Agnes:PairingToken"] = BootstrapToken,
                     ["Agnes:DevicesFile"] = DeviceFile,
                     ["Agnes:McpFile"] = McpFile,
@@ -112,6 +115,7 @@ public class SessionCatalogueAccessTests : IClassFixture<SessionCatalogueAccessT
             base.Dispose(disposing);
             if (disposing && File.Exists(DeviceFile)) File.Delete(DeviceFile);
             if (disposing && File.Exists(McpFile)) File.Delete(McpFile);
+            if (disposing) _home.Dispose();
         }
     }
 }

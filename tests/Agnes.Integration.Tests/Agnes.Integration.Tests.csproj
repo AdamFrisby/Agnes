@@ -33,6 +33,9 @@
     <!-- The relay end-to-end test runs the in-process blind relay broker between host and client. -->
     <ProjectReference Include="..\..\src\Agnes.Relay\Agnes.Relay.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Relay.Protocol\Agnes.Relay.Protocol.csproj" />
+    <!-- IsolatedHostHome: the one place that says where a test host's state goes, and the guard that makes
+         forgetting it a startup failure rather than an edit to the developer's real ~/.agnes. -->
+    <ProjectReference Include="..\Agnes.TestKit\Agnes.TestKit.csproj" />
   </ItemGroup>
 
 </Project>
