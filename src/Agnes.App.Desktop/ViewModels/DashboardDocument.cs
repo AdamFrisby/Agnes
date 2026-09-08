@@ -266,6 +266,23 @@ public sealed class DashboardSessionRow : ObservableObject
 
     public bool HasCurrentStep => CurrentStep.Length > 0;
 
+    /// <summary>
+    /// The agent's own one-line status — what it found and what it is doing about it, in its words. It sits
+    /// under the title beside <see cref="CurrentStep"/>, which says only which tool is running: the tool is
+    /// the mechanism, this is the reason, and a dashboard is exactly where the reason is worth more.
+    /// </summary>
+    public string? LatestStatus => _doc.LatestStatus;
+
+    /// <summary>Whether there is a status at all. A session whose agent has never reported one shows
+    /// nothing here — never a placeholder saying it said nothing.</summary>
+    public bool HasStatus => _doc.HasStatus;
+
+    public string StatusAge => _doc.StatusAge;
+
+    public bool StatusIsStale => _doc.StatusIsStale;
+
+    public string StaleText => _doc.StaleText;
+
     // ---- plan progress ----
 
     private IReadOnlyList<PlanEntry> Entries => _plan?.Entries ?? [];
@@ -348,6 +365,11 @@ public sealed class DashboardSessionRow : ObservableObject
         OnPropertyChanged(nameof(UsageSummary));
         OnPropertyChanged(nameof(CurrentStep));
         OnPropertyChanged(nameof(HasCurrentStep));
+        OnPropertyChanged(nameof(LatestStatus));
+        OnPropertyChanged(nameof(HasStatus));
+        OnPropertyChanged(nameof(StatusAge));
+        OnPropertyChanged(nameof(StatusIsStale));
+        OnPropertyChanged(nameof(StaleText));
         OnPropertyChanged(nameof(HasPlan));
         OnPropertyChanged(nameof(PlanDone));
         OnPropertyChanged(nameof(PlanTotal));

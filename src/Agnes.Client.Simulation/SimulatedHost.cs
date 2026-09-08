@@ -677,6 +677,10 @@ public sealed class SimulatedHost : IAgnesHost
         {
             await Task.Delay(250, cancel).ConfigureAwait(false);
             session.Emit(new ThoughtChunkEvent(new TextContent("Reading the request and planning a response…")));
+            // The agent's own one-line status, as the host's report_status tool would record it. Emitted here
+            // (and again mid-turn below) so every offline surface that shows a status — the tab header, the
+            // dashboard rows, the "while you were away" band — has something real to render.
+            session.Emit(new AgentStatusEvent("Reading the request and planning a response."));
 
             // Once the conversation is under way, surface a sample agent-generated title (as Claude's
             // on-disk aiTitle does) so the session-name header + tab title are demoable offline.
@@ -737,6 +741,11 @@ public sealed class SimulatedHost : IAgnesHost
 
             if (Mentions(prompt, "explain", "detail", "describe", "overview"))
             {
+                // Same mid-turn report as the working path below: this branch answers and returns, so
+                // without its own emit the longest-running turn in the simulation would be the one with no
+                // status to show.
+                session.Emit(new AgentStatusEvent(
+                    "Found the config default is wrong; fixing it and adding a regression test, which is the last step of the plan."));
                 foreach (var chunk in LongAnswer.Split(' '))
                 {
                     await Task.Delay(12, cancel).ConfigureAwait(false);
@@ -782,6 +791,11 @@ public sealed class SimulatedHost : IAgnesHost
                 session.Emit(new MessageChunkEvent(MessageRole.Assistant,
                     new TextContent("Looks good — timeoutMs has a sensible default and retries stays bounded.")) { AgentId = "sub-review" });
             }
+
+            // Mid-turn: the shape the tool is actually for — what it found, what it is doing about it, and
+            // where that sits in the plan, in one breath.
+            session.Emit(new AgentStatusEvent(
+                "Found the config default is wrong; fixing it and adding a regression test, which is the last step of the plan."));
 
             var reply = BuildReply(prompt);
             foreach (var word in reply.Split(' '))
