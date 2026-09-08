@@ -1634,10 +1634,10 @@
                                                     </Button>
                                                 </Grid>
                                                 <!-- Assistant responses are one code surface with a rendered/source toggle. -->
-                                                <ctl:MarkdownMessageViewer Markdown="{Binding Text}"
+                                                <ctl:MarkdownMessageViewer Markdown="{Binding AssistantMarkdown}"
                                                                            IsVisible="{Binding IsAssistant}" />
                                                 <!-- Prompts keep their compact user-bubble treatment. -->
-                                                <ctl:MarkdownViewer Markdown="{Binding Text}" IsVisible="{Binding IsUser}"
+                                                <ctl:MarkdownViewer Markdown="{Binding UserMarkdown}" IsVisible="{Binding IsUser}"
                                                                     SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True">
                                                     <ctl:MarkdownViewer.Styles>
                                                         <!-- The built-in Markdown theme is attached as this control's own styles, so

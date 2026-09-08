@@ -43,8 +43,23 @@ public static class PlanMarkdown
 
     private static string Detail(PlanEntry entry, PlanEntryView view)
     {
-        var state = view.IsDone || view.IsPending ? null : view.StatusLabel;
+        var state = StateDetail(entry, view);
         var priority = string.IsNullOrWhiteSpace(entry.Priority) ? null : $"Priority: {entry.Priority}";
         return string.Join(" · ", new[] { state, priority }.Where(value => value is not null));
+    }
+
+    private static string? StateDetail(PlanEntry entry, PlanEntryView view)
+    {
+        if (view.IsDone || string.Equals(entry.Status, "pending", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (view.IsRunning || view.IsCancelled)
+        {
+            return view.StatusLabel;
+        }
+
+        return string.IsNullOrWhiteSpace(entry.Status) ? null : entry.Status;
     }
 }

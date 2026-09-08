@@ -95,7 +95,9 @@ public partial class MarkdownMessageViewer : UserControl
             indent++;
         }
 
-        if (indent > 3 || indent == opening.Length || opening[indent] is not ('`' or '~'))
+        // Markdown.Avalonia's ordinary code-fence parser only handles backticks. Tilde fences are
+        // claimed by Agnes only when explicitly labelled markdown/md, which is excluded below.
+        if (indent > 3 || indent == opening.Length || opening[indent] != '`')
         {
             return false;
         }
@@ -113,7 +115,7 @@ public partial class MarkdownMessageViewer : UserControl
         }
 
         var info = opening[(indent + fenceLength)..].Trim();
-        if (fenceCharacter == '`' && info.Contains('`'))
+        if (info.Contains('`'))
         {
             return false;
         }

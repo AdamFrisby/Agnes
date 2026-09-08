@@ -1,5 +1,6 @@
 using Agnes.App.Mobile.Controls;
 using Agnes.App.Mobile.Preview;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
@@ -17,9 +18,11 @@ public sealed class MarkdownBlockTests
             var block = new MarkdownBlock { Markdown = "```markdown\n# Preview\n```" };
             var toggle = Toggle(block);
             Assert.Equal("Code", toggle.Content);
+            Assert.Equal("Show Markdown block source", AutomationProperties.GetName(toggle));
 
             toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Equal("Render", toggle.Content);
+            Assert.Equal("Render Markdown block", AutomationProperties.GetName(toggle));
             Assert.Contains(
                 Descendants(block).OfType<SelectableTextBlock>(),
                 text => text.Classes.Contains("markdownFenceSource") && text.Text == "# Preview\n");

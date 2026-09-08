@@ -1,5 +1,6 @@
 using Agnes.App.Desktop.Controls;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
@@ -65,6 +66,29 @@ public sealed class MarkdownViewerTests
             Assert.Equal(new Thickness(1), codeBlock.BorderThickness);
             Assert.NotEqual(0, Assert.IsAssignableFrom<Avalonia.Media.ISolidColorBrush>(codeBlock.Background).Color.A);
             Assert.Equal(codeBlock.Background?.ToString(), editor.Background?.ToString());
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void Ordinary_tilde_fence_keeps_message_toggle_and_is_not_flattened()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(DesktopMarkdownAppBuilder));
+        Dispatch(session, () =>
+        {
+            var viewer = new MarkdownMessageViewer { Markdown = "~~~csharp\nConsole.WriteLine();\n~~~" };
+            var window = new Window { Content = viewer };
+            window.Show();
+
+            var renderer = Assert.Single(
+                Descendants(viewer).OfType<MarkdownViewer>(),
+                markdown => markdown.Name == "RenderedMarkdown");
+            var toolbar = Assert.Single(
+                Descendants(viewer).OfType<Grid>(),
+                grid => grid.Classes.Contains("markdownMessageToolbar"));
+
+            Assert.DoesNotContain("standaloneCodeMessage", renderer.Classes);
+            Assert.True(toolbar.IsVisible);
             window.Close();
         });
     }
@@ -177,9 +201,11 @@ public sealed class MarkdownViewerTests
                 Descendants(viewer).OfType<Button>(),
                 button => button.Classes.Contains("markdownFenceToggle"));
             Assert.Equal("Code", toggle.Content);
+            Assert.Equal("Show Markdown block source", AutomationProperties.GetName(toggle));
 
             toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Equal("Render", toggle.Content);
+            Assert.Equal("Render Markdown block", AutomationProperties.GetName(toggle));
             Assert.Contains(
                 Descendants(viewer).OfType<SelectableTextBlock>(),
                 text => text.Classes.Contains("markdownFenceSource") && text.Text == "# Rendered\n");

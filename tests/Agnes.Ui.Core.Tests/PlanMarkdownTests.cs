@@ -33,4 +33,14 @@ public sealed class PlanMarkdownTests
     [Fact]
     public void Empty_plan_still_exports_a_valid_markdown_document()
         => Assert.Equal("# Plan\n", PlanMarkdown.Format([]));
+
+    [Fact]
+    public void Unknown_provider_status_is_preserved_verbatim()
+    {
+        var markdown = PlanMarkdown.Format([new PlanEntry("Wait for dependency", "deferred")]);
+
+        Assert.Equal(
+            "# Plan\n\n- [ ] Wait for dependency _(deferred)_\n",
+            markdown);
+    }
 }

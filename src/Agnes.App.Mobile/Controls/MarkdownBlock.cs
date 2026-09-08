@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Agnes.Ui.Core.Markdown;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -272,6 +273,9 @@ internal sealed class MarkdownFenceView : Border
     private void ShowCurrentMode()
     {
         _toggle.Content = _showSource ? "Render" : "Code";
+        AutomationProperties.SetName(
+            _toggle,
+            _showSource ? "Render Markdown block" : "Show Markdown block source");
         ToolTip.SetTip(
             _toggle,
             _showSource ? "Render this code block as Markdown" : "Show the Markdown source as code");
