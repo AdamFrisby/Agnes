@@ -212,7 +212,7 @@ public sealed class PairApprovalEndpointTests
         var publicKey = NewDeviceKey();
         var pending = await PairingApproval.RequestAsync("http://localhost", publicKey, "Pixel 9", http);
         var offered = Assert.Single(await PairingManagement.PendingAsync("http://localhost", ApproverToken, http));
-        await PairingManagement.ApproveAsync("http://localhost", ApproverToken, offered.RequestId, http);
+        await PairingManagement.ApproveAsync("http://localhost", ApproverToken, offered.RequestId, httpClient: http);
         Assert.Equal(PairApprovalState.Approved,
             (await PairingApproval.PollAsync("http://localhost", pending.RequestId, http)).State);
 
