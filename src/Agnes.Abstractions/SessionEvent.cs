@@ -79,6 +79,7 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(PendingQueueEvent), "pending_queue")]
 [JsonDerivedType(typeof(FileSharedEvent), "file_shared")]
 [JsonDerivedType(typeof(DisplayControlChangedEvent), "display_control")]
+[JsonDerivedType(typeof(AgentStatusEvent), "agent_status")]
 public abstract record SessionEvent : Events.IAgnesEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -300,3 +301,18 @@ public enum DisplayControlHolder
 /// </summary>
 /// <param name="DeviceId">The device that took or released control; null for the agent or a timeout.</param>
 public sealed record DisplayControlChangedEvent(DisplayControlHolder Holder, string? DeviceId) : SessionEvent;
+
+/// <summary>
+/// The agent's own one-line status, reported through the <c>report_status</c> tool on the host's MCP
+/// server: what it found, what it is doing now, and how that fits the plan. One or two sentences, never
+/// a transcript. It exists because a person running many agents cannot read many transcripts, and a
+/// recap written by a second model over the first one's output is both late and expensive; the agent
+/// itself already knows the sentence.
+/// </summary>
+/// <remarks>
+/// Rides the log like every other fact so all clients agree on the latest line, but it is not a
+/// transcript item: heads show the most recent one in headers, overviews and lists, and in a session
+/// the person has not looked at for a while. The host rate-limits reports per session and clips them to
+/// one line.
+/// </remarks>
+public sealed record AgentStatusEvent(string Status) : SessionEvent;

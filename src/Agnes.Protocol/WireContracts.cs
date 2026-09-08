@@ -522,7 +522,11 @@ public sealed record SessionSummary(
     bool ReadOnly = false,
     bool Sandboxed = false,
     // Whether the session's sandbox has a display a client may open over the display channel.
-    bool HasDisplay = false)
+    bool HasDisplay = false,
+    // The agent's latest one-line status (see AgentStatusEvent) and when it said it, so a list of sessions
+    // can say what each agent is doing without opening any of them.
+    string? LatestStatus = null,
+    DateTimeOffset? LatestStatusAt = null)
 {
     /// <summary>Whether this session is waiting on a human (one or more unanswered permission requests).</summary>
     public bool IsBlocked => OpenApprovals > 0;
