@@ -26,6 +26,12 @@ public static class LivePreview
         public required string SessionId { get; init; }
         public string? Fingerprint { get; init; }
         public string OutDir { get; init; } = "screenshots/mobile-live";
+
+        /// <summary>Which live scene to shoot: <c>screen</c> (a graphical sandbox's frames, the original
+        /// reason this mode exists) or <c>status</c> (the agent's own one-line status, on the list and in
+        /// the session header). A session has one or the other, so this picks, rather than adding a flag
+        /// that would make a status run wait three minutes for a frame that is never coming.</summary>
+        public string Mode { get; init; } = "screen";
     }
 
     /// <summary>Parses the live-mode arguments, or null when <c>--host</c> was not given.</summary>
@@ -49,6 +55,7 @@ public static class LivePreview
             SessionId = Value("--session") ?? throw new ArgumentException("--host also needs --session."),
             Fingerprint = Value("--fingerprint"),
             OutDir = Value("--out") ?? Path.Combine(Directory.GetCurrentDirectory(), "screenshots", "mobile-live"),
+            Mode = Value("--mode") ?? "screen",
         };
     }
 
@@ -115,6 +122,12 @@ public static class LivePreview
             return;
         }
 
+        if (string.Equals(options.Mode, "status", StringComparison.OrdinalIgnoreCase))
+        {
+            Status(shell, window, page, entry);
+            return;
+        }
+
         page.ShowScreenCommand.ExecuteAsync(null);
         Program.Pump(() => page.Display is { IsConnected: true }, 30_000);
         if (page.Display is not { } display)
@@ -149,6 +162,35 @@ public static class LivePreview
 
         display.ReleaseControlCommand.Execute(null);
         Program.Pump(() => !display.IsUserDriving, 10_000);
+    }
+
+    /// <summary>
+    /// The status scene: the agent's own line where a phone actually reads it — on the session card in the
+    /// list, and under the header of the open session.
+    /// </summary>
+    /// <remarks>
+    /// Nothing here is staged. The line on both screens is whatever the host replayed out of the session
+    /// log, which is only there because a model in a sandbox called <c>report_status</c>; the tour's
+    /// <c>02-sessions</c> / <c>03b-session-away</c> shots hand their line in, and cannot tell that apart
+    /// from a build where the tool was never called at all.
+    /// </remarks>
+    private static void Status(ShellViewModel shell, Window window, SessionPageViewModel page, object entry)
+    {
+        // The header line comes from the live session's own status members, so give the subscription's
+        // replay a moment to land before photographing an empty header.
+        Program.Pump(() => page.HasStatus, 30_000);
+        Console.WriteLine(page.HasStatus
+            ? $"status on the phone: \"{page.LatestStatus}\" ({page.StatusAge})"
+            : "!! the session page shows no status line");
+        Program.Settle(500);
+        Program.Shot(window, "live-mobile-status-01-session");
+
+        // Back to the list, where one line per session is the entire point of the feature.
+        shell.PopToRoot();
+        shell.SelectTab(ShellTab.Sessions);
+        Program.Settle(700);
+        Program.Shot(window, "live-mobile-status-02-sessions");
+        _ = entry;
     }
 
     /// <summary>

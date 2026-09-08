@@ -34,7 +34,19 @@ public static class Program
             _outDir = live.OutDir;
             Directory.CreateDirectory(_outDir);
             using var liveSession = HeadlessUnitTestSession.StartNew(typeof(HeadlessApp));
-            liveSession.Dispatch(() => LiveCapture.Run(live), CancellationToken.None).GetAwaiter().GetResult();
+            liveSession.Dispatch(
+                () =>
+                {
+                    if (string.Equals(live.Mode, "status", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LiveStatusCapture.Run(live);
+                    }
+                    else
+                    {
+                        LiveCapture.Run(live);
+                    }
+                },
+                CancellationToken.None).GetAwaiter().GetResult();
             Console.WriteLine($"Done. Screenshots in {_outDir}");
             return;
         }

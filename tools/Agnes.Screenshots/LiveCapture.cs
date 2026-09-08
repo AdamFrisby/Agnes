@@ -48,6 +48,31 @@ public static class LiveCapture
         public string? WorkingDirectory { get; init; }
         public string Theme { get; init; } = "Dark";
 
+        /// <summary>Which live scene to shoot: <c>display</c> (a graphical sandbox and its Screen panel,
+        /// this file) or <c>status</c> (a real task and the agent's own status line, see
+        /// <see cref="LiveStatusCapture"/>). They want opposite sessions, so this picks one, not a flag.</summary>
+        public string Mode { get; init; } = "display";
+
+        /// <summary>The one prompt the status scene sends. It must never mention reporting: the whole
+        /// question is whether the standing nudge alone gets the agent to call the tool.</summary>
+        public string? Prompt { get; init; }
+
+        /// <summary>Run the session on this model id. A live run must be able to say which model it means:
+        /// a host remembers the last model chosen for an adapter, and a stale one (a BYOK id the account no
+        /// longer serves) makes every turn fail on the first token with nothing to photograph. Applied to a
+        /// joined session too, which relaunches its CLI.</summary>
+        public string? ModelId { get; init; }
+
+        /// <summary>Open the session in autonomous mode (no per-tool permission prompts). A headless
+        /// harness has nobody to answer a prompt, so an attended run of a task that writes a file simply
+        /// stops at the first approval and never reaches a status. Safe here for the same reason it is safe
+        /// anywhere: the agent is inside a disposable sandbox VM.</summary>
+        public bool Autonomous { get; init; }
+
+        /// <summary>How long to keep pumping after the turn ends, so a report the host is still holding in
+        /// its coalescing window (Agnes:Status:MinIntervalSeconds) lands before the shot.</summary>
+        public int StatusGraceMs { get; init; } = 30_000;
+
         /// <summary>Stop the session on the host once the shots are taken. Off by default — a run that joined
         /// somebody else's session must not close it — and when on it does what closing the tab does: the
         /// agent stops and the sandbox VM is shut down, kept for resume.</summary>
@@ -83,6 +108,11 @@ public static class LiveCapture
             AdapterId = Value("--agent") ?? "opencode",
             WorkingDirectory = Value("--cwd"),
             Theme = Value("--theme") ?? "Dark",
+            Mode = Value("--mode") ?? "display",
+            ModelId = Value("--model"),
+            Prompt = Value("--prompt"),
+            StatusGraceMs = int.TryParse(Value("--status-grace-ms"), out var g) ? g : 30_000,
+            Autonomous = args.Contains("--autonomous", StringComparer.Ordinal),
             Stop = args.Contains("--stop", StringComparer.Ordinal),
             Width = int.TryParse(Value("--width"), out var w) ? w : 1700,
             Height = int.TryParse(Value("--height"), out var h) ? h : 1000,
