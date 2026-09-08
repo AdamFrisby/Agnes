@@ -85,6 +85,18 @@
             <Setter Property="Background" Value="{DynamicResource Panel}" />
             <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
         </Style>
+        <!-- The status band's two emphases. Quiet is the resting state and looks like chrome; raised is
+             the same band with more weight when nobody has been looking. Neither takes a status hue —
+             the sentence reports, it does not alarm. -->
+        <Style Selector="Border.statusband">
+            <Setter Property="Background" Value="{DynamicResource Panel}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style Selector="Border.statusband.raised">
+            <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
         <!-- Pulsing dot for the "Thinking…" indicator. -->
         <Style Selector="Border.pulse">
             <Style.Animations>
@@ -624,24 +636,11 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- The agent's own one-line status, straight under the header row: what it found, what it
-                     is doing, and how that fits the plan, in its own words. Faint and single-line on
-                     purpose — it must never compete with the conversation, and the whole sentence is on the
-                     tooltip when it doesn't fit. The age sits at the end; when the agent has gone quiet the
-                     age is replaced by how long it has been quiet, in FgFaint rather than a status hue,
-                     because silence is not an error — amber here would claim the session is blocked on a
-                     human when it is precisely not. -->
-                <Grid x:Name="StatusLine" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="14,3,0,0"
-                      IsVisible="{Binding ShowStatusLine}">
-                    <TextBlock Grid.Column="0" Text="{Binding LatestStatus}" Foreground="{DynamicResource FgDim}"
-                               FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                               ToolTip.Tip="{Binding LatestStatus}"
-                               AutomationProperties.Name="What the agent says it is doing" />
-                    <TextBlock Grid.Column="1" Text="{Binding StatusAge}" Foreground="{DynamicResource FgFaint}"
-                               FontSize="12" VerticalAlignment="Center" IsVisible="{Binding !StatusIsStale}" />
-                    <TextBlock Grid.Column="1" Text="{Binding StaleText}" Foreground="{DynamicResource FgFaint}"
-                               FontSize="12" VerticalAlignment="Center" IsVisible="{Binding StatusIsStale}" />
-                </Grid>
+                <!-- The agent's own one-line status used to be repeated here, directly under the header
+                     row, as a second faint line saying exactly what the band above the transcript says.
+                     Two copies of one sentence, stacked. There is now one home for it: the status band
+                     (x:Name="StatusBand", further down this file), which is always present and merely
+                     changes emphasis when nobody has been looking. -->
 
                 <!-- inline rename / tag editor -->
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding IsRenaming}">
@@ -1588,35 +1587,56 @@
                     <!-- MIDDLE: chat -->
                     <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding ShowChat}">
 
-                        <!-- Row 0 is everything that pins above the transcript: the find bar, and the
-                             "while you were away" band. -->
+                        <!-- Row 0 is everything that pins above the transcript: the status band, and the
+                             find bar. A real grid row, never an overlay — it costs the transcript one
+                             line and gives back a place the eye can rely on. -->
                         <StackPanel Grid.Row="0">
 
-                        <!-- While you were away: the one place the status stops being a faint footnote.
-                             It appears only when the agent has done something since the person last
-                             touched this session AND that was minutes ago — the case where you come back
-                             to a tab and want one sentence, not a scroll. Any sign of life (a scroll, a
-                             keystroke, a click in the transcript, activating the tab) retires it, so it
-                             cannot linger in front of someone who is plainly reading. PanelAlt, not a
-                             status hue: it reports, it does not alarm. -->
-                        <Border IsVisible="{Binding HasAwayStatus}" Background="{DynamicResource PanelAlt}"
-                                BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="16,7"
-                                AutomationProperties.Name="While you were away">
-                            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8" MaxWidth="900"
-                                  HorizontalAlignment="Stretch">
+                        <!-- The status band: the single home for the agent's own one-line report of what
+                             it found, what it is doing, and how that fits the plan. It has two emphases
+                             and only two, because the same sentence used to be printed twice — once faint
+                             under the tab header, once here — and one of those was always redundant.
+
+                             Quiet (default): Panel, a Comment glyph, the sentence in Fg, the age in
+                             FgFaint. It sits there whenever the agent has said anything at all.
+
+                             Raised (IsUnattended): the agent has done something since the person last
+                             touched this session AND that was minutes ago — you have come back to a tab
+                             and want one sentence, not a scroll. PanelAlt with a hairline Line border, a
+                             ClockAlarm glyph, "While you were away" ahead of the sentence, and a dismiss.
+                             Any sign of life (a scroll, a keystroke, a click, activating the tab) settles
+                             it back to quiet; the band itself does not go away.
+
+                             No status hue in either state. The agent is in motion, not blocking you — sky
+                             belongs to the working indicators that already exist, and amber here would
+                             claim the session is waiting on a human when it is precisely not. Likewise
+                             the stale replacement for the age ("no update for 12 min") stays FgFaint:
+                             silence is not a failure. -->
+                        <Border x:Name="StatusBand" Classes="statusband" Classes.raised="{Binding IsUnattended}"
+                                IsVisible="{Binding ShowStatusLine}" Height="30" Padding="16,0"
+                                AutomationProperties.Name="What the agent says it is doing">
+                            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+                                <ic:SymbolIcon Grid.Column="0" Symbol="Comment" FontSize="15"
+                                               Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                               IsVisible="{Binding !IsUnattended}" />
                                 <ic:SymbolIcon Grid.Column="0" Symbol="ClockAlarm" FontSize="15"
-                                               Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" />
+                                               Foreground="{DynamicResource FgDim}" VerticalAlignment="Center"
+                                               IsVisible="{Binding IsUnattended}" />
                                 <TextBlock Grid.Column="1" Text="While you were away" Foreground="{DynamicResource FgDim}"
-                                           FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="2" Text="{Binding AwayStatus}" Foreground="{DynamicResource Fg}"
+                                           FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           IsVisible="{Binding IsUnattended}" />
+                                <TextBlock Grid.Column="2" Text="{Binding LatestStatus}" Foreground="{DynamicResource Fg}"
                                            FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                           ToolTip.Tip="{Binding AwayStatus}" />
+                                           ToolTip.Tip="{Binding LatestStatus}" />
                                 <TextBlock Grid.Column="3" Text="{Binding StatusAge}" Foreground="{DynamicResource FgFaint}"
-                                           FontSize="12" VerticalAlignment="Center" />
+                                           FontSize="12" VerticalAlignment="Center" IsVisible="{Binding !StatusIsStale}" />
+                                <TextBlock Grid.Column="3" Text="{Binding StaleText}" Foreground="{DynamicResource FgFaint}"
+                                           FontSize="12" VerticalAlignment="Center" IsVisible="{Binding StatusIsStale}" />
                                 <Button Grid.Column="4" Command="{Binding DismissAwayCommand}"
                                         Content="{icx:SymbolIcon Symbol=Dismiss}" Background="Transparent"
-                                        Foreground="{DynamicResource FgFaint}" BorderThickness="0" Padding="6,2"
-                                        Cursor="Hand" AutomationProperties.Name="Dismiss the away summary" />
+                                        Foreground="{DynamicResource FgFaint}" BorderThickness="0" Padding="6,0"
+                                        Cursor="Hand" IsVisible="{Binding IsUnattended}"
+                                        AutomationProperties.Name="Dismiss the away summary" />
                             </Grid>
                         </Border>
 

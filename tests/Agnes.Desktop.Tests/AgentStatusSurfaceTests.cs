@@ -16,10 +16,13 @@ using Avalonia.VisualTree;
 namespace Agnes.Desktop.Tests;
 
 /// <summary>
-/// The desktop's three status surfaces, rendered for real: the faint line under the tab header, the
-/// "while you were away" band above the transcript, and the dashboard row. Rendering is the point — a
-/// binding to a property that does not exist throws on attach, not at build time, and the away band's whole
-/// contract is that it appears and disappears rather than that a bool flips somewhere.
+/// The desktop's two status surfaces, rendered for real: the one band above the transcript, and the
+/// dashboard row. Rendering is the point — a binding to a property that does not exist throws on attach,
+/// not at build time, and the band's whole contract is a visual one: it is present whenever the agent has
+/// said anything, and it *raises* rather than appears when nobody has been looking.
+///
+/// There used to be a third surface: a faint duplicate of the same sentence under the tab header. It is
+/// gone, and <see cref="The_header_no_longer_repeats_the_status_under_the_toolbar"/> keeps it gone.
 /// </summary>
 [Collection("desktop-headless")]
 public class AgentStatusSurfaceTests
@@ -50,7 +53,7 @@ public class AgentStatusSurfaceTests
     }
 
     [Fact]
-    public async Task The_tab_header_carries_the_agents_latest_line_and_its_age()
+    public async Task The_band_carries_the_agents_latest_line_and_its_age()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(TestAppBuilder));
         await session.Dispatch(() =>
@@ -61,17 +64,21 @@ public class AgentStatusSurfaceTests
             scene.Emit(new AgentStatusEvent(Reported));
             Dispatcher.UIThread.RunJobs();
 
-            var line = Assert.Single(scene.Window.GetVisualDescendants().OfType<Grid>(), g => g.Name == "StatusLine");
-            Assert.True(line.IsEffectivelyVisible);
-            Assert.Contains(Reported, Texts(line));
-            Assert.Contains("just now", Texts(line));
+            var band = Band(scene.Window);
+            Assert.True(band.IsEffectivelyVisible);
+            Assert.Contains(Reported, Texts(band));
+            Assert.Contains("just now", Texts(band));
+
+            // Quiet: no "while you were away", no dismiss — the person is right here.
+            Assert.DoesNotContain("While you were away", Texts(band));
+            Assert.DoesNotContain("raised", band.Classes);
 
             scene.Window.Close();
         }, CancellationToken.None);
     }
 
     [Fact]
-    public async Task A_session_whose_agent_has_said_nothing_shows_no_line_at_all()
+    public async Task A_session_whose_agent_has_said_nothing_shows_no_band_at_all()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(TestAppBuilder));
         await session.Dispatch(() =>
@@ -79,15 +86,61 @@ public class AgentStatusSurfaceTests
             var scene = Show(new Clock(new DateTimeOffset(2026, 9, 8, 12, 0, 0, TimeSpan.Zero)));
             Dispatcher.UIThread.RunJobs();
 
-            var line = Assert.Single(scene.Window.GetVisualDescendants().OfType<Grid>(), g => g.Name == "StatusLine");
-            Assert.False(line.IsEffectivelyVisible);
+            Assert.False(Band(scene.Window).IsEffectivelyVisible);
+
+            scene.Window.Close();
+        }, CancellationToken.None);
+    }
+
+    /// <summary>The band replaced a second copy of itself under the toolbar; one sentence, one place.</summary>
+    [Fact]
+    public async Task The_header_no_longer_repeats_the_status_under_the_toolbar()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(TestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var clock = new Clock(new DateTimeOffset(2026, 9, 8, 12, 0, 0, TimeSpan.Zero));
+            var scene = Show(clock);
+            scene.Emit(new AgentStatusEvent(Reported));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.DoesNotContain(scene.Window.GetVisualDescendants().OfType<Grid>(), g => g.Name == "StatusLine");
+            // And the sentence itself is rendered exactly once, not stacked twice.
+            Assert.Single(Texts(scene.Window), t => t == Reported);
+
+            scene.Window.Close();
+        }, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// A working agent that has gone quiet swaps the age for how long it has been quiet — in the band, in
+    /// FgFaint, and never in a status hue.
+    /// </summary>
+    [Fact]
+    public async Task Silence_from_a_working_agent_is_reported_in_the_band()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(TestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var clock = new Clock(new DateTimeOffset(2026, 9, 8, 12, 0, 0, TimeSpan.Zero));
+            var scene = Show(clock);
+
+            scene.Emit(new AgentStatusEvent(Reported));
+            // Stale only counts while the agent is actually working, and "working" is derived from the
+            // stream — a streamed chunk is what puts the session in a running turn.
+            scene.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("thinking about it")));
+            clock.Advance(TimeSpan.FromMinutes(12));
+            scene.Session.RaiseStatusAge();
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Contains(Texts(Band(scene.Window)), t => t.StartsWith("no update for", StringComparison.Ordinal));
 
             scene.Window.Close();
         }, CancellationToken.None);
     }
 
     [Fact]
-    public async Task The_away_band_appears_when_nobody_has_looked_and_goes_the_moment_somebody_does()
+    public async Task The_band_raises_when_nobody_has_looked_and_settles_the_moment_somebody_does()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(TestAppBuilder));
         await session.Dispatch(() =>
@@ -107,11 +160,18 @@ public class AgentStatusSurfaceTests
 
             Assert.Contains("While you were away", Texts(scene.Window));
             Assert.Contains(Reported, Texts(scene.Window));
+            Assert.Contains("raised", Band(scene.Window).Classes);
 
-            // Any sign of life retires it — here the same call every scroll, keystroke and click makes.
+            // Any sign of life settles it — here the same call every scroll, keystroke and click makes.
             scene.Session.NoteUserInteraction();
             Dispatcher.UIThread.RunJobs();
             Assert.DoesNotContain("While you were away", Texts(scene.Window));
+
+            // ...but the band stays: only the emphasis changed.
+            var band = Band(scene.Window);
+            Assert.True(band.IsEffectivelyVisible);
+            Assert.DoesNotContain("raised", band.Classes);
+            Assert.Contains(Reported, Texts(band));
 
             scene.Window.Close();
         }, CancellationToken.None);
@@ -195,6 +255,9 @@ public class AgentStatusSurfaceTests
         Dispatcher.UIThread.RunJobs();
         return new Scene(window, doc, doc.Session!, view);
     }
+
+    private static Border Band(Visual root)
+        => Assert.Single(root.GetVisualDescendants().OfType<Border>(), b => b.Name == "StatusBand");
 
     private static List<string> Texts(Visual root)
         => [.. root.GetVisualDescendants().OfType<TextBlock>()

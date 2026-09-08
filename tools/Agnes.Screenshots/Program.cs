@@ -98,10 +98,14 @@ public static class Program
         Settle(200);
         Capture(window, "03-conversation.png");
 
-        // 3s) The agent's own one-line status, and the band that carries it when nobody has been looking.
-        //     Staged by back-dating the last visit rather than by waiting three minutes: the session is a
-        //     real one whose agent really reported, and the only fiction is when the person last looked at
-        //     it — which is exactly the fact the band is about.
+        // 3t) The status band at rest: one line above the transcript carrying the agent's own report of
+        //     what it is doing, quiet enough to read as chrome. It is the *only* copy of that sentence —
+        //     the faint duplicate under the toolbar is gone.
+        Capture(window, "03t-agent-status.png");
+
+        // 3s) The same band raised. Staged by back-dating the last visit rather than by waiting three
+        //     minutes: the session is a real one whose agent really reported, and the only fiction is when
+        //     the person last looked at it — which is exactly the fact the raised state is about.
         first.Session!.NoteUserInteraction(DateTimeOffset.Now - TimeSpan.FromMinutes(8));
         Settle(150);
         Capture(window, "03s-agent-status-away.png");
