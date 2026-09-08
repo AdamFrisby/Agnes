@@ -237,7 +237,7 @@ public enum PairApprovalState
 
 /// <summary>The result of polling a pairing request. <see cref="Token"/> is set exactly once, on the
 /// first poll after approval.</summary>
-public sealed record PairApprovalStatus(PairApprovalState State, string? DeviceId = null, string? Token = null);
+public sealed record PairApprovalStatus(PairApprovalState State, string? DeviceId = null, string? Token = null, DeviceRole Role = DeviceRole.Member);
 
 /// <summary>
 /// The six digits shown on both screens during approval pairing.
@@ -261,7 +261,37 @@ public static class PairVerification
 
 /// <summary>A successful pairing — the per-device token to store and connect with (shown once).
 /// Shared by every bootstrap method (pairing code, GitHub SSO, keypair).</summary>
-public sealed record PairResponse(string DeviceId, string DeviceName, string Token);
+public sealed record PairResponse(string DeviceId, string DeviceName, string Token, DeviceRole Role = DeviceRole.Member);
+
+/// <summary>
+/// What a paired device may do on the host, decided by HOW it was admitted rather than by the order it
+/// arrived in. A device admitted with the operator's own secret (the pairing code, a pairing grant, the
+/// bootstrap token) or an operator-authorized key is an <see cref="Owner"/>; a device vouched for by
+/// another device is a <see cref="Member"/> unless an Owner chose otherwise at approval time. Owners can
+/// promote, demote (never the last Owner) and prune devices.
+/// </summary>
+/// <remarks>
+/// A Member is not a second-class guest: it can open sessions and always sees the sessions it started,
+/// plus anything shared with it. It cannot see other people's sessions or change host-wide configuration.
+/// The role exists so that "why can't this device see anything" has an answer on the Devices page rather
+/// than an empty list.
+/// </remarks>
+public enum DeviceRole
+{
+    Member,
+    Owner,
+}
+
+/// <summary>Body of <c>POST /pair/approve/{requestId}</c>: the role the approver admits the device with.
+/// Only an Owner may grant <see cref="DeviceRole.Owner"/>; anything else is admitted as a Member.</summary>
+public sealed record PairApprovalDecision(DeviceRole Role = DeviceRole.Member);
+
+/// <summary>Body of <c>PUT /devices/{id}/role</c> (Owner only).</summary>
+public sealed record DeviceRoleRequest(DeviceRole Role);
+
+/// <summary>Body of <c>POST /devices/prune</c> (Owner only): remove devices not seen for this many days
+/// (never the caller's own device, never the last Owner).</summary>
+public sealed record DevicePruneRequest(int UnusedForDays = 30);
 
 /// <summary>Which bootstrap auth methods a host offers (advertised at <c>GET /auth/methods</c>) so a
 /// client shows only the enabled ones. <see cref="GitHubClientId"/> is a public OAuth client id for the
@@ -592,7 +622,11 @@ public sealed record DeviceInfo(
     DateTimeOffset PairedAt,
     DateTimeOffset? LastSeenAt,
     string? Subject = null,
-    bool IsCurrentDevice = false);
+    bool IsCurrentDevice = false,
+    // How the device may act on this host (see DeviceRole) and how it was admitted ("pairing", "approval",
+    // "keypair", "github", ...), so the Devices page can say both without guessing from the subject.
+    DeviceRole Role = DeviceRole.Member,
+    string? Kind = null);
 
 /// <summary>
 /// How widely an MCP server applies, resolved at session start. <see cref="AllHosts"/> and
