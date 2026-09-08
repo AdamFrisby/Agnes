@@ -198,4 +198,27 @@ public sealed class PairApprovalEndpointTests
         // The key is what the digits are derived from, so a keyless request could never be verified.
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task An_approval_run_writes_its_devices_inside_its_own_temporary_home()
+    {
+        // This class is why the guard exists. It used to mint a real device record per run into the
+        // developer's own ~/.agnes/devices.json — 55 "Pixel 9" rows had accumulated there — and under the
+        // old "earliest device owns the host" rule the oldest of them had taken the host over. So the one
+        // thing worth asserting is not that approval works (the tests above do that) but WHERE it landed.
+        using var factory = new Factory();
+        using var http = factory.CreateClient();
+
+        var publicKey = NewDeviceKey();
+        var pending = await PairingApproval.RequestAsync("http://localhost", publicKey, "Pixel 9", http);
+        var offered = Assert.Single(await PairingManagement.PendingAsync("http://localhost", ApproverToken, http));
+        await PairingManagement.ApproveAsync("http://localhost", ApproverToken, offered.RequestId, http);
+        Assert.Equal(PairApprovalState.Approved,
+            (await PairingApproval.PollAsync("http://localhost", pending.RequestId, http)).State);
+
+        var written = factory.HomePath;
+        var devices = Path.Combine(written, "devices.json");
+        Assert.True(File.Exists(devices), $"the approved device should have been recorded under {written}");
+        Assert.Contains("Pixel 9", File.ReadAllText(devices), StringComparison.Ordinal);
+    }
 }
