@@ -213,6 +213,16 @@ public static class LiveStatusCapture
         }
 
         doc.SelectAgentChoiceCommand.Execute(agent);
+
+        // --model applies to a NEW session too: the free-text id overrides the picker, so the open request
+        // carries exactly the model this run asked for rather than whatever the catalogue listed first.
+        if (options.ModelId is { Length: > 0 } modelId)
+        {
+            Program.Pump(() => doc.HasModels, 30_000);
+            doc.CustomModelId = modelId;
+            Console.WriteLine($"model for the new session: {modelId}");
+        }
+
         doc.StartSessionCommand.Execute(null);
         Console.WriteLine($"opening a {options.AdapterId} session "
             + $"(sandbox: {doc.UseSandbox}, autonomous: {doc.SkipPermissions}).");

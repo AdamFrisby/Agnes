@@ -207,13 +207,19 @@ public sealed partial class SessionDocument : Document, ITraySession
     }
 
     /// <summary>Replaces the model picker's contents (called by the controller once the catalog is resolved),
-    /// preselecting the first available model.</summary>
+    /// preselecting a favourite when one is offered and otherwise nothing.</summary>
+    /// <remarks>
+    /// Nothing selected means the open request carries no model and the CLI runs its own default — which is
+    /// the one choice guaranteed to work. Preselecting "the first available model" was how a session on a
+    /// live host opened with a BYOK gateway id the CLI rejected on the first token: the catalogue's order is
+    /// the provider's, not a recommendation, and a person who never touched the picker had not chosen it.
+    /// </remarks>
     public void SetModels(IEnumerable<ModelChoice> models)
     {
         Models = new ObservableCollection<ModelChoice>(models);
         CustomModelId = string.Empty;
         SelectedModel = null;
-        SelectModelChoice(Models.FirstOrDefault(m => m.IsAvailable));
+        SelectModelChoice(Models.FirstOrDefault(m => m.IsFavorite && m.IsAvailable));
         OnPropertyChanged(nameof(HasModels));
     }
 
