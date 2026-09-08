@@ -2,18 +2,17 @@ using Agnes.App.Mobile.Controls;
 using Agnes.App.Mobile.Preview;
 using Avalonia.Automation;
 using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Interactivity;
 
 namespace Agnes.Mobile.Tests;
 
-public sealed class MarkdownBlockTests
+[Collection(AvaloniaCollection.Name)]
+public sealed class MarkdownBlockTests(AvaloniaSession avalonia)
 {
     [Fact]
-    public void Markdown_fence_renders_first_and_keeps_its_source_mode_while_streaming()
+    public async Task Markdown_fence_renders_first_and_keeps_its_source_mode_while_streaming()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(PreviewAppBuilder));
-        Dispatch(session, () =>
+        await avalonia.Run(() =>
         {
             var block = new MarkdownBlock { Markdown = "```markdown\n# Preview\n```" };
             var toggle = Toggle(block);
@@ -36,10 +35,9 @@ public sealed class MarkdownBlockTests
     }
 
     [Fact]
-    public void Ordinary_code_fences_keep_the_standard_renderer()
+    public async Task Ordinary_code_fences_keep_the_standard_renderer()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(PreviewAppBuilder));
-        Dispatch(session, () =>
+        await avalonia.Run(() =>
         {
             var block = new MarkdownBlock { Markdown = "```csharp\nvar answer = 42;\n```" };
             Assert.DoesNotContain(
@@ -49,10 +47,9 @@ public sealed class MarkdownBlockTests
     }
 
     [Fact]
-    public void Each_markdown_fence_has_its_own_mode()
+    public async Task Each_markdown_fence_has_its_own_mode()
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(PreviewAppBuilder));
-        Dispatch(session, () =>
+        await avalonia.Run(() =>
         {
             var block = new MarkdownBlock
             {
@@ -74,10 +71,9 @@ public sealed class MarkdownBlockTests
     [Theory]
     [InlineData("~~~md\n## Tilde\n~~~", "## Tilde\n")]
     [InlineData("```markdown\n## Still streaming", "## Still streaming")]
-    public void Alternate_and_streaming_markdown_fences_use_the_toggle(string markdown, string source)
+    public async Task Alternate_and_streaming_markdown_fences_use_the_toggle(string markdown, string source)
     {
-        using var session = HeadlessUnitTestSession.StartNew(typeof(PreviewAppBuilder));
-        Dispatch(session, () =>
+        await avalonia.Run(() =>
         {
             var block = new MarkdownBlock { Markdown = markdown };
             var toggle = Toggle(block);
@@ -97,9 +93,6 @@ public sealed class MarkdownBlockTests
         => Assert.Single(
             Descendants(block).OfType<Button>(),
             button => button.Classes.Contains("markdownFenceToggle"));
-
-    private static void Dispatch(HeadlessUnitTestSession session, Action action)
-        => session.Dispatch(action, CancellationToken.None).GetAwaiter().GetResult();
 
     private static IEnumerable<Control> Descendants(Control root)
     {
