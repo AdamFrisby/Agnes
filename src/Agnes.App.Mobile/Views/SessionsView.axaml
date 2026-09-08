@@ -126,9 +126,19 @@
         <TextBlock Classes="headline" Text="No sessions yet" HorizontalAlignment="Center"
                    TextAlignment="Center" />
         <TextBlock Classes="dim" TextAlignment="Center" LineHeight="22"
+                   IsVisible="{Binding !HasMemberNotice}"
                    Text="One host runs the agents; this phone drives them. Start a session and we'll keep the whole history." />
         <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Center"
+                IsVisible="{Binding !HasMemberNotice}"
                 Command="{Binding ShowHostsCommand}" Content="Connect a host" />
+
+        <!-- A member's empty list is not the same fact as an owner's: it may only mean this phone can't
+             see what's running. Say which, and offer the page that can change it. -->
+        <StackPanel Name="MemberNoticePanel" Spacing="14" IsVisible="{Binding HasMemberNotice}">
+          <TextBlock Classes="dim" TextAlignment="Center" LineHeight="22" Text="{Binding MemberNotice}" />
+          <Button Theme="{StaticResource OutlineButton}" HorizontalAlignment="Center"
+                  Command="{Binding ShowDevicesCommand}" Content="Open More › Devices" />
+        </StackPanel>
       </StackPanel>
 
       <!-- ===== new session ===== -->

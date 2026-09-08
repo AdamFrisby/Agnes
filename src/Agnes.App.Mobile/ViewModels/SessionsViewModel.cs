@@ -41,6 +41,7 @@ public sealed partial class SessionsViewModel : ObservableObject
         NewSessionCommand = new RelayCommand(StartNew);
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         ShowHostsCommand = new RelayCommand(() => _shell.ShowSheet(new HostsSheetViewModel(_shell, _hosts, this)));
+        ShowDevicesCommand = new RelayCommand(() => _shell.Push(new DevicesPageViewModel(_shell)));
         EntryActionsCommand = new RelayCommand<SessionEntry>(e => { if (e is not null) { _shell.ShowSheet(new SessionActionsSheetViewModel(_shell, this, e)); } });
 
         // Relative timestamps go stale silently, which makes a live list look frozen. One cheap tick a
@@ -71,6 +72,22 @@ public sealed partial class SessionsViewModel : ObservableObject
 
     /// <summary>True when there is genuinely nothing to show (as opposed to "not loaded yet").</summary>
     public bool IsEmpty => All.Count == 0 && !IsRestoring;
+
+    /// <summary>
+    /// The role explanation, when a connected host has told this phone it is a member.
+    ///
+    /// An owner's empty list means nothing is running. A member's may only mean it can't see what is.
+    /// Those two screens are identical, and the second one is the one that made a newly-paired device
+    /// look broken — so it says which it is, and where the fix lives.
+    /// </summary>
+    public string MemberNotice => _hosts.Real.FirstOrDefault(l => l.IsMember) is { } link
+        ? DeviceRoleText.EmptyStateForMember(link.Name, "More › Devices")
+        : string.Empty;
+
+    public bool HasMemberNotice => MemberNotice.Length > 0;
+
+    /// <summary>Takes the reader to the page the notice names, rather than making them find it.</summary>
+    public IRelayCommand ShowDevicesCommand { get; }
 
     /// <summary>How many sessions are blocked on the user — the Inbox tab's badge.</summary>
     public int AttentionCount => All.Count(e => e.NeedsAttention);
@@ -554,6 +571,8 @@ public sealed partial class SessionsViewModel : ObservableObject
         OnPropertyChanged(nameof(HostSummary));
         OnPropertyChanged(nameof(AnyHostOnline));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(MemberNotice));
+        OnPropertyChanged(nameof(HasMemberNotice));
         AttentionChanged?.Invoke();
     }
 

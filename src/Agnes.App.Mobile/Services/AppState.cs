@@ -24,7 +24,15 @@ public sealed record MobileSettings(
 
 /// <summary>A host this device has paired with. The token is the per-device bearer token issued at
 /// pairing — revocable host-side, and never shared between devices.</summary>
-public sealed record SavedHost(string Name, string Url, string Token, string? Fingerprint = null);
+/// <param name="Role">
+/// What this device last knew itself to be on that host, remembered only so an empty session list can be
+/// explained on the screen that shows it rather than one round trip later. Null means "not asked yet",
+/// which is what every host saved before roles existed says — and is why it isn't defaulted to Member:
+/// an owner must never be told, even for a moment, that it is a member. The host re-answers on connect.
+/// </param>
+public sealed record SavedHost(
+    string Name, string Url, string Token, string? Fingerprint = null,
+    Agnes.Protocol.DeviceRole? Role = null);
 
 /// <summary>The device's paired hosts.</summary>
 public static class HostRegistry

@@ -65,6 +65,7 @@ public sealed partial class SessionDocument : Document, ITraySession
         SignInWithKeyCommand = new AsyncRelayCommand(() => _controller.SignInWithKeyAsync(this));
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
+        OpenDevicesSettingsCommand = new RelayCommand(() => _controller.OpenDevicesSettings());
         CloseLoginTerminalCommand = new RelayCommand(() => LoginTerminal = null);
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
         SetPermissionModeCommand = new RelayCommand<string>(v => { if (!PermissionPromptsRequired) { SkipPermissions = v == "Autonomous"; } });
@@ -341,6 +342,20 @@ public sealed partial class SessionDocument : Document, ITraySession
 
     [ObservableProperty]
     private string _hostName = string.Empty;
+
+    /// <summary>
+    /// Why this tab's session list is short, when the reason is this device's role rather than the host's
+    /// state. Empty for an owner, for a host too old to say, and whenever there is something in the list —
+    /// an explanation for an absence has no business appearing next to a presence.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowHostRoleNotice))]
+    private string _hostRoleNotice = string.Empty;
+
+    public bool ShowHostRoleNotice => HostRoleNotice.Length > 0;
+
+    /// <summary>Takes the reader to the page the notice names.</summary>
+    public IRelayCommand OpenDevicesSettingsCommand { get; }
 
     [ObservableProperty]
     private string _agentName = string.Empty;

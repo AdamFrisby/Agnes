@@ -156,6 +156,25 @@ than adding a row: same id, same role, and the previous token stops working.
 For headless / automation, set `Agnes:PairingToken` to a fixed bootstrap token;
 it's always accepted, skips the pairing handshake, and counts as an Owner.
 
+**What the clients show** (one paragraph; the rest of this section is the host's).
+A device is admitted as an **owner** or a **member**, and both Avalonia heads say
+which. Pairing and sign-in report the role they were granted on the status line
+("Paired as owner", or "Paired as member — ask an owner to promote this device if
+you need to see everything"). A member whose session list is empty is told why
+rather than left with a blank screen — desktop points at Settings › Devices,
+Android at More › Devices — because a member sees only the sessions it started
+plus anything shared with it, which is indistinguishable from a broken host
+otherwise. The Devices page lists each device's role, how it was admitted ("paired
+with code", "vouched for by a device", "authorized key", "GitHub") and when it was
+last seen; an owner also gets **Make owner** / **Make member** per row (disabled on
+the last owner) and a **Remove devices unused for 30 days** action that names the
+count before it acts. A non-owner sees the same list read-only, under the line
+"Only an owner can change roles." When a device asks to join, the approver is
+offered **Let in as member** and — only if the approver is itself an owner — **Let
+in as owner**, with the verification digits shown beside both. A host that predates
+roles answers 404 to `GET /devices/me`, and the clients then behave exactly as they
+did before roles existed: nothing is claimed, and nothing is explained.
+
 The pairing code is ~40 bits with rotate-after-5-failures — fine on localhost or a
 private overlay, but a thin guard on the open internet. For an internet-facing host,
 prefer **GitHub sign-in** below and turn the pairing code off:

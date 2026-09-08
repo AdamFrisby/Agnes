@@ -165,7 +165,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
         RevokeDeviceCommand = new AsyncRelayCommand<DeviceRowVm>(RevokeDeviceAsync);
         ApproveDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: true));
+        ApproveDeviceAsOwnerCommand = new AsyncRelayCommand<string>(
+            id => DecideApprovalAsync(id, approve: true, DeviceRole.Owner));
         DenyDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: false));
+        SetDeviceRoleCommand = new AsyncRelayCommand<DeviceRowVm>(SetDeviceRoleAsync);
+        PruneDevicesCommand = new AsyncRelayCommand(PruneDevicesAsync);
         LoadMcpServersCommand = new AsyncRelayCommand(LoadMcpServersAsync);
         AddMcpServerCommand = new AsyncRelayCommand(AddMcpServerAsync);
         RemoveMcpServerCommand = new AsyncRelayCommand<string>(RemoveMcpServerAsync);
@@ -185,6 +189,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OpenDashboardCommand = new RelayCommand(OpenDashboard);
         SetSettingsCategoryCommand = new RelayCommand<string>(v => { if (v is not null) { SettingsCategory = v; } });
         LinkGitHubNowCommand = new RelayCommand(LinkGitHubNow);
+        OpenDevicesSettingsCommand = new RelayCommand(OpenDevicesSettings);
         DismissGitHubLinkPromptCommand = new RelayCommand(() => ShowGitHubLinkPrompt = false);
         LoadSandboxesCommand = new AsyncRelayCommand(LoadSandboxesAsync);
         DeleteSandboxRecordCommand = new AsyncRelayCommand<SandboxRowVm>(DeleteSandboxRecordAsync);
@@ -510,7 +515,63 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool HasPendingApprovals => PendingApprovals.Count > 0;
 
     public IAsyncRelayCommand<string> ApproveDeviceCommand { get; }
+    public IAsyncRelayCommand<string> ApproveDeviceAsOwnerCommand { get; }
     public IAsyncRelayCommand<string> DenyDeviceCommand { get; }
+    public IAsyncRelayCommand<DeviceRowVm> SetDeviceRoleCommand { get; }
+    public IAsyncRelayCommand PruneDevicesCommand { get; }
+
+    /// <summary>How long a device may go unused before the prune offer will remove it.</summary>
+    public const int PruneUnusedForDays = 30;
+
+    /// <summary>
+    /// Whether this device is an Owner on the host the Devices page is showing.
+    ///
+    /// Everything that manages other devices hangs off this. A Member that was shown owner buttons would
+    /// get a silent 403 for its trouble, so the buttons simply aren't there — and a line says why, because
+    /// a page that quietly has fewer controls than someone else's is its own small mystery.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanManageDevices))]
+    [NotifyPropertyChangedFor(nameof(ShowOnlyOwnersNote))]
+    private bool _isHostOwner;
+
+    /// <summary>False until the host has answered <c>/devices/me</c>, so nothing is claimed before it's
+    /// known — an old host that never answers leaves the page exactly as it was before roles existed.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanManageDevices))]
+    [NotifyPropertyChangedFor(nameof(ShowOnlyOwnersNote))]
+    private bool _isHostRoleKnown;
+
+    public bool CanManageDevices => IsHostRoleKnown && IsHostOwner;
+
+    public bool ShowOnlyOwnersNote => IsHostRoleKnown && !IsHostOwner;
+
+    /// <summary>The line a non-owner sees where the owner sees buttons.</summary>
+    public static string OnlyOwnersNote => DeviceRoleText.OnlyOwnersManage;
+
+    public static string PruneLabel => DeviceRoleText.PruneAction(PruneUnusedForDays);
+
+    /// <summary>Arms the prune the way revoking a device is armed: the first click names how many devices
+    /// would go, the second removes them. Removing several devices at once deserves at least that.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PruneButtonLabel))]
+    private bool _isConfirmingPrune;
+
+    public string PruneButtonLabel => IsConfirmingPrune
+        ? DeviceRoleText.ConfirmPrune(StaleDeviceCount, PruneUnusedForDays)
+        : PruneLabel;
+
+    /// <summary>How many listed devices the prune would take, computed here so the confirmation can name
+    /// a number instead of asking a human to accept an unknown amount of destruction.</summary>
+    private int StaleDeviceCount => Devices.Count(IsStale);
+
+    /// <summary>The client's reading of what the host will prune: never this device, and never an owner —
+    /// so the number offered can't promise more than the host is willing to do.</summary>
+    private static bool IsStale(DeviceRowVm row)
+        => !row.IsCurrentDevice
+           && !row.IsOwner
+           && (row.Info.LastSeenAt is not { } seen
+               || DateTimeOffset.UtcNow - seen > TimeSpan.FromDays(PruneUnusedForDays));
 
     /// <summary>
     /// What to put on a settings status line when a call to the host failed. The raw exception chain says
@@ -567,16 +628,29 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // returns none, so this never turns an older host into an error.
             var waiting = await PairingManagement.PendingAsync(target.Url, target.Token, target.Http);
 
+            // …and so does what this device itself is, which decides whether the page manages anything or
+            // only reports. Null means the host predates roles: leave the page as it was before they existed.
+            var me = await PairingManagement.MeAsync(target.Url, target.Token, target.Http);
+
+            var owners = list.Count(d => d.Role == DeviceRole.Owner);
             var now = DateTimeOffset.UtcNow;
             _dispatcher.Post(() =>
             {
+                IsHostRoleKnown = me is not null;
+                IsHostOwner = me?.Role == DeviceRole.Owner;
+
                 Devices.Clear();
-                foreach (var d in list) { Devices.Add(new DeviceRowVm(d, now)); }
+                foreach (var d in list)
+                {
+                    Devices.Add(new DeviceRowVm(d, now) { IsLastOwner = owners <= 1 });
+                }
 
                 PendingApprovals.Clear();
                 foreach (var p in waiting) { PendingApprovals.Add(p); }
                 OnPropertyChanged(nameof(HasPendingApprovals));
 
+                IsConfirmingPrune = false;
+                OnPropertyChanged(nameof(PruneButtonLabel));
                 DevicesStatus = list.Count == 0 ? "No paired devices." : $"{list.Count} paired device(s).";
             });
         }
@@ -591,7 +665,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// public key, so approving is only meaningful once a human has compared them against the asking
     /// device's screen — the UI says so, and there is no way to approve without seeing them.
     /// </summary>
-    private async Task DecideApprovalAsync(string? requestId, bool approve)
+    /// <param name="role">
+    /// What the device is admitted as. Letting someone in as a member is the ordinary answer and the
+    /// default button; letting them in as an owner hands over the host, so it is a separate, deliberate
+    /// click that only an owner is shown.
+    /// </param>
+    private async Task DecideApprovalAsync(string? requestId, bool approve, DeviceRole role = DeviceRole.Member)
     {
         var target = ActiveHttpHost();
         if (target is null || string.IsNullOrEmpty(requestId))
@@ -603,7 +682,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             if (approve)
             {
-                await PairingManagement.ApproveAsync(target.Url, target.Token, requestId, target.Http);
+                await PairingManagement.ApproveAsync(target.Url, target.Token, requestId, role, target.Http);
             }
             else
             {
@@ -611,12 +690,67 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             }
 
             await LoadDevicesAsync();
-            _dispatcher.Post(() => DevicesStatus = approve ? "Device approved." : "Request declined.");
+            _dispatcher.Post(() => DevicesStatus = approve
+                ? role == DeviceRole.Owner ? "Device let in as an owner." : "Device let in as a member."
+                : "Request declined.");
         }
         catch (Exception ex)
         {
             _dispatcher.Post(() => DevicesStatus = "Couldn't answer that request: " + Explain(ex));
         }
+    }
+
+    /// <summary>
+    /// Promotes or demotes one device. The host is the authority — it refuses a demotion that would leave
+    /// no owner, and a Member asking at all — so a refusal is reported as a refusal rather than being
+    /// pre-empted by hiding the list, and the page reloads either way so what's shown is what's true.
+    /// </summary>
+    private async Task SetDeviceRoleAsync(DeviceRowVm? row)
+    {
+        var target = ActiveHttpHost();
+        if (row is null || target is null)
+        {
+            return;
+        }
+
+        var wanted = row.TargetRole;
+        var ok = await PairingManagement.SetRoleAsync(target.Url, target.Token, row.Id, wanted, target.Http);
+        await LoadDevicesAsync();
+        _dispatcher.Post(() => DevicesStatus = ok
+            ? $"{row.Name} is now {(wanted == DeviceRole.Owner ? "an owner" : "a member")}."
+            : $"The host wouldn't change {row.Name}'s role — it keeps at least one owner, and only an owner may ask.");
+    }
+
+    /// <summary>
+    /// Removes every device that hasn't been seen for a month. Two clicks: the first names how many would
+    /// go, because "remove unused devices" with no number is a request to approve an unknown amount of
+    /// destruction. The host still decides — it never prunes the caller's own device or the last owner.
+    /// </summary>
+    private async Task PruneDevicesAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            return;
+        }
+
+        if (!IsConfirmingPrune)
+        {
+            _dispatcher.Post(() =>
+            {
+                IsConfirmingPrune = true;
+                DevicesStatus = StaleDeviceCount == 0
+                    ? $"Nothing has been idle for {PruneUnusedForDays} days."
+                    : "Click again to remove them.";
+            });
+            return;
+        }
+
+        var ok = await PairingManagement.PruneAsync(target.Url, target.Token, PruneUnusedForDays, target.Http);
+        await LoadDevicesAsync();
+        _dispatcher.Post(() => DevicesStatus = ok
+            ? $"Removed the devices unused for {PruneUnusedForDays} days."
+            : "The host wouldn't prune devices — only an owner can.");
     }
 
     /// <summary>
@@ -678,6 +812,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     // ---- Settings tab (a first-class document, opened by the gear) ----
     public IRelayCommand OpenSettingsCommand { get; }
+
+    /// <summary>Takes a member straight to the page that explains its role — the notice that names
+    /// "Settings › Devices" would be a worse notice if it made you go and find it.</summary>
+    public IRelayCommand OpenDevicesSettingsCommand { get; }
+
     public IRelayCommand LinkGitHubNowCommand { get; }
     public IRelayCommand DismissGitHubLinkPromptCommand { get; }
 
@@ -746,6 +885,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         doc.ShowAddHost = true;
         _ = DiscoverAuthMethodsAsync(doc);
         IsSetupWizardOpen = false;
+    }
+
+    public void OpenDevicesSettings()
+    {
+        OpenSettings();
+        SettingsCategory = "devices";
     }
 
     private void LinkGitHubNow()
@@ -2786,7 +2931,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     // ---- ITabController ----
 
-    public async Task<bool> SelectHostAsync(SessionDocument doc, KnownHost host)
+    public Task<bool> SelectHostAsync(SessionDocument doc, KnownHost host)
+        => SelectHostAsync(doc, host, announceRole: false);
+
+    /// <param name="announceRole">
+    /// True when this connect immediately follows pairing or signing in, so the host's answer to "what am
+    /// I here?" also lands on the status line. See <see cref="RefreshDeviceRoleAsync"/> for why that answer
+    /// comes from the host rather than from the pairing response.
+    /// </param>
+    private async Task<bool> SelectHostAsync(SessionDocument doc, KnownHost host, bool announceRole)
     {
         try
         {
@@ -2821,6 +2974,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // What's already running here, alongside the agent picker. Best-effort and off the critical path:
             // connecting must not wait on it, and a host too old to answer just shows no list.
             _ = doc.HostSessions.LoadAsync();
+
+            // Show the remembered role's explanation immediately, then correct it from the host. A member
+            // that opens a tab and finds nothing must be told why on the same screen, not on the next one.
+            _dispatcher.Post(() => doc.HostRoleNotice = NoticeFor(host.Role, host.Name));
+            _ = RefreshDeviceRoleAsync(doc, host, announceRole);
             return true;
         }
         catch (Exception ex)
@@ -2832,6 +2990,57 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             _dispatcher.Post(() => doc.IsConnectingHost = false);
         }
+    }
+
+    /// <summary>
+    /// The sentence a device sees where its sessions would be. Only a Member gets one: an owner's empty
+    /// list means the host really is idle, and saying anything there would be noise.
+    /// </summary>
+    private static string NoticeFor(DeviceRole? role, string hostName)
+        => role == DeviceRole.Member ? DeviceRoleText.EmptyStateForMember(hostName) : string.Empty;
+
+    /// <summary>
+    /// Asks the host what this device is, updates the tab's explanation and remembers the answer against the
+    /// saved host so the next connect can say it before the round trip. Best-effort throughout: a host that
+    /// predates <c>/devices/me</c> answers nothing, and the tab is left exactly as it was.
+    /// </summary>
+    /// <param name="announce">
+    /// Whether to also say it on the status line — true straight after pairing or signing in, which is the
+    /// one moment a human is certainly reading it.
+    ///
+    /// The announcement is driven from here rather than from the <see cref="PairResponse"/> on purpose.
+    /// <c>Role</c> is a trailing-optional wire field defaulting to Member, so a host too old to have roles
+    /// returns a response that <em>says</em> Member — and announcing that would tell an operator's own
+    /// first device it is a guest. This endpoint answering at all is the proof the host has roles.
+    /// </param>
+    private async Task RefreshDeviceRoleAsync(SessionDocument doc, KnownHost host, bool announce = false)
+    {
+        if (!host.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var me = await PairingManagement.MeAsync(host.Url, host.Token, Agnes.Client.AgnesHttp.For(host.Fingerprint));
+        if (me is null)
+        {
+            return;
+        }
+
+        _dispatcher.Post(() =>
+        {
+            doc.HostRoleNotice = NoticeFor(me.Role, host.Name);
+            if (announce)
+            {
+                doc.StatusText = DeviceRoleText.Paired(me.Role);
+            }
+
+            var index = _knownHosts.FindIndex(h => h.Url == host.Url);
+            if (index >= 0 && _knownHosts[index].Role != me.Role)
+            {
+                _knownHosts[index] = _knownHosts[index] with { Role = me.Role };
+                _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+            }
+        });
     }
 
     public async Task<Agnes.Abstractions.ProviderAuthStatus?> CheckAgentAuthAsync(SessionDocument doc, string adapterId)
@@ -2951,14 +3160,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             ? Agnes.Client.PinnedTls.CreateClient(fingerprint)
             : null;
         var pairingFailed = false;
+        var justPaired = false;
         if (!string.IsNullOrEmpty(codeOrToken))
         {
             try
             {
                 _dispatcher.Post(() => doc.StatusText = "Pairing…");
                 var deviceName = $"{Environment.MachineName} (desktop)";
-                var paired = await Agnes.Client.DevicePairing.PairAsync(url, codeOrToken, deviceName, pinnedHttp);
-                token = paired.Token;
+                token = (await Agnes.Client.DevicePairing.PairAsync(url, codeOrToken, deviceName, pinnedHttp)).Token;
+                justPaired = true;
             }
             catch
             {
@@ -2968,7 +3178,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         // Persist ONLY after a successful connection, so a wrong URL / expired code never gets saved.
         var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, token, fingerprint);
-        var connected = await SelectHostAsync(doc, host);
+        var connected = await SelectHostAsync(doc, host, announceRole: justPaired);
         if (connected)
         {
             if (!_knownHosts.Any(h => h.Url == host.Url))
@@ -3044,8 +3254,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var deviceName = $"{Environment.MachineName} (desktop)";
             var paired = await Agnes.Client.KeypairEnrollment.AuthenticateAsync(url, deviceName, httpClient: http).ConfigureAwait(false);
 
-            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
-            var connected = await SelectHostAsync(doc, host);
+            var host = new KnownHost(
+                string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
+            var connected = await SelectHostAsync(doc, host, announceRole: true);
             if (connected)
             {
                 if (!_knownHosts.Any(h => h.Url == host.Url))
@@ -3101,8 +3312,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 .CompleteAsync(url, methods.GitHubClientId, code, deviceName, hostClient: http).ConfigureAwait(false);
 
             // Same persist-on-successful-connect flow as AddHostAsync — never save a host we couldn't reach.
-            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
-            var connected = await SelectHostAsync(doc, host);
+            var host = new KnownHost(
+                string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
+            var connected = await SelectHostAsync(doc, host, announceRole: true);
             if (connected)
             {
                 if (!_knownHosts.Any(h => h.Url == host.Url))

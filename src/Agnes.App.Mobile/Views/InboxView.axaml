@@ -62,14 +62,21 @@
                     </StackPanel>
                   </Border>
 
+                  <!-- Two ways in, not one. A member is the ordinary answer and keeps the primary slot;
+                       handing over the run of the host is a separate, differently-worded tap that a phone
+                       only offers when this device is itself an owner. -->
                   <Grid ColumnDefinitions="*,10,*">
                     <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Decline"
                             Command="{Binding $parent[UserControl].DataContext.DenyDeviceCommand}"
                             CommandParameter="{Binding}" />
-                    <Button Grid.Column="2" Theme="{StaticResource SuccessButton}" Content="Approve"
+                    <Button Grid.Column="2" Theme="{StaticResource SuccessButton}" Content="Let in as member"
                             Command="{Binding $parent[UserControl].DataContext.ApproveDeviceCommand}"
                             CommandParameter="{Binding}" />
                   </Grid>
+                  <Button Name="LetInAsOwner" Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
+                          Content="Let in as owner" IsVisible="{Binding CanGrantOwner}"
+                          Command="{Binding $parent[UserControl].DataContext.ApproveDeviceAsOwnerCommand}"
+                          CommandParameter="{Binding}" />
                 </StackPanel>
               </Border>
             </DataTemplate>

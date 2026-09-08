@@ -796,6 +796,20 @@
                                    Foreground="{DynamicResource FgDim}" FontSize="12" HorizontalAlignment="Center" />
                     </StackPanel>
 
+                    <!-- Why the list above is empty, when the reason is this device's role rather than an idle
+                         host. A newly-paired member's first screen is this one, and "nothing here" with no
+                         explanation is exactly the dead end roles exist to remove. -->
+                    <Border Name="MemberRoleNotice" IsVisible="{Binding ShowHostRoleNotice}" CornerRadius="10" Padding="14,12"
+                            Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{Binding HostRoleNotice}" Foreground="{DynamicResource FgDim}" FontSize="12"
+                                       TextWrapping="Wrap" />
+                            <Button Classes="chip" HorizontalAlignment="Left" Padding="9,3" FontSize="11"
+                                    Content="Open Settings › Devices"
+                                    Command="{Binding OpenDevicesSettingsCommand}" />
+                        </StackPanel>
+                    </Border>
+
                     <!-- Already running on this host: the sessions this device may reach, listed as soon as the
                          host connects. Rejoining work in progress is the first question after pairing, so it sits
                          above the new-session controls rather than behind them. -->

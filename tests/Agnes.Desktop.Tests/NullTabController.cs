@@ -21,6 +21,7 @@ internal sealed class NullTabController : ITabController
     public Task SignInWithGitHubAsync(SessionDocument doc) => Task.CompletedTask;
     public Task SignInWithKeyAsync(SessionDocument doc) => Task.CompletedTask;
     public Task ForgetHostAsync(SessionDocument doc, KnownHost host) => Task.CompletedTask;
+    public void OpenDevicesSettings() { }
     public bool IsForgettableHost(string url) => false;
     public Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false) => Task.CompletedTask;
     public Task DiscoverExternalSessionsAsync(SessionDocument doc) => Task.CompletedTask;
