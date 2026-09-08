@@ -72,10 +72,22 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _showDiscarded;
     // True only while the constructor rebuilds the transcript from the log — see the replay guard there.
     private bool _replaying;
+    private readonly Func<DateTimeOffset> _now;
+    private readonly DateTimeOffset _openedAt;
+    private string? _latestStatus;
+    private DateTimeOffset? _latestStatusAt;
+    private DateTimeOffset _lastUserInteractionAt;
+    private DateTimeOffset? _lastAgentActivityAt;
     private SendPolicy _sendPolicy = SendPolicy.QueueInAgent;
 
-    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null, Agnes.Abstractions.Events.IEventBus? eventBus = null, IReceivedFileHandler? receivedFiles = null)
+    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null, Agnes.Abstractions.Events.IEventBus? eventBus = null, IReceivedFileHandler? receivedFiles = null, Func<DateTimeOffset>? now = null)
     {
+        // Everything time-derived on this view model (the status age, staleness, whether the person has
+        // wandered off) reads the clock through this one function, so a test can state "eleven minutes
+        // later" instead of sleeping for eleven minutes.
+        _now = now ?? (() => DateTimeOffset.Now);
+        _openedAt = _now();
+        _lastUserInteractionAt = _openedAt;
         _host = host;
         _view = view;
         _dispatcher = dispatcher;
@@ -181,6 +193,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         RecallPreviousCommand = new RelayCommand(RecallPrevious);
         RecallNextCommand = new RelayCommand(RecallNext);
         DismissBannerCommand = new RelayCommand(DismissBanner);
+        // Dismissing the away band IS declaring yourself present — there is no separate "hide it" state to
+        // keep, which is why one method serves both the gesture and every other sign of life.
+        DismissAwayCommand = new RelayCommand(NoteUserInteraction);
         RetryCommand = new AsyncRelayCommand(RetryAsync);
         OpenSearchCommand = new RelayCommand(() => IsSearchOpen = true);
         CloseSearchCommand = new RelayCommand(() => { IsSearchOpen = false; SearchQuery = string.Empty; });
@@ -395,6 +410,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         if (active)
         {
             _ = _host.MarkSessionReadAsync(SessionId, _view.LastSequence);
+            // Bringing the tab to the front is the person arriving, so it retires the away band here rather
+            // than in each head's activation glue — a phone pushing this page counts for the same reason a
+            // desktop tab click does.
+            NoteUserInteraction();
         }
 
         OnPropertyChanged(nameof(IsUnread));
@@ -402,6 +421,149 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Marks this session unread (sticky — stays unread while open until the next focus).</summary>
     public void MarkUnread() => _ = _host.MarkSessionUnreadAsync(SessionId);
+
+    // ---- the agent's own one-line status ----
+    //
+    // A person running a dozen agents cannot read a dozen transcripts. The agent says, rarely and in its own
+    // words, what it found and what it is doing (AgentStatusEvent, via the host's report_status tool); this
+    // is where that sentence and its age live, for every surface that shows a session without opening it.
+    // All of it is derived from two fields and one clock, so it is testable without a UI and identical on
+    // every head.
+
+    /// <summary>How long the agent may go without a word before its silence is itself worth saying.</summary>
+    private static readonly TimeSpan StatusStaleAfter = TimeSpan.FromMinutes(10);
+
+    /// <summary>How long the person must be gone before the session counts as unattended. Short, because
+    /// three minutes away from a running agent is already long enough to have missed what it decided.</summary>
+    private static readonly TimeSpan UnattendedAfter = TimeSpan.FromMinutes(3);
+
+    /// <summary>The agent's latest one-line status, or null until it has reported one. Replay leaves the
+    /// last one in the log here; a live report replaces it. Never a placeholder — a surface with nothing to
+    /// say shows nothing.</summary>
+    public string? LatestStatus => _latestStatus;
+
+    /// <summary>When the agent said it (local time), or null if it never has.</summary>
+    public DateTimeOffset? LatestStatusAt => _latestStatusAt;
+
+    public bool HasStatus => !string.IsNullOrWhiteSpace(_latestStatus);
+
+    /// <summary>The status's age in prose — "just now", "2 min ago". Empty when there is no status.</summary>
+    public string StatusAge => RelativeTime.Ago(_latestStatusAt, _now());
+
+    /// <summary>
+    /// The agent is working and has gone quiet: no status for ten minutes (or none at all since this view
+    /// opened). Only ever true while it is *working* — an idle session that said nothing recently is simply
+    /// finished, not silent.
+    /// </summary>
+    public bool StatusIsStale => IsWorking && _now() - (_latestStatusAt ?? _openedAt) > StatusStaleAfter;
+
+    /// <summary>
+    /// What to show in place of the age when the agent has gone quiet: "no update for 12 min". Deliberately
+    /// not a status hue — see the one-meaning-per-hue rule. Silence is not a failure, and painting it amber
+    /// would say the session is blocked on a human, which is exactly what it is not.
+    /// </summary>
+    public string StaleText => StatusIsStale
+        ? $"no update for {RelativeTime.Elapsed(_now() - (_latestStatusAt ?? _openedAt))}"
+        : string.Empty;
+
+    /// <summary>
+    /// Whether the header's status line has anything to say — either a status, or the fact that a working
+    /// agent has stopped saying anything. Silence only counts as news while it is working, so a fresh idle
+    /// session shows no line at all rather than an empty one.
+    /// </summary>
+    public bool ShowStatusLine => HasStatus || StatusIsStale;
+
+    /// <summary>When the person last did anything with this session on this client (opening it counts).</summary>
+    public DateTimeOffset LastUserInteractionAt => _lastUserInteractionAt;
+
+    /// <summary>
+    /// The agent has done something since the person last touched this session, and that was more than
+    /// three minutes ago — the case where a status line stops being a nicety and becomes the whole point:
+    /// you come back to a tab and want one sentence, not a scroll.
+    /// </summary>
+    public bool IsUnattended => _lastAgentActivityAt is { } acted
+        && acted > _lastUserInteractionAt
+        && _now() - _lastUserInteractionAt > UnattendedAfter;
+
+    /// <summary>The status to show in the "while you were away" band — the latest one, but only while the
+    /// session actually is unattended, so a head can bind this alone and get both conditions.</summary>
+    public string? AwayStatus => IsUnattended ? _latestStatus : null;
+
+    /// <summary>Whether there is anything to put in that band (unattended *and* the agent said something).</summary>
+    public bool HasAwayStatus => !string.IsNullOrWhiteSpace(AwayStatus);
+
+    /// <summary>
+    /// Records that the person is here: it retires the away band and restarts the three-minute clock, since
+    /// everything the agent has done up to now is on the near side of this visit. Heads call it on scroll,
+    /// typing, a click into the transcript and tab activation — anything that means eyes on this session.
+    /// </summary>
+    public void NoteUserInteraction() => NoteUserInteraction(_now());
+
+    /// <summary>
+    /// As <see cref="NoteUserInteraction()"/>, but for an interaction at a stated moment — a head restoring
+    /// saved state, or a harness staging a session that was left alone eight minutes ago. Both sides of
+    /// "unattended" are timestamps rather than a flag precisely so this works: back-dating the visit leaves
+    /// the work the agent already did on the far side of it, which is what being away means.
+    /// </summary>
+    public void NoteUserInteraction(DateTimeOffset when)
+    {
+        // Every keystroke in the composer comes through here, so only announce a change when there is one:
+        // the visit time itself is not on screen, and the band's presence is the only thing it moves.
+        var wasUnattended = IsUnattended;
+        _lastUserInteractionAt = when;
+        if (wasUnattended || IsUnattended)
+        {
+            RaiseStatusAge();
+        }
+    }
+
+    /// <summary>
+    /// Re-raises everything the status line derives from the clock rather than from an event. Nothing here
+    /// changes on its own, so a surface showing an age ticks this (every 30s while it is visible) — the same
+    /// bargain the dashboard already makes with its relative timestamps.
+    /// </summary>
+    public void RaiseStatusAge()
+    {
+        OnPropertyChanged(nameof(StatusAge));
+        OnPropertyChanged(nameof(StatusIsStale));
+        OnPropertyChanged(nameof(StaleText));
+        OnPropertyChanged(nameof(ShowStatusLine));
+        OnPropertyChanged(nameof(LastUserInteractionAt));
+        OnPropertyChanged(nameof(IsUnattended));
+        OnPropertyChanged(nameof(AwayStatus));
+        OnPropertyChanged(nameof(HasAwayStatus));
+    }
+
+    // Stamped on every live event the agent produced. Guarded like the visit above, because a streamed reply
+    // arrives a word at a time and re-raising seven properties per word would be the expensive way to say
+    // nothing.
+    private void NoteAgentActivity()
+    {
+        var wasUnattended = IsUnattended;
+        _lastAgentActivityAt = _now();
+        if (wasUnattended != IsUnattended)
+        {
+            RaiseStatusAge();
+        }
+    }
+
+    // Applied identically in replay and live: each report simply replaces the last, so folding the whole log
+    // leaves the most recent one standing and a live report overwrites it.
+    private void ApplyStatus(AgentStatusEvent status)
+    {
+        var text = status.Status.Trim();
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        _latestStatus = text;
+        _latestStatusAt = status.Timestamp == default ? _now() : status.Timestamp.ToLocalTime();
+        OnPropertyChanged(nameof(LatestStatus));
+        OnPropertyChanged(nameof(LatestStatusAt));
+        OnPropertyChanged(nameof(HasStatus));
+        RaiseStatusAge();
+    }
 
     public string Title { get; }
     public string SessionId => _view.SessionId;
@@ -1118,6 +1280,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(IsAwaitingInput));
         OnPropertyChanged(nameof(IsReadyForReview));
         OnPropertyChanged(nameof(IsFaulted));
+        // Staleness is "working AND quiet", so a change of activity can make silence meaningful or
+        // meaningless without a single new status arriving.
+        OnPropertyChanged(nameof(StatusIsStale));
+        OnPropertyChanged(nameof(StaleText));
+        OnPropertyChanged(nameof(ShowStatusLine));
     }
 
     /// <summary>
@@ -2013,6 +2180,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public ICommand RecallPreviousCommand { get; }
     public ICommand RecallNextCommand { get; }
     public ICommand DismissBannerCommand { get; }
+
+    /// <summary>Dismisses the "while you were away" band — which is simply <see cref="NoteUserInteraction()"/>
+    /// under a button, since the band is present exactly while nobody has been.</summary>
+    public ICommand DismissAwayCommand { get; }
     public ICommand OpenSearchCommand { get; }
     public ICommand CloseSearchCommand { get; }
     public ICommand NextMatchCommand { get; }
@@ -2171,6 +2342,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 CurrentModeId = mode.ModeId;
                 break;
 
+            case AgentStatusEvent status:
+                ApplyStatus(status);
+                break;
+
             case PendingQueueEvent queue:
                 ApplyPendingQueue(queue);
                 break;
@@ -2213,6 +2388,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 if (m.CostUsd is not null) _costUsd = m.CostUsd;
                 Usage = new UsageInfo(_ctxUsed, _ctxWindow, _outputTokens, _costUsd);
                 break;
+        }
+
+        // "When did the agent last do anything?" — the other half of IsUnattended. Two exclusions, both
+        // load-bearing: replay is not activity (the whole log arrives at once, before anyone could have
+        // interacted with it, so a reconnect must not open onto an away band about work already seen), and
+        // the user's own prompt echoing back off the host is the person, not the agent.
+        if (!_replaying && @event is not MessageChunkEvent { Role: MessageRole.User })
+        {
+            NoteAgentActivity();
         }
 
         // While filtered to a subagent, refresh the (snapshot) view as its events arrive.
@@ -2630,6 +2814,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     private void Record(string text)
     {
+        // Sending is the most unambiguous form of "I am here": it ends any away band and restarts the
+        // three-minute clock, whichever head the keystrokes came from.
+        NoteUserInteraction();
         _history.Add(text);
         _prompts.AppendHistory(SessionId, text);
         _historyIndex = _history.Count;

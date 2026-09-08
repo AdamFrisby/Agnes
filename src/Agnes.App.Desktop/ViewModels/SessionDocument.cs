@@ -893,6 +893,13 @@ public sealed partial class SessionDocument : Document, ITraySession
             {
                 OnPropertyChanged(nameof(IsUnread));
             }
+            else if (e.PropertyName is nameof(SessionViewModel.LatestStatus)
+                or nameof(SessionViewModel.StatusAge)
+                or nameof(SessionViewModel.StatusIsStale)
+                or nameof(SessionViewModel.ShowStatusLine))
+            {
+                RaiseStatusFlags();
+            }
             else if (e.PropertyName is nameof(SessionViewModel.IsTerminalVisible))
             {
                 OnPropertyChanged(nameof(TerminalPanelVisible));
@@ -933,6 +940,7 @@ public sealed partial class SessionDocument : Document, ITraySession
         OnPropertyChanged(nameof(ActivityText));
         OnPropertyChanged(nameof(NeedsAttention));
         RaiseActivityFlags();
+        RaiseStatusFlags();
         Usage = session.Usage;
         UsageSummary = session.UsageSummary;
         if (session.HasAgentTitle)
@@ -963,6 +971,51 @@ public sealed partial class SessionDocument : Document, ITraySession
         OnPropertyChanged(nameof(IsAwaitingInput));
         OnPropertyChanged(nameof(IsReadyForReview));
         OnPropertyChanged(nameof(IsFaulted));
+    }
+
+    // ---- the agent's one-line status (mirrors the live session, like the activity flags above) ----
+
+    /// <summary>The agent's latest one-line status, or null. Mirrored here so the tab strip, the sessions
+    /// switcher and the dashboard can read it off the tab without reaching through a possibly-null
+    /// session.</summary>
+    public string? LatestStatus => Session?.LatestStatus;
+
+    public bool HasStatus => Session?.HasStatus ?? false;
+
+    public string StatusAge => Session?.StatusAge ?? string.Empty;
+
+    public bool StatusIsStale => Session?.StatusIsStale ?? false;
+
+    /// <summary>Whether the header's status line has anything to show at all.</summary>
+    public bool ShowStatusLine => Session?.ShowStatusLine ?? false;
+
+    public string StaleText => Session?.StaleText ?? string.Empty;
+
+    /// <summary>
+    /// What the tab's own tooltip says: where it runs, and — when the agent has said anything — the latest
+    /// status under it. A tab strip trims a title to a few characters, so hovering is the cheapest way to
+    /// find out what a given agent is up to without switching to it.
+    /// </summary>
+    public string TabTooltip
+    {
+        get
+        {
+            var head = WorkingDirectory is { Length: > 0 } dir ? dir : Title ?? string.Empty;
+            return LatestStatus is { Length: > 0 } status
+                ? StatusAge is { Length: > 0 } age ? $"{head}\n{status} · {age}" : $"{head}\n{status}"
+                : head;
+        }
+    }
+
+    private void RaiseStatusFlags()
+    {
+        OnPropertyChanged(nameof(LatestStatus));
+        OnPropertyChanged(nameof(HasStatus));
+        OnPropertyChanged(nameof(StatusAge));
+        OnPropertyChanged(nameof(StatusIsStale));
+        OnPropertyChanged(nameof(StaleText));
+        OnPropertyChanged(nameof(ShowStatusLine));
+        OnPropertyChanged(nameof(TabTooltip));
     }
 
     /// <summary>The live session's id, or empty until one is attached (ITraySession — feeds the tray's

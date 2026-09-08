@@ -624,6 +624,25 @@
                     </StackPanel>
                 </Grid>
 
+                <!-- The agent's own one-line status, straight under the header row: what it found, what it
+                     is doing, and how that fits the plan, in its own words. Faint and single-line on
+                     purpose — it must never compete with the conversation, and the whole sentence is on the
+                     tooltip when it doesn't fit. The age sits at the end; when the agent has gone quiet the
+                     age is replaced by how long it has been quiet, in FgFaint rather than a status hue,
+                     because silence is not an error — amber here would claim the session is blocked on a
+                     human when it is precisely not. -->
+                <Grid x:Name="StatusLine" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="14,3,0,0"
+                      IsVisible="{Binding ShowStatusLine}">
+                    <TextBlock Grid.Column="0" Text="{Binding LatestStatus}" Foreground="{DynamicResource FgDim}"
+                               FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                               ToolTip.Tip="{Binding LatestStatus}"
+                               AutomationProperties.Name="What the agent says it is doing" />
+                    <TextBlock Grid.Column="1" Text="{Binding StatusAge}" Foreground="{DynamicResource FgFaint}"
+                               FontSize="12" VerticalAlignment="Center" IsVisible="{Binding !StatusIsStale}" />
+                    <TextBlock Grid.Column="1" Text="{Binding StaleText}" Foreground="{DynamicResource FgFaint}"
+                               FontSize="12" VerticalAlignment="Center" IsVisible="{Binding StatusIsStale}" />
+                </Grid>
+
                 <!-- inline rename / tag editor -->
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding IsRenaming}">
                     <TextBox Text="{Binding RenameText, Mode=TwoWay}" Width="240" Watermark="Tab name"
@@ -1569,8 +1588,40 @@
                     <!-- MIDDLE: chat -->
                     <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding ShowChat}">
 
+                        <!-- Row 0 is everything that pins above the transcript: the find bar, and the
+                             "while you were away" band. -->
+                        <StackPanel Grid.Row="0">
+
+                        <!-- While you were away: the one place the status stops being a faint footnote.
+                             It appears only when the agent has done something since the person last
+                             touched this session AND that was minutes ago — the case where you come back
+                             to a tab and want one sentence, not a scroll. Any sign of life (a scroll, a
+                             keystroke, a click in the transcript, activating the tab) retires it, so it
+                             cannot linger in front of someone who is plainly reading. PanelAlt, not a
+                             status hue: it reports, it does not alarm. -->
+                        <Border IsVisible="{Binding HasAwayStatus}" Background="{DynamicResource PanelAlt}"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="16,7"
+                                AutomationProperties.Name="While you were away">
+                            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8" MaxWidth="900"
+                                  HorizontalAlignment="Stretch">
+                                <ic:SymbolIcon Grid.Column="0" Symbol="ClockAlarm" FontSize="15"
+                                               Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="While you were away" Foreground="{DynamicResource FgDim}"
+                                           FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2" Text="{Binding AwayStatus}" Foreground="{DynamicResource Fg}"
+                                           FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding AwayStatus}" />
+                                <TextBlock Grid.Column="3" Text="{Binding StatusAge}" Foreground="{DynamicResource FgFaint}"
+                                           FontSize="12" VerticalAlignment="Center" />
+                                <Button Grid.Column="4" Command="{Binding DismissAwayCommand}"
+                                        Content="{icx:SymbolIcon Symbol=Dismiss}" Background="Transparent"
+                                        Foreground="{DynamicResource FgFaint}" BorderThickness="0" Padding="6,2"
+                                        Cursor="Hand" AutomationProperties.Name="Dismiss the away summary" />
+                            </Grid>
+                        </Border>
+
                         <!-- within-session search (Ctrl+F) -->
-                        <Border Grid.Row="0" IsVisible="{Binding IsSearchOpen}" Background="{DynamicResource Panel}"
+                        <Border IsVisible="{Binding IsSearchOpen}" Background="{DynamicResource Panel}"
                                 BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="24,8">
                             <StackPanel MaxWidth="768" HorizontalAlignment="Center" Spacing="6">
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
@@ -1615,6 +1666,7 @@
                                 </ScrollViewer>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
                         <!-- Transcript: a virtualizing ListBox so a long conversation only realizes the
                              rows on screen. Full-width (scrollbar at the window edge) with each row

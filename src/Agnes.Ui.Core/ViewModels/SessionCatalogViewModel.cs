@@ -221,6 +221,19 @@ public sealed partial class CatalogSessionRow : ObservableObject
     /// <summary>When the session last did anything, as "now / 4m / 2h / 3d" (empty if it never has).</summary>
     public string Age => RelativeTime.Format(Summary.LastActivityAt);
 
+    /// <summary>
+    /// The agent's own one-line status, straight off the catalogue row — which is the point of carrying it
+    /// on <see cref="SessionSummary"/> at all: a list can say what each agent is doing before anyone
+    /// subscribes to a single one of them. Null until the agent has reported one; a row with no status
+    /// shows nothing rather than a placeholder.
+    /// </summary>
+    public string? LatestStatus => Summary.LatestStatus;
+
+    public bool HasStatus => !string.IsNullOrWhiteSpace(Summary.LatestStatus);
+
+    /// <summary>How long ago the agent said it ("2 min ago"), or empty.</summary>
+    public string StatusAge => RelativeTime.Ago(Summary.LatestStatusAt);
+
     /// <summary>Sort key — see <see cref="SessionCatalogViewModel"/>: blocked, then working, then live, then
     /// dormant.</summary>
     public int Rank => IsBlocked ? 0 : Summary.State switch
@@ -232,8 +245,12 @@ public sealed partial class CatalogSessionRow : ObservableObject
 
     public DateTimeOffset LastActivityAt => Summary.LastActivityAt ?? Summary.StartedAt ?? DateTimeOffset.MinValue;
 
-    /// <summary>Re-raises the relative timestamp, ticked by whatever surface shows it.</summary>
-    public void RaiseAge() => OnPropertyChanged(nameof(Age));
+    /// <summary>Re-raises the relative timestamps, ticked by whatever surface shows them.</summary>
+    public void RaiseAge()
+    {
+        OnPropertyChanged(nameof(Age));
+        OnPropertyChanged(nameof(StatusAge));
+    }
 
     private static string LeafOf(string path)
     {

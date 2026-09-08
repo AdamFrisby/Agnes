@@ -98,6 +98,16 @@ public static class Program
         Settle(200);
         Capture(window, "03-conversation.png");
 
+        // 3s) The agent's own one-line status, and the band that carries it when nobody has been looking.
+        //     Staged by back-dating the last visit rather than by waiting three minutes: the session is a
+        //     real one whose agent really reported, and the only fiction is when the person last looked at
+        //     it — which is exactly the fact the band is about.
+        first.Session!.NoteUserInteraction(DateTimeOffset.Now - TimeSpan.FromMinutes(8));
+        Settle(150);
+        Capture(window, "03s-agent-status-away.png");
+        first.Session!.NoteUserInteraction(); // back to attended, so later shots are of an ordinary tab
+        Settle(60);
+
         // 3z) Composer must NOT resize horizontally as you type — set a long draft and confirm stable width.
         first.Session!.PromptText = "This is a fairly long draft typed into the composer to confirm the input box keeps a stable, fixed width and wraps, instead of growing horizontally as characters are added.";
         Settle(150);

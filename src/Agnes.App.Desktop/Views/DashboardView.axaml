@@ -113,7 +113,7 @@
             <!-- ================= open here ================= -->
             <StackPanel Spacing="10" IsVisible="{Binding HasLive}">
                 <TextBlock Text="OPEN IN THIS WINDOW" Classes="section" />
-                <ItemsControl ItemsSource="{Binding Live}">
+                <ItemsControl x:Name="LiveRows" ItemsSource="{Binding Live}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border Classes="card" Padding="14" Margin="0,0,0,8">
@@ -135,6 +135,19 @@
                                                        Classes.done="{Binding IsReadyForReview}"
                                                        Classes.error="{Binding IsFaulted}" />
                                         </StackPanel>
+
+                                        <!-- What the agent says it is doing, in its own words — one line,
+                                             trimmed, with its age at the end. A session whose agent has
+                                             never reported one shows nothing here rather than a placeholder. -->
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasStatus}">
+                                            <TextBlock Grid.Column="0" Text="{Binding LatestStatus}" Foreground="{DynamicResource Fg}"
+                                                       FontSize="12" TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding LatestStatus}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding StatusAge}" Foreground="{DynamicResource FgFaint}"
+                                                       FontSize="11" VerticalAlignment="Center" IsVisible="{Binding !StatusIsStale}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding StaleText}" Foreground="{DynamicResource FgFaint}"
+                                                       FontSize="11" VerticalAlignment="Center" IsVisible="{Binding StatusIsStale}" />
+                                        </Grid>
 
                                         <TextBlock Text="{Binding CurrentStep}" Foreground="{DynamicResource FgDim}" FontSize="12"
                                                    TextTrimming="CharacterEllipsis" IsVisible="{Binding HasCurrentStep}" />
@@ -184,6 +197,12 @@
                                     <StackPanel Grid.Column="1" Spacing="2">
                                         <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}"
                                                    FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <!-- The same line for a session this window has never opened: the host
+                                             put it on the catalogue row, so the overview can say what each
+                                             agent is doing without subscribing to any of them. -->
+                                        <TextBlock Text="{Binding LatestStatus}" Foreground="{DynamicResource FgDim}" FontSize="12"
+                                                   TextTrimming="CharacterEllipsis" IsVisible="{Binding HasStatus}"
+                                                   ToolTip.Tip="{Binding LatestStatus}" />
                                         <StackPanel Orientation="Horizontal" Spacing="10">
                                             <TextBlock Text="{Binding AdapterId}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
                                             <TextBlock Text="{Binding WorkingDirectory}" Classes="mono"

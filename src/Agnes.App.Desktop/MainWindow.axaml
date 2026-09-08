@@ -389,6 +389,18 @@
                                                             ToolTip.Tip="{Binding ActivityText}" />
                                                     <StackPanel Grid.Column="1">
                                                         <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                        <!-- What the agent says it is doing — the reason this
+                                                             switcher can answer "which one do I want?" without
+                                                             opening any of them. One line, trimmed; a session
+                                                             with no status shows nothing extra. -->
+                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" MaxWidth="260"
+                                                              IsVisible="{Binding HasStatus}">
+                                                            <TextBlock Grid.Column="0" Text="{Binding LatestStatus}" Foreground="{DynamicResource FgDim}"
+                                                                       FontSize="11" TextTrimming="CharacterEllipsis"
+                                                                       ToolTip.Tip="{Binding LatestStatus}" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding StatusAge}" Foreground="{DynamicResource FgFaint}"
+                                                                       FontSize="10" VerticalAlignment="Center" />
+                                                        </Grid>
                                                         <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
