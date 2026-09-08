@@ -50,6 +50,7 @@ public static class ClaudeCodeNative
             McpConfigFlag = "--mcp-config",
             Models = Models,
             ModelArguments = static id => ["--model", id],
+            SystemPromptArguments = static prompt => ["--append-system-prompt", prompt],
             CredentialFaultClassifier = IsRecoverableCredentialFault,
             AuthStatusProbe = _ => Task.FromResult<ProviderAuthStatus?>(ProbeAuthStatus(DefaultCredentialsPath)),
         }, loggerFactory, claudeHome ?? DefaultClaudeHome);

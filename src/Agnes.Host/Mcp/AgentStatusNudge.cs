@@ -20,8 +20,9 @@ public static class AgentStatusNudge
     /// knows the budget writes to it, and one that doesn't gets clipped and told off afterwards.
     /// </summary>
     public const string Text =
-        "Keep the person informed without their having to read you: every few minutes of work, or when your "
-        + "plan changes or you hit a problem, call the agnes report_status tool with one or two sentences "
+        "Keep the person informed without their having to read you: at the start of a task, every few minutes "
+        + "of work after that, and whenever your plan changes or you hit a problem, call the agnes "
+        + "report_status tool with one or two sentences "
         + "under " + StatusOptions.DefaultMaxCharsText + " characters — what you found, what you are doing "
         + "now, and how it fits the plan.";
 }

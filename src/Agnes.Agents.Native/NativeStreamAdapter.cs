@@ -28,6 +28,14 @@ public sealed record NativeLaunchSpec
     /// this CLI takes no model flag, so a requested <see cref="AgentSessionOptions.ModelId"/> is ignored.</summary>
     public Func<string, IReadOnlyList<string>>? ModelArguments { get; init; }
 
+    /// <summary>
+    /// How to hand the CLI a standing system-prompt addition (e.g. <c>claude --append-system-prompt</c>), or
+    /// null when this CLI takes none. The host composes the text (prompt-library additions, the status nudge);
+    /// the adapter only carries it. Without this, a native adapter's model hears the nudge solely as MCP
+    /// server instructions, which a model reads as "a thing you may use" rather than "a thing you are to do".
+    /// </summary>
+    public Func<string, IReadOnlyList<string>>? SystemPromptArguments { get; init; }
+
     /// <summary>Optional live model probe, for a CLI that can be asked what it can reach
     /// (see <see cref="IModelListingAdapter.ListModelsAsync"/>). Null means "no live listing" — resolution
     /// falls back to <see cref="Models"/>.</summary>
@@ -73,6 +81,9 @@ public sealed record NativeLaunchSpec
 public class NativeStreamAdapter : IAgentAdapter, IModelListingAdapter
 {
     private readonly NativeLaunchSpec _spec;
+
+    /// <summary>The launch spec this adapter was built from — for tests that check what a plugin wires.</summary>
+    internal NativeLaunchSpec Spec => _spec;
     private readonly ILoggerFactory _loggerFactory;
 
     public NativeStreamAdapter(NativeLaunchSpec spec, ILoggerFactory loggerFactory)
@@ -127,6 +138,13 @@ public class NativeStreamAdapter : IAgentAdapter, IModelListingAdapter
         if (options.ModelId is { Length: > 0 } modelId && _spec.ModelArguments is { } buildModel)
         {
             baseArgs.AddRange(buildModel(modelId));
+        }
+
+        // Carry the host's composed system-prompt addition where the CLI accepts one. An adapter with no
+        // SystemPromptArguments relies on the MCP server's instructions alone.
+        if (options.SystemPrompt is { Length: > 0 } systemPrompt && _spec.SystemPromptArguments is { } buildPrompt)
+        {
+            baseArgs.AddRange(buildPrompt(systemPrompt));
         }
 
         // Tell the CLI its working directory is part of the workspace, where that is not implied. See
