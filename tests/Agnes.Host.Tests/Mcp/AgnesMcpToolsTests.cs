@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using Agnes.Host.Mcp;
+using Agnes.Host.Sharing;
 using Agnes.Protocol;
 using ModelContextProtocol.Server;
 
@@ -10,8 +11,11 @@ public sealed class AgnesMcpToolsTests
 {
     private const string ValidToken = "good-token";
 
-    private static AgnesMcpTools Build(FakeAgnesMcpBackend backend, string? presentedToken = ValidToken)
-        => new(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(presentedToken), new SessionMcpTokens(), Display.DisplayFixture.NoDisplays());
+    private static AgnesMcpTools Build(
+        FakeAgnesMcpBackend backend, string? presentedToken = ValidToken, SessionAccessDecider? access = null)
+        => new(
+            backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(presentedToken),
+            new SessionMcpTokens(), Display.DisplayFixture.NoDisplays(), access ?? StubSessionAccess.AllowAll());
 
     [Fact]
     public void ToolsList_exposes_the_expected_tool_set_with_schemas()
@@ -130,7 +134,7 @@ public sealed class AgnesMcpToolsTests
 
     private static IReadOnlyList<McpServerTool> BuildToolDescriptors()
     {
-        var instance = new AgnesMcpTools(new FakeAgnesMcpBackend(), new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(ValidToken), new SessionMcpTokens(), Display.DisplayFixture.NoDisplays());
+        var instance = new AgnesMcpTools(new FakeAgnesMcpBackend(), new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(ValidToken), new SessionMcpTokens(), Display.DisplayFixture.NoDisplays(), StubSessionAccess.AllowAll());
         var options = new McpServerToolCreateOptions();
         return typeof(AgnesMcpTools)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance)
@@ -147,7 +151,7 @@ public sealed class AgnesMcpToolsTests
         var tokens = new SessionMcpTokens();
         var sessionToken = tokens.Issue(sessionId);
         // Authenticator deliberately rejects it: the ONLY thing vouching for this caller is the session token.
-        var tools = new AgnesMcpTools(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(sessionToken), tokens, Display.DisplayFixture.NoDisplays());
+        var tools = new AgnesMcpTools(backend, new FakeMcpAuthenticator(ValidToken), new FixedTokenSource(sessionToken), tokens, Display.DisplayFixture.NoDisplays(), StubSessionAccess.AllowAll());
         return (tools, tokens, sessionToken);
     }
 

@@ -60,7 +60,17 @@ access** as membership (via the linked GitHub App's collaborator-permission API)
 everyone who can push to repo X can collaborate on X's sessions, and no one else can. Other membership
 backends (LDAP, SSO teams, a static roster) can ship as additional `IGroupProvider` plugins without
 touching core. A session's owner is the caller's GitHub login (falling back to device id), recorded at
-open time; the host owner remains an admin who can reach every session.
+open time; a host Owner remains an admin who can reach every session.
+
+**The session-owner match applies in every mode, including the default `Shared`.** Whoever started a
+session reaches it — matched across their identities, so a phone reaches what a laptop began when both
+resolve to the same GitHub login. This is not an isolation feature; it is the baseline. Making it
+conditional on isolation being *on* is what left a non-Owner device unable to subscribe to the session
+it had just opened. What `Shared` still adds nothing for is somebody *else's* session: that needs an
+explicit share, or host ownership.
+
+Opening a session requires a paired device of any role, and stamps it as the owner. A public-link
+viewer cannot open one at all.
 
 ### Egress control
 
@@ -172,6 +182,48 @@ Development environment.
 - **CORS**: never set `Agnes:AllowAllOrigins=true` on a shared/public host (it defaults to
   `false`). Set an explicit `Agnes:AllowedOrigins` for the web client.
 - Auth endpoints are rate-limited (`Agnes:Auth:RateLimit:*`).
+
+### Device roles: Owner and Member
+
+A paired device is either an **Owner** or a **Member**, and which one it is depends on **how it was
+admitted** — never on when it arrived.
+
+The rule this replaces was "the earliest-paired device owns the host". It reads as a sensible
+first-run heuristic and it is a booby trap: whatever wrote the *first* record into `devices.json` owned
+the machine, whether or not that was ever a real device. On the machine this was found on, the earliest
+record was a months-old test fixture — so no real device was the owner, and under the default
+`SessionIsolation=Shared` the operator was refused every session on their own host, including ones they
+had just opened. Ownership is now a fact on the record, written when the device is admitted.
+
+| Admitted by | Role | Why |
+|---|---|---|
+| Typed pairing code | **Owner** | The code is printed on the host's own console. Presenting it *is* the operator acting. |
+| QR grant (`POST /pair/grant` → `POST /pair`) | **the minter's own role** | A grant hands over the standing of the device that showed it, and no more: an Owner's QR admits an Owner, a Member's admits a Member. Otherwise "show a QR" would be a promotion path for anyone already inside. |
+| Configured bootstrap token (`Agnes:PairingToken`) | **Owner** | It is the operator's own secret, in the host's own configuration. It has no device record. |
+| Authorized key (`authorized_keys`) | **Owner** by default | Somebody with access to the host's filesystem put it there. A host that hands keys to a team can set `Agnes:Auth:Keypair:Role=Member` and promote individually. |
+| GitHub SSO | **Owner** if the login is in `Agnes:Auth:GitHub:Owners`, else Member | A GitHub login proves *who* somebody is, not that they administer this host. |
+| OIDC / Cloudflare Access / mTLS | **Owner** if the subject (or, for Cloudflare, the email) is in the matching `…:Owners` list, else Member | Same reasoning. |
+| Approval (`POST /pair/approve/{id}`) | the role in the request body, **capped at Member unless the approver is an Owner** | Vouching is not promotion. A Member's approval admits a Member however the body is crafted. |
+
+**A Member is not a guest.** It opens sessions like anybody else and always reaches the sessions it
+started, plus anything explicitly shared with it. What it cannot do is see *other people's* sessions or
+change host-wide configuration.
+
+**Owner-only, and enforced host-side:** `PUT /devices/{id}/role`, `POST /devices/prune`, and (when
+`Agnes:Security:RestrictConfigToOwner` is set) the host-wide config mutations. The host **refuses to be
+left with no Owner**: the last one cannot be demoted or pruned, because a host with no Owner can never
+promote anybody back.
+
+**Upgrading an existing host changes nothing.** A `devices.json` written before roles existed has none,
+so on first load Agnes marks the earliest-paired device an Owner — exactly what the old rule computed
+on every call — records that decision, logs it once, and never re-derives it again. An explicit
+`Member` on disk is somebody's decision and is never migrated over.
+
+**One device, one row.** A sign-in that presents the *same* credential — the same key fingerprint, or
+the same GitHub/OIDC identity from the same device name — **rotates** that device's token instead of
+minting a second identity: same id, same role, same paired-at date, and the old token stops working.
+Two devices behind one account stay two rows, because the device name is part of the identity. A
+pairing code stands for nothing durable (it is single-use), so those always mint fresh.
 
 ### The typed pairing code is a bootstrap, not a way in
 
@@ -291,6 +343,14 @@ the host. Handing one to an agent would be strictly worse than plaintext on loop
   (`SessionMcpTokens`) which *is* that session's identity to the tool layer: an agent presenting one can act
   only on its own session, cannot name another, and is explicitly refused by the tools that need a paired
   device. Tokens are in-memory, are revoked when the session closes, and do not survive a host restart.
+- **A device token buys no more here than at the hub.** Every session-scoped tool asks the same
+  `SessionAccessDecider` the SignalR hub and the display channel ask, for the same verb the equivalent hub
+  method requires: `read_session_transcript` and `get_session_status` need Subscribe, `send_prompt`,
+  `set_mode`, the goal tools and `computer_*` need Prompt, `respond_permission` needs Approve. The catalogue
+  tools (`list_sessions`, `list_open_approvals`, `list_goals all`) **filter** rather than refuse, exactly as
+  `AgnesHub.ListSessions` does, so they can never advertise a session the caller would then be denied.
+  Before this, a device token the hub refused could list and drive every session on the host by arriving over
+  `/mcp-agnes` instead.
 - **Neither address is routable off-box.** The bridge gateway is reachable only from that bridge's
   sandboxes; loopback only from this machine.
 

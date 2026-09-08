@@ -12,6 +12,14 @@ public sealed class McpUnauthenticatedException : Exception
     public McpUnauthenticatedException(string message) : base(message) { }
 }
 
+/// <summary>Raised by a tool when the caller is authenticated but has no access to the session it named.
+/// Distinct from <see cref="McpUnauthenticatedException"/> so the caller can tell "who are you" from "not
+/// yours" — and so a Member is told why rather than silently getting an empty answer.</summary>
+public sealed class McpForbiddenException : Exception
+{
+    public McpForbiddenException(string message) : base(message) { }
+}
+
 /// <summary>Validates a bearer token and resolves it to a stable caller identity — the SAME authority path a
 /// paired client uses (<see cref="DeviceRegistry.ResolveCallerId"/>). Abstracted so the tool layer is
 /// unit-testable without a real registry.</summary>

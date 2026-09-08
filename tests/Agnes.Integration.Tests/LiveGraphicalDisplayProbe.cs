@@ -304,7 +304,10 @@ public sealed class LiveGraphicalDisplayProbe
                 new DeviceRegistryMcpAuthenticator(devices),
                 new FixedToken(sessionTokens.Issue(SessionId)),
                 sessionTokens,
-                new BrokerDisplayBackend(host._registry, options));
+                new BrokerDisplayBackend(host._registry, options),
+                // The probe drives the tools with a SESSION token, which never reaches the sharing layer at
+                // all — the session it may act on comes from the token, not from an access decision.
+                new Agnes.Host.Sharing.SessionAccessDecider(null!, null!, null!));
 
             return host;
         }

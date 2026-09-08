@@ -34,7 +34,8 @@ public class ComputerToolsTests : IAsyncLifetime
             new FakeMcpAuthenticator("device-token"),
             new FixedTokenSource(sessionToken),
             tokens,
-            new BrokerDisplayBackend(_registry, options));
+            new BrokerDisplayBackend(_registry, options),
+            Mcp.StubSessionAccess.AllowAll());
         return Task.CompletedTask;
     }
 
@@ -58,7 +59,8 @@ public class ComputerToolsTests : IAsyncLifetime
         await using var registry = DisplayFixture.Registry(new StubSessionSource(), options);
         var tools = new AgnesMcpTools(
             new FakeAgnesMcpBackend(), new FakeMcpAuthenticator("device-token"),
-            new FixedTokenSource(tokens.Issue("headless")), tokens, new BrokerDisplayBackend(registry, options));
+            new FixedTokenSource(tokens.Issue("headless")), tokens, new BrokerDisplayBackend(registry, options),
+            Mcp.StubSessionAccess.AllowAll());
 
         var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => tools.ComputerScreenshot());
         Assert.Equal("This session has no display.", refused.Message);
@@ -222,7 +224,8 @@ public class ComputerToolsTests : IAsyncLifetime
         var tokens = new SessionMcpTokens();
         var tools = new AgnesMcpTools(
             new FakeAgnesMcpBackend(), new FakeMcpAuthenticator("device-token"),
-            new FixedTokenSource(tokens.Issue("budgeted")), tokens, new BrokerDisplayBackend(registry, options));
+            new FixedTokenSource(tokens.Issue("budgeted")), tokens, new BrokerDisplayBackend(registry, options),
+            Mcp.StubSessionAccess.AllowAll());
 
         await tools.ComputerType("eight ch");   // 8 characters = 8 of the minute's 10, not 16 events
 

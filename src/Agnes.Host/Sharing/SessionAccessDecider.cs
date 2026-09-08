@@ -56,23 +56,14 @@ public class SessionAccessDecider
         => CallerFor(request.Query[WireProtocol.TokenParameter].ToString());
 
     /// <summary>
-    /// The access decision. When session isolation is off (the common case) this is the original synchronous
-    /// share/host-owner check with no ownership lookup, so PerUser/PerGroup cost nothing until enabled.
+    /// The access decision: the share/host-owner check, plus the session's own owner, plus (only when session
+    /// isolation is enabled) the group grants. The ownership lookup is an in-memory catalogue read, so it is
+    /// asked unconditionally — a caller reaching the session they started is not an isolation feature, it is
+    /// the baseline, and making it conditional is what left non-Owner devices staring at an empty list.
     /// </summary>
     public virtual async Task<bool> DecideAsync(
         string sessionId, SessionAccessKind kind, SharingCaller caller, CancellationToken cancellationToken = default)
     {
-        if (_access.IsolationDisabled)
-        {
-            return kind switch
-            {
-                SessionAccessKind.Subscribe => _access.CanSubscribe(sessionId, caller),
-                SessionAccessKind.Prompt => _access.CanPrompt(sessionId, caller),
-                SessionAccessKind.Approve => _access.CanApprovePermissions(sessionId, caller),
-                _ => _access.CanManage(sessionId, caller),
-            };
-        }
-
         var (owner, group) = _sessions.GetOwnership(sessionId);
         return kind switch
         {

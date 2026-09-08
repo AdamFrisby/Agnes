@@ -17,17 +17,19 @@ namespace Agnes.Host.Mcp;
 /// screenshot was scaled down for the model's benefit, the text block says so and says both sizes, and clicks
 /// are still in display coordinates. Scaling the picture must never silently move the mouse.
 /// </para>
-/// <para>Authorization is <see cref="RequireActingSession"/>, exactly as <c>send_user_file</c>: an agent's
-/// session token can only ever drive its own session's screen, whatever <c>sessionId</c> it passes.</para>
+/// <para>Authorization is <see cref="RequireActingSessionAsync"/>, exactly as <c>send_user_file</c>: an
+/// agent's session token can only ever drive its own session's screen, whatever <c>sessionId</c> it passes,
+/// and a device token needs Prompt access to the session it names — moving somebody else's mouse is driving
+/// their session.</para>
 /// </summary>
 public sealed partial class AgnesMcpTools
 {
     /// <summary>Resolves the session a computer tool may act on and asserts it actually has a screen.</summary>
     /// <exception cref="InvalidOperationException">The session is headless. Stated plainly so a model that
     /// guessed wrong stops guessing rather than retrying with different arguments.</exception>
-    private string RequireDisplaySession(string? sessionId)
+    private async Task<string> RequireDisplaySessionAsync(string? sessionId, CancellationToken cancellationToken)
     {
-        var target = RequireActingSession(sessionId);
+        var target = await RequireActingSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         if (!_display.HasDisplay(target))
         {
             throw new InvalidOperationException("This session has no display.");
@@ -45,7 +47,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var shot = await _display.ScreenshotAsync(target, Sane(maxWidth), cancellationToken).ConfigureAwait(false);
         return Image(
             shot.Jpeg,
@@ -64,7 +66,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var span = TimeSpan.FromMilliseconds(Math.Clamp(spanMs, 0, 10_000));
         var sheet = await _display.ContactSheetAsync(target, Math.Clamp(count, 1, 12), span, Sane(maxWidth), cancellationToken)
             .ConfigureAwait(false);
@@ -87,7 +89,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         await _display.InjectAsync(target, [new PointerMove(x, y)], cancellationToken).ConfigureAwait(false);
         return $"Pointer moved to {x},{y}.";
     }
@@ -105,7 +107,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var kind = ButtonKind(button);
         var clicks = Math.Clamp(count, 1, 3);
         var held = ModifierKeys(modifiers);
@@ -140,7 +142,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var kind = ButtonKind(button);
         await _display.InjectAsync(
             target,
@@ -165,7 +167,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var chord = KeyChord.Parse(keys);
         await _display.PressChordAsync(target, chord, Math.Clamp(count, 1, 16), cancellationToken).ConfigureAwait(false);
         return $"Pressed {keys}{(count > 1 ? $" {count}x" : string.Empty)}.";
@@ -180,7 +182,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var bytes = TypedText.ByteLength(text);
         if (bytes > _display.Options.MaxTypeBytes)
         {
@@ -207,7 +209,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var clicks = Math.Clamp(amount, 1, 10);
         var (dx, dy) = direction.ToLowerInvariant() switch
         {
@@ -238,7 +240,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var chord = KeyChord.Parse(key);
         if (chord.Modifiers.Count > 0)
         {
@@ -259,7 +261,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        RequireDisplaySession(sessionId);
+        await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var wait = Math.Clamp(ms, 0, _display.Options.MaxWaitMs);
         await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
         return $"Waited {wait} ms.";
@@ -271,7 +273,7 @@ public sealed partial class AgnesMcpTools
         [Description("Omit when called by the agent itself; required with a device token.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireDisplaySession(sessionId);
+        var target = await RequireDisplaySessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         var (x, y) = await _display.PointerPositionAsync(target, cancellationToken).ConfigureAwait(false);
         var display = await _display.GeometryAsync(target, cancellationToken).ConfigureAwait(false);
         return display is null

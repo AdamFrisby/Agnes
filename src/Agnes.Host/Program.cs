@@ -132,6 +132,7 @@ builder.Services.AddSingleton(sp => new DeviceRegistry(
     // The typed code closes once a device is paired; an operator who genuinely needs it back (a lab
     // host that is re-paired constantly, say) can opt out of the lockout.
     allowCodeAfterFirstDevice: builder.Configuration.GetValue("Agnes:Auth:Pairing:AllowCodeAfterFirstDevice", false)));
+builder.Services.AddSingleton(DeviceRoleOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<PairingGrants>();
 builder.Services.AddSingleton<PairingApprovals>();
 
@@ -191,7 +192,8 @@ builder.Services.AddSingleton(sp => new OidcRedirectFlow(
     new HttpClient(),
     sp.GetRequiredService<IOidcStateStore>(),
     TimeProvider.System,
-    sp.GetRequiredService<ILoggerFactory>().CreateLogger<OidcRedirectFlow>()));
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<OidcRedirectFlow>(),
+    sp.GetRequiredService<DeviceRoleOptions>()));
 
 // ---- Cloudflare Access browser assertion — optional and separate from native OIDC ----
 var cloudflareAccessOptions = new CloudflareAccessOptions
@@ -1604,7 +1606,7 @@ static string? PinnedFingerprint(IHostCertificateProvider provider)
     => provider.CaValidatedHostName is { Length: > 0 } ? null : provider.Fingerprint;
 
 // Pair a new device with the current code; returns a durable per-device token (shown once).
-app.MapPost("/pair", async (PairRequest request, PairingGrants grants) =>
+app.MapPost("/pair", async (PairRequest request, PairingGrants grants, DeviceRoleOptions roles) =>
 {
     if (!tokens.PairingEnabled)
     {
@@ -1614,12 +1616,16 @@ app.MapPost("/pair", async (PairRequest request, PairingGrants grants) =>
     // The same field carries either a QR grant (256-bit, minted by an already-paired device) or the
     // typed bootstrap code. Try the strong one first: a grant is unguessable, so accepting it costs
     // nothing, while the code is closed as soon as the host has a device that could have vouched.
-    if (grants.TryRedeem(request.Code, out _))
+    if (grants.TryRedeem(request.Code, out _, out var grantedRole))
     {
-        var granted = tokens.IssueDeviceToken(request.DeviceName, subject: "pairing", kind: "pairing-grant");
+        // A grant hands over the standing of the device that minted it: an Owner's QR admits an Owner (the
+        // operator vouching with their own authority, exactly as the typed code does), a Member's admits a
+        // Member. Anything else would make "show a QR" a way for a Member to promote itself.
+        var granted = tokens.IssueDeviceToken(
+            request.DeviceName, subject: "pairing", kind: "pairing-grant", role: grantedRole);
         await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(
             granted.DeviceId, granted.DeviceName, "pairing-grant", "pairing-grant"));
-        return Results.Ok(new PairResponse(granted.DeviceId, granted.DeviceName, granted.Token));
+        return Results.Ok(new PairResponse(granted.DeviceId, granted.DeviceName, granted.Token, granted.Role));
     }
 
     var result = tokens.TryPair(request.Code, request.DeviceName);
@@ -1637,12 +1643,12 @@ app.MapPost("/pair", async (PairRequest request, PairingGrants grants) =>
     }
 
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "pairing", "pairing"));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // Exchange a GitHub user access token (obtained by the client via the device flow) for an Agnes device
 // token, if the identity is on the host's allowlist. The GitHub token is verified then discarded.
-app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHubIdentity github, CancellationToken ct) =>
+app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHubIdentity github, DeviceRoleOptions roles, CancellationToken ct) =>
 {
     if (!github.Options.IsUsable)
     {
@@ -1664,14 +1670,19 @@ app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHu
     }
 
     var login = verified.Login;
-    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "github:" + login, kind: "github");
+    // A GitHub login proves who somebody is, not that they administer this host: Owner only when the
+    // operator named them in Agnes:Auth:GitHub:Owners. Signing in again from the same named device rotates
+    // that device's token rather than minting a second identity for the same person.
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "github:" + login, kind: "github",
+        role: roles.ForGitHub(login), identity: DeviceIdentity.For("github:" + login, request.DeviceName));
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "github", "github:" + login));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // Exchange an OIDC-issued token (validated against the configured issuer's JWKS + audience) for an Agnes
 // device token. Token-validation core only — the interactive authorization-code redirect is out of scope.
-app.MapPost("/auth/oidc/exchange", async (OidcExchangeRequest request, OidcIdentity oidc, CancellationToken ct) =>
+app.MapPost("/auth/oidc/exchange", async (OidcExchangeRequest request, OidcIdentity oidc, DeviceRoleOptions roles, CancellationToken ct) =>
 {
     if (!oidc.Options.IsUsable)
     {
@@ -1684,9 +1695,12 @@ app.MapPost("/auth/oidc/exchange", async (OidcExchangeRequest request, OidcIdent
         return Results.Json(new { error = validated.Reason ?? "The OIDC token is invalid." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
-    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "oidc:" + validated.Subject, kind: "oidc");
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "oidc:" + validated.Subject, kind: "oidc",
+        role: roles.ForOidc(validated.Subject),
+        identity: DeviceIdentity.For("oidc:" + validated.Subject, request.DeviceName));
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "oidc", "oidc:" + validated.Subject));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // Browser clients that have already passed Cloudflare Access can exchange the signed assertion which
@@ -1697,6 +1711,7 @@ app.MapPost("/auth/cloudflare-access/exchange", async (
     HttpContext context,
     CloudflareAccessIdentity cloudflareAccess,
     DeviceRegistry tokens,
+    DeviceRoleOptions roles,
     CancellationToken ct) =>
 {
     if (!cloudflareAccess.Options.IsUsable)
@@ -1711,10 +1726,13 @@ app.MapPost("/auth/cloudflare-access/exchange", async (
         return Results.Json(new { error = "Cloudflare Access authentication failed." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
-    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "cloudflare:" + validated.Subject, kind: "cloudflare-access");
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "cloudflare:" + validated.Subject, kind: "cloudflare-access",
+        role: roles.ForCloudflare(validated.Subject, validated.Email),
+        identity: DeviceIdentity.For("cloudflare:" + validated.Subject, request.DeviceName));
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(
         result.DeviceId, result.DeviceName, "cloudflare-access", "cloudflare:" + validated.Email));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // Begin the interactive OIDC authorization-code + PKCE redirect flow: the host generates the PKCE verifier,
@@ -1759,7 +1777,7 @@ app.MapGet("/auth/oidc/callback", async (string? code, string? state, OidcRedire
 // mTLS: the client certificate presented on the TLS connection is the credential. Validate it against the
 // configured trust anchor / pin allowlist and mint a device token. (Requires the listener to request a
 // client certificate; when TLS is terminated upstream this endpoint isn't reachable with a cert.)
-app.MapPost("/auth/mtls", async (MtlsPairRequest request, HttpContext ctx, MtlsIdentity mtls, CancellationToken ct) =>
+app.MapPost("/auth/mtls", async (MtlsPairRequest request, HttpContext ctx, MtlsIdentity mtls, DeviceRoleOptions roles, CancellationToken ct) =>
 {
     if (!mtls.Options.IsUsable)
     {
@@ -1773,9 +1791,12 @@ app.MapPost("/auth/mtls", async (MtlsPairRequest request, HttpContext ctx, MtlsI
         return Results.Json(new { error = validated.Reason ?? "The client certificate is not trusted." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
-    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "mtls:" + validated.Subject, kind: "mtls");
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "mtls:" + validated.Subject, kind: "mtls",
+        role: roles.ForMtls(validated.Subject),
+        identity: DeviceIdentity.For("mtls:" + validated.Subject, request.DeviceName));
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "mtls", "mtls:" + validated.Subject));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // Keypair auth: a single-use challenge nonce the client signs with its private key.
@@ -1785,7 +1806,7 @@ app.MapGet("/auth/keypair/challenge", (KeypairAuth keypair) =>
         : Results.Json(new { error = "Keypair sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest));
 
 // Verify a signed challenge against the authorized keys and issue a device token.
-app.MapPost("/auth/keypair", async (KeypairAuthRequest request, KeypairAuth keypair) =>
+app.MapPost("/auth/keypair", async (KeypairAuthRequest request, KeypairAuth keypair, DeviceRoleOptions roles) =>
 {
     if (!keypair.IsUsable)
     {
@@ -1798,9 +1819,13 @@ app.MapPost("/auth/keypair", async (KeypairAuthRequest request, KeypairAuth keyp
         return Results.Json(new { error = "Key not authorized, or the signed challenge was invalid/expired." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
-    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "key:" + label, kind: "keypair");
+    // An operator put this key in authorized_keys, so by default it carries their authority. The key
+    // itself is the identity: signing in again from the same key rotates one device rather than adding a row.
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "key:" + label, kind: "keypair",
+        role: roles.KeypairRole, identity: "keypair:" + Fingerprint(request.PublicKey));
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "keypair", "key:" + label));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // The host's IPv4 address on the sandbox bridge — where the MCP forward listener binds and what the
@@ -1919,7 +1944,9 @@ app.MapPost("/pair/grant", (HttpContext ctx, PairingGrants grants, HostReachabil
         ? Results.Json(
             new { error = "This host has no externally-reachable address to advertise yet. Set Agnes:PublicUrl if it sits behind a reverse proxy." },
             statusCode: StatusCodes.Status503ServiceUnavailable)
-        : Results.Ok(grants.Mint(reachable, session, candidates, PinnedFingerprint(hostCert)));
+        : Results.Ok(grants.Mint(
+            reachable, session, candidates, PinnedFingerprint(hostCert),
+            minterRole: tokens.IsOwner(tokens.ResolveCallerId(RequestToken(ctx))) ? DeviceRole.Owner : DeviceRole.Member));
 });
 
 // Drop a displayed grant early — what "hide the QR" calls, so a code that was on screen stops working
@@ -1962,10 +1989,20 @@ app.MapPost("/pair/approve/{requestId}", async (HttpContext ctx, PairingApproval
         return Results.Unauthorized();
     }
 
+    // An approval is one device vouching for another, so the vouching device cannot hand over more than it
+    // holds: only an Owner may admit an Owner. A Member's approval admits a Member however the body is
+    // crafted — otherwise "approve this phone" would be a promotion path for anyone already inside.
+    var approverId = tokens.ResolveCallerId(RequestToken(ctx));
+    var requested = (await ReadApprovalDecisionAsync(ctx)).Role;
+    var admitAs = requested == DeviceRole.Owner && tokens.IsOwner(approverId) ? DeviceRole.Owner : DeviceRole.Member;
+
     PairingResult? issued = null;
     var ok = approvals.Approve(requestId, (name, publicKey) =>
     {
-        issued = tokens.IssueDeviceToken(name, subject: "approved:" + Fingerprint(publicKey), kind: "approval");
+        var fingerprint = Fingerprint(publicKey);
+        issued = tokens.IssueDeviceToken(
+            name, subject: "approved:" + fingerprint, kind: "approval",
+            role: admitAs, identity: "approved:" + fingerprint);
         return issued;
     });
 
@@ -1994,14 +2031,97 @@ app.MapPost("/pair/deny/{requestId}", (HttpContext ctx, PairingApprovals approva
 app.MapGet("/pair/request/{requestId}", (PairingApprovals approvals, string requestId)
     => Results.Ok(approvals.Poll(requestId)));
 
+// The approve endpoint's body. Read by hand rather than model-bound because a client that predates roles
+// sends no body at all (and no content type), and "approve with the default role" must keep working rather
+// than 400 — an approval flow that breaks on an older phone is a support call at the worst moment.
+static async Task<PairApprovalDecision> ReadApprovalDecisionAsync(HttpContext ctx)
+{
+    if (ctx.Request.ContentLength is null or 0 || !ctx.Request.HasJsonContentType())
+    {
+        return new PairApprovalDecision();
+    }
+
+    try
+    {
+        return await ctx.Request.ReadFromJsonAsync<PairApprovalDecision>() ?? new PairApprovalDecision();
+    }
+    catch (System.Text.Json.JsonException)
+    {
+        return new PairApprovalDecision();
+    }
+}
+
 // A short, stable label for a device's key in the audit trail — never the key itself.
 static string Fingerprint(string publicKey)
     => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
         System.Text.Encoding.UTF8.GetBytes(publicKey.Trim())))[..16].ToLowerInvariant();
 
-// The caller's own token is passed through so the list can mark which row is the calling device.
+// The caller's own token is passed through so the list can mark which row is the calling device. Each row
+// now carries its Role and the Kind that admitted it, so "why can't this device see anything" is answerable
+// on the page rather than by reading devices.json.
 app.MapGet("/devices", (HttpContext ctx) =>
     Authorized(ctx, tokens) ? Results.Ok(tokens.ListDevices(RequestToken(ctx))) : Results.Unauthorized());
+
+// This device's own row. Any paired device may ask — it is the difference between "there is nothing here"
+// and "you are a Member, so you only see what you started", which a Member cannot learn from GET /devices
+// (that lists everybody, and a Member has no business enumerating the household).
+app.MapGet("/devices/me", (HttpContext ctx) =>
+{
+    if (!Authorized(ctx, tokens))
+    {
+        return Results.Unauthorized();
+    }
+
+    return tokens.DescribeSelf(RequestToken(ctx)) is { } me
+        ? Results.Ok(me)
+        // The configured bootstrap token is an operator but not a device record; say so rather than 404.
+        : Results.Json(
+            new { error = "This token is the host's configured bootstrap token, not a paired device." },
+            statusCode: StatusCodes.Status404NotFound);
+});
+
+// Promote or demote a device. Owner-only, and the registry refuses to leave the host with no Owner at all.
+app.MapPut("/devices/{id}/role", async (HttpContext ctx, string id, DeviceRoleRequest request) =>
+{
+    var callerId = tokens.ResolveCallerId(RequestToken(ctx));
+    if (callerId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!tokens.IsOwner(callerId))
+    {
+        return Results.Json(new { error = "Only an Owner can change device roles." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var updated = tokens.SetRole(id, request.Role, callerId);
+    if (updated.NotFound)
+    {
+        return Results.NotFound(new { error = updated.Error });
+    }
+
+    if (!updated.Ok)
+    {
+        return Results.Json(new { error = updated.Error }, statusCode: StatusCodes.Status409Conflict);
+    }
+
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DeviceRoleChangedEvent(id, request.Role.ToString()));
+    return Results.Ok(updated.Device);
+});
+
+// Tidy up devices nobody has used in a while. Owner-only, never the caller's own device, never the last Owner.
+app.MapPost("/devices/prune", (HttpContext ctx, DevicePruneRequest request) =>
+{
+    var callerId = tokens.ResolveCallerId(RequestToken(ctx));
+    if (callerId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    return tokens.IsOwner(callerId)
+        ? Results.Ok(tokens.Prune(request.UnusedForDays, callerId))
+        : Results.Json(new { error = "Only an Owner can prune devices." }, statusCode: StatusCodes.Status403Forbidden);
+});
 
 app.MapDelete("/devices/{id}", async (HttpContext ctx, string id) =>
 {
@@ -2389,6 +2509,9 @@ app.Lifetime.ApplicationStarted.Register(() =>
     }
 });
 app.Lifetime.ApplicationStopping.Register(() => transport.StopAsync().GetAwaiter().GetResult());
+// Last-seen is written through at most once a minute (it changes on every request); flush whatever the
+// debounce is still holding, so "unused for 30 days" isn't measured from a stale timestamp after a restart.
+app.Lifetime.ApplicationStopping.Register(tokens.Flush);
 
 app.Run();
 

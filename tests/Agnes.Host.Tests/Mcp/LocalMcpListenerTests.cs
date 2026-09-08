@@ -159,7 +159,8 @@ public sealed class LocalMcpListenerTests : IAsyncLifetime
         // neither a session (SessionFor) nor a device (the token was never a device token).
         Assert.Null(_tokens.SessionFor(token));
         var tools = new AgnesMcpTools(
-            new FakeAgnesMcpBackend(), new FakeMcpAuthenticator("device-token"), new FixedTokenSource(token), _tokens, Agnes.Host.Tests.Display.DisplayFixture.NoDisplays());
+            new FakeAgnesMcpBackend(), new FakeMcpAuthenticator("device-token"), new FixedTokenSource(token), _tokens,
+            Agnes.Host.Tests.Display.DisplayFixture.NoDisplays(), StubSessionAccess.AllowAll());
         await Assert.ThrowsAsync<McpUnauthenticatedException>(() => tools.SendUserFile("out.txt", null, null));
     }
 

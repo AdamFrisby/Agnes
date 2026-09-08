@@ -129,13 +129,32 @@ the code is single-use and rotates after each pairing (and after repeated bad
 attempts). Tokens are persisted **hashed** — `Agnes:DevicesFile` (default
 `~/.agnes/devices.json`) never holds a usable token.
 
+Every paired device is an **Owner** or a **Member**, decided by how it was admitted rather than by when
+it arrived — the typed code and an authorized key admit an Owner, a federated sign-in admits a Member
+unless the login is in that method's `Owners` list, and an approval admits at most what the approver
+holds. [security.md](security.md#device-roles-owner-and-member) has the full table and the reasoning.
+A Member opens sessions and always sees the ones it started; it does not see other people's.
+
 Manage devices with a valid token:
 
-- `GET /devices` — list paired devices (id, name, paired/last-seen).
-- `DELETE /devices/{id}` — revoke one.
+| | | |
+|---|---|---|
+| `GET /devices` | any paired device | List paired devices: id, name, paired/last-seen, `role`, and the `kind` that admitted each one. |
+| `GET /devices/me` | any paired device | Just the calling device's own row — how a client says "you are a Member on this host" without listing everybody. 404 for the configured bootstrap token, which is an operator but not a device. |
+| `PUT /devices/{id}/role` | **Owner** | Body `{ "role": "Owner" \| "Member" }`. 403 for a Member, 409 when it would leave the host with no Owner (including demoting yourself as the last one), 404 for an unknown device. |
+| `POST /devices/prune` | **Owner** | Body `{ "unusedForDays": 30 }`. Removes devices not seen for that long (measured from last-seen, or from pairing when a device has never connected), **never** the calling device and **never** the last Owner. Returns what it removed. |
+| `DELETE /devices/{id}` | any paired device | Revoke one. |
+
+Owner lists, where a method supports them: `Agnes:Auth:GitHub:Owners`, `Agnes:Auth:Oidc:Owners`,
+`Agnes:Auth:CloudflareAccess:Owners` (matches the subject *or* the email), `Agnes:Auth:Mtls:Owners`, and
+`Agnes:Auth:Keypair:Role` (`Owner` by default). All are additive to the existing allowlists — an owners
+list decides what an *admitted* identity is worth, never whether it is admitted.
+
+Signing in again with the same credential from the same device **rotates** that device's token rather
+than adding a row: same id, same role, and the previous token stops working.
 
 For headless / automation, set `Agnes:PairingToken` to a fixed bootstrap token;
-it's always accepted and skips the pairing handshake.
+it's always accepted, skips the pairing handshake, and counts as an Owner.
 
 The pairing code is ~40 bits with rotate-after-5-failures — fine on localhost or a
 private overlay, but a thin guard on the open internet. For an internet-facing host,
@@ -185,10 +204,15 @@ single-use challenge — no secret ever crosses the wire.
 {
   "Agnes": { "Auth": { "Keypair": {
     "Enabled": true,
-    "AuthorizedKeysFile": "~/.agnes/authorized_keys"
+    "AuthorizedKeysFile": "~/.agnes/authorized_keys",
+    "Role": "Owner"
   } } }
 }
 ```
+
+`Role` is what an authorized key is admitted as. **Owner** by default — an operator edited
+`authorized_keys` to put it there — but set it to `Member` on a host that hands keys out to a team, and
+promote individually with `PUT /devices/{id}/role`.
 
 `authorized_keys` has one **base64 SPKI** public key per line, with an optional label:
 
@@ -319,7 +343,10 @@ adapter follows from it.
 | `Auth:Oidc:{Enabled,Issuer,Audience,JwksUri,ClientId,ClientSecret,RedirectUri}` | Native OIDC sign-in; Google is configured through this standard flow. |
 | `Auth:CloudflareAccess:{Enabled,TeamDomain,Audience,AllowedEmailDomains}` | Exchange a validated Cloudflare Access browser assertion for a revocable device token. |
 | `Auth:RateLimit:{Enabled,PerIpPerMinute,GlobalPerMinute,TrustForwardedFor}` | Throttle the auth endpoints (see above). |
-| `DevicesFile` | Where paired-device hashes are stored. |
+| `Home` | The host's state directory. **Every** other path below defaults to something under it: devices, MCP config, projects, checkouts, review comments, prompts, launch profiles, connected services, attention/approval requests, the sandbox registry and image manifest, channel links, push registrations, scheduled tasks, session goals, plugins, the relay key, the linked GitHub app. Default `~/.agnes`. Set it to run a second host on one machine without the two treading on each other — and set it for anything that boots the host in a test or a tool. (With `AGNES_REFUSE_DEFAULT_HOME=1` in the environment, a host with no `Home` set refuses to start rather than fall back to `~/.agnes`; the test suite sets that variable, which is how a forgotten override becomes a loud failure instead of an edit to your real host state.) |
+| `DevicesFile` | Where paired-device hashes are stored. Defaults to `<Home>/devices.json`. |
+| `Auth:Keypair:Role` | What an authorized key is admitted as: `Owner` (default) or `Member`. |
+| `Auth:{GitHub,Oidc,CloudflareAccess,Mtls}:Owners` | Identities admitted as **Owner** by that method; everyone else it admits is a Member. |
 | `AllowedOrigins` / `AllowAllOrigins` | Cross-origin browser policy. |
 | `Database` | SQLite path for the event log (in-memory if empty). |
 | `Storage:EventStore` | Event-store backend: `sqlite` (default single-node) or `postgres` (optional shared DB). |
@@ -360,3 +387,27 @@ purely operational — no application behavior changes.
 
 Selection is per-store: the same seam could later give other durable stores (e.g. the memory-search index) a
 Postgres backing the same way, without changing core storage code.
+
+## Troubleshooting
+
+### "Why can't this device see any sessions?"
+
+An empty session list is almost always an *answer*, not a fault: the catalogue advertises exactly what
+the caller could subscribe to, so it goes empty when the caller may reach nothing. Work down this list.
+
+1. **Ask the device what it is.** `GET /devices/me` returns its `role` and the `kind` that admitted it
+   (the desktop and phone show the same two facts on their Devices screen). A **Member** sees only the
+   sessions it started plus what has been shared with it — that is working as intended, not a bug.
+2. **Is the session actually theirs?** A session is owned by whoever opened it (their GitHub login,
+   falling back to the device id). Sessions opened by somebody else need an explicit share, or Owner.
+3. **Does the host still have a real Owner?** `GET /devices` as any paired device: if the only row
+   marked `Owner` is something you don't recognise — a stale test fixture, a device you revoked and
+   re-paired — that is the old "earliest device wins" rule showing through a migrated store. Promote
+   the right device with `PUT /devices/{id}/role`, then demote or `DELETE` the stale one. (The host
+   refuses to be left with no Owner, so promote before you demote.)
+4. **Check `Agnes:Home`.** If a test run, a script, or a second daemon booted a host without setting it,
+   it wrote into the same `~/.agnes` as your real host and its device records are now in your registry.
+   `POST /devices/prune` with a suitable `unusedForDays` clears out what nobody has used; set
+   `Agnes:Home` on the stray process so it stops happening.
+5. **Isolation.** Under `Agnes:Security:SessionIsolation=PerUser`/`PerGroup` a device also needs to own
+   the session or be in its group — see [security.md](security.md#session-isolation--groups).

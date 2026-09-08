@@ -147,7 +147,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     }
 
     public Task<SessionInfo> OpenSession(OpenSessionRequest request)
-        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox, request.ModelId, owner: CallerOwnerId(), graphical: request.Graphical);
+        => _sessions.OpenSessionAsync(request.AdapterId, request.WorkingDirectory, request.UseWorktree, request.SkipPermissions, request.McpApproval, request.GitCredentialMode, request.UseSandbox, request.ModelId, owner: RequireOpenerId(), graphical: request.Graphical);
 
     /// <summary>
     /// What is already running on this host, filtered to what the caller may actually subscribe to. The gate is
@@ -193,7 +193,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         var profile = _launchProfiles.Find(request.ProfileId)
             ?? throw new InvalidOperationException($"No launch profile with id '{request.ProfileId}'.");
         var open = profile.ToOpenSessionRequest(request.WorkingDirectoryOverride);
-        return _sessions.OpenSessionAsync(open.AdapterId, open.WorkingDirectory, open.UseWorktree, open.SkipPermissions, open.McpApproval, open.GitCredentialMode, open.UseSandbox, open.ModelId, owner: CallerOwnerId(), graphical: open.Graphical);
+        return _sessions.OpenSessionAsync(open.AdapterId, open.WorkingDirectory, open.UseWorktree, open.SkipPermissions, open.McpApproval, open.GitCredentialMode, open.UseSandbox, open.ModelId, owner: RequireOpenerId(), graphical: open.Graphical);
     }
     public Task<IReadOnlyList<Abstractions.ExternalSessionInfo>> DiscoverExternalSessions(string workspaceDirectory)
         => _sessions.DiscoverExternalSessionsAsync(workspaceDirectory);
@@ -819,6 +819,21 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     {
         var token = Context.GetHttpContext()?.Request.Query[WireProtocol.TokenParameter].ToString();
         return _tokens.ResolveGitHubLogin(token) ?? _tokens.ResolveCallerId(token);
+    }
+
+    // Opening a session is the one write with no session to check against, so it is gated on the caller
+    // instead: a paired device of ANY role (a Member opens sessions like anybody else), never a public-link
+    // viewer. It also guarantees the owner actually gets stamped — an unattributable session is one nobody
+    // but a host Owner can ever see again, which is worse than refusing to start it.
+    private string RequireOpenerId()
+    {
+        if (_publicViewers.IsPublicViewer(Context.ConnectionId))
+        {
+            throw new HubException("A public link cannot open sessions.");
+        }
+
+        return CallerOwnerId()
+            ?? throw new HubException("Opening a session needs a paired device on this host.");
     }
 
     // The hub speaks the shared access vocabulary directly; the decision itself lives in
