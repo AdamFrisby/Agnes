@@ -220,6 +220,26 @@ public sealed partial class AgnesMcpTools
         return $"Sent {shared.FileName} ({DescribeSize(shared.Size)}) to the user.";
     }
 
+    [McpServerTool(Name = "report_status")]
+    [Description("Report your one-line status: what you found, what you are doing now, and how it fits the "
+        + "plan. One or two sentences, up to " + Sessions.StatusOptions.DefaultMaxCharsText + " characters; "
+        + "the first line only. Call it when you start a new piece of work, when you hit a problem, and about "
+        + "every few minutes during long work — not every step.")]
+    public async Task<string> ReportStatus(
+        [Description("Your status: one or two sentences, up to " + Sessions.StatusOptions.DefaultMaxCharsText
+            + " characters, on a single line. A longer report is kept up to the limit rather than refused, "
+            + "and the reply tells you what was kept.")] string status,
+        [Description("Omit when called by the agent itself; required with a device token")] string? sessionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var target = RequireActingSession(sessionId);
+        var recorded = await _backend.ReportStatusAsync(target, status, cancellationToken).ConfigureAwait(false);
+
+        // The acknowledgement is where truncation stops being silent. A model that is told "noted" after
+        // having half its sentence thrown away learns nothing and writes the same paragraph next time.
+        return Sessions.AgentStatusText.Acknowledge(recorded);
+    }
+
     /// <summary>A human-sized rendering of a byte count for the confirmation the model reads back. Rounded on
     /// purpose: the agent is being told the send worked, not being handed a figure to compute with.</summary>
     private static string DescribeSize(long bytes)

@@ -96,6 +96,28 @@ internal sealed class FakeAgnesMcpBackend : IAgnesMcpBackend
         Shared.Add((sessionId, path, caption));
         return Task.FromResult(Share with { Caption = caption });
     }
+
+    // ---- the agent's one-line status ----
+    public List<(string SessionId, string Status)> Statuses { get; } = [];
+
+    /// <summary>Set to make ReportStatusAsync throw — how the real backend reports a veto or an empty line.</summary>
+    public Exception? StatusFailure { get; set; }
+
+    /// <summary>What the host claims it kept. Defaults to "nothing was taken away".</summary>
+    public Func<string, Agnes.Host.Sessions.StatusReportResult> StatusResult { get; set; } =
+        status => new Agnes.Host.Sessions.StatusReportResult(status, Clipped: false, TrimmedToFirstLine: false, MaxChars: 240);
+
+    public Task<Agnes.Host.Sessions.StatusReportResult> ReportStatusAsync(
+        string sessionId, string status, CancellationToken cancellationToken = default)
+    {
+        if (StatusFailure is { } failure)
+        {
+            return Task.FromException<Agnes.Host.Sessions.StatusReportResult>(failure);
+        }
+
+        Statuses.Add((sessionId, status));
+        return Task.FromResult(StatusResult(status));
+    }
 }
 
 /// <summary>A fixed-token caller source for offline tool tests.</summary>

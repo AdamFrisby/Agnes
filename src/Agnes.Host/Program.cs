@@ -607,6 +607,16 @@ builder.Services.AddSingleton(new Agnes.Host.Sessions.SharingOptions
 {
     MaxBytes = builder.Configuration.GetValue("Agnes:Sharing:MaxBytes", Agnes.Host.Sessions.SharingOptions.DefaultMaxBytes),
 });
+// ---- the agent's one-line status (Agnes:Status:*) ----
+// The clip keeps a status renderable where a status is rendered (a row, a tab, a phone list); the interval
+// keeps a chatty agent from burying its own transcript. Neither drops a report: a long one is cut with the
+// agent told, and a fast one replaces whatever was waiting for the window to close. See docs/agent-status.md.
+builder.Services.AddSingleton(new Agnes.Host.Sessions.StatusOptions
+{
+    MaxChars = builder.Configuration.GetValue("Agnes:Status:MaxChars", Agnes.Host.Sessions.StatusOptions.DefaultMaxChars),
+    MinIntervalSeconds = builder.Configuration.GetValue(
+        "Agnes:Status:MinIntervalSeconds", Agnes.Host.Sessions.StatusOptions.DefaultMinIntervalSeconds),
+});
 builder.Services.AddHostedService<Agnes.Host.Sessions.UsageReporter>();
 builder.Services.AddHostedService<Agnes.Host.Events.TranscriptRetentionService>();
 builder.Services.AddSingleton<SessionManager>();
@@ -764,7 +774,7 @@ builder.Services.AddSingleton<Agnes.Host.Mcp.IMcpDeviceAuthenticator>(sp =>
     new Agnes.Host.Mcp.DeviceRegistryMcpAuthenticator(sp.GetRequiredService<DeviceRegistry>()));
 builder.Services.AddSingleton<Agnes.Host.Mcp.IMcpCallerTokenSource, Agnes.Host.Mcp.HttpContextMcpTokenSource>();
 builder.Services
-    .AddMcpServer()
+    .AddMcpServer(Agnes.Host.Mcp.AgnesMcpEndpoints.ConfigureServer)
     // Stateless: each tool call is its own HTTP POST, so the device token is re-authenticated on EVERY call
     // (matching the SignalR hub's per-connection check but at per-request granularity).
     .WithHttpTransport(o => o.Stateless = true)

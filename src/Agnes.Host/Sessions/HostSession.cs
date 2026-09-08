@@ -728,6 +728,14 @@ internal sealed class HostSession : IAsyncDisposable
     public Task<SessionEvent> RecordDisplayControlAsync(DisplayControlChangedEvent changed)
         => AppendAndPublishAsync(changed);
 
+    /// <summary>
+    /// Records the agent's own one-line status. Same path as everything else here, and for the same reason:
+    /// "what were you doing at half past two" is answerable only if the line is in the log next to the tool
+    /// calls it describes, rather than kept as a mutable field somewhere that only shows the latest one.
+    /// </summary>
+    public Task<SessionEvent> RecordAgentStatusAsync(AgentStatusEvent status)
+        => AppendAndPublishAsync(status);
+
     public async ValueTask DisposeAsync()
     {
         // Session teardown: any still-queued message can no longer be delivered, so move it to the discarded
