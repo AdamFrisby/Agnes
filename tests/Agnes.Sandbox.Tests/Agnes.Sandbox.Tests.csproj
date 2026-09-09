@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Agnes.Sandbox\Agnes.Sandbox.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Sandbox.Incus\Agnes.Sandbox.Incus.csproj" />
+    <ProjectReference Include="..\Agnes.TestKit\Agnes.TestKit.csproj" />
   </ItemGroup>
 
 </Project>

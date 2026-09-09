@@ -8,7 +8,16 @@ namespace Agnes.App.Desktop.Persistence;
 /// paired from an <c>agnes://pair</c> link; null for a host with a CA-issued certificate, which is
 /// validated by chain and name instead.
 /// </param>
-public sealed record KnownHost(string Name, string Url, string Token, string? Fingerprint = null);
+/// <param name="Role">
+/// What this device last knew itself to be on that host, so a reconnecting tab can explain an empty session
+/// list in the same breath as showing it rather than a round trip later. Null means "not asked yet" — which
+/// is what every host saved before roles existed says, and is why it is nullable rather than defaulting to
+/// Member: an owner must never be told, even for a moment, that it is a member. The host re-answers on every
+/// connect and wins.
+/// </param>
+public sealed record KnownHost(
+    string Name, string Url, string Token, string? Fingerprint = null,
+    Agnes.Protocol.DeviceRole? Role = null);
 
 /// <summary>Persists the list of hosts the user has added (the simulated host is built-in).</summary>
 public sealed class HostRegistryStore

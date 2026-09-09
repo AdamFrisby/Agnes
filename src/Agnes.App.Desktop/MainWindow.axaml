@@ -87,10 +87,11 @@
                 BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="14,9">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Grid.Column="0" x:Name="LeftBar" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <!-- Brand lockup: the Agnes gradient tile and the wordmark in the display face. This
-                         is the one place the gradient appears in the chrome. -->
+                    <!-- Brand lockup: the Agnes squid mark and the wordmark in the display face. This is
+                         the one place the brand gradient appears in the chrome — it used to be a bare
+                         gradient tile standing in for a mark that the app already ships on Android. -->
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <Border Width="20" Height="20" CornerRadius="6" Background="{StaticResource GradAgnes}" VerticalAlignment="Center" />
+                        <Image Source="{StaticResource AgnesMark}" Width="22" Height="22" VerticalAlignment="Center" />
                         <TextBlock Text="Agnes" Classes="display" FontSize="15" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
                     </StackPanel>
                 </StackPanel>
@@ -121,28 +122,91 @@
                                 <TextBlock Text="No matches" Foreground="{DynamicResource FgFaint}" FontSize="11"
                                            IsVisible="{Binding !HasGlobalResults}" />
                                 <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
-                                <ItemsControl ItemsSource="{Binding GlobalResults}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button Command="{Binding $parent[ItemsControl].DataContext.SelectGlobalHitCommand}"
-                                                    CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                                    HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                                                    Padding="7,5" CornerRadius="6" Cursor="Hand">
-                                                <StackPanel Spacing="2">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding SessionTitle}" Foreground="{DynamicResource Fg}"
-                                                                   FontSize="11" FontWeight="SemiBold" />
-                                                        <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
-                                                                   FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                <StackPanel Spacing="2">
+                                    <!-- Results are grouped, current tab first. Searching while reading a
+                                         session usually means "find it in this one", so those hits lead and
+                                         the rest follow under a rule rather than being interleaved by dock
+                                         order. Each group's header carries the context, which is why a row
+                                         only names its session in the second group (see GlobalHit). -->
+                                    <TextBlock Text="This session" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                               FontWeight="SemiBold" Margin="2,2,0,2"
+                                               IsVisible="{Binding HasThisSessionResults}" />
+                                    <ItemsControl ItemsSource="{Binding ThisSessionResults}"
+                                                  IsVisible="{Binding HasThisSessionResults}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Command="{Binding $parent[ItemsControl].DataContext.SelectGlobalHitCommand}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                        Padding="7,5" CornerRadius="6" Cursor="Hand">
+                                                    <StackPanel Spacing="2">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding SessionTitle}" Foreground="{DynamicResource Fg}"
+                                                                       FontSize="11" FontWeight="SemiBold"
+                                                                       IsVisible="{Binding ShowSessionTitle}" />
+                                                            <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Snippet}" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding Snippet}" Foreground="{DynamicResource FgDim}" FontSize="11"
-                                                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
-                                            </Button>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- The rule only exists to separate two populated groups; with one group
+                                         it would be a line under nothing. -->
+                                    <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                                            Margin="0,6,0,0" IsVisible="{Binding HasBothResultGroups}" />
+
+                                    <TextBlock Text="Other sessions" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                               FontWeight="SemiBold" Margin="2,6,0,2"
+                                               IsVisible="{Binding HasOtherSessionResults}" />
+                                    <ItemsControl ItemsSource="{Binding OtherSessionResults}"
+                                                  IsVisible="{Binding HasOtherSessionResults}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Command="{Binding $parent[ItemsControl].DataContext.SelectGlobalHitCommand}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                                        Padding="7,5" CornerRadius="6" Cursor="Hand">
+                                                    <StackPanel Spacing="2">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding SessionTitle}" Foreground="{DynamicResource Fg}"
+                                                                       FontSize="11" FontWeight="SemiBold"
+                                                                       IsVisible="{Binding ShowSessionTitle}" />
+                                                            <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource Good}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Snippet}" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
                                 </ScrollViewer>
+
+                                <!-- The two searches differ in reach, not in kind: the box above matches the
+                                     sessions currently open, this reaches the host's index of every transcript
+                                     it has ever recorded, closed ones included. They used to be separate top-bar
+                                     controls with the same word and the same icon, which read as one feature
+                                     offered twice; as a footer here the narrower search leads to the wider one. -->
+                                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
+                                    <Button Command="{Binding OpenSearchCommand}" HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
+                                            Padding="7,5" CornerRadius="6" Cursor="Hand"
+                                            AutomationProperties.Name="Search all recorded sessions"
+                                            ToolTip.Tip="Full-text search across every session the host has recorded, including closed ones">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <ic:SymbolIcon Symbol="History" Foreground="{DynamicResource FgFaint}" FontSize="14" />
+                                            <TextBlock Text="Search all recorded sessions" Foreground="{DynamicResource FgDim}"
+                                                       FontSize="11" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </Border>
                             </StackPanel>
                         </Flyout>
                     </Button.Flyout>
@@ -325,6 +389,18 @@
                                                             ToolTip.Tip="{Binding ActivityText}" />
                                                     <StackPanel Grid.Column="1">
                                                         <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                        <!-- What the agent says it is doing — the reason this
+                                                             switcher can answer "which one do I want?" without
+                                                             opening any of them. One line, trimmed; a session
+                                                             with no status shows nothing extra. -->
+                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" MaxWidth="260"
+                                                              IsVisible="{Binding HasStatus}">
+                                                            <TextBlock Grid.Column="0" Text="{Binding LatestStatus}" Foreground="{DynamicResource FgDim}"
+                                                                       FontSize="11" TextTrimming="CharacterEllipsis"
+                                                                       ToolTip.Tip="{Binding LatestStatus}" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding StatusAge}" Foreground="{DynamicResource FgFaint}"
+                                                                       FontSize="10" VerticalAlignment="Center" />
+                                                        </Grid>
                                                         <TextBlock Text="{Binding HostName}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -349,9 +425,6 @@
                     <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Board}" Command="{Binding OpenDashboardCommand}" Padding="10,5" FontSize="12"
                             AutomationProperties.Name="Status dashboard"
                             ToolTip.Tip="Status of every session, and anything waiting on you (Ctrl+Shift+D)" />
-
-                    <!-- Search: opens a first-class tab searching every recorded session's transcript -->
-                    <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Search}" Command="{Binding OpenSearchCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Search history" />
 
                     <!-- Settings: opens a first-class, searchable Settings tab -->
                     <Button Classes="chip" Content="{icx:SymbolIcon Symbol=Settings}" Command="{Binding OpenSettingsCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="Settings" />
@@ -383,12 +456,66 @@
                             </Flyout>
                         </Button.Flyout>
                     </Button>
-                    <Button Classes="chip" Command="{Binding NewTabCommand}" Padding="10,5" FontSize="12" AutomationProperties.Name="New tab">
+                    <!-- New tab. With only Agnes sessions to open it is a plain button; once a plugin
+                         contributes a screen there is more than one kind of tab, so it grows a menu
+                         listing them. The button keeps its primary action either way — clicking it still
+                         opens a session, and the chevron is what offers the rest. -->
+                    <Button Classes="chip" Command="{Binding NewTabCommand}" Padding="10,5" FontSize="12"
+                            IsVisible="{Binding !HasTabKinds}" AutomationProperties.Name="New tab">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="+" FontSize="14" />
                             <TextBlock Text="New tab" />
                         </StackPanel>
                     </Button>
+
+                    <StackPanel Orientation="Horizontal" Spacing="0" IsVisible="{Binding HasTabKinds}">
+                        <Button Classes="chip" Command="{Binding NewTabCommand}" Padding="10,5" FontSize="12"
+                                CornerRadius="6,0,0,6" AutomationProperties.Name="New tab">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="+" FontSize="14" />
+                                <TextBlock Text="New tab" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="chip" Padding="6,5" FontSize="12" CornerRadius="0,6,6,0"
+                                AutomationProperties.Name="Choose what kind of tab to open">
+                            <ic:SymbolIcon Symbol="ChevronDown" FontSize="12" />
+                            <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedRight">
+                                    <StackPanel Width="220" Spacing="2">
+                                        <TextBlock Text="Open a tab" Foreground="{DynamicResource FgFaint}"
+                                                   FontSize="10" FontWeight="SemiBold" Margin="2,2,0,4" />
+                                        <Button Command="{Binding NewTabCommand}" HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Left" Background="Transparent"
+                                                BorderThickness="0" Padding="7,5" CornerRadius="6" Cursor="Hand">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Image Source="{StaticResource AgnesMark}" Width="14" Height="14"
+                                                       VerticalAlignment="Center" />
+                                                <TextBlock Text="Agnes session" Foreground="{DynamicResource Fg}"
+                                                           FontSize="12" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <ItemsControl ItemsSource="{Binding CustomScreens}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Command="{Binding $parent[ItemsControl].DataContext.OpenCustomScreenCommand}"
+                                                            CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Left" Background="Transparent"
+                                                            BorderThickness="0" Padding="7,5" CornerRadius="6" Cursor="Hand">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <ic:SymbolIcon Symbol="PuzzlePiece" FontSize="14"
+                                                                           Foreground="{DynamicResource FgFaint}" />
+                                                            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}"
+                                                                       FontSize="12" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
+                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Border>

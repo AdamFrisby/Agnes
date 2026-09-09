@@ -62,14 +62,21 @@
                     </StackPanel>
                   </Border>
 
+                  <!-- Two ways in, not one. A member is the ordinary answer and keeps the primary slot;
+                       handing over the run of the host is a separate, differently-worded tap that a phone
+                       only offers when this device is itself an owner. -->
                   <Grid ColumnDefinitions="*,10,*">
                     <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Decline"
                             Command="{Binding $parent[UserControl].DataContext.DenyDeviceCommand}"
                             CommandParameter="{Binding}" />
-                    <Button Grid.Column="2" Theme="{StaticResource SuccessButton}" Content="Approve"
+                    <Button Grid.Column="2" Theme="{StaticResource SuccessButton}" Content="Let in as member"
                             Command="{Binding $parent[UserControl].DataContext.ApproveDeviceCommand}"
                             CommandParameter="{Binding}" />
                   </Grid>
+                  <Button Name="LetInAsOwner" Theme="{StaticResource OutlineButton}" HorizontalAlignment="Stretch"
+                          Content="Let in as owner" IsVisible="{Binding CanGrantOwner}"
+                          Command="{Binding $parent[UserControl].DataContext.ApproveDeviceAsOwnerCommand}"
+                          CommandParameter="{Binding}" />
                 </StackPanel>
               </Border>
             </DataTemplate>
@@ -139,6 +146,60 @@
                   <TextBlock Classes="caption" Text="{Binding CompletedAt, StringFormat='{}{0:d MMM HH:mm}'}" />
                 </StackPanel>
               </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ===== sent to you =====
+             Below Finished, because a file is news rather than a demand: nothing is blocked on you
+             reading it. It is here at all because a notification about a screenshot is useless if the
+             only way back to it is remembering which of six agents produced it. -->
+        <TextBlock Classes="section" Text="SENT TO YOU" Margin="4,10,0,8"
+                   IsVisible="{Binding HasSharedFiles}" />
+
+        <ItemsControl ItemsSource="{Binding SharedFiles}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SharedFileRow">
+              <Button Theme="{StaticResource RowButton}" Padding="0" Margin="0,0,0,8"
+                      Command="{Binding $parent[UserControl].DataContext.OpenSharedFileCommand}"
+                      CommandParameter="{Binding}">
+                <Border Classes="card" Padding="14">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+
+                    <Border Grid.Column="0" Width="36" Height="36" Margin="0,0,12,0"
+                            CornerRadius="{StaticResource RadiusMd}"
+                            Background="{DynamicResource AccentSoft}">
+                      <Panel>
+                        <c:Icon Data="{StaticResource IconImage}" Size="18"
+                                Stroke="{DynamicResource AccentText}"
+                                IsVisible="{Binding File,
+                                            Converter={x:Static v:SharedFileKindConverter.Instance},
+                                            ConverterParameter=image}" />
+                        <c:Icon Data="{StaticResource IconFileText}" Size="18"
+                                Stroke="{DynamicResource AccentText}"
+                                IsVisible="{Binding File,
+                                            Converter={x:Static v:SharedFileKindConverter.Instance},
+                                            ConverterParameter=document}" />
+                        <c:Icon Data="{StaticResource IconFile}" Size="18"
+                                Stroke="{DynamicResource AccentText}"
+                                IsVisible="{Binding File,
+                                            Converter={x:Static v:SharedFileKindConverter.Instance},
+                                            ConverterParameter=other}" />
+                      </Panel>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                      <TextBlock Text="{Binding FileName}" Classes="strong" MaxLines="1"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding SessionTitle}" Classes="caption" MaxLines="1"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="2" Text="{Binding Age}" Classes="caption"
+                               VerticalAlignment="Center" Margin="10,0,0,0" />
+                  </Grid>
+                </Border>
+              </Button>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>

@@ -27,6 +27,30 @@ public static class Program
 
     public static void Main(string[] args)
     {
+        // Live mode (--host …) renders the same window against a REAL host instead of the simulator; see
+        // LiveCapture for why that is worth a mode of its own. Everything else is the simulated tour.
+        if (LiveCapture.TryParse(args) is { } live)
+        {
+            _outDir = live.OutDir;
+            Directory.CreateDirectory(_outDir);
+            using var liveSession = HeadlessUnitTestSession.StartNew(typeof(HeadlessApp));
+            liveSession.Dispatch(
+                () =>
+                {
+                    if (string.Equals(live.Mode, "status", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LiveStatusCapture.Run(live);
+                    }
+                    else
+                    {
+                        LiveCapture.Run(live);
+                    }
+                },
+                CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"Done. Screenshots in {_outDir}");
+            return;
+        }
+
         _outDir = args.Length > 0 ? args[0] : Path.Combine(Directory.GetCurrentDirectory(), "screenshots");
         Directory.CreateDirectory(_outDir);
 
@@ -51,6 +75,8 @@ public static class Program
         window.Show();
         MainWindowViewModel.ApplyTheme("Dark"); // pin dark for the canonical shots (every theme gets its own below)
         vm.Notifier = new AvaloniaNotifier(window); // in-app toasts for blockers/completions
+        // The real save/open verbs, so a received-file card shows the buttons the desktop actually has.
+        vm.ReceivedFiles = new DesktopReceivedFileHandler(() => window);
         vm.WindowActive = false; // simulate a background window so completion toasts also show
         vm.Showcase.Dismiss(); // record this version so the first-run feature showcase doesn't auto-open
         vm.RestoreAsync(); // empty → one fresh host-picker tab; also enables persistence
@@ -83,6 +109,20 @@ public static class Program
         Pump(() => first.Session!.Items.OfType<MessageBubbleItem>().Any(m => m.IsLong)); // wait for the full answer
         Settle(200);
         Capture(window, "03-conversation.png");
+
+        // 3t) The status band at rest: one line above the transcript carrying the agent's own report of
+        //     what it is doing, quiet enough to read as chrome. It is the *only* copy of that sentence —
+        //     the faint duplicate under the toolbar is gone.
+        Capture(window, "03t-agent-status.png");
+
+        // 3s) The same band raised. Staged by back-dating the last visit rather than by waiting three
+        //     minutes: the session is a real one whose agent really reported, and the only fiction is when
+        //     the person last looked at it — which is exactly the fact the raised state is about.
+        first.Session!.NoteUserInteraction(DateTimeOffset.Now - TimeSpan.FromMinutes(8));
+        Settle(150);
+        Capture(window, "03s-agent-status-away.png");
+        first.Session!.NoteUserInteraction(); // back to attended, so later shots are of an ordinary tab
+        Settle(60);
 
         // 3z) Composer must NOT resize horizontally as you type — set a long draft and confirm stable width.
         first.Session!.PromptText = "This is a fairly long draft typed into the composer to confirm the input box keeps a stable, fixed width and wraps, instead of growing horizontally as characters are added.";
@@ -193,6 +233,18 @@ public static class Program
         tools.Session!.ResumeSandboxCommand.Execute(null);
         Pump(() => !tools.Session!.SandboxPaused);
 
+        // 4sc) The graphical sandbox's Screen panel: the simulated sandbox streams a synthetic desktop, so this
+        // shot shows a real decoded frame beside the transcript rather than an empty placeholder.
+        Pump(() => tools.Session!.HasDisplay);
+        tools.Session!.IsDisplayVisible = true;
+        Pump(() => tools.Session!.Display?.LastFrameAt is not null);
+        // Past a second, so the fps/bandwidth readout has closed its first window and is showing something.
+        Pump(() => tools.Session!.Display?.Fps > 0, timeoutMs: 4000);
+        Settle(200);
+        Capture(window, "04sc-screen-panel.png");
+        tools.Session!.IsDisplayVisible = false;
+        Settle(120);
+
         // 4d) Clear session-state banner (offline / reconnecting / interrupted / stale).
         tools.Session!.MarkStale();
         Pump(() => tools.Session!.ShowBanner);
@@ -277,6 +329,15 @@ public static class Program
         Prompt(ask, "Ask me a clarifying question before you start.");
         Pump(() => ask.Session!.PendingQuestion is not null);
         Capture(window, "05c-question-card.png");
+
+        // 5cf) A file the agent sent: the card in the transcript, with the image shown inline and the two
+        //      verbs this head has. Its own tab, so the shot is the card and nothing else.
+        var sent = OpenSession(vm, "opencode");
+        Settle(6000); // wait out the earlier tabs' toasts, so the only one in shot is this file's own
+        Prompt(sent, "Send me a screenshot of the header when you're done.");
+        Pump(() => sent.Session!.SharedFiles.Count > 0);
+        Settle(700); // the inline preview is fetched after the card attaches
+        Capture(window, "05cf-shared-file.png");
 
         // 5d) Fork dialog — copy the working folder to a new location (+ optional CoW sandbox clone).
         var forkTab = OpenSession(vm, "opencode");
@@ -375,7 +436,7 @@ public static class Program
     private static IEnumerable<SessionDocument> Tabs(MainWindowViewModel vm)
         => Dock(vm).VisibleDockables!.OfType<SessionDocument>();
 
-    private static SessionDocument? LastTab(MainWindowViewModel vm) => Tabs(vm).LastOrDefault();
+    internal static SessionDocument? LastTab(MainWindowViewModel vm) => Tabs(vm).LastOrDefault();
 
     private static SessionDocument OpenSession(MainWindowViewModel vm, string adapterId)
     {
@@ -397,7 +458,7 @@ public static class Program
         Pump(() => doc.Session!.Items.OfType<MessageBubbleItem>().Any(m => m.IsUser));
     }
 
-    private static void Pump(Func<bool> condition, int timeoutMs = 10000)
+    internal static void Pump(Func<bool> condition, int timeoutMs = 10000)
     {
         var start = DateTime.UtcNow;
         while (!condition() && (DateTime.UtcNow - start).TotalMilliseconds < timeoutMs)
@@ -410,7 +471,7 @@ public static class Program
         Dispatcher.UIThread.RunJobs();
     }
 
-    private static void Settle(int ms)
+    internal static void Settle(int ms)
     {
         var start = DateTime.UtcNow;
         while ((DateTime.UtcNow - start).TotalMilliseconds < ms)
@@ -421,7 +482,7 @@ public static class Program
         }
     }
 
-    private static void Capture(Window window, string name)
+    internal static void Capture(Window window, string name)
     {
         Settle(250);
         Dispatcher.UIThread.RunJobs();

@@ -20,6 +20,8 @@
                 <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Tokens.axaml" />
                 <!-- The ported Spacegray flavours: colour sets keyed by their own theme variants. -->
                 <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Spacegray.axaml" />
+                <!-- The Agnes squid mark. Theme-independent: it is the brand, not a role. -->
+                <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/BrandMark.axaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- One shared dock content recycler (see the DockControl style below); the factory evicts a
@@ -41,10 +43,11 @@
         <DataTemplate DataType="vm:DashboardDocument">
             <views:DashboardView />
         </DataTemplate>
-        <!-- A plugin custom screen: host its own view-model; a plugin ships a DataTemplate for that VM,
-             else the default presenter renders it. This is the head-specific view-resolution seam. -->
+        <!-- A plugin custom screen. ScreenContent is the plugin's own view when it registered an
+             IViewFactory (a control, which ContentControl hosts directly), else the bare view-model for the
+             templates above to match. The resolution happens in the view model, so this stays one binding. -->
         <DataTemplate DataType="vm:PluginScreenDocument">
-            <ContentControl Content="{Binding ScreenViewModel}" />
+            <ContentControl Content="{Binding ScreenContent}" />
         </DataTemplate>
     </Application.DataTemplates>
 

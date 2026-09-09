@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Agnes.App.Mobile.Services;
 using Agnes.Client;
+using Agnes.Protocol;
 using Agnes.Ui.Core;
 using Agnes.Ui.Core.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -40,6 +41,7 @@ public sealed partial class SessionsViewModel : ObservableObject
         NewSessionCommand = new RelayCommand(StartNew);
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         ShowHostsCommand = new RelayCommand(() => _shell.ShowSheet(new HostsSheetViewModel(_shell, _hosts, this)));
+        ShowDevicesCommand = new RelayCommand(() => _shell.Push(new DevicesPageViewModel(_shell)));
         EntryActionsCommand = new RelayCommand<SessionEntry>(e => { if (e is not null) { _shell.ShowSheet(new SessionActionsSheetViewModel(_shell, this, e)); } });
 
         // Relative timestamps go stale silently, which makes a live list look frozen. One cheap tick a
@@ -70,6 +72,22 @@ public sealed partial class SessionsViewModel : ObservableObject
 
     /// <summary>True when there is genuinely nothing to show (as opposed to "not loaded yet").</summary>
     public bool IsEmpty => All.Count == 0 && !IsRestoring;
+
+    /// <summary>
+    /// The role explanation, when a connected host has told this phone it is a member.
+    ///
+    /// An owner's empty list means nothing is running. A member's may only mean it can't see what is.
+    /// Those two screens are identical, and the second one is the one that made a newly-paired device
+    /// look broken — so it says which it is, and where the fix lives.
+    /// </summary>
+    public string MemberNotice => _hosts.Real.FirstOrDefault(l => l.IsMember) is { } link
+        ? DeviceRoleText.EmptyStateForMember(link.Name, "More › Devices")
+        : string.Empty;
+
+    public bool HasMemberNotice => MemberNotice.Length > 0;
+
+    /// <summary>Takes the reader to the page the notice names, rather than making them find it.</summary>
+    public IRelayCommand ShowDevicesCommand { get; }
 
     /// <summary>How many sessions are blocked on the user — the Inbox tab's badge.</summary>
     public int AttentionCount => All.Count(e => e.NeedsAttention);
@@ -123,6 +141,7 @@ public sealed partial class SessionsViewModel : ObservableObject
         });
 
         await _hosts.ConnectAllAsync().ConfigureAwait(false);
+        await DiscoverAsync().ConfigureAwait(false);
         _shell.Dispatcher.Post(RaiseSummary);
 
         // Reattach in parallel — each is an independent snapshot+tail, and a phone waking up wants them
@@ -137,13 +156,83 @@ public sealed partial class SessionsViewModel : ObservableObject
         });
     }
 
-    /// <summary>Reconnects hosts and reattaches anything that isn't live (pull-to-refresh).</summary>
+    /// <summary>Reconnects hosts, picks up any sessions this device hasn't seen, and reattaches anything
+    /// that isn't live (pull-to-refresh).</summary>
     public async Task RefreshAsync()
     {
         await _hosts.ConnectAllAsync().ConfigureAwait(false);
+        await DiscoverAsync().ConfigureAwait(false);
         _shell.Dispatcher.Post(RaiseSummary);
         await Task.WhenAll(All.Where(e => !e.IsLive).ToList().Select(AttachAsync)).ConfigureAwait(false);
         _shell.Dispatcher.Post(() => { Resort(); RaiseSummary(); });
+    }
+
+    /// <summary>
+    /// Adds the sessions each connected host actually has, for any this device doesn't already list.
+    /// </summary>
+    /// <remarks>
+    /// Without this the list is only ever what the phone itself opened: a freshly paired device shows
+    /// nothing at all, however many sessions are running, because its local registry starts empty and no
+    /// other code path ever asks the host. Sessions belong to the host, not to the device that opened them.
+    /// Best-effort per host — one host that can't be listed must not blank out the others.
+    /// </remarks>
+    private async Task DiscoverAsync()
+    {
+        var dismissed = DismissedSessions.Load();
+        foreach (var link in _hosts.Links)
+        {
+            if (link.IsBuiltIn)
+            {
+                continue; // the demo seeds its own session deliberately; don't also enumerate it
+            }
+
+            if (link.Host is not { } host)
+            {
+                continue; // not connected — the next refresh will pick it up
+            }
+
+            IReadOnlyList<SessionSummary> remote;
+            try
+            {
+                remote = await host.ListSessionsAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                continue;
+            }
+
+            var known = All.Select(e => e.SessionId).ToHashSet(StringComparer.Ordinal);
+            var added = remote
+                .Where(r => !known.Contains(r.SessionId) && !dismissed.Contains(r.SessionId))
+                .Select(r => new SavedSession(
+                    link.Name, link.Url, link.Saved.Token, r.SessionId, r.AdapterId,
+                    string.IsNullOrWhiteSpace(r.Title)
+                        ? (string.IsNullOrWhiteSpace(r.WorkingDirectory) ? r.SessionId : r.WorkingDirectory)
+                        : r.Title!,
+                    r.WorkingDirectory,
+                    HasDisplay: r.HasDisplay,
+                    LatestStatus: r.LatestStatus,
+                    LatestStatusAt: r.LatestStatusAt))
+                .ToList();
+
+            if (added.Count == 0)
+            {
+                continue;
+            }
+
+            _shell.Dispatcher.Post(() =>
+            {
+                foreach (var saved in added)
+                {
+                    var row = new SessionEntry(saved, link) { IsLoading = true };
+                    row.Changed += _ => Resort();
+                    All.Add(row);
+                }
+
+                Persist(); // remember what we found, so the next cold start is instant
+                Resort();
+            });
+        }
     }
 
     private async Task AttachAsync(SessionEntry entry)
@@ -192,7 +281,22 @@ public sealed partial class SessionsViewModel : ObservableObject
     /// <summary>Builds a session view model wired to this app's stores, policy and notifier.</summary>
     private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
     {
-        var session = new SessionViewModel(host, view, _shell.Dispatcher, title, _prompts, _policy);
+        // This is the one place the app builds a session, so it is where the device's file handler joins
+        // one: every session gets the shell's single Android handler, and the received-file sheet reads
+        // the same instance off the shell — one object either way.
+        var session = new SessionViewModel(host, view, _shell.Dispatcher, title, _prompts, _policy, receivedFiles: _shell.ReceivedFiles);
+
+        // Files an agent sent are a live projection over the transcript, the way the blocked list is a live
+        // projection over attention state — the Inbox subscribes to this rather than polling every session.
+        session.Items.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset
+                || e.NewItems?.OfType<Agnes.Ui.Core.Transcript.SharedFileItem>().Any() == true)
+            {
+                _shell.Dispatcher.Post(() => SharedFilesChanged?.Invoke());
+            }
+        };
+
         session.NotificationRaised += n =>
         {
             _notifier.Notify(n);
@@ -209,6 +313,12 @@ public sealed partial class SessionsViewModel : ObservableObject
                     case NotificationKind.Error:
                         _shell.Haptics.Alert();
                         _shell.Toast(n.Body, ToastKind.Danger);
+                        break;
+                    case NotificationKind.File:
+                        // A file arriving while you're looking at another session is worth a line: the card
+                        // that carries it is somewhere off-screen, and the Inbox row is a tab away.
+                        _shell.Haptics.Success();
+                        _shell.Toast(n.Body, ToastKind.Info);
                         break;
                     default:
                         _shell.Haptics.Success();
@@ -228,8 +338,19 @@ public sealed partial class SessionsViewModel : ObservableObject
                 entry.UpdateSavedTitle(session.AgentTitle!);
                 Persist();
             }
+            else if (e.PropertyName == LiveStatusProperty)
+            {
+                // Saved for the same reason the title is: the list is read cold, on a phone that has been
+                // in a pocket, and the status is the one line worth being right before the host answers.
+                entry.AdoptLiveStatus();
+                Persist();
+            }
         };
     }
+
+    /// <summary>The shared session view model's status property, by name — this head persists what it
+    /// reports without owning the member. See <see cref="LiveAgentStatus"/> for why it is a string.</summary>
+    private const string LiveStatusProperty = "LatestStatus";
 
     // ---- opening / creating ----
 
@@ -298,6 +419,20 @@ public sealed partial class SessionsViewModel : ObservableObject
         });
     }
 
+    /// <summary>
+    /// Opens a session and lands on one moment in it — an inbox row for a file, a notification tap, a
+    /// shared link. Same path as <see cref="Open"/>, then the same retrying scroll a link uses, because the
+    /// session is usually still attaching when the page appears.
+    /// </summary>
+    public void OpenAt(SessionEntry entry, long sequence)
+    {
+        Open(entry);
+        if (sequence > 0)
+        {
+            RevealSequence(entry, sequence);
+        }
+    }
+
     public void StartNew()
     {
         _shell.Haptics.Tick();
@@ -322,6 +457,7 @@ public sealed partial class SessionsViewModel : ObservableObject
         return entry;
     }
 
+#if DEBUG
     /// <summary>
     /// Seeds a session on the built-in offline host, once, on a first launch with nothing paired.
     ///
@@ -364,6 +500,7 @@ public sealed partial class SessionsViewModel : ObservableObject
             // The demo is a courtesy; a failure here just leaves the normal empty state.
         }
     }
+#endif
 
     /// <summary>Wraps a host + view into a live session (used by the new-session flow).</summary>
     public SessionViewModel Build(IAgnesHost host, SessionView view, string title)
@@ -374,6 +511,8 @@ public sealed partial class SessionsViewModel : ObservableObject
     public void Forget(SessionEntry entry)
     {
         All.Remove(entry);
+        // Sticky: discovery lists what the host has, so without this the next refresh would bring it back.
+        DismissedSessions.Add(entry.SessionId);
         Persist();
         RaiseSummary();
         _shell.Toast($"Removed {entry.Title} from this device", ToastKind.Info);
@@ -432,9 +571,15 @@ public sealed partial class SessionsViewModel : ObservableObject
         OnPropertyChanged(nameof(HostSummary));
         OnPropertyChanged(nameof(AnyHostOnline));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(MemberNotice));
+        OnPropertyChanged(nameof(HasMemberNotice));
         AttentionChanged?.Invoke();
     }
 
     /// <summary>Raised when the blocked-session count may have changed (drives the Inbox badge).</summary>
     public event Action? AttentionChanged;
+
+    /// <summary>Raised when any open session's list of received files may have changed (drives the Inbox's
+    /// "Sent to you" section).</summary>
+    public event Action? SharedFilesChanged;
 }

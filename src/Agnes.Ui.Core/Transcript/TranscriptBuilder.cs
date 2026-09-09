@@ -44,11 +44,25 @@ public sealed class TranscriptBuilder
     /// <summary>Raised when a subagent is announced (for the session's agent tree).</summary>
     public event Action<SubagentStartedEvent>? SubagentAdded;
 
+    /// <summary>Raised when a subagent reports that it has finished, so the roster can retire its row.
+    /// Separate from the tool call completing: a background subagent's launch call completes in seconds
+    /// while the subagent itself runs for minutes, and only the payload knows which is which.</summary>
+    public event Action<string>? SubagentFinished;
+
+    /// <summary>
+    /// Raised when a subagent reports that it is <em>still running</em> even though the call that launched
+    /// it has finished — a background dispatch. Tells the roster to stop inferring the subagent's fate
+    /// from that call's status, which is right for Claude (whose Task call runs as long as the subagent)
+    /// and wrong here, where the launch returns immediately and the work goes on without it.
+    /// </summary>
+    public event Action<string>? SubagentDetached;
+
     public void Apply(SessionEvent @event)
     {
         var agentId = @event.AgentId;
         var before = Items.Count;
         ApplyCore(@event, agentId);
+        ExpireWithdrawnPermissions(@event);
         // Stamp every item this event created with its time and its place in the log (one choke point covers
         // all the cases above): the time drives the scroll-position hint, and the sequence is the stable
         // address a shared link uses to point at this moment.
@@ -56,6 +70,59 @@ public sealed class TranscriptBuilder
         {
             Items[i].Timestamp = @event.Timestamp;
             Items[i].Sequence = @event.Sequence;
+        }
+    }
+
+    // Requests asked and not yet resolved: requestId → the tool call each is gating. Kept so an event
+    // that means "nobody is waiting any more" can be matched against them as it arrives — the client
+    // learns a request expired the same way the host does, by inference over the log.
+    private readonly Dictionary<string, string> _openPermissions = new(StringComparer.Ordinal);
+
+    /// <summary>Raised when a request the user could have answered stops being answerable.</summary>
+    public event Action<PermissionItem>? PermissionExpired;
+
+    /// <summary>
+    /// Retires any open request this event withdrew. Runs after the event has been applied, so a tool
+    /// call's own completion is already recorded when it is used to conclude that the agent went ahead.
+    /// </summary>
+    private void ExpireWithdrawnPermissions(SessionEvent @event)
+    {
+        if (_openPermissions.Count == 0 || @event is PermissionRequestedEvent or PermissionResolvedEvent)
+        {
+            return;
+        }
+
+        List<string>? withdrawn = null;
+        foreach (var (requestId, toolCallId) in _openPermissions)
+        {
+            if (PermissionLifecycle.Withdraws(@event, toolCallId))
+            {
+                (withdrawn ??= []).Add(requestId);
+            }
+        }
+
+        if (withdrawn is null)
+        {
+            return;
+        }
+
+        foreach (var requestId in withdrawn)
+        {
+            _openPermissions.Remove(requestId);
+            if (!_permissions.TryGetValue(requestId, out var item) || item.Resolved)
+            {
+                continue;
+            }
+
+            item.Expired = true;
+            item.ResolutionText = "Expired — the agent stopped waiting";
+            if (PendingPermission == item)
+            {
+                PendingPermission = null;
+                PendingPermissionChanged?.Invoke();
+            }
+
+            PermissionExpired?.Invoke(item);
         }
     }
 
@@ -72,6 +139,10 @@ public sealed class TranscriptBuilder
                 break;
 
             case SubagentStartedEvent sub:
+                // Remember which call announced it, so a second signal about the same call (OpenCode
+                // reports its task id in the *result*, after the ACP boundary has already named it from
+                // rawInput) refreshes that subagent instead of adding a duplicate row.
+                _subagentByToolCall[sub.SubagentId] = sub.SubagentId;
                 SubagentAdded?.Invoke(sub);
                 break;
 
@@ -86,6 +157,12 @@ public sealed class TranscriptBuilder
                 if (tc.Title is "Agent" or "Task")
                 {
                     SubagentAdded?.Invoke(new SubagentStartedEvent(tc.ToolCallId, SubagentName(tc)));
+                }
+                else if (IsDelegationTool(tc.Title))
+                {
+                    // OpenCode's lowercase "task" tool. It says nothing at call time — the subagent's id
+                    // and state arrive in the result — so remember the call and decide when that lands.
+                    _delegations.Add(tc.ToolCallId);
                 }
 
                 CloseBubble();
@@ -121,6 +198,11 @@ public sealed class TranscriptBuilder
                     existing.Detail = string.Concat(content.Select(TextOf));
                 }
 
+                if (_delegations.Contains(u.ToolCallId))
+                {
+                    ApplyDelegationResult(existing, u.ToolCallId);
+                }
+
                 break;
 
             case PlanEvent p:
@@ -136,6 +218,7 @@ public sealed class TranscriptBuilder
                     pr.RequestId, pr.Title, pr.Options, linkedTool?.Kind, linkedTool?.Title,
                     pr.Detail ?? linkedTool?.Title) { AgentId = agentId };
                 _permissions[pr.RequestId] = permission;
+                _openPermissions[pr.RequestId] = pr.ToolCallId;
                 Items.Add(permission);
                 PendingPermission = permission;
                 PendingPermissionChanged?.Invoke();
@@ -162,7 +245,8 @@ public sealed class TranscriptBuilder
 
             case PermissionResolvedEvent rr when _permissions.TryGetValue(rr.RequestId, out var item):
                 item.Resolved = true;
-                item.ResolutionText = rr.Outcome.ToString();
+                item.ResolutionText = PermissionItem.OutcomeText(rr.Outcome);
+                _openPermissions.Remove(rr.RequestId);
                 if (PendingPermission == item)
                 {
                     PendingPermission = null;
@@ -180,6 +264,13 @@ public sealed class TranscriptBuilder
                 Items.Add(new NoticeItem(err.Message, isError: true) { AgentId = agentId });
                 break;
 
+            case FileSharedEvent f:
+                // A file the agent sent is a thing in its own right, not a line of chat: close whatever
+                // bubble was open so the card stands alone in the order it arrived.
+                CloseBubble();
+                Items.Add(new SharedFileItem(f) { AgentId = agentId });
+                break;
+
             case NoticeEvent notice:
                 CloseBubble();
                 Items.Add(new NoticeItem(notice.Message, notice.IsError) { AgentId = agentId });
@@ -188,6 +279,14 @@ public sealed class TranscriptBuilder
             case ForkedFromEvent:
                 CloseBubble();
                 Items.Add(new NoticeItem("Forked from a prior session — the branch continues below.") { AgentId = agentId });
+                break;
+
+            case AgentStatusEvent:
+                // Deliberately nothing. The agent's one-line status is a header/overview line, not a
+                // transcript item — a person reading the conversation already has the detail it summarises,
+                // and repeating it inline would be the same sentence twice. Note what is NOT called here:
+                // the status arrives *mid-turn*, in the middle of a streamed reply, so closing the open
+                // bubble would split one answer into two at whatever word the agent happened to report on.
                 break;
 
             case TurnEndedEvent:
@@ -265,6 +364,82 @@ public sealed class TranscriptBuilder
         else
         {
             Plan.Entries = entries;
+        }
+    }
+
+    // ---- delegation to a subagent that reports through its tool result (OpenCode's `task`) ----
+
+    private readonly HashSet<string> _delegations = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _subagentNames = new(StringComparer.Ordinal);
+
+    // toolCallId → the subagent id already registered for it, from whichever signal arrived first.
+    private readonly Dictionary<string, string> _subagentByToolCall = new(StringComparer.Ordinal);
+
+    /// <summary>Tool names that hand work to a subagent rather than doing it. Claude's own are matched
+    /// exactly above (they carry their description in the call); this is the by-shape case.</summary>
+    private static bool IsDelegationTool(string title) => string.Equals(title, "task", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Turns a delegating tool call's result into a subagent the roster can show. Three things change on
+    /// the row itself, all of which were wrong before: it is a Subagent, not a "Think"; it is named after
+    /// the subagent rather than after the tool; and it is still *running* if the payload says so, where
+    /// the transport had already called the launch completed. The envelope is replaced by whatever the
+    /// subagent actually reported, so the transcript stops showing raw markup addressed to the model.
+    /// </summary>
+    private void ApplyDelegationResult(ToolCallItem item, string toolCallId)
+    {
+        if (SubagentTaskPayload.TryParse(item.Detail) is not { } task)
+        {
+            return;
+        }
+
+        // Already announced from the call's rawInput at the ACP boundary, under a better name than an
+        // opaque id: keep that row and that identity rather than opening a second one for the same work.
+        if (_subagentByToolCall.TryGetValue(toolCallId, out var announced))
+        {
+            _subagentNames[task.TaskId] = announced;
+            item.Kind = ToolKind.Subagent;
+            item.AgentId = announced;
+            item.Detail = task.Body;
+            item.Status = task.IsRunning ? ToolCallStatus.InProgress : ToolCallStatus.Completed;
+            if (task.IsRunning)
+            {
+                item.CompletedAt = null;
+                SubagentDetached?.Invoke(announced);
+            }
+            else
+            {
+                SubagentFinished?.Invoke(announced);
+            }
+
+            return;
+        }
+
+        if (!_subagentNames.TryGetValue(task.TaskId, out var name))
+        {
+            // OpenCode gives a subagent no description of its own — only an opaque id — so the roster
+            // numbers them in the order they appear. The count is derived from the log, which every
+            // client replays identically, so the same subagent is "Subagent 3" on all of them.
+            name = $"Subagent {_subagentNames.Count + 1}";
+            _subagentNames[task.TaskId] = name;
+            SubagentAdded?.Invoke(new SubagentStartedEvent(task.TaskId, name));
+        }
+
+        item.Kind = ToolKind.Subagent;
+        item.Title = name;
+        item.AgentId = task.TaskId;
+        item.Detail = task.Body;
+        item.Status = task.IsRunning ? ToolCallStatus.InProgress : ToolCallStatus.Completed;
+
+        if (task.IsRunning)
+        {
+            // The launch call is over, but the subagent isn't; a duration here would time the dispatch.
+            item.CompletedAt = null;
+            SubagentDetached?.Invoke(task.TaskId);
+        }
+        else
+        {
+            SubagentFinished?.Invoke(task.TaskId);
         }
     }
 

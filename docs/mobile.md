@@ -72,6 +72,33 @@ would want you to skim past. The card leads with the six digits that must match 
 screen — see [security.md](security.md) for why those digits are what makes the approval mean
 anything.
 
+**And letting one in is two different decisions.** The card's primary action is **Let in as member** —
+a device that can open sessions and see its own. **Let in as owner** hands over the run of the host, so
+it is a separate, differently-worded button below the pair, and it appears only when *this* phone is
+itself an owner: a member's attempt would be refused host-side, and a button whose only outcome is a
+refusal teaches nothing. Decline stays exactly as cheap as it was.
+
+**A member is told it is one.** A device that can see none of the host's sessions looks exactly like a
+broken host, which is how a newly-paired phone ended up staring at an empty list with no explanation.
+So: pairing says what it granted before the screen moves on (a member gets a card — "Paired as member",
+plus the one line on what that means — and taps Continue; an owner has nothing to learn and goes
+straight through); an empty Sessions list on a host that called this phone a member replaces the usual
+teaching line with "This device is a member on *host*. It sees the sessions it starts and any shared
+with it. An owner can make it an owner in More › Devices", and offers the button that goes there. The
+role is remembered against the saved host so the sentence is on screen before the round trip that
+confirms it — but only once a host has actually said so. Null means "not asked", and an owner must
+never be told, even for a moment, that it is a member.
+
+**More › Devices is a management page, not a list.** Each row carries the device's role as a plain pill
+(never a status tint — those already mean needs-you / running / failed), how it was admitted in words
+("paired with code", "vouched for by a device", "authorized key", "GitHub"), and when it was last used,
+which is the field you came here for when you meant to revoke something. An owner also gets **Make
+owner** / **Make member** per row — disabled on the only owner left, because the host refuses that
+demotion and offering it would be a button whose purpose is to fail — and a prune that names the number
+before it acts (first tap arms and counts, second removes; a phone has no hover and no undo). A member
+sees the same list read-only under "Only an owner can change roles.", because who else is on the host is
+not a secret; changing it is a permission.
+
 **Send never means two things silently.** The same gesture sends when idle and queues while a turn is
 running; the composer says which, above the field, whenever it isn't obvious. Stop appears beside Send
 only while there is something to stop, so the destructive action is never where your thumb rests.
@@ -113,9 +140,153 @@ demo runs the real event pipeline, so what you see is honestly how the app behav
 - **Edge-to-edge** — bar backgrounds run to the screen edge while their content clears the status bar and
   the gesture handle (`SafeSpacer`).
 
+**Received files land where a phone is best.** An agent can send you a file — a screenshot, a report, a
+build — and the phone is the primary place to receive one. It arrives as a card in the transcript (an
+image shows itself inline, fetched only once the card is on screen), as a **Sent to you** row in the
+Inbox across every session and host, and, when the app isn't foreground, on its own default-importance
+notification channel that can be silenced separately from the one that says an agent is blocked. Tapping
+any of those lands on the card. The card opens a sheet with three verbs in the order a phone uses them:
+**Share** first and primary — the screenshot is two taps from the group chat, which on a laptop is a
+download, a file manager and an upload — then **Save to Downloads**, then **Open**. Each is a real
+platform mechanism, not a wrapper: Save goes through `MediaStore` (no storage permission at all from API
+29, staged `IS_PENDING` so nothing indexes a half-written file), Share and Open stage a copy in the app
+cache and hand out a `content://` URI from `AgnesFileProvider` — a `file://` URI in an Intent has thrown
+`FileUriExposedException` since Android 7, and the read grant has to travel with the URI. See
+`Services/AndroidReceivedFileHandler.cs` and `Resources/xml/file_paths.xml`, which between them expose
+exactly one directory and nothing else.
+
+### The status line
+
+An agent reports, rarely and in its own words, what it is doing — "found the leak in the tail cursor;
+rewriting the resume path so a reconnect can't replay" — through the host's status tool
+(`AgentStatusEvent`, surfaced on the wire as `SessionSummary.LatestStatus`). It is the only line in the
+app that is the agent's own account of itself rather than a derivative of its output, which is why the
+**Sessions list** is where it belongs: one card per session, and now each card says what its agent is
+doing, without opening any of them. That is the thing a phone is genuinely better at.
+
+The rules, all in `ViewModels/AgentStatusLine.cs`:
+
+- **Two lines, wrapped, then ellipsis.** A status is a sentence, and a phone card that clips it after
+  eight words shows the setup and eats the point. There is no tooltip on a phone and a long-press to
+  reveal is a gesture nobody discovers, so the line simply gets the room it needs — no more.
+- **No status, no row.** A card whose agent has never reported grows nothing. A blank row would read as
+  "idle", which is a different and wrong claim.
+- **The age carries the staleness.** "4m" while things are moving; once a *working* agent has been quiet
+  for ten minutes it reads **"no update for 12 min"** instead — because "12m" beside a running session
+  looks like progress, and the whole reason for the line is to say when there hasn't been any. An idle
+  session is never stale: nothing is overdue there.
+- **Both fields are persisted** on `SavedSession`, like the title, so the list is right the second it is
+  opened cold rather than one round trip later.
+
+The session screen carries the same line under its app bar, in its own row rather than a third line in
+the fixed 56dp bar. Above the transcript it also gets a **"while you were away"** band: when the session
+was unattended and the agent said something in the meantime, one slim band in the sky hue — *in motion*,
+never amber, because nothing here is blocked on you — with the line and its age. It is captured on
+arrival and taken down by the first scroll, tap or keystroke (or a tap on the band itself). Two details
+that are easy to get wrong: opening the page is *itself* the end of being away, so the band snapshots
+the state before marking the session attended; and dismissal listens for pointer and text gestures, not
+`ScrollChanged`, because the page scrolls itself to the tail on arrival and would otherwise dismiss the
+band in the frame it appeared.
+
+There is deliberately **no notification** for a status. A status is not a page: it is what you read when
+you chose to look.
+
 **No terminal.** The desktop head embeds a VT terminal; a phone does not get one. A 40-column terminal
 behind a soft keyboard is worse than useless, and the things you'd use it for are covered by the git
 sheet and the tool timeline.
+
+---
+
+## The screen
+
+A session launched with a **graphical sandbox** has a desktop the agent can see and drive
+(`OpenSessionRequest.Graphical`, `docs/architecture.md`). The phone can watch it, and take the mouse.
+
+The session page gains a **Screen** segment beside Conversation — the one place this head shows two
+different things in the same slot — and **the composer stays pinned below both**. Watching an agent
+click through something wrong and having to navigate away to say "stop" would be the worst possible
+version of this feature.
+
+### Touch is not a mouse
+
+An absolute mapping puts the pointer under your fingertip, where you cannot see it, at a precision of
+about 9 mm — which on a 1280-wide desktop is roughly thirty pixels of "somewhere near the thing you
+meant". So the surface is a **trackpad**, not a touchscreen:
+
+| gesture | what it does |
+| --- | --- |
+| one finger, drag | moves a drawn cursor, **relative** to where it already was |
+| one finger, tap | clicks *at the cursor* — not where you tapped |
+| one finger, hold still | right-click at the cursor |
+| two fingers, drag | scrolls at the cursor |
+| pinch | zooms the view (1×–6×); sends nothing to the guest |
+| one finger, drag, *while not driving* | pans the view |
+
+Movement is 1:1 in guest pixels with no acceleration. Predictability beats reach — the answer to "that
+target is too small" is the pinch zoom, not a curve nobody can learn. Zoomed in, the view follows the
+cursor rather than letting it walk off the edge.
+
+The guest is **never resized**: 1280×800 stays 1280×800 and the phone is a window onto it, scaled to
+fit and letterboxed. Nothing at all is sent unless you hold control, so watching can never nudge the
+agent's mouse. The rules live in `Controls/DisplayTrackpad.cs` (a pure state machine over positions and
+timestamps, unit-tested) and the fit in `Controls/DisplayFit.cs`.
+
+### The keyboard
+
+Android hands an app *finished text*, not keystrokes — what you physically pressed to produce it (a long
+press, a swipe, a suggestion) is not recoverable. So the Keyboard chip focuses a one-pixel invisible
+`TextBox` to raise the IME, and each character that comes out is mapped to an X keysym name
+(`Controls/DisplayKeysyms.cs`) and sent as a press and a release. A character with no keysym — an
+accented letter, CJK, an emoji — is **dropped rather than guessed at**, because a wrong keysym types a
+wrong character silently. Escape, Tab and the arrows get chips, since a soft keyboard has no room for
+them. **Modifier chords (ctrl+letter and friends) are deliberately absent**: they need a sticky-modifier
+model of their own, and half of one is worse than none. Drive them from the desktop or web client.
+
+### What we ask the host to send
+
+Two tiers, because there are two situations and no useful middle:
+
+| | max width | fps | JPEG quality |
+| --- | --- | --- | --- |
+| unmetered | the panel's own pixel width, capped at 960 | 15 | 65 |
+| metered | 640 | 8 | 55 |
+
+Asking for more pixels than the panel has is bytes nobody can see. The metered tier is roughly a third of
+the data for a picture that still answers "what is it doing". "Metered" is Android's answer
+(`ConnectivityManager.IsActiveNetworkMetered` — a tethered Wi-Fi hotspot counts, and looks like ordinary
+Wi-Fi from the app's side), injected into the shell rather than reached for; the person can turn the
+behaviour off in **Appearance → Lower screen quality on mobile data**, which is on by default.
+
+### Lifecycle
+
+Connect on **entering the segment**; disconnect on **leaving the page**, not on switching back to the
+conversation. That is what lets the transcript carry a live thumbnail (~120 px, Full frames only, at most
+one repaint a second) with a driver chip over it — a graphical session is the one case where the
+transcript alone lies about what is happening, because the tool calls say "moved the mouse", not what
+appeared. The sessions list marks such a session with a small display glyph.
+
+The screen is drawn into a `RenderTargetBitmap` at the guest's size: a Full frame replaces it, a Tile is
+the decoded rectangle drawn into its own rect. That is a drawing-context call rather than a hand-rolled
+`WriteableBitmap` blit because the blit can get the pixel format or the stride wrong and fails as a
+smear rather than an exception.
+
+### The web head, for comparison
+
+`src/Agnes.App` (Uno, browser) gets the same view model and a **Screen** toggle beside the transcript,
+but none of the trackpad: a browser has a real mouse and a real keyboard, so pointer positions map
+straight to guest pixels and `VirtualKey` maps to keysyms (`Controls/DisplayKeys.cs` — note `Back` →
+`BackSpace` and `Menu` → `alt`, both Win32 names that mean nothing to a guest). Two browser constraints
+shape it: `BitmapDecoder` does not exist on WebAssembly, so frames go through
+`BitmapImage.SetSourceAsync` over an in-memory stream — the browser's own image decoder; and there is no
+pixel access to composite a tile into, so tiles are drawn as positioned `Image`s on a `Canvas` over the
+last Full frame and cleared when the next one lands. The `Canvas` is laid out in *guest* pixels inside a
+`Viewbox`, which means a pointer position read relative to it already **is** a guest pixel — no fit maths
+to get wrong.
+
+The web head also can't reach a host authenticated by a **pinned self-signed certificate**: the browser
+terminates TLS itself, so the pin is unusable there (the same reason the hub doesn't connect to one from
+a tab). The pane's empty state says so, because "couldn't connect" otherwise invites an hour of reading
+the host's logs.
 
 ---
 
@@ -164,6 +335,16 @@ than an attached property, and why the session screen's back button is a command
 `Sheet` from the shell's `CurrentSheet`; setting `DataContext = sheet` on itself made that binding
 re-resolve against the sheet, yield null, and close the sheet the instant it opened.
 
+**`Avalonia.Input.Gestures` is internal in Avalonia 12.** `AddHandler(Gestures.PinchEvent, …)` no
+longer compiles; the pinch and pinch-ended events are reached as `InputElement.Pinch` /
+`InputElement.PinchEnded` instead. Same events, different door.
+
+**Only one `HeadlessUnitTestSession` may exist per process.** Starting a second one — even of the same
+app type — throws *"a URI scheme name 'avares' already has a registered custom parser"* and takes an
+unrelated test down with it. Every rendering test class therefore joins the `AvaloniaCollection` xunit
+collection and shares one session (`tests/Agnes.Mobile.Tests/AvaloniaSession.cs`). It draws with **Skia**,
+not the null backend, because the display surface's job is to decode a JPEG and composite it.
+
 **A full-screen overlay must start input-transparent.** The sheet layer spans the window; its
 `IsHitTestVisible` is set per sheet in `Present()`, which only runs on a *change* — so the initial
 state has to be set in the constructor, or it silently eats every tap on the app.
@@ -198,6 +379,13 @@ run time. It drives the simulated host through the real event pipeline, so the c
 actually does. It's part of `Agnes.Core.slnf`, so CI compiles the phone UI on every run, and
 `tests/Agnes.Mobile.Tests` covers the shell's navigation, the session list and the card projections
 against it.
+
+The graphical sandbox is verified there too. The simulated host has no display, so the harness supplies
+its own — `tools/Agnes.MobilePreview/FakeDisplayHost.cs` is an `IAgnesHost` that can do exactly one thing
+(open a display channel) plus a synthetic desktop drawn and JPEG-encoded on the spot. That is enough to
+shoot `13-screen-agent-driving`, `13b-screen-you-driving` (a tile blitted over the picture, the cursor
+drawn, the chip amber) and `13c-screen-thumbnail`, and enough for `DisplayRenderTests` to assert the
+thing that actually matters: **input goes nowhere until control is taken**.
 
 The harness also accepts synthetic input (`window.MouseDown(...)`), which is how hit-testing is checked
 without a device — useful, because a software-only emulator (no KVM, `-accel off`) does not deliver

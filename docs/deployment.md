@@ -129,13 +129,51 @@ the code is single-use and rotates after each pairing (and after repeated bad
 attempts). Tokens are persisted **hashed** — `Agnes:DevicesFile` (default
 `~/.agnes/devices.json`) never holds a usable token.
 
+Every paired device is an **Owner** or a **Member**, decided by how it was admitted rather than by when
+it arrived — the typed code and an authorized key admit an Owner, a federated sign-in admits a Member
+unless the login is in that method's `Owners` list, and an approval admits at most what the approver
+holds. [security.md](security.md#device-roles-owner-and-member) has the full table and the reasoning.
+A Member opens sessions and always sees the ones it started; it does not see other people's.
+
 Manage devices with a valid token:
 
-- `GET /devices` — list paired devices (id, name, paired/last-seen).
-- `DELETE /devices/{id}` — revoke one.
+| | | |
+|---|---|---|
+| `GET /devices` | any paired device | List paired devices: id, name, paired/last-seen, `role`, and the `kind` that admitted each one. |
+| `GET /devices/me` | any paired device | Just the calling device's own row — how a client says "you are a Member on this host" without listing everybody. 404 for the configured bootstrap token, which is an operator but not a device. |
+| `PUT /devices/{id}/role` | **Owner** | Body `{ "role": "Owner" \| "Member" }`. 403 for a Member, 409 when it would leave the host with no Owner (including demoting yourself as the last one), 404 for an unknown device. |
+| `POST /devices/prune` | **Owner** | Body `{ "unusedForDays": 30 }`. Removes devices not seen for that long (measured from last-seen, or from pairing when a device has never connected), **never** the calling device and **never** the last Owner. Returns what it removed. |
+| `DELETE /devices/{id}` | any paired device | Revoke one. |
+
+Owner lists, where a method supports them: `Agnes:Auth:GitHub:Owners`, `Agnes:Auth:Oidc:Owners`,
+`Agnes:Auth:CloudflareAccess:Owners` (matches the subject *or* the email), `Agnes:Auth:Mtls:Owners`, and
+`Agnes:Auth:Keypair:Role` (`Owner` by default). All are additive to the existing allowlists — an owners
+list decides what an *admitted* identity is worth, never whether it is admitted.
+
+Signing in again with the same credential from the same device **rotates** that device's token rather
+than adding a row: same id, same role, and the previous token stops working.
 
 For headless / automation, set `Agnes:PairingToken` to a fixed bootstrap token;
-it's always accepted and skips the pairing handshake.
+it's always accepted, skips the pairing handshake, and counts as an Owner.
+
+**What the clients show** (one paragraph; the rest of this section is the host's).
+A device is admitted as an **owner** or a **member**, and both Avalonia heads say
+which. Pairing and sign-in report the role they were granted on the status line
+("Paired as owner", or "Paired as member — ask an owner to promote this device if
+you need to see everything"). A member whose session list is empty is told why
+rather than left with a blank screen — desktop points at Settings › Devices,
+Android at More › Devices — because a member sees only the sessions it started
+plus anything shared with it, which is indistinguishable from a broken host
+otherwise. The Devices page lists each device's role, how it was admitted ("paired
+with code", "vouched for by a device", "authorized key", "GitHub") and when it was
+last seen; an owner also gets **Make owner** / **Make member** per row (disabled on
+the last owner) and a **Remove devices unused for 30 days** action that names the
+count before it acts. A non-owner sees the same list read-only, under the line
+"Only an owner can change roles." When a device asks to join, the approver is
+offered **Let in as member** and — only if the approver is itself an owner — **Let
+in as owner**, with the verification digits shown beside both. A host that predates
+roles answers 404 to `GET /devices/me`, and the clients then behave exactly as they
+did before roles existed: nothing is claimed, and nothing is explained.
 
 The pairing code is ~40 bits with rotate-after-5-failures — fine on localhost or a
 private overlay, but a thin guard on the open internet. For an internet-facing host,
@@ -185,10 +223,15 @@ single-use challenge — no secret ever crosses the wire.
 {
   "Agnes": { "Auth": { "Keypair": {
     "Enabled": true,
-    "AuthorizedKeysFile": "~/.agnes/authorized_keys"
+    "AuthorizedKeysFile": "~/.agnes/authorized_keys",
+    "Role": "Owner"
   } } }
 }
 ```
+
+`Role` is what an authorized key is admitted as. **Owner** by default — an operator edited
+`authorized_keys` to put it there — but set it to `Member` on a host that hands keys out to a team, and
+promote individually with `PUT /devices/{id}/role`.
 
 `authorized_keys` has one **base64 SPKI** public key per line, with an optional label:
 
@@ -272,6 +315,41 @@ when a browser client is hosted elsewhere:
 
 By default no cross-origin browser is allowed (native clients are unaffected).
 
+## Agnes's own MCP tools (`agnes`)
+
+As well as wiring *other* MCP servers into an agent, the host offers its own tool set back to the agent it is
+running — `send_user_file`, `report_status`, `arm_goal`, `list_goals`, `disarm_goal` — as an MCP server named
+`agnes`. It is materialized into whatever config file that CLI reads, with a per-session bearer token;
+nothing is configured per session by hand.
+
+The server also states one **standing instruction** in its MCP `ServerInstructions`, which clients put in the
+model's context: call `report_status` every few minutes with one line about what you found, what you are
+doing, and how it fits the plan. Adapters whose CLI takes a system prompt get the same sentence appended
+there too — see [agent-status.md](agent-status.md).
+
+| Adapter | Sandboxed session | Unsandboxed session | Token carried as |
+|---|---|---|---|
+| `claude-code-native` | `~/.agnes/mcp.json`, passed as `--mcp-config` | temp JSON, passed as `--mcp-config` | `headers.Authorization` |
+| `copilot` | `~/.agnes/mcp.json`, passed as `--additional-mcp-config` | temp JSON, same flag | `headers.Authorization` |
+| `codex` | `~/.codex/config.toml` in the guest home | **not offered** — see below | `bearer_token_env_var` + `AGNES_MCP_BEARER` in the environment |
+| `opencode` (native) | inline config in the environment | not offered | `Authorization` header in the inline config |
+| `claude-code` / `opencode` (ACP) | inline config in the environment where the adapter supports it | not offered | as above |
+| `pi` | **never** — Pi ships no MCP client at all, by explicit design | never | — |
+| `antigravity` | **never** — no MCP config surface | never | — |
+
+Two gaps are deliberate rather than pending:
+
+- **Codex on the host.** Codex discovers its config at a fixed path in the *real* home directory. That file
+  is the operator's — their own servers, models and auth live in it — and Agnes writing or merging into it
+  would be editing someone's configuration behind their back. Only a config Agnes generates and *points* a
+  CLI at (a launch flag) is safe to write for an unsandboxed session. Run Codex sandboxed to get the tools.
+- **An operator-defined server already called `agnes`.** Yours wins; Agnes's own is not written, and the host
+  logs a warning naming the session. Rename yours to get the Agnes tools back.
+
+Adding an adapter to this table is the whole job of wiring it up — `SessionManager.McpTargetFor` is the one
+place that says which file, which format, and how a token is carried, and everything MCP-related for that
+adapter follows from it.
+
 ## Configuration reference (`Agnes:` section)
 
 | Key | Purpose |
@@ -284,13 +362,31 @@ By default no cross-origin browser is allowed (native clients are unaffected).
 | `Auth:Oidc:{Enabled,Issuer,Audience,JwksUri,ClientId,ClientSecret,RedirectUri}` | Native OIDC sign-in; Google is configured through this standard flow. |
 | `Auth:CloudflareAccess:{Enabled,TeamDomain,Audience,AllowedEmailDomains}` | Exchange a validated Cloudflare Access browser assertion for a revocable device token. |
 | `Auth:RateLimit:{Enabled,PerIpPerMinute,GlobalPerMinute,TrustForwardedFor}` | Throttle the auth endpoints (see above). |
-| `DevicesFile` | Where paired-device hashes are stored. |
+| `Home` | The host's state directory. **Every** other path below defaults to something under it: devices, MCP config, projects, checkouts, review comments, prompts, launch profiles, connected services, attention/approval requests, the sandbox registry and image manifest, channel links, push registrations, scheduled tasks, session goals, plugins, the relay key, the linked GitHub app. Default `~/.agnes`. Set it to run a second host on one machine without the two treading on each other — and set it for anything that boots the host in a test or a tool. (With `AGNES_REFUSE_DEFAULT_HOME=1` in the environment, a host with no `Home` set refuses to start rather than fall back to `~/.agnes`; the test suite sets that variable, which is how a forgotten override becomes a loud failure instead of an edit to your real host state.) |
+| `DevicesFile` | Where paired-device hashes are stored. Defaults to `<Home>/devices.json`. |
+| `Auth:Keypair:Role` | What an authorized key is admitted as: `Owner` (default) or `Member`. |
+| `Auth:{GitHub,Oidc,CloudflareAccess,Mtls}:Owners` | Identities admitted as **Owner** by that method; everyone else it admits is a Member. |
 | `AllowedOrigins` / `AllowAllOrigins` | Cross-origin browser policy. |
 | `Database` | SQLite path for the event log (in-memory if empty). |
 | `Storage:EventStore` | Event-store backend: `sqlite` (default single-node) or `postgres` (optional shared DB). |
 | `Storage:Postgres:ConnectionString` | Npgsql connection string; required when `Storage:EventStore=postgres`. |
-| `ClaudeCode` / `OpenCode` / `ClaudeCodeNative` | Agent launch commands. |
+| `ClaudeCode` / `OpenCode` / `ClaudeCodeNative` / `Codex` / `Copilot` / `Pi` | Agent launch commands. |
+| `Copilot:Provider:*` | Copilot bring-your-own-key provider (`BaseUrl` activates it; also `Type`, `ApiKey`/`BearerToken`, `WireApi`, `Transport`, `AzureApiVersion`, `Headers`, `Model`). Rendered to the `COPILOT_PROVIDER_*` environment, which is the only place Copilot exposes this. |
+| `Copilot:FleetMode` | Starts each Copilot session in fleet mode (parallel subagent execution — its own UI calls it "autopilot + /fleet"). Off by default: a fleet session spends far more. Copilot exposes this only as the in-session `/fleet` command — no flag, no environment variable, no settings key — so Agnes invokes that command once as the session opens, best-effort. |
+| `Copilot:SubagentNames` | Which built-in Copilot subagents get pointed at the session's model. Defaults to the ones whose shipped definition pins one (`explore`, `task`, `research`) — under BYOK those ids resolve to nothing, so without this a session can only dispatch to the agents that pin nothing. Agnes merges `subagents.agents.<name>.model` into `~/.copilot/settings.json` at launch and again on every model switch, leaving every other setting in the file alone. Only applied when `Copilot:Provider:BaseUrl` is set; set this to `[]` to leave the file untouched entirely. |
 | `Sandbox:Provider` | `incus` to run agents in per-session VMs (see [sandbox-live-testing.md](sandbox-live-testing.md)). |
+| `Sandbox:Incus:InstancePrefix` | Name prefix for the VMs this daemon creates (default `agnes-`). Change it when a **second** daemon shares one Incus — a screenshot run, a live probe — so its instances can be told from the operator's session VMs by name, and cleaned up without guessing. |
+| `Sandbox:Incus:GuestReadySeconds` | How long to wait for a new VM to report ready (default 180). Raise it on a workstation already running other VMs, where a first boot is legitimately slower than on a host that exists to run sandboxes. |
+| `Sandbox:GuestMcpBindUrl` / `Sandbox:GuestMcpUrl` | Where a **sandboxed** agent reaches Agnes's own MCP tools — the address the host binds on the sandbox bridge, and the same address as the guest sees it (e.g. `http://10.99.5.1:5099` and `http://10.99.5.1:5099/mcp-agnes`). Off unless the bind address is set. |
+| `Mcp:LocalEnabled` | Whether an agent running **on the host** (an unsandboxed session) is offered Agnes's own MCP tools over a loopback listener. Default **true**. Set false on a machine whose local users you don't trust — sessions then simply get no `agnes` server. |
+| `Mcp:LocalUrl` | Bind address for that loopback listener. Default `http://127.0.0.1:5117`. Change it if 5117 clashes (a second Agnes on the same box); if the port is already in use the host logs it and starts *without* the local endpoint rather than failing. Both MCP listeners are **added** to whichever listener you configured (`Kestrel:Endpoints` or `ASPNETCORE_URLS`); configure neither and they are skipped with a log line rather than displacing Kestrel's default. |
+| `Security:AllowGraphicalSandboxes` | Whether a session may ask for a **graphical** sandbox — a VM with a display the agent drives over `computer_*` and a person watches over the display channel. **Default false**; implies a sandbox. See [security.md](security.md) and [display-channel.md](display-channel.md). |
+| `Display:{ControlIdleSeconds,MaxFps,JpegQuality,FullFrameThresholdPercent}` | The display channel's stream shape: how long an untouched human hold survives before control falls back (60 s), the per-subscriber frame-rate ceiling (15), JPEG quality (75), and the damage share at which a Tile becomes a Full frame (40 %). |
+| `Display:{InputEventsPerMinute,InputEventsPerToolCall,MaxTypeBytes,MaxWaitMs}` | What may be injected into a graphical guest: a per-session rolling budget across the agent and every person (240/min), what one agent tool call may expand to (32), the `computer_type` ceiling (4096 bytes), and the `computer_wait` ceiling (10 s). |
+| `Display:BlockedChords` | Key chords the **agent** may not press, e.g. `["super", "super+*", "ctrl+alt+*", "alt+F2", "ctrl+shift+i"]` (the default). Agent-only: what it stops is an agent leaving the application it is working in. A person driving the display is already authorized to do anything the guest allows. |
+| `Status:MaxChars` | Longest one-line status an agent may report with `report_status` (default 240, about two sentences). A longer report is **kept up to the limit**, cut at a word boundary — never refused — and the agent is told what was kept, so the next one is shorter. A non-positive value falls back to the default. See [agent-status.md](agent-status.md). |
+| `Status:MinIntervalSeconds` | Coalescing window for status reports (default 20). At most one line per window reaches the log; a report inside the window *replaces* whatever was pending and is written when the window closes, so the latest line always lands and a chatty agent can't bury its own transcript. `0` writes every report. |
+| `Sharing:MaxBytes` | Largest file an agent may send the user with `send_user_file` (default 26214400 — 25 MB). Sending copies the file into the workspace and every connected client then downloads it, phones on mobile data included, so the cap turns "send you the build" into a refusal the agent can act on rather than a silent, very slow success. See [send-user-file.md](send-user-file.md). |
 
 ## Storage topology (event store)
 
@@ -310,3 +406,27 @@ purely operational — no application behavior changes.
 
 Selection is per-store: the same seam could later give other durable stores (e.g. the memory-search index) a
 Postgres backing the same way, without changing core storage code.
+
+## Troubleshooting
+
+### "Why can't this device see any sessions?"
+
+An empty session list is almost always an *answer*, not a fault: the catalogue advertises exactly what
+the caller could subscribe to, so it goes empty when the caller may reach nothing. Work down this list.
+
+1. **Ask the device what it is.** `GET /devices/me` returns its `role` and the `kind` that admitted it
+   (the desktop and phone show the same two facts on their Devices screen). A **Member** sees only the
+   sessions it started plus what has been shared with it — that is working as intended, not a bug.
+2. **Is the session actually theirs?** A session is owned by whoever opened it (their GitHub login,
+   falling back to the device id). Sessions opened by somebody else need an explicit share, or Owner.
+3. **Does the host still have a real Owner?** `GET /devices` as any paired device: if the only row
+   marked `Owner` is something you don't recognise — a stale test fixture, a device you revoked and
+   re-paired — that is the old "earliest device wins" rule showing through a migrated store. Promote
+   the right device with `PUT /devices/{id}/role`, then demote or `DELETE` the stale one. (The host
+   refuses to be left with no Owner, so promote before you demote.)
+4. **Check `Agnes:Home`.** If a test run, a script, or a second daemon booted a host without setting it,
+   it wrote into the same `~/.agnes` as your real host and its device records are now in your registry.
+   `POST /devices/prune` with a suitable `unusedForDays` clears out what nobody has used; set
+   `Agnes:Home` on the stray process so it stops happening.
+5. **Isolation.** Under `Agnes:Security:SessionIsolation=PerUser`/`PerGroup` a device also needs to own
+   the session or be in its group — see [security.md](security.md#session-isolation--groups).

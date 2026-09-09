@@ -1,3 +1,4 @@
+using System.Runtime.Loader;
 using System.Reflection;
 using Agnes.App.Desktop.Plugins;
 using Agnes.Client.Simulation;
@@ -91,5 +92,67 @@ public class DesktopClientPluginTests
     {
         var sink = channel.GetType().Assembly.GetType("Agnes.TestClientPluginFixture.Sink")!;
         return (IReadOnlyList<string>)sink.GetMethod("Titles")!.Invoke(null, null)!;
+    }
+
+    [Fact]
+    public void Only_assemblies_that_reference_the_contract_get_a_load_context()
+    {
+        // A plugin folder is mostly the plugin's dependencies — the CodeyBox one ships twenty files, of
+        // which exactly one is a plugin. Giving each its own context meant loading nineteen framework
+        // assemblies for nothing, and those contexts then became garbage while the real plugin still
+        // needed the files they held: a dependency loaded later hit one mid-unload and failed with
+        // "AssemblyLoadContext is unloading or was already unloaded", reported as a FileLoadException for
+        // an assembly plainly present on disk.
+        var dir = FixtureDirectory();
+        try
+        {
+            // A dependency sitting beside the plugin, as one really would.
+            File.Copy(
+                typeof(Agnes.Protocol.SessionInfo).Assembly.Location,
+                Path.Combine(dir, Path.GetFileName(typeof(Agnes.Protocol.SessionInfo).Assembly.Location)));
+
+            var before = AssemblyLoadContext.All.Count();
+            var modules = DesktopClientPluginLoader.LoadModules(dir);
+            var created = AssemblyLoadContext.All.Count() - before;
+
+            Assert.Single(modules);
+            Assert.Equal(1, created); // the plugin only — not one per file in the folder
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public void A_plugins_load_context_outlives_collection_so_late_dependencies_still_load()
+    {
+        // The context is collectible, so it lives exactly as long as something references it. What made
+        // this hard to see is that everything already loaded kept working; only the FIRST assembly the
+        // plugin had not needed yet failed. For CodeyBox that was SignalR.Common, pulled in when a hub
+        // connection is first opened — minutes after startup, on a click.
+        var dir = FixtureDirectory();
+        try
+        {
+            var modules = DesktopClientPluginLoader.LoadModules(dir);
+            var context = AssemblyLoadContext.GetLoadContext(Assert.Single(modules).GetType().Assembly);
+            Assert.NotNull(context);
+
+            var weak = new WeakReference(context);
+            context = null;
+            for (var i = 0; i < 5; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+
+            // The loader roots it for the session; without that the only thing keeping it alive would be
+            // whatever the caller happened to hold, which is not a lifetime anyone declared.
+            Assert.True(weak.IsAlive, "the loader must keep a plugin's load context alive for the session");
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* best effort */ }
+        }
     }
 }

@@ -87,7 +87,11 @@ public sealed class MainActivity : AvaloniaMainActivity
 
         if (intent.GetStringExtra(AndroidNotifier.SessionExtra) is { Length: > 0 } sessionId)
         {
-            shell.Dispatcher.Post(() => shell.OpenSessionById(sessionId));
+            // The anchor is what the notification was about — the file card, the finished reply. Passed
+            // through so the tap lands on it; harmless when the process was restarted and the anchor no
+            // longer resolves, which is the case the shell handles by opening the session plainly.
+            var anchor = intent.GetStringExtra(AndroidNotifier.AnchorExtra);
+            shell.Dispatcher.Post(() => shell.OpenSessionById(sessionId, anchor));
             return;
         }
 

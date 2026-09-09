@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Agnes.Plugins.CodeyBox.Views.DependencyPickerView">
+  <!-- Picking what a piece of work should wait for. Its DataContext is the picker itself, and it holds
+       no Add/Cancel of its own: the relations band applies its ticks to an existing item while the
+       composer applies them to an item that does not exist yet, and those are different commands. What
+       is genuinely the same — search, and a ticked list where every row states enough to tell two
+       similarly-titled items apart — is here, once. -->
+  <UserControl.Styles>
+    <Style Selector="CheckBox.candidate">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="7,0,0,0" />
+      <Setter Property="MinHeight" Value="0" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Spacing="6">
+    <TextBox Text="{Binding Search, Mode=TwoWay}" FontSize="11"
+             PlaceholderText="Search the queue for something to wait on…" />
+
+    <!-- Capped, and scrolls: a live fleet has hundreds of candidates and a picker that grows without
+         limit pushes the thing you were reading off the pane. -->
+    <ScrollViewer MaxHeight="190">
+      <ItemsControl ItemsSource="{Binding Candidates}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <CheckBox Classes="candidate" IsChecked="{Binding Ticked, Mode=OneWay}"
+                      Command="{Binding $parent[ItemsControl].DataContext.TickCommand}"
+                      CommandParameter="{Binding}">
+              <StackPanel Spacing="1" Margin="0,2">
+                <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Fg}" FontSize="11"
+                           TextTrimming="CharacterEllipsis" />
+                <!-- State, project and id: the three things that separate two items called
+                     "Fix the flaky test". -->
+                <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource FgFaint}" FontSize="9"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </CheckBox>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </StackPanel>
+</UserControl>

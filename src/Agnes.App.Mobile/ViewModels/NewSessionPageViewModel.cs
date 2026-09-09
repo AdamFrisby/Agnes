@@ -86,6 +86,14 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
             }
         });
         SetGitCredentialCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
+        ToggleGraphicalCommand = new RelayCommand(() =>
+        {
+            if (GraphicalAvailable)
+            {
+                Graphical = !Graphical;
+                _shell.Haptics.Tick();
+            }
+        });
 
         if (_selectedHost is not null)
         {
@@ -153,10 +161,19 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
     public bool PermissionsLocked => PermissionPromptsRequired;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GraphicalAvailable))]
     private bool _useSandbox = true;
 
+    partial void OnUseSandboxChanged(bool value)
+    {
+        if (!value)
+        {
+            Graphical = false;
+        }
+    }
+
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SandboxLocked))]
+    [NotifyPropertyChangedFor(nameof(SandboxLocked), nameof(GraphicalAvailable))]
     private bool _sandboxAvailable;
 
     [ObservableProperty]
@@ -164,6 +181,19 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
     private bool _sandboxRequired;
 
     public bool SandboxLocked => !SandboxAvailable || SandboxRequired;
+
+    /// <summary>
+    /// A desktop the agent can see and drive, and you can watch from here.
+    ///
+    /// It lives inside the sandbox — the display is the sandbox's, so there is no such thing as a
+    /// graphical session without one, and the switch goes away when the sandbox does. Whether the
+    /// operator permits graphical sandboxes at all is the host's call and is not advertised, so a
+    /// refusal comes back as the start error rather than as a disabled control.
+    /// </summary>
+    [ObservableProperty]
+    private bool _graphical;
+
+    public bool GraphicalAvailable => SandboxAvailable && UseSandbox;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(GitOff))]
@@ -182,6 +212,7 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
     public IRelayCommand<LaunchProfile> ApplyProfileCommand { get; }
     public IRelayCommand<string> SetPermissionCommand { get; }
     public IRelayCommand<string> SetGitCredentialCommand { get; }
+    public IRelayCommand ToggleGraphicalCommand { get; }
 
     private async Task SelectHostAsync(HostLink? link)
     {
@@ -295,6 +326,7 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
         SkipPermissions = profile.SkipPermissions && !PermissionPromptsRequired;
         GitCredentialMode = profile.GitCredentialMode;
         UseSandbox = profile.UseSandbox && SandboxAvailable;
+        Graphical = false; // a profile predates graphical sandboxes; never turn one on by surprise
         SelectAgent(Agents.FirstOrDefault(a => a.AdapterId == profile.AdapterId && a.Available));
         _shell.Haptics.Tick();
         Status = $"Applied \"{profile.Name}\" — adjust anything, then start.";
@@ -325,12 +357,15 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
             var host = await link.ConnectAsync().ConfigureAwait(false)
                 ?? throw new InvalidOperationException("host unreachable");
 
-            var info = await host.OpenSessionAsync(
+            var request = new OpenSessionRequest(
                 agent.AdapterId,
                 directory,
-                skipPermissions: SkipPermissions,
-                gitCredentialMode: GitCredentialMode,
-                useSandbox: SandboxAvailable && UseSandbox).ConfigureAwait(false);
+                SkipPermissions: SkipPermissions,
+                GitCredentialMode: GitCredentialMode,
+                UseSandbox: SandboxAvailable && UseSandbox,
+                Graphical: Graphical && GraphicalAvailable);
+
+            var info = await OpenAsync(host, request).ConfigureAwait(false);
 
             var view = await host.SubscribeAsync(info.SessionId).ConfigureAwait(false);
 
@@ -339,13 +374,29 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
                 var title = info.WorkingDirectory;
                 var session = _sessions.Build(host, view, title);
                 var saved = new SavedSession(link.Name, link.Url, link.Saved.Token, info.SessionId,
-                    agent.AdapterId, title, info.WorkingDirectory);
+                    agent.AdapterId, title, info.WorkingDirectory,
+                    // What the host DID, not what was asked for. Asking for a screen is a request: the
+                    // operator may forbid graphical sandboxes, an older host may not know the flag at all,
+                    // and a project default may hand one to a session that never asked. Believing the
+                    // request would leave the Screen tab wired to a display that does not exist — a
+                    // connection that fails with a 404 the person has no way to interpret.
+                    HasDisplay: info.HasDisplay);
 
                 ((ShellViewModel)_shell).UpdateSettings(s => s with { LastWorkingDirectory = directory });
                 IsStarting = false;
                 _shell.Haptics.Success();
                 _shell.Pop();
                 _sessions.Adopt(link, session, saved);
+
+                if (info.HasDisplay)
+                {
+                    _shell.Toast("Screen available — open it from the session's Screen tab.", ToastKind.Success);
+                }
+                else if (request.Graphical)
+                {
+                    _shell.Toast(
+                        "The host opened this session without a screen; it runs headless.", ToastKind.Warning);
+                }
             });
         }
         catch (Exception ex)
@@ -357,4 +408,23 @@ public sealed partial class NewSessionPageViewModel : PageViewModel
             });
         }
     }
+
+    /// <summary>
+    /// Opens the session the request describes.
+    ///
+    /// The request is built as an <see cref="OpenSessionRequest"/> — the wire contract's own record —
+    /// rather than as a pile of arguments, because that is what the host receives and it is the thing
+    /// that carries <see cref="OpenSessionRequest.Graphical"/>. The host refuses a graphical launch the
+    /// operator has not allowed, and that refusal surfaces as this page's error rather than as a session
+    /// with no screen. The quieter case — a host that opened the session but without a display — is read
+    /// back off <see cref="SessionInfo.HasDisplay"/> by the caller rather than assumed.
+    /// </summary>
+    private static Task<SessionInfo> OpenAsync(IAgnesHost host, OpenSessionRequest request)
+        => host.OpenSessionAsync(
+            request.AdapterId,
+            request.WorkingDirectory,
+            skipPermissions: request.SkipPermissions,
+            gitCredentialMode: request.GitCredentialMode,
+            useSandbox: request.UseSandbox,
+            graphical: request.Graphical);
 }
