@@ -12,24 +12,29 @@ public class AuthRateLimitEndpointTests
 {
     private sealed class Factory : WebApplicationFactory<Program>
     {
-        private readonly string _devicesFile = Path.Combine(Path.GetTempPath(), $"agnes-rate-limit-devices-{Guid.NewGuid():n}.json");
+        // Every host-state default hangs off Agnes:Home; pointing it at a temp directory is what keeps a
+        // test run out of the operator's real ~/.agnes. See Agnes.TestKit.IsolatedHostHome.
+        private readonly Agnes.TestKit.IsolatedHostHome _home = new();
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                _home.Dispose();
+            }
+        }
 
         protected override IHost CreateHost(IHostBuilder builder)
         {
             builder.ConfigureHostConfiguration(config =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
+                    ["Agnes:Home"] = _home.Path,
                     ["Agnes:Auth:RateLimit:PerIpPerMinute"] = "3",  // small so the test is fast + deterministic
                     ["Agnes:Auth:RateLimit:GlobalPerMinute"] = "1000",
-                    ["Agnes:DevicesFile"] = _devicesFile,
                 }));
             return base.CreateHost(builder);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            base.Dispose(disposing);
-            if (disposing && File.Exists(_devicesFile)) File.Delete(_devicesFile);
         }
     }
 

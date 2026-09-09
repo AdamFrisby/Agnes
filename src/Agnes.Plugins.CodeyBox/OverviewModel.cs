@@ -1,0 +1,252 @@
+using System.Globalization;
+
+namespace Agnes.Plugins.CodeyBox;
+
+/// <summary>
+/// The pure model behind the overview: <see cref="OverviewInputs"/> in, <see cref="Overview"/> out. No
+/// I/O, no time source of its own (<see cref="OverviewInputs.Now"/> is injected), so every derivation is
+/// a function the tests can pin. See <c>OverviewContract.cs</c> for what each output means.
+///
+/// <para>Split across <c>OverviewModel.*.cs</c>: traces (motion and convergence per item), vitals (the
+/// five headline numbers with their control bands), the sentence, and the two trend series.</para>
+/// </summary>
+public static partial class OverviewModel
+{
+    // -----------------------------------------------------------------------------------------------
+    // Thresholds. Every number this model judges by lives here, with why it is that number. None of them
+    // is a fleet-wide absolute except where an absolute is genuinely what is meant (a clock window, a
+    // sample count); the trend bands are always relative to the fleet's own trailing history.
+    // -----------------------------------------------------------------------------------------------
+
+    /// <summary>A live phase whose item and audit stream have both been silent this long is wedged. The
+    /// operator's own rule from months of running this fleet: audits are slow and deserve patience, but
+    /// three quarters of an hour with no state change and no fresh audit row is not patience, it is a
+    /// stuck process nobody has noticed.</summary>
+    internal static readonly TimeSpan WedgeAfter = TimeSpan.FromMinutes(45);
+
+    /// <summary>How long a runnable queued item may sit before the row says so. Below this it is just
+    /// the dispatcher's next tick, and saying "waiting for a slot" about it would be noise.</summary>
+    internal static readonly TimeSpan QueuedPatience = TimeSpan.FromMinutes(30);
+
+    /// <summary>"Landed this week" is a rolling seven days, not a calendar week: a calendar week resets
+    /// the headline to zero every Monday morning for reasons that have nothing to do with the fleet.</summary>
+    internal static readonly TimeSpan LandedWindow = TimeSpan.FromDays(7);
+
+    /// <summary>Samples younger than this are excluded from a vital's control band, so the current
+    /// reading cannot pull the band it is being judged against towards itself.</summary>
+    internal static readonly TimeSpan BandSettleAge = TimeSpan.FromHours(1);
+
+    /// <summary>How close to the ceiling counts as near it. Three iterations is roughly one more audit
+    /// round on this fleet — the last moment at which raising the cap still saves the work.</summary>
+    internal const int NearCeilingWithin = 3;
+
+    /// <summary>Oscillation is judged over a short recent window; a sawtooth from twenty iterations ago
+    /// that has since settled is history, not a live problem.</summary>
+    internal const int OscillationWindow = 6;
+
+    /// <summary>One rise is ordinary — a rework that uncovered something. Two is a pattern.</summary>
+    internal const int OscillationRises = 2;
+
+    /// <summary>Down-up-down-up with no repeated gate is still oscillation if it turns often enough.</summary>
+    internal const int OscillationDirectionChanges = 3;
+
+    /// <summary>Identical non-zero findings for this many complete iterations running is stuck, not
+    /// slow: the loop is producing the same verdict and the rework is not touching it.</summary>
+    internal const int StuckRun = 3;
+
+    /// <summary>Below this many complete iterations a trace has no shape worth naming.</summary>
+    internal const int ShapeMinPoints = 3;
+
+    /// <summary>Fewer settled samples than this and a band would be an opinion rather than a norm, so
+    /// the vital reports no band and a trend of <see cref="Trend.Unknown"/>.</summary>
+    internal const int BandMinSamples = 8;
+
+    /// <summary>The control band is the middle 60% of the fleet's own recent history (nearest-rank
+    /// percentiles, so the edges are always real observed readings).</summary>
+    internal const double BandLowPercentile = 20;
+
+    internal const double BandHighPercentile = 80;
+
+    /// <summary>How far from the trailing median counts as a direction rather than noise.</summary>
+    internal const double TrendDeadband = 0.10;
+
+    /// <summary>How many history points a sparkline draws. Wide enough to show a shape, short enough
+    /// that a week-old excursion does not flatten today.</summary>
+    internal const int SparkWindow = 48;
+
+    /// <summary>The cumulative flow chart's window.</summary>
+    internal const int FlowDays = 30;
+
+    /// <summary>A jump up of more than this many percentage points between consecutive quota samples is
+    /// a window refill, not a burn — the fit has to start again after it.</summary>
+    internal const double QuotaRefillJump = 15;
+
+    /// <summary>Two points make a line through noise; three make a rate worth extrapolating.</summary>
+    internal const int MinBurnSamples = 3;
+
+    /// <summary>Infra failure rates above these read as bad and as worth attention respectively. The bad
+    /// edge only applies once enough transitions have happened for the rate to mean anything.</summary>
+    internal const double InfraBadRate = 0.25;
+
+    internal const int InfraBadMinTransitions = 20;
+
+    internal const double InfraAttentionRate = 0.10;
+
+    // Rank, ascending: the order the attention band is read in. Lower is more urgent.
+    internal const int RankWedged = 0;
+    internal const int RankOscillating = 1;
+    internal const int RankNearCeiling = 2;
+    internal const int RankStuck = 3;
+    internal const int RankNeedsPerson = 4;
+    internal const int RankParked = 5;
+    internal const int RankBlocked = 6;
+    internal const int RankMoving = 7;
+
+    /// <summary>Builds the whole overview in one pass.</summary>
+    public static Overview Build(OverviewInputs inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+
+        var traces = BuildTraces(inputs);
+        var counts = Count(inputs, traces);
+
+        var vitals = BuildVitals(inputs, counts);
+        var (sentence, verdict) = BuildSentence(inputs, counts);
+
+        return new Overview(
+            sentence,
+            verdict,
+            vitals,
+            [.. traces.Where(t => t.NeedsAttention).Order(AttentionOrder)],
+            [.. traces.Where(t => !t.NeedsAttention).OrderBy(t => t.SinceMoved)],
+            BuildFlow(inputs),
+            BuildQuota(inputs),
+            new OverviewSample(
+                inputs.Now,
+                counts.Landed7d,
+                counts.Moving,
+                counts.Parked,
+                counts.Blocked,
+                counts.Wedged,
+                counts.EligibleAgents,
+                counts.SlotsBusy,
+                counts.SlotsTotal,
+                inputs.Health?.InfraFailureRate ?? 0,
+                counts.NeedsPerson));
+    }
+
+    /// <summary>Rank first, then the one that has been still longest, then the one that matters most.</summary>
+    private static readonly Comparer<ItemTrace> AttentionOrder = Comparer<ItemTrace>.Create((a, b) =>
+    {
+        var byRank = a.Rank.CompareTo(b.Rank);
+        if (byRank != 0)
+        {
+            return byRank;
+        }
+
+        var byStillness = b.SinceMoved.CompareTo(a.SinceMoved);
+        return byStillness != 0 ? byStillness : b.Item.Priority.CompareTo(a.Item.Priority);
+    });
+
+    /// <summary>The fleet counts every other part of the build reads, taken once.</summary>
+    internal readonly record struct FleetCounts(
+        int Moving,
+        int Parked,
+        int Blocked,
+        int Wedged,
+        int NeedsPerson,
+        int OpenQuestions,
+        int FailedItems,
+        int Landed7d,
+        int Queued,
+        int Runnable,
+        int Running,
+        int EligibleAgents,
+        int TotalAgents,
+        int SlotsBusy,
+        int SlotsTotal,
+        IReadOnlyList<string> RunningAgents);
+
+    private static FleetCounts Count(OverviewInputs inputs, IReadOnlyList<ItemTrace> traces)
+    {
+        var eligible = EligibleAgents(inputs.Probes);
+
+        return new FleetCounts(
+            Moving: traces.Count(t => t.Motion == Motion.Moving),
+            Parked: traces.Count(t => t.Motion == Motion.Parked),
+            Blocked: traces.Count(t => t.Motion == Motion.Blocked),
+            Wedged: traces.Count(t => t.Motion == Motion.Wedged),
+            NeedsPerson: traces.Count(t => t.NeedsPerson),
+            OpenQuestions: traces.Where(t => t.NeedsPerson).Sum(t => Questions(inputs, t.Item.Id)),
+            FailedItems: traces.Count(t => t.Item.IsFailed),
+            Landed7d: inputs.Items.Count(i => i.State == "Done" && inputs.Now - i.UpdatedAt <= LandedWindow),
+            Queued: Dashboard.Queued(inputs.Items),
+            Runnable: Dashboard.Runnable(inputs.Items),
+            Running: Dashboard.Running(inputs.Items),
+            EligibleAgents: eligible.Count,
+            TotalAgents: inputs.Probes.Select(p => p.Agent).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            SlotsBusy: inputs.Concurrency?.CurrentlyRunningTotal ?? 0,
+            SlotsTotal: inputs.Concurrency?.GlobalMaxConcurrent ?? 0,
+            RunningAgents:
+            [
+                .. inputs.Items
+                    .Where(i => i.IsActive && !string.IsNullOrWhiteSpace(i.Agent))
+                    .Select(i => i.Agent!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
+            ]);
+    }
+
+    /// <summary>The agents the router would dispatch to right now, one entry per agent.</summary>
+    internal static IReadOnlyList<string> EligibleAgents(IReadOnlyList<QuotaProbe> probes)
+        => [.. probes
+            .Where(p => p is { WouldAllow: true, Paused: false })
+            .Select(p => p.Agent)
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    private static int Questions(OverviewInputs inputs, string itemId)
+        => inputs.Questions.TryGetValue(itemId, out var n) ? n : 0;
+
+    // ---- Small shared formatting. Numbers invariant; clock times local, as the rest of this plugin. ----
+
+    private static string Inv(FormattableString text) => FormattableString.Invariant(text);
+
+    private static string Clock(DateTimeOffset at) => at.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
+
+    private static string Plural(int n, string one, string many) => n == 1 ? one : many;
+
+    /// <summary>A duration said the way a person says it: "12m", "1h 12m", "2d 3h".</summary>
+    internal static string Duration(TimeSpan span)
+    {
+        var minutes = (int)Math.Floor(Math.Max(0, span.TotalMinutes));
+        if (minutes < 1)
+        {
+            return "under a minute";
+        }
+
+        if (minutes < 60)
+        {
+            return Inv($"{minutes}m");
+        }
+
+        var hours = minutes / 60;
+        if (hours < 24)
+        {
+            var rest = minutes % 60;
+            return rest == 0 ? Inv($"{hours}h") : Inv($"{hours}h {rest}m");
+        }
+
+        var days = hours / 24;
+        var spare = hours % 24;
+        return spare == 0 ? Inv($"{days}d") : Inv($"{days}d {spare}h");
+    }
+
+    /// <summary>"claude", "claude and codex", "claude, codex and antigravity".</summary>
+    internal static string Listed(IReadOnlyList<string> names) => names.Count switch
+    {
+        0 => string.Empty,
+        1 => names[0],
+        2 => Inv($"{names[0]} and {names[1]}"),
+        _ => Inv($"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}"),
+    };
+}

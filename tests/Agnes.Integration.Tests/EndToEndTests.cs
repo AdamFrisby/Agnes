@@ -246,6 +246,9 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
     {
         public ScriptedAdapter Adapter { get; } = new();
 
+        // A throwaway Agnes:Home, so nothing this host persists can reach the real ~/.agnes.
+        private readonly Agnes.TestKit.IsolatedHostHome _home = new();
+
         // Throwaway files so the test never touches the real ~/.agnes/*.
         public string DeviceFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-devices-it-{Guid.NewGuid():n}.json");
         public string McpFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-mcp-it-{Guid.NewGuid():n}.json");
@@ -256,6 +259,7 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
             builder.ConfigureHostConfiguration(config =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
+                    ["Agnes:Home"] = _home.Path,
                     ["Agnes:PairingToken"] = Token,
                     ["Agnes:DevicesFile"] = DeviceFile,
                     ["Agnes:McpFile"] = McpFile,
@@ -279,6 +283,7 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
             if (disposing && File.Exists(DeviceFile)) File.Delete(DeviceFile);
             if (disposing && File.Exists(McpFile)) File.Delete(McpFile);
             if (disposing && File.Exists(ImageFile)) File.Delete(ImageFile);
+            if (disposing) _home.Dispose();
         }
     }
 

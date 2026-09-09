@@ -100,6 +100,7 @@ public sealed class FcmPushChannel : INotificationChannel
         NotificationTrigger.TurnReady => "Agent ready",
         NotificationTrigger.PermissionRequest => "Permission needed",
         NotificationTrigger.UserActionRequest => "Action needed",
+        NotificationTrigger.FileShared => "File from your agent",
         _ => "Agnes",
     };
 }

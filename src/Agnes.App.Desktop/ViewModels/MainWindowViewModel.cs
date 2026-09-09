@@ -26,7 +26,11 @@ namespace Agnes.App.Desktop.ViewModels;
 /// </summary>
 public sealed partial class MainWindowViewModel : ObservableObject, ITabController
 {
+#if DEBUG
+    // Debug only, as in the Android head: the offline simulated host is a development affordance, and a
+    // shipped client must not list a fabricated host among the user's real ones. See RoutingConnector.
     private static readonly KnownHost SimulatedHost = new("Simulated host", "sim://demo", string.Empty);
+#endif
     private static readonly KnownHost RecordedHost = new("Recorded sessions", "rec://local", string.Empty);
 
     private readonly IAgnesConnector _connector;
@@ -48,6 +52,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     /// <summary>Surfaces session notifications (toast / OS). Set by the shell once a window exists.</summary>
     public INotifier Notifier { get; set; } = NullNotifier.Instance;
+
+    /// <summary>
+    /// What this client does with a file an agent sends (save / open). Set by the shell for the same reason
+    /// as <see cref="Notifier"/>: both need a window, and this view model is constructed before there is one.
+    /// Every session opened from here is handed it, so a card's buttons match what the head can actually do.
+    /// </summary>
+    public IReceivedFileHandler ReceivedFiles { get; set; } = NullReceivedFileHandler.Instance;
 
     private ClientPluginSet? _clientPlugins;
 
@@ -85,8 +96,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SettingsStore? settingsStore = null,
         IPermissionPolicy? policy = null,
         IOnboardingStore? onboarding = null,
-        KeymapService? keymap = null)
+        KeymapService? keymap = null,
+        string? clientPluginDirectory = null)
     {
+        _clientPluginDirectory = clientPluginDirectory;
         _connector = connector;
         _dispatcher = dispatcher;
         _tabStore = tabStore;
@@ -122,7 +135,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         Approvals = new ApprovalsViewModel(SnapshotHosts, _dispatcher);
         Approvals.JumpRequested += JumpToApproval;
 
+#if DEBUG
         _knownHosts.Add(SimulatedHost);
+#endif
         _knownHosts.Add(RecordedHost);
         _knownHosts.AddRange(hostStore.Load());
 
@@ -163,7 +178,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         LoadDevicesCommand = new AsyncRelayCommand(LoadDevicesAsync);
         RevokeDeviceCommand = new AsyncRelayCommand<DeviceRowVm>(RevokeDeviceAsync);
         ApproveDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: true));
+        ApproveDeviceAsOwnerCommand = new AsyncRelayCommand<string>(
+            id => DecideApprovalAsync(id, approve: true, DeviceRole.Owner));
         DenyDeviceCommand = new AsyncRelayCommand<string>(id => DecideApprovalAsync(id, approve: false));
+        SetDeviceRoleCommand = new AsyncRelayCommand<DeviceRowVm>(SetDeviceRoleAsync);
+        PruneDevicesCommand = new AsyncRelayCommand(PruneDevicesAsync);
         LoadMcpServersCommand = new AsyncRelayCommand(LoadMcpServersAsync);
         AddMcpServerCommand = new AsyncRelayCommand(AddMcpServerAsync);
         RemoveMcpServerCommand = new AsyncRelayCommand<string>(RemoveMcpServerAsync);
@@ -183,6 +202,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OpenDashboardCommand = new RelayCommand(OpenDashboard);
         SetSettingsCategoryCommand = new RelayCommand<string>(v => { if (v is not null) { SettingsCategory = v; } });
         LinkGitHubNowCommand = new RelayCommand(LinkGitHubNow);
+        OpenDevicesSettingsCommand = new RelayCommand(OpenDevicesSettings);
         DismissGitHubLinkPromptCommand = new RelayCommand(() => ShowGitHubLinkPrompt = false);
         LoadSandboxesCommand = new AsyncRelayCommand(LoadSandboxesAsync);
         DeleteSandboxRecordCommand = new AsyncRelayCommand<SandboxRowVm>(DeleteSandboxRecordAsync);
@@ -208,6 +228,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             new SettingsCategoryVm("devices", "Devices", Symbol.Key, "paired devices pairing token revoke auth access per-device"),
             new SettingsCategoryVm("sandboxes", "Sandboxes", Symbol.Box, "sandbox vm incus running stopped resume restart delete reap orphan cleanup lifecycle"),
             new SettingsCategoryVm("mcp", "MCP servers", Symbol.PlugConnected, "mcp model context protocol server tool preset install curated playwright github context7 scope workspace host preview effective strict"),
+            new SettingsCategoryVm("localmodels", "Local models", Symbol.Server,
+                "local model models byok ollama vllm lemonade llama lm studio foundry openai compatible endpoint " +
+                "base url api key offline gpu self-hosted copilot provider bring your own key on-prem private"),
             // Per-project
             new SettingsCategoryVm("projects", "Projects", Symbol.Folder, "project repo sandbox image mcp servers packages node apt npm pip agents credentials defaults per-repo"),
             new SettingsCategoryVm("plugins", "Plugins", Symbol.PuzzlePiece, "plugin plugins extension nuget install uninstall browse marketplace capability consent provider adapter transport voice notification enable disable configure"),
@@ -575,7 +598,63 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool HasPendingApprovals => PendingApprovals.Count > 0;
 
     public IAsyncRelayCommand<string> ApproveDeviceCommand { get; }
+    public IAsyncRelayCommand<string> ApproveDeviceAsOwnerCommand { get; }
     public IAsyncRelayCommand<string> DenyDeviceCommand { get; }
+    public IAsyncRelayCommand<DeviceRowVm> SetDeviceRoleCommand { get; }
+    public IAsyncRelayCommand PruneDevicesCommand { get; }
+
+    /// <summary>How long a device may go unused before the prune offer will remove it.</summary>
+    public const int PruneUnusedForDays = 30;
+
+    /// <summary>
+    /// Whether this device is an Owner on the host the Devices page is showing.
+    ///
+    /// Everything that manages other devices hangs off this. A Member that was shown owner buttons would
+    /// get a silent 403 for its trouble, so the buttons simply aren't there — and a line says why, because
+    /// a page that quietly has fewer controls than someone else's is its own small mystery.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanManageDevices))]
+    [NotifyPropertyChangedFor(nameof(ShowOnlyOwnersNote))]
+    private bool _isHostOwner;
+
+    /// <summary>False until the host has answered <c>/devices/me</c>, so nothing is claimed before it's
+    /// known — an old host that never answers leaves the page exactly as it was before roles existed.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanManageDevices))]
+    [NotifyPropertyChangedFor(nameof(ShowOnlyOwnersNote))]
+    private bool _isHostRoleKnown;
+
+    public bool CanManageDevices => IsHostRoleKnown && IsHostOwner;
+
+    public bool ShowOnlyOwnersNote => IsHostRoleKnown && !IsHostOwner;
+
+    /// <summary>The line a non-owner sees where the owner sees buttons.</summary>
+    public static string OnlyOwnersNote => DeviceRoleText.OnlyOwnersManage;
+
+    public static string PruneLabel => DeviceRoleText.PruneAction(PruneUnusedForDays);
+
+    /// <summary>Arms the prune the way revoking a device is armed: the first click names how many devices
+    /// would go, the second removes them. Removing several devices at once deserves at least that.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PruneButtonLabel))]
+    private bool _isConfirmingPrune;
+
+    public string PruneButtonLabel => IsConfirmingPrune
+        ? DeviceRoleText.ConfirmPrune(StaleDeviceCount, PruneUnusedForDays)
+        : PruneLabel;
+
+    /// <summary>How many listed devices the prune would take, computed here so the confirmation can name
+    /// a number instead of asking a human to accept an unknown amount of destruction.</summary>
+    private int StaleDeviceCount => Devices.Count(IsStale);
+
+    /// <summary>The client's reading of what the host will prune: never this device, and never an owner —
+    /// so the number offered can't promise more than the host is willing to do.</summary>
+    private static bool IsStale(DeviceRowVm row)
+        => !row.IsCurrentDevice
+           && !row.IsOwner
+           && (row.Info.LastSeenAt is not { } seen
+               || DateTimeOffset.UtcNow - seen > TimeSpan.FromDays(PruneUnusedForDays));
 
     /// <summary>
     /// What to put on a settings status line when a call to the host failed. The raw exception chain says
@@ -632,16 +711,29 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // returns none, so this never turns an older host into an error.
             var waiting = await PairingManagement.PendingAsync(target.Url, target.Token, target.Http);
 
+            // …and so does what this device itself is, which decides whether the page manages anything or
+            // only reports. Null means the host predates roles: leave the page as it was before they existed.
+            var me = await PairingManagement.MeAsync(target.Url, target.Token, target.Http);
+
+            var owners = list.Count(d => d.Role == DeviceRole.Owner);
             var now = DateTimeOffset.UtcNow;
             _dispatcher.Post(() =>
             {
+                IsHostRoleKnown = me is not null;
+                IsHostOwner = me?.Role == DeviceRole.Owner;
+
                 Devices.Clear();
-                foreach (var d in list) { Devices.Add(new DeviceRowVm(d, now)); }
+                foreach (var d in list)
+                {
+                    Devices.Add(new DeviceRowVm(d, now) { IsLastOwner = owners <= 1 });
+                }
 
                 PendingApprovals.Clear();
                 foreach (var p in waiting) { PendingApprovals.Add(p); }
                 OnPropertyChanged(nameof(HasPendingApprovals));
 
+                IsConfirmingPrune = false;
+                OnPropertyChanged(nameof(PruneButtonLabel));
                 DevicesStatus = list.Count == 0 ? "No paired devices." : $"{list.Count} paired device(s).";
             });
         }
@@ -656,7 +748,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// public key, so approving is only meaningful once a human has compared them against the asking
     /// device's screen — the UI says so, and there is no way to approve without seeing them.
     /// </summary>
-    private async Task DecideApprovalAsync(string? requestId, bool approve)
+    /// <param name="role">
+    /// What the device is admitted as. Letting someone in as a member is the ordinary answer and the
+    /// default button; letting them in as an owner hands over the host, so it is a separate, deliberate
+    /// click that only an owner is shown.
+    /// </param>
+    private async Task DecideApprovalAsync(string? requestId, bool approve, DeviceRole role = DeviceRole.Member)
     {
         var target = ActiveHttpHost();
         if (target is null || string.IsNullOrEmpty(requestId))
@@ -668,7 +765,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             if (approve)
             {
-                await PairingManagement.ApproveAsync(target.Url, target.Token, requestId, target.Http);
+                await PairingManagement.ApproveAsync(target.Url, target.Token, requestId, role, target.Http);
             }
             else
             {
@@ -676,12 +773,67 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             }
 
             await LoadDevicesAsync();
-            _dispatcher.Post(() => DevicesStatus = approve ? "Device approved." : "Request declined.");
+            _dispatcher.Post(() => DevicesStatus = approve
+                ? role == DeviceRole.Owner ? "Device let in as an owner." : "Device let in as a member."
+                : "Request declined.");
         }
         catch (Exception ex)
         {
             _dispatcher.Post(() => DevicesStatus = "Couldn't answer that request: " + Explain(ex));
         }
+    }
+
+    /// <summary>
+    /// Promotes or demotes one device. The host is the authority — it refuses a demotion that would leave
+    /// no owner, and a Member asking at all — so a refusal is reported as a refusal rather than being
+    /// pre-empted by hiding the list, and the page reloads either way so what's shown is what's true.
+    /// </summary>
+    private async Task SetDeviceRoleAsync(DeviceRowVm? row)
+    {
+        var target = ActiveHttpHost();
+        if (row is null || target is null)
+        {
+            return;
+        }
+
+        var wanted = row.TargetRole;
+        var ok = await PairingManagement.SetRoleAsync(target.Url, target.Token, row.Id, wanted, target.Http);
+        await LoadDevicesAsync();
+        _dispatcher.Post(() => DevicesStatus = ok
+            ? $"{row.Name} is now {(wanted == DeviceRole.Owner ? "an owner" : "a member")}."
+            : $"The host wouldn't change {row.Name}'s role — it keeps at least one owner, and only an owner may ask.");
+    }
+
+    /// <summary>
+    /// Removes every device that hasn't been seen for a month. Two clicks: the first names how many would
+    /// go, because "remove unused devices" with no number is a request to approve an unknown amount of
+    /// destruction. The host still decides — it never prunes the caller's own device or the last owner.
+    /// </summary>
+    private async Task PruneDevicesAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            return;
+        }
+
+        if (!IsConfirmingPrune)
+        {
+            _dispatcher.Post(() =>
+            {
+                IsConfirmingPrune = true;
+                DevicesStatus = StaleDeviceCount == 0
+                    ? $"Nothing has been idle for {PruneUnusedForDays} days."
+                    : "Click again to remove them.";
+            });
+            return;
+        }
+
+        var ok = await PairingManagement.PruneAsync(target.Url, target.Token, PruneUnusedForDays, target.Http);
+        await LoadDevicesAsync();
+        _dispatcher.Post(() => DevicesStatus = ok
+            ? $"Removed the devices unused for {PruneUnusedForDays} days."
+            : "The host wouldn't prune devices — only an owner can.");
     }
 
     /// <summary>
@@ -743,6 +895,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     // ---- Settings tab (a first-class document, opened by the gear) ----
     public IRelayCommand OpenSettingsCommand { get; }
+
+    /// <summary>Takes a member straight to the page that explains its role — the notice that names
+    /// "Settings › Devices" would be a worse notice if it made you go and find it.</summary>
+    public IRelayCommand OpenDevicesSettingsCommand { get; }
+
     public IRelayCommand LinkGitHubNowCommand { get; }
     public IRelayCommand DismissGitHubLinkPromptCommand { get; }
 
@@ -813,6 +970,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         IsSetupWizardOpen = false;
     }
 
+    public void OpenDevicesSettings()
+    {
+        OpenSettings();
+        SettingsCategory = "devices";
+    }
+
     private void LinkGitHubNow()
     {
         ShowGitHubLinkPrompt = false;
@@ -866,6 +1029,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatDevices => SettingsCategory == "devices";
     public bool CatSandboxes => SettingsCategory == "sandboxes";
     public bool CatMcp => SettingsCategory == "mcp";
+    public bool CatLocalModels => SettingsCategory == "localmodels";
     public bool CatProjects => SettingsCategory == "projects";
     public bool CatPlugins => SettingsCategory == "plugins";
     public bool CatBugReport => SettingsCategory == "bugreport";
@@ -891,6 +1055,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatDevices));
         OnPropertyChanged(nameof(CatSandboxes));
         OnPropertyChanged(nameof(CatMcp));
+        OnPropertyChanged(nameof(CatLocalModels));
         OnPropertyChanged(nameof(CatProjects));
         OnPropertyChanged(nameof(CatPlugins));
         OnPropertyChanged(nameof(CatBugReport));
@@ -919,6 +1084,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         else if (value == "mcp")
         {
             _ = LoadMcpAsync();
+        }
+        else if (value == "localmodels")
+        {
+            _ = LoadLocalProviderAsync();
         }
         else if (value == "plugins")
         {
@@ -1907,6 +2076,173 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// presets need them to know what's already installed), then the presets, then what would actually be
     /// active. One call so the page is never half-populated.
     /// </summary>
+    // ---- Local models (Copilot BYOK against a self-hosted OpenAI-compatible endpoint) ----
+
+    [ObservableProperty] private string _localProviderUrl = string.Empty;
+    [ObservableProperty] private string _localProviderKey = string.Empty;
+    /// <summary>Whether the host already holds a key. Shown instead of the key, which the host never sends.</summary>
+    [ObservableProperty] private bool _localProviderHasKey;
+    [ObservableProperty] private string _localProviderWireModel = string.Empty;
+    [ObservableProperty] private string _localProviderModelId = string.Empty;
+    [ObservableProperty] private bool _localProviderOffline = true;
+    [ObservableProperty] private bool _localProviderExcludeApplyPatch = true;
+    /// <summary>Reasoning effort. Empty means "let Copilot decide", which is what it does for a model it
+    /// recognises; for one it does not, it decides "max" — which some servers reject outright.</summary>
+    [ObservableProperty] private string _localProviderEffort = string.Empty;
+    [ObservableProperty] private string _localProviderStatus = string.Empty;
+    [ObservableProperty] private bool _localProviderBusy;
+
+    /// <summary>Models the endpoint reports, for the picker.</summary>
+    public ObservableCollection<LocalProviderModel> LocalProviderModels { get; } = [];
+
+    public bool HasLocalProviderModels => LocalProviderModels.Count > 0;
+
+    /// <summary>
+    /// Well-known ids worth offering for the "acts like" field. This is not a list of models Agnes can
+    /// run — it is the identity Copilot uses to choose prompting strategy, token limits, and the
+    /// reasoning-effort value it sends. gpt-5.4 leads because it is the one observed to send "medium",
+    /// which strict local servers accept; the default of "max" is rejected outright by some.
+    /// </summary>
+    public IReadOnlyList<string> LocalProviderModelIds { get; } =
+        ["gpt-5.4", "gpt-5-mini", "gpt-4.1", "claude-sonnet-4", "claude-opus-4.8"];
+
+    /// <summary>Copilot's own effort levels, plus a blank first entry meaning "leave it alone".</summary>
+    public IReadOnlyList<string> LocalProviderEfforts { get; } =
+        ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+    private async Task LoadLocalProviderAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            _dispatcher.Post(() => LocalProviderStatus = "Connect to a host to configure a local model.");
+            return;
+        }
+
+        try
+        {
+            var info = await LocalProviderManagement.GetAsync(target.Url, target.Token, target.Http);
+            _dispatcher.Post(() =>
+            {
+                if (info is null) { return; }
+                LocalProviderUrl = info.BaseUrl ?? string.Empty;
+                LocalProviderHasKey = info.HasApiKey;
+                LocalProviderKey = string.Empty;
+                LocalProviderModelId = info.ModelId ?? string.Empty;
+                LocalProviderWireModel = info.WireModel ?? string.Empty;
+                LocalProviderOffline = info.Offline;
+                LocalProviderEffort = info.Effort ?? string.Empty;
+                // An empty stored list means "use the recommended set"; the single sentinel "none" is how
+                // an operator says they want no exclusions at all.
+                LocalProviderExcludeApplyPatch =
+                    info.ExcludedTools.Count == 0
+                    || info.ExcludedTools.Any(t => string.Equals(t, "apply_patch", StringComparison.OrdinalIgnoreCase));
+                LocalProviderStatus = info.IsConfigured
+                    ? "Sessions on this host use your local model."
+                    : "Not configured — sessions use GitHub's models.";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => LocalProviderStatus = $"Couldn't read the settings — {ex.Message}");
+        }
+    }
+
+    private LocalProviderRequest BuildLocalProviderRequest() => new(
+        BaseUrl: LocalProviderUrl,
+        ProviderType: "OpenAi",
+        // Blank means "keep what the host already has" — the host never sends the key back, so an
+        // untouched field must not be read as "clear it".
+        ApiKey: string.IsNullOrEmpty(LocalProviderKey) ? null : LocalProviderKey,
+        ModelId: LocalProviderModelId,
+        WireModel: LocalProviderWireModel,
+        ExcludedTools: LocalProviderExcludeApplyPatch ? ["apply_patch"] : ["none"],
+        Offline: LocalProviderOffline,
+        Effort: string.IsNullOrWhiteSpace(LocalProviderEffort) ? null : LocalProviderEffort);
+
+    public IAsyncRelayCommand FetchLocalModelsCommand => _fetchLocalModels ??= new AsyncRelayCommand(async () =>
+    {
+        var target = ActiveHttpHost();
+        if (target is null) { return; }
+
+        _dispatcher.Post(() => { LocalProviderBusy = true; LocalProviderStatus = "Asking the endpoint…"; });
+        var result = await LocalProviderManagement.ModelsAsync(
+            target.Url, target.Token, BuildLocalProviderRequest(), target.Http);
+
+        _dispatcher.Post(() =>
+        {
+            LocalProviderBusy = false;
+            LocalProviderModels.Clear();
+            foreach (var m in result.Models) { LocalProviderModels.Add(m); }
+            OnPropertyChanged(nameof(HasLocalProviderModels));
+
+            // "Could not reach it" and "reachable but serving nothing" are different problems and get
+            // different words: one is a URL or key to fix, the other is a server with no model loaded.
+            LocalProviderStatus = !result.Reachable
+                ? result.Error ?? "Couldn't reach that endpoint."
+                : result.Models.Count == 0
+                    ? "Reached it, but it isn't serving any models."
+                    : $"Found {result.Models.Count} model(s).";
+        });
+    });
+
+    private IAsyncRelayCommand? _fetchLocalModels;
+
+    public IAsyncRelayCommand SaveLocalProviderCommand => _saveLocalProvider ??= new AsyncRelayCommand(async () =>
+    {
+        var target = ActiveHttpHost();
+        if (target is null) { return; }
+
+        _dispatcher.Post(() => { LocalProviderBusy = true; LocalProviderStatus = "Saving…"; });
+        try
+        {
+            var info = await LocalProviderManagement.SaveAsync(
+                target.Url, target.Token, BuildLocalProviderRequest(), target.Http);
+            _dispatcher.Post(() =>
+            {
+                LocalProviderBusy = false;
+                LocalProviderHasKey = info?.HasApiKey ?? LocalProviderHasKey;
+                LocalProviderKey = string.Empty;
+                // Stated because it is not obvious: the provider is read when a session launches, so a
+                // running session keeps the model it started with.
+                LocalProviderStatus = info?.IsConfigured == true
+                    ? "Saved. New sessions will use your local model."
+                    : "Saved. Sessions will use GitHub's models.";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => { LocalProviderBusy = false; LocalProviderStatus = $"Couldn't save — {ex.Message}"; });
+        }
+    });
+
+    private IAsyncRelayCommand? _saveLocalProvider;
+
+    /// <summary>Clears the provider, so Copilot goes back to GitHub's own model routing.</summary>
+    public IAsyncRelayCommand ClearLocalProviderCommand => _clearLocalProvider ??= new AsyncRelayCommand(async () =>
+    {
+        var target = ActiveHttpHost();
+        if (target is null) { return; }
+
+        await LocalProviderManagement.SaveAsync(
+            target.Url, target.Token,
+            new LocalProviderRequest(null, "OpenAi", "", null, null, null, false), target.Http);
+        _dispatcher.Post(() =>
+        {
+            LocalProviderUrl = string.Empty;
+            LocalProviderKey = string.Empty;
+            LocalProviderHasKey = false;
+            LocalProviderWireModel = string.Empty;
+            LocalProviderModelId = string.Empty;
+            LocalProviderEffort = string.Empty;
+            LocalProviderModels.Clear();
+            OnPropertyChanged(nameof(HasLocalProviderModels));
+            LocalProviderStatus = "Cleared. Sessions use GitHub's models.";
+        });
+    });
+
+    private IAsyncRelayCommand? _clearLocalProvider;
+
     private async Task LoadMcpAsync()
     {
         await LoadMcpServersAsync();
@@ -2200,7 +2536,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     /// <summary>Creates a session view model and wires its notifications to the shell.</summary>
     private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
     {
-        var session = new SessionViewModel(host, view, _dispatcher, title, _prompts, _policy, EnsureClientPlugins().EventBus);
+        var session = new SessionViewModel(host, view, _dispatcher, title, _prompts, _policy, EnsureClientPlugins().EventBus, ReceivedFiles);
         session.NotificationRaised += n => _dispatcher.Post(() => Surface(n));
         _ = EnsureClientPlugins().EventBus.DispatchAsync(new SessionTabOpenedEvent(view.SessionId)); // observe-only
         return session;
@@ -2231,12 +2567,35 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
-    private ClientPluginSet EnsureClientPlugins()
-        => _clientPlugins ??= DesktopClientPlugins.Build(Notifier,
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins"));
+    /// <summary>
+    /// Where dynamically-loaded client plugins are read from. Injectable so a test is not at the mercy of
+    /// whatever the machine running it happens to have installed — before this was a parameter, installing
+    /// a plugin locally made a test asserting "no plugin screens" fail on that machine and nowhere else.
+    /// </summary>
+    private readonly string? _clientPluginDirectory;
 
-    /// <summary>Custom screens contributed by client plugins, for a menu / command-palette to list and open.</summary>
+    public static string DefaultClientPluginDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins");
+
+    private ClientPluginSet EnsureClientPlugins()
+        => _clientPlugins ??= DesktopClientPlugins.Build(
+            Notifier, _clientPluginDirectory ?? DefaultClientPluginDirectory);
+
+    /// <summary>Custom screens contributed by client plugins, for the New-tab menu to list and open.</summary>
     public IReadOnlyList<ICustomScreenProvider> CustomScreens => EnsureClientPlugins().CustomScreens;
+
+    /// <summary>
+    /// Whether more than one kind of tab can be opened — i.e. whether a plugin contributed a screen.
+    /// With none, "New tab" stays a plain button that opens a session, because a menu offering one choice
+    /// is a worse button.
+    /// </summary>
+    public bool HasTabKinds => CustomScreens.Count > 0;
+
+    /// <summary>Opens a plugin screen by the id the New-tab menu carries.</summary>
+    public IRelayCommand<ICustomScreenProvider> OpenCustomScreenCommand =>
+        _openCustomScreen ??= new RelayCommand<ICustomScreenProvider>(p => { if (p is not null) { OpenCustomScreen(p); } });
+
+    private IRelayCommand<ICustomScreenProvider>? _openCustomScreen;
 
     /// <summary>Opens a plugin's custom screen as a dock document — the same way <see cref="OpenSettings"/>
     /// opens Settings, so a plugin screen can replace the conversation view in a tab.</summary>
@@ -2251,7 +2610,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             .FirstOrDefault(d => (string?)d.Id == provider.ScreenId);
         if (existing is null)
         {
-            existing = new PluginScreenDocument(provider);
+            existing = new PluginScreenDocument(provider, EnsureClientPlugins().CreateView);
             _factory.AddDockable(dock, existing);
         }
 
@@ -2431,36 +2790,79 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         set { if (SetProperty(ref _globalSearchQuery, value)) { RunGlobalSearch(); } }
     }
 
-    /// <summary>Matches found across every open session for <see cref="GlobalSearchQuery"/>.</summary>
-    public System.Collections.ObjectModel.ObservableCollection<GlobalHit> GlobalResults { get; } = [];
+    /// <summary>How many hits the flyout will hold, across both groups.</summary>
+    private const int MaxGlobalResults = 100;
 
-    public bool HasGlobalResults => GlobalResults.Count > 0;
+    /// <summary>The tab in front. Search groups its results around it.</summary>
+    private SessionDocument? ActiveTab => _factory.DocumentDock?.ActiveDockable as SessionDocument;
+
+    /// <summary>
+    /// Matches in the tab the user is already looking at. Split out from the rest because it is the far
+    /// likelier target: searching while reading a session usually means "find it in <i>this</i>", and a
+    /// result from it should not have to be picked out of a flat list ordered by tab position.
+    /// </summary>
+    public System.Collections.ObjectModel.ObservableCollection<GlobalHit> ThisSessionResults { get; } = [];
+
+    /// <summary>Matches in every other open session.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<GlobalHit> OtherSessionResults { get; } = [];
+
+    public bool HasThisSessionResults => ThisSessionResults.Count > 0;
+
+    public bool HasOtherSessionResults => OtherSessionResults.Count > 0;
+
+    public bool HasGlobalResults => HasThisSessionResults || HasOtherSessionResults;
+
+    /// <summary>Both groups have something, so the rule between them has content on each side to divide.</summary>
+    public bool HasBothResultGroups => HasThisSessionResults && HasOtherSessionResults;
 
     private void RunGlobalSearch()
     {
-        GlobalResults.Clear();
+        ThisSessionResults.Clear();
+        OtherSessionResults.Clear();
+
         var query = _globalSearchQuery;
         if (!string.IsNullOrWhiteSpace(query))
         {
-            foreach (var doc in OpenTabs())
+            // The active tab is searched first, not merely displayed first: with a shared cap, scanning in
+            // dock order could spend the whole budget on other sessions and leave the one being read with
+            // no results at all.
+            var active = ActiveTab;
+            var tabs = OpenTabs().ToList();
+            var ordered = active is not null && tabs.Contains(active)
+                ? tabs.Where(d => ReferenceEquals(d, active)).Concat(tabs.Where(d => !ReferenceEquals(d, active)))
+                : tabs;
+
+            foreach (var doc in ordered)
             {
                 if (doc.Session is not { } session)
                 {
                     continue;
                 }
 
+                var current = ReferenceEquals(doc, active);
+                var target = current ? ThisSessionResults : OtherSessionResults;
                 foreach (var hit in session.Find(query, doc.Title))
                 {
-                    GlobalResults.Add(new GlobalHit(doc, hit));
-                    if (GlobalResults.Count >= 100)
+                    target.Add(new GlobalHit(doc, hit, current));
+                    if (ThisSessionResults.Count + OtherSessionResults.Count >= MaxGlobalResults)
                     {
                         break;
                     }
                 }
+
+                // Stop scanning tabs too, not just hits within one: the old cap broke the inner loop only,
+                // so a query matching everywhere kept walking every remaining session after it was full.
+                if (ThisSessionResults.Count + OtherSessionResults.Count >= MaxGlobalResults)
+                {
+                    break;
+                }
             }
         }
 
+        OnPropertyChanged(nameof(HasThisSessionResults));
+        OnPropertyChanged(nameof(HasOtherSessionResults));
         OnPropertyChanged(nameof(HasGlobalResults));
+        OnPropertyChanged(nameof(HasBothResultGroups));
     }
 
     private void SelectGlobalHit(GlobalHit? hit)
@@ -2545,6 +2947,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             new("Open dashboard", GestureFor(AgnesCommand.DashboardOpen, KeymapContext.Window), () => OpenDashboardCommand.Execute(null)),
             new("Show onboarding tour", "help", () => Showcase.Show()),
         };
+
+        // Panel toggles for the tab in front. Offered only where they apply — a "Screen" entry on a session
+        // with no display would be a command that does nothing, which is worse than one that isn't listed.
+        if (ActiveTab is { IsLive: true, Session: { } active } document)
+        {
+            all.Add(new PaletteItem("Terminal", "panel", () => active.ToggleTerminalCommand.Execute(null)));
+            if (document.ScreenAvailable)
+            {
+                all.Add(new PaletteItem("Screen", "panel", () => active.ToggleDisplayCommand.Execute(null)));
+            }
+        }
+
         all.AddRange(AllDocuments().Select(t => new PaletteItem(
             string.IsNullOrWhiteSpace(t.Title) ? "New session" : t.Title,
             IsFloating(t) ? "window" : "session",
@@ -2636,7 +3050,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 CanClose = true,
                 Descriptor = descriptor,
                 HostName = descriptor.HostName,
-                AgentName = descriptor.Title,
+                // The agent slot names the agent, not the folder. Restoring from a saved tab used to put
+                // the session's *title* here, so a reopened OpenCode session introduced itself as "dawn2"
+                // while a freshly-opened one next to it said "opencode" — and nothing ever corrected it,
+                // since reconnecting doesn't revisit this. The descriptor has carried the adapter id all
+                // along.
+                AgentName = descriptor.AdapterId,
                 Pinned = descriptor.Pinned,
             };
             ApplyTags(doc, descriptor.Tags);
@@ -2662,7 +3081,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     // ---- ITabController ----
 
-    public async Task<bool> SelectHostAsync(SessionDocument doc, KnownHost host)
+    public Task<bool> SelectHostAsync(SessionDocument doc, KnownHost host)
+        => SelectHostAsync(doc, host, announceRole: false);
+
+    /// <param name="announceRole">
+    /// True when this connect immediately follows pairing or signing in, so the host's answer to "what am
+    /// I here?" also lands on the status line. See <see cref="RefreshDeviceRoleAsync"/> for why that answer
+    /// comes from the host rather than from the pairing response.
+    /// </param>
+    private async Task<bool> SelectHostAsync(SessionDocument doc, KnownHost host, bool announceRole)
     {
         try
         {
@@ -2697,6 +3124,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // What's already running here, alongside the agent picker. Best-effort and off the critical path:
             // connecting must not wait on it, and a host too old to answer just shows no list.
             _ = doc.HostSessions.LoadAsync();
+
+            // Show the remembered role's explanation immediately, then correct it from the host. A member
+            // that opens a tab and finds nothing must be told why on the same screen, not on the next one.
+            _dispatcher.Post(() => doc.HostRoleNotice = NoticeFor(host.Role, host.Name));
+            _ = RefreshDeviceRoleAsync(doc, host, announceRole);
             return true;
         }
         catch (Exception ex)
@@ -2708,6 +3140,57 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             _dispatcher.Post(() => doc.IsConnectingHost = false);
         }
+    }
+
+    /// <summary>
+    /// The sentence a device sees where its sessions would be. Only a Member gets one: an owner's empty
+    /// list means the host really is idle, and saying anything there would be noise.
+    /// </summary>
+    private static string NoticeFor(DeviceRole? role, string hostName)
+        => role == DeviceRole.Member ? DeviceRoleText.EmptyStateForMember(hostName) : string.Empty;
+
+    /// <summary>
+    /// Asks the host what this device is, updates the tab's explanation and remembers the answer against the
+    /// saved host so the next connect can say it before the round trip. Best-effort throughout: a host that
+    /// predates <c>/devices/me</c> answers nothing, and the tab is left exactly as it was.
+    /// </summary>
+    /// <param name="announce">
+    /// Whether to also say it on the status line — true straight after pairing or signing in, which is the
+    /// one moment a human is certainly reading it.
+    ///
+    /// The announcement is driven from here rather than from the <see cref="PairResponse"/> on purpose.
+    /// <c>Role</c> is a trailing-optional wire field defaulting to Member, so a host too old to have roles
+    /// returns a response that <em>says</em> Member — and announcing that would tell an operator's own
+    /// first device it is a guest. This endpoint answering at all is the proof the host has roles.
+    /// </param>
+    private async Task RefreshDeviceRoleAsync(SessionDocument doc, KnownHost host, bool announce = false)
+    {
+        if (!host.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var me = await PairingManagement.MeAsync(host.Url, host.Token, Agnes.Client.AgnesHttp.For(host.Fingerprint));
+        if (me is null)
+        {
+            return;
+        }
+
+        _dispatcher.Post(() =>
+        {
+            doc.HostRoleNotice = NoticeFor(me.Role, host.Name);
+            if (announce)
+            {
+                doc.StatusText = DeviceRoleText.Paired(me.Role);
+            }
+
+            var index = _knownHosts.FindIndex(h => h.Url == host.Url);
+            if (index >= 0 && _knownHosts[index].Role != me.Role)
+            {
+                _knownHosts[index] = _knownHosts[index] with { Role = me.Role };
+                _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+            }
+        });
     }
 
     public async Task<Agnes.Abstractions.ProviderAuthStatus?> CheckAgentAuthAsync(SessionDocument doc, string adapterId)
@@ -2753,7 +3236,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     }
 
     public bool IsForgettableHost(string url)
+#if DEBUG
         => url != SimulatedHost.Url && url != RecordedHost.Url;
+#else
+        // The simulated host is not built in here, so a sim:// entry can only be stale state from a Debug
+        // run — which the user should be able to remove rather than being stuck with.
+        => url != RecordedHost.Url;
+#endif
 
     public Task ForgetHostAsync(SessionDocument doc, KnownHost host)
     {
@@ -2821,14 +3310,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             ? Agnes.Client.PinnedTls.CreateClient(fingerprint)
             : null;
         var pairingFailed = false;
+        var justPaired = false;
         if (!string.IsNullOrEmpty(codeOrToken))
         {
             try
             {
                 _dispatcher.Post(() => doc.StatusText = "Pairing…");
                 var deviceName = $"{Environment.MachineName} (desktop)";
-                var paired = await Agnes.Client.DevicePairing.PairAsync(url, codeOrToken, deviceName, pinnedHttp);
-                token = paired.Token;
+                token = (await Agnes.Client.DevicePairing.PairAsync(url, codeOrToken, deviceName, pinnedHttp)).Token;
+                justPaired = true;
             }
             catch
             {
@@ -2838,7 +3328,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         // Persist ONLY after a successful connection, so a wrong URL / expired code never gets saved.
         var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, token, fingerprint);
-        var connected = await SelectHostAsync(doc, host);
+        var connected = await SelectHostAsync(doc, host, announceRole: justPaired);
         if (connected)
         {
             if (!_knownHosts.Any(h => h.Url == host.Url))
@@ -2914,8 +3404,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var deviceName = $"{Environment.MachineName} (desktop)";
             var paired = await Agnes.Client.KeypairEnrollment.AuthenticateAsync(url, deviceName, httpClient: http).ConfigureAwait(false);
 
-            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
-            var connected = await SelectHostAsync(doc, host);
+            var host = new KnownHost(
+                string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
+            var connected = await SelectHostAsync(doc, host, announceRole: true);
             if (connected)
             {
                 if (!_knownHosts.Any(h => h.Url == host.Url))
@@ -2971,8 +3462,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 .CompleteAsync(url, methods.GitHubClientId, code, deviceName, hostClient: http).ConfigureAwait(false);
 
             // Same persist-on-successful-connect flow as AddHostAsync — never save a host we couldn't reach.
-            var host = new KnownHost(string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
-            var connected = await SelectHostAsync(doc, host);
+            var host = new KnownHost(
+                string.IsNullOrWhiteSpace(doc.NewHostName) ? url : doc.NewHostName.Trim(), url, paired.Token, fingerprint);
+            var connected = await SelectHostAsync(doc, host, announceRole: true);
             if (connected)
             {
                 if (!_knownHosts.Any(h => h.Url == host.Url))
@@ -3006,7 +3498,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
-    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
+    public async Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false)
     {
         if (doc.Host is null)
         {
@@ -3032,7 +3524,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         try
         {
-            var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode, useSandbox: useSandbox, modelId: modelId);
+            var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode, useSandbox: useSandbox, modelId: modelId, graphical: graphical);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             var title = ProjectTitle(info.WorkingDirectory, displayName);
             _dispatcher.Post(() =>
@@ -3043,6 +3535,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 }
 
                 doc.AgentName = displayName;
+                // What the host actually did about the screen, from its own answer rather than from what we
+                // asked for. A host may refuse graphical sandboxes outright (that comes back as an exception),
+                // but it may also simply open the session without one — and then the only visible difference
+                // is a Screen button that never appears, which looks like a broken client.
+                doc.ScreenDeclined = graphical && !info.HasDisplay;
                 // Set the folder-derived base title BEFORE attaching, so if the session already carries an
                 // agent title (replayed from the snapshot) AttachSession's title wins instead of being clobbered.
                 doc.Title = title;
@@ -3743,7 +4240,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             CanClose = true,
             Descriptor = descriptor,
             HostName = descriptor.HostName,
-            AgentName = descriptor.Title,
+            AgentName = descriptor.AdapterId, // the agent, not the folder — see RestoreAsync
             Pinned = descriptor.Pinned,
         };
         ApplyTags(doc, descriptor.Tags);

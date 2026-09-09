@@ -60,7 +60,53 @@ public sealed partial class HostLink : ObservableObject
     /// <summary>Whether this is a built-in host the user can't remove (the offline demo).</summary>
     public bool IsBuiltIn => DemoHost.IsDemo(Url);
 
+    /// <summary>What this device is on that host, or null while it hasn't been asked (an old host never
+    /// answers, and that stays null forever — which is exactly "say nothing").</summary>
+    public Agnes.Protocol.DeviceRole? Role => Saved.Role;
+
+    /// <summary>True only once the host has actually said so. The one case that needs explaining.</summary>
+    public bool IsMember => Saved.Role == Agnes.Protocol.DeviceRole.Member;
+
+    /// <summary>Raised when the host's answer changed what we thought, so the book can write it down.</summary>
+    public event Action<HostLink>? RoleChanged;
+
     public void Rename(string name) => Saved = Saved with { Name = name };
+
+    /// <summary>
+    /// Asks the host what this device is (<c>GET /devices/me</c>) and remembers it. Best-effort in every
+    /// direction: the demo host isn't asked, an old host answers nothing, and a failure leaves whatever we
+    /// last knew — nothing here is worth interrupting a connection over.
+    /// </summary>
+    public async Task<Agnes.Protocol.DeviceRole?> RefreshRoleAsync()
+    {
+        if (IsBuiltIn || !Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            return Role;
+        }
+
+        var me = await Agnes.Client.PairingManagement.MeAsync(Url, Saved.Token, Http).ConfigureAwait(false);
+        if (me is null)
+        {
+            return Role;
+        }
+
+        _dispatcher.Post(() => SetRole(me.Role));
+        return me.Role;
+    }
+
+    /// <summary>Records a role the host stated — at pairing, or on a later <c>/devices/me</c>.</summary>
+    public void SetRole(Agnes.Protocol.DeviceRole role)
+    {
+        if (Saved.Role == role)
+        {
+            return;
+        }
+
+        Saved = Saved with { Role = role };
+        OnPropertyChanged(nameof(Role));
+        OnPropertyChanged(nameof(IsMember));
+        RoleChanged?.Invoke(this);
+    }
 
     /// <summary>Connects (or returns the existing connection). Concurrent callers share one attempt, so a
     /// screen that needs the host and a background restore that also needs it don't dial twice.</summary>
@@ -89,6 +135,10 @@ public sealed partial class HostLink : ObservableObject
                 Host = host;
                 State = host.State;
             });
+
+            // What this device is here decides whether an empty session list needs explaining. Asked on
+            // every connect and off the critical path: the connection is already usable either way.
+            _ = RefreshRoleAsync();
             return host;
         }
         catch (Exception ex)
@@ -119,13 +169,24 @@ public sealed class HostBook
         _connector = connector;
         _dispatcher = dispatcher;
 
-        // The offline demo host is always present: the app has something to show before you have
-        // anywhere to connect to, which is the difference between "empty app" and "try it now".
-        _links.Add(new HostLink(DemoHost.Saved, connector, dispatcher));
+#if DEBUG
+        // Debug only: the app has something to show before you have anywhere to connect to. A shipped
+        // build lists only hosts the user actually paired — a fake one in that list is worse than an
+        // empty list, because it looks like real data.
+        _links.Add(Track(new HostLink(DemoHost.Saved, connector, dispatcher)));
+#endif
         foreach (var saved in HostRegistry.Load())
         {
-            _links.Add(new HostLink(saved, connector, dispatcher));
+            _links.Add(Track(new HostLink(saved, connector, dispatcher)));
         }
+    }
+
+    /// <summary>Watches a link for a role the host stated, so the answer survives the next launch and the
+    /// explanation can be on screen before the round trip that confirms it.</summary>
+    private HostLink Track(HostLink link)
+    {
+        link.RoleChanged += _ => Persist();
+        return link;
     }
 
     public IReadOnlyList<HostLink> Links => _links;
@@ -145,7 +206,7 @@ public sealed class HostBook
             _links.Remove(existing);
         }
 
-        var link = new HostLink(saved, _connector, _dispatcher);
+        var link = Track(new HostLink(saved, _connector, _dispatcher));
         _links.Add(link);
         Persist();
         return link;
@@ -170,12 +231,18 @@ public sealed class HostBook
     public Task ConnectAllAsync() => Task.WhenAll(_links.Select(l => l.ConnectAsync()));
 }
 
-/// <summary>The built-in, offline simulated host.</summary>
+/// <summary>The built-in, offline simulated host (Debug builds only — see <see cref="MobileConnector"/>).
+/// <see cref="IsDemo"/> stays compiled in Release so the <c>sim://</c> check still works on any URL that
+/// somehow survives in saved state from a Debug run; it simply never matches anything the app adds.</summary>
 public static class DemoHost
 {
     public const string Url = "sim://demo";
 
+#if DEBUG
+    /// <summary>The list entry itself, which only a Debug build ever adds — so it is only a Debug build
+    /// that carries the demo host's name.</summary>
     public static SavedHost Saved { get; } = new("Demo (offline)", Url, string.Empty);
+#endif
 
     public static bool IsDemo(string url) => url.StartsWith("sim:", StringComparison.OrdinalIgnoreCase);
 }

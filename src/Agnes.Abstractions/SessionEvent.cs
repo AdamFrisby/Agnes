@@ -20,6 +20,10 @@ public enum ToolKind
     Think,
     Fetch,
     Other,
+
+    /// <summary>Delegating work to a subagent. Appended last on purpose: the kind is persisted in the
+    /// event log by ordinal, so new members go at the end or every stored event shifts meaning.</summary>
+    Subagent,
 }
 
 /// <summary>Lifecycle state of a tool call.</summary>
@@ -73,6 +77,9 @@ public sealed record PlanEntry(string Content, string Status, string? Priority =
 [JsonDerivedType(typeof(GitCredentialEvent), "git_credential")]
 [JsonDerivedType(typeof(SessionTitleEvent), "session_title")]
 [JsonDerivedType(typeof(PendingQueueEvent), "pending_queue")]
+[JsonDerivedType(typeof(FileSharedEvent), "file_shared")]
+[JsonDerivedType(typeof(DisplayControlChangedEvent), "display_control")]
+[JsonDerivedType(typeof(AgentStatusEvent), "agent_status")]
 public abstract record SessionEvent : Events.IAgnesEvent
 {
     /// <summary>Monotonic, per-session ordering key. Assigned by the host on append.</summary>
@@ -151,8 +158,13 @@ public sealed record QuestionAnsweredEvent(string RequestId) : SessionEvent;
 /// <summary>Raw output from the CLI-fallback terminal attached to this session.</summary>
 public sealed record TerminalOutputEvent(string TerminalId, string Data) : SessionEvent;
 
-/// <summary>An agent turn finished.</summary>
-public sealed record TurnEndedEvent(StopReason Reason) : SessionEvent;
+/// <summary>
+/// An agent turn finished. <see cref="RawReason"/> preserves the adapter's own wire value verbatim, because
+/// <see cref="Reason"/> is a lossy narrowing: an agent may report a reason outside the known set, and without
+/// the raw string an unrecognised stop is indistinguishable from a clean completion after the fact. Null when
+/// the adapter has no wire-level reason (or for events recorded before this was captured).
+/// </summary>
+public sealed record TurnEndedEvent(StopReason Reason, string? RawReason = null) : SessionEvent;
 
 /// <summary>
 /// Real token/cost usage numbers (the single shared shape for usage across the domain event, the wire, and
@@ -160,12 +172,31 @@ public sealed record TurnEndedEvent(StopReason Reason) : SessionEvent;
 /// nullable and nothing is estimated or fabricated: <see cref="ContextUsed"/> is the context-window
 /// occupancy the model reported, <see cref="ContextWindow"/> is the model's real window (when known),
 /// <see cref="OutputTokens"/> is tokens produced, and <see cref="CostUsd"/> is the cost the CLI reported.
+///
+/// <para><b>Levels and flows are mixed here, deliberately.</b> <see cref="ContextUsed"/> and
+/// <see cref="ContextWindow"/> describe the window's <em>state</em> at the moment of the report, so a
+/// client keeps the latest and must never add them up. <see cref="InputTokens"/>,
+/// <see cref="CacheReadTokens"/>, <see cref="CacheWriteTokens"/> and <see cref="OutputTokens"/> are what
+/// that one model call <em>consumed</em>, so they accumulate — which is what makes a session total
+/// possible at all, and why summing occupancy instead would have produced a number meaning nothing.</para>
 /// </summary>
 public sealed record UsageMetrics(
     long? ContextUsed = null,
     long? ContextWindow = null,
     long? OutputTokens = null,
-    double? CostUsd = null);
+    double? CostUsd = null,
+    long? InputTokens = null,
+    long? CacheReadTokens = null,
+    long? CacheWriteTokens = null)
+{
+    /// <summary>
+    /// Whether this report breaks its input down by kind. Only some adapters can: Claude's stream
+    /// states fresh, cache-read and cache-written input separately, while ACP's <c>usage_update</c>
+    /// reports occupancy and cost alone. Nothing is inferred to fill the gap — a client shows the
+    /// breakdown where an agent gives one and says nothing where it doesn't.
+    /// </summary>
+    public bool HasTokenBreakdown => InputTokens is not null || CacheReadTokens is not null || CacheWriteTokens is not null;
+}
 
 /// <summary>Real token/cost usage the agent reported (today: the native Claude Code adapter, from the
 /// stream's per-message and result <c>usage</c> blocks). Each event may carry only some fields (context
@@ -229,3 +260,59 @@ public sealed record SubagentStartedEvent(string SubagentId, string Name, string
 /// the parent's transcript read-only above a "Forked from…" divider (sessions/01).
 /// </summary>
 public sealed record ForkedFromEvent(string ParentSessionId, long ParentSequence) : SessionEvent;
+
+/// <summary>
+/// The agent sent the user a file: a screenshot, a report, a build — something to look at rather than a
+/// diff to review. The host copied it to a stable place under the session's workspace
+/// (<c>.agnes/shared/&lt;FileId&gt;/&lt;FileName&gt;</c>) at the moment of sending, so a later edit or
+/// deletion by the agent cannot change what the person receives, and every client fetches it through the
+/// ordinary guarded workspace download path by <see cref="RelativePath"/>.
+/// </summary>
+/// <param name="FileId">Stable id (also the folder under <c>.agnes/shared</c>).</param>
+/// <param name="FileName">Leaf name, as the person will see and save it.</param>
+/// <param name="RelativePath">Workspace-relative, POSIX-separated path of the stored copy.</param>
+/// <param name="Size">Bytes.</param>
+/// <param name="MimeType">Best-effort from the extension; null when unknown.</param>
+/// <param name="Caption">The agent's one line of context ("before vs after"), or null.</param>
+public sealed record FileSharedEvent(
+    string FileId,
+    string FileName,
+    string RelativePath,
+    long Size,
+    string? MimeType,
+    string? Caption) : SessionEvent;
+
+/// <summary>Who holds the display of a graphical session.</summary>
+public enum DisplayControlHolder
+{
+    /// <summary>Nobody is driving; the agent may take input when its next turn starts.</summary>
+    None,
+    /// <summary>The agent drives; its input rides the log as tool calls.</summary>
+    Agent,
+    /// <summary>A person has taken the mouse. Agent input tools refuse until it is handed back.</summary>
+    User,
+}
+
+/// <summary>
+/// Control of a graphical session's display changed hands. This is the only trace a human's use of the
+/// display leaves in the log: their pointer and keystrokes are never recorded (they are routinely the
+/// credential the person took control in order to type), and frames are not facts, so they never ride
+/// the log either.
+/// </summary>
+/// <param name="DeviceId">The device that took or released control; null for the agent or a timeout.</param>
+public sealed record DisplayControlChangedEvent(DisplayControlHolder Holder, string? DeviceId) : SessionEvent;
+
+/// <summary>
+/// The agent's own one-line status, reported through the <c>report_status</c> tool on the host's MCP
+/// server: what it found, what it is doing now, and how that fits the plan. One or two sentences, never
+/// a transcript. It exists because a person running many agents cannot read many transcripts, and a
+/// recap written by a second model over the first one's output is both late and expensive; the agent
+/// itself already knows the sentence.
+/// </summary>
+/// <remarks>
+/// Rides the log like every other fact so all clients agree on the latest line, but it is not a
+/// transcript item: heads show the most recent one in headers, overviews and lists, and in a session
+/// the person has not looked at for a while. The host rate-limits reports per session and clips them to
+/// one line.
+/// </remarks>
+public sealed record AgentStatusEvent(string Status) : SessionEvent;

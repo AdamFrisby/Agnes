@@ -84,7 +84,10 @@ public interface IAgnesHost : IAsyncDisposable
     Task<NegotiatedCapabilities> NegotiateAsync(ClientCapabilities client)
         => Task.FromResult(new NegotiatedCapabilities([]));
 
-    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
+    /// <param name="graphical">Ask for a graphical sandbox — a 1280×800 display the agent can see and drive
+    /// and a person can watch over the display channel. Implies a sandbox, and the host refuses it unless the
+    /// operator allows graphical sandboxes. Trailing-optional so every existing caller is unaffected.</param>
+    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false);
 
     /// <summary>The sessions already on this host that this client may reach — live or dormant — so a device
     /// that has just paired can rejoin work in progress rather than only start something new. The host filters
@@ -157,8 +160,22 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Writes raw input bytes (keystrokes/paste) to an open fallback terminal. Default no-op.</summary>
     Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data) => Task.CompletedTask;
 
+    /// <summary>Opens the session's display channel (see <see cref="DisplayWire"/>). Only meaningful when the
+    /// session summary says <c>HasDisplay</c>; a host without the feature throws.</summary>
+    Task<IDisplayChannel> OpenDisplayAsync(string sessionId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not offer a display channel.");
+
     /// <summary>Resizes an open fallback terminal. Default no-op.</summary>
     Task ResizeTerminalAsync(string sessionId, string terminalId, int columns, int rows) => Task.CompletedTask;
+
+    /// <summary>
+    /// Opens (or re-attaches to) this session's agent console — the agent's own CLI run interactively in a
+    /// PTY, wherever the agent runs — returning its terminal id, or null when the agent offers none.
+    /// A second process, not a view onto the live agent, whose stdin is the ACP protocol channel.
+    /// Default: null, so a host or fixture without one simply offers no console.
+    /// </summary>
+    Task<string?> OpenAgentConsoleAsync(string sessionId, int columns = 120, int rows = 30)
+        => Task.FromResult<string?>(null);
 
     /// <summary>Starts a provider CLI's interactive login through the same CLI-fallback terminal path as the
     /// in-session terminal, returning the opened terminal id. Default: unsupported.</summary>
@@ -360,6 +377,18 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Completed background runs (newest first).</summary>
     Task<IReadOnlyList<InboxRun>> GetInboxAsync();
 
+    /// <summary>Arms a standing goal on a session (nudged when it falls idle past the threshold).</summary>
+    Task<SessionGoal> ArmGoalAsync(ArmGoalRequest request) => throw new NotSupportedException();
+
+    /// <summary>Stops a goal nudging, recording why.</summary>
+    Task<SessionGoal?> DisarmGoalAsync(string goalId, string reason) => throw new NotSupportedException();
+
+    /// <summary>Deletes a goal outright.</summary>
+    Task RemoveGoalAsync(string goalId) => Task.CompletedTask;
+
+    /// <summary>Every goal on this host, newest first.</summary>
+    Task<IReadOnlyList<SessionGoal>> ListGoalsAsync() => Task.FromResult<IReadOnlyList<SessionGoal>>([]);
+
     /// <summary>Open permission requests across every session on this host that still need a human, newest
     /// first — the cross-session approvals list (notifications/02 tier 1). Default empty for hosts/fixtures
     /// that don't aggregate approvals.</summary>
@@ -368,6 +397,9 @@ public interface IAgnesHost : IAsyncDisposable
 
     /// <summary>Raised when a background run lands in the inbox.</summary>
     event Action<InboxRun>? InboxRunReceived;
+
+    /// <summary>A goal was armed, nudged or disarmed on this host.</summary>
+    event Action<SessionGoal>? GoalChanged;
 
     /// <summary>A session's read state changed on the host (sessionId, last-viewed sequence, sticky-unread).</summary>
     event Action<string, long, bool>? ReadStateChanged;

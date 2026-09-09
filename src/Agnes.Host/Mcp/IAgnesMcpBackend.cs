@@ -1,3 +1,4 @@
+using Agnes.Abstractions;
 using Agnes.Protocol;
 
 namespace Agnes.Host.Mcp;
@@ -35,6 +36,29 @@ public interface IAgnesMcpBackend
     /// leave the host — see <see cref="TranscriptPrivacyFilter"/>. Only an explicit opt-in includes them.
     /// </summary>
     Task<McpTranscript> ReadSessionTranscriptAsync(string sessionId, bool forwardRawContext, CancellationToken cancellationToken = default);
+
+    /// <summary>Arms a standing goal on a session (see <see cref="Agnes.Protocol.SessionGoal"/>).</summary>
+    Task<SessionGoal> ArmGoalAsync(ArmGoalRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Stops a goal nudging, recording why. Null when the goal id is unknown.</summary>
+    Task<SessionGoal?> DisarmGoalAsync(string goalId, string reason, CancellationToken cancellationToken = default);
+
+    /// <summary>Goals on one session, or every goal when <paramref name="sessionId"/> is null.</summary>
+    Task<IReadOnlyList<SessionGoal>> ListGoalsAsync(string? sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends the user a file from the session's workspace: copies it to a stable place and appends the
+    /// <see cref="FileSharedEvent"/> every client renders. Throws when the path escapes the workspace, is
+    /// missing, is too large, or an interceptor vetoes it — the message is the agent's error text.
+    /// </summary>
+    Task<FileSharedEvent> ShareFileAsync(string sessionId, string path, string? caption, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records the agent's one-line status. Returns what was actually kept — the line, and whether it was
+    /// clipped or cut to its first line — so the tool can tell the agent rather than truncating it silently.
+    /// Throws when the report is empty or an interceptor refused it; the message is the agent's error text.
+    /// </summary>
+    Task<Sessions.StatusReportResult> ReportStatusAsync(string sessionId, string status, CancellationToken cancellationToken = default);
 }
 
 /// <summary>An open/known session as an MCP client sees it.</summary>

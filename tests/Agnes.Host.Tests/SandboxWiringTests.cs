@@ -16,7 +16,7 @@ public class SandboxWiringTests
     }
 
     /// <summary>A fake sandbox that records lifecycle calls and wraps commands like Incus would.</summary>
-    private sealed class FakeSandbox : ISandbox, IPausableSandbox
+    private class FakeSandbox : ISandbox, IPausableSandbox
     {
         public string Id { get; } = "fake-vm-1";
         public string HomeDirectory => "/home/agnes";
@@ -36,8 +36,16 @@ public class SandboxWiringTests
             return ("fakebox", argv);
         }
 
+        /// <summary>Scripted stdout for a probe exec (argv -> stdout), so the model-availability check can be
+        /// driven without a real CLI.</summary>
+        public Func<IReadOnlyList<string>, SandboxExecResult>? OnExec { get; set; }
+        public List<IReadOnlyList<string>> Execs { get; } = [];
+
         public Task<SandboxExecResult> ExecAsync(SandboxExec exec, CancellationToken cancellationToken = default)
-            => Task.FromResult(new SandboxExecResult(0, "", ""));
+        {
+            Execs.Add(exec.Argv);
+            return Task.FromResult(OnExec?.Invoke(exec.Argv) ?? new SandboxExecResult(0, "", ""));
+        }
 
         public Task MaterializeCredentialAsync(SandboxCredential credential, CancellationToken cancellationToken = default)
         {
@@ -51,16 +59,36 @@ public class SandboxWiringTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask; // persist — never deletes
     }
 
+    /// <summary>
+    /// The same fake, with a screen. A separate type rather than a flag because that is how the question is
+    /// asked in production: <c>SessionManager.DisplaySourceFor</c> tests whether the sandbox <em>is</em> an
+    /// <see cref="IDisplaySource"/>, so a headless sandbox pretending to have a display would prove nothing.
+    /// </summary>
+    private sealed class FakeGraphicalSandbox(GraphicalDisplay display) : FakeSandbox, IDisplaySource
+    {
+        public GraphicalDisplay Display { get; } = display;
+
+        public Task<IDisplaySession> OpenDisplayAsync(CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("These tests never open the capture; the display layer has its own.");
+    }
+
     private sealed class FakeSandboxProvider : ISandboxProvider
     {
         public FakeSandbox Last { get; private set; } = null!;
         public List<SandboxSpec> Specs { get; } = [];
         public string Name => "fake";
 
+        /// <summary>Applied to each sandbox as it is created, so a test can script its exec before the
+        /// manager gets hold of it.</summary>
+        public Action<FakeSandbox>? OnCreated { get; set; }
+
         public Task<ISandbox> CreateAsync(SandboxSpec spec, CancellationToken cancellationToken = default)
         {
             Specs.Add(spec);
-            Last = new FakeSandbox();
+            // A spec with a display gets a sandbox that HAS one, the way a real provider hands back a
+            // different handle for a graphical VM.
+            Last = spec.Display is { } display ? new FakeGraphicalSandbox(display) : new FakeSandbox();
+            OnCreated?.Invoke(Last);
             return Task.FromResult<ISandbox>(Last);
         }
 
@@ -320,22 +348,175 @@ public class SandboxWiringTests
         var file = Path.Combine(Path.GetTempPath(), $"agnes-img-{Guid.NewGuid():n}.json");
         try
         {
-            // Default manifest bakes claude-code-native + codex, not opencode.
+            // Default manifest bakes the self-contained CLIs (codex, opencode, …) but not the
+            // node-based claude-code ACP bridge — so that's the one reported unavailable.
             var images = new Agnes.Host.Sessions.SandboxImageManager(
                 new SandboxImageManagerTests.FakeImageBuilder { Exists = true }, file,
                 NullLogger<Agnes.Host.Sessions.SandboxImageManager>.Instance);
             var manager = new SessionManager(
-                TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex"), new ScriptedAgentAdapter("opencode")),
+                TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex"), new ScriptedAgentAdapter("claude-code")),
                 new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance, images: images);
 
             var agents = manager.ListAgents();
             Assert.True(agents.Single(a => a.AdapterId == "codex").Available);
-            Assert.False(agents.Single(a => a.AdapterId == "opencode").Available);
+            Assert.False(agents.Single(a => a.AdapterId == "claude-code").Available);
         }
         finally
         {
             if (File.Exists(file)) File.Delete(file);
         }
+    }
+
+    /// <summary>A scripted agent whose CLI selects its model through the environment (as OpenCode's does),
+    /// so the sandbox wiring can be tested without core knowing about any concrete agent.</summary>
+    private sealed class EnvModelAgentAdapter(string id) : IAgentAdapter, IModelEnvironmentAdapter
+    {
+        private readonly ScriptedAgentAdapter _inner = new(id);
+
+        public AgentDescriptor Descriptor => _inner.Descriptor;
+
+        public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
+            => _inner.StartSessionAsync(options, cancellationToken);
+
+        public IReadOnlyDictionary<string, string> InlineConfigEnvironment(string? modelId, IReadOnlyList<InlineMcpServer> mcpServers)
+        {
+            var env = new Dictionary<string, string>();
+            if (!string.IsNullOrEmpty(modelId))
+            {
+                env["FAKE_MODEL_CONFIG"] = $"model={modelId}";
+            }
+
+            if (mcpServers.Count > 0)
+            {
+                env["FAKE_MCP_CONFIG"] = string.Join(",", mcpServers.Select(m => $"{m.Name}={m.Url}"));
+            }
+
+            return env;
+        }
+    }
+
+    [Fact]
+    public async Task Sandboxed_session_materializes_the_model_environment_into_the_guest()
+    {
+        // A sandboxed agent's environment is scrubbed by the run wrapper, so an env-selected model only
+        // works if it is materialized into the guest — argv-threading (the Claude Code route) can't reach it.
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new EnvModelAgentAdapter("envmodel")), new InMemoryEventStore(),
+            new NullBroadcaster(), NullLoggerFactory.Instance, TestPluginRegistries.Sandboxes(sandboxes));
+
+        await manager.OpenSessionAsync("envmodel", "/tmp/project", modelId: "vendor/model-x");
+
+        var env = Assert.Single(sandboxes.Last.Materialised).EnvironmentVariables;
+        Assert.Equal("model=vendor/model-x", env["FAKE_MODEL_CONFIG"]);
+    }
+
+    [Fact]
+    public async Task Sandboxed_session_without_a_model_materializes_no_model_environment()
+    {
+        // The re-stamp must still happen (so a previously-set variable is cleared), just with nothing in it.
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new EnvModelAgentAdapter("envmodel")), new InMemoryEventStore(),
+            new NullBroadcaster(), NullLoggerFactory.Instance, TestPluginRegistries.Sandboxes(sandboxes));
+
+        await manager.OpenSessionAsync("envmodel", "/tmp/project");
+
+        Assert.DoesNotContain("FAKE_MODEL_CONFIG", Assert.Single(sandboxes.Last.Materialised).EnvironmentVariables);
+    }
+
+
+    /// <summary>An agent whose catalogue is probed by running a command where it lives (as OpenCode's is).</summary>
+    private sealed class ProbeableAgentAdapter(string id, IReadOnlyList<string>? argv) : IAgentAdapter, IModelProbeAdapter
+    {
+        private readonly ScriptedAgentAdapter _inner = new(id);
+
+        public AgentDescriptor Descriptor => _inner.Descriptor;
+
+        public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
+            => _inner.StartSessionAsync(options, cancellationToken);
+
+        public IReadOnlyList<string>? ProbeArguments => argv;
+
+        public IReadOnlyList<ModelInfo> ParseProbeOutput(string stdout)
+            => [.. stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(line => new ModelInfo(line, line))];
+    }
+
+    private static async Task<IReadOnlyList<SessionEvent>> OpenWithProbeAsync(
+        FakeSandboxProvider sandboxes, IAgentAdapter adapter, string? modelId, Func<IReadOnlyList<string>, SandboxExecResult> onExec)
+    {
+        var store = new InMemoryEventStore();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(adapter), store, new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes));
+
+        // The provider hands out a fresh FakeSandbox per create, so the script is attached via the factory.
+        sandboxes.OnCreated = box => box.OnExec = onExec;
+
+        var info = await manager.OpenSessionAsync("probe", "/tmp/project", modelId: modelId);
+        return (await manager.GetSnapshotAsync(info.SessionId, 0)).Events;
+    }
+
+    [Fact]
+    public async Task A_model_the_sandboxed_agent_cannot_reach_is_reported_not_silently_substituted()
+    {
+        // The failure this guards against is silent: OpenCode asked for a model outside its catalogue
+        // streams from a different one without a word, so the session runs on a model nobody chose.
+        var sandboxes = new FakeSandboxProvider();
+        var events = await OpenWithProbeAsync(
+            sandboxes, new ProbeableAgentAdapter("probe", ["models"]), "vendor/premium",
+            _ => new SandboxExecResult(0, "vendor/free-a\nvendor/free-b\n", ""));
+
+        var notice = Assert.Single(events.OfType<NoticeEvent>(), n => n.IsError);
+        Assert.Contains("vendor/premium", notice.Message, StringComparison.Ordinal);
+        Assert.Contains(sandboxes.Last.Execs, argv => argv.SequenceEqual(new[] { "models" }));
+    }
+
+    [Fact]
+    public async Task A_model_the_sandboxed_agent_can_reach_is_not_reported()
+    {
+        var sandboxes = new FakeSandboxProvider();
+        var events = await OpenWithProbeAsync(
+            sandboxes, new ProbeableAgentAdapter("probe", ["models"]), "vendor/premium",
+            _ => new SandboxExecResult(0, "vendor/free-a\nvendor/premium\n", ""));
+
+        Assert.DoesNotContain(events.OfType<NoticeEvent>(), n => n.IsError);
+    }
+
+    [Fact]
+    public async Task An_unusable_probe_stays_quiet_rather_than_crying_wolf()
+    {
+        // A probe that fails, returns nothing, or isn't supported means "couldn't determine" — reporting a
+        // missing model on that basis would train the user to ignore the warning.
+        var sandboxes = new FakeSandboxProvider();
+
+        var failed = await OpenWithProbeAsync(
+            sandboxes, new ProbeableAgentAdapter("probe", ["models"]), "vendor/premium",
+            _ => new SandboxExecResult(127, "", "command not found"));
+        Assert.DoesNotContain(failed.OfType<NoticeEvent>(), n => n.IsError);
+
+        var empty = await OpenWithProbeAsync(
+            sandboxes, new ProbeableAgentAdapter("probe", ["models"]), "vendor/premium",
+            _ => new SandboxExecResult(0, "", ""));
+        Assert.DoesNotContain(empty.OfType<NoticeEvent>(), n => n.IsError);
+
+        var unsupported = await OpenWithProbeAsync(
+            sandboxes, new ProbeableAgentAdapter("probe", argv: null), "vendor/premium",
+            _ => new SandboxExecResult(0, "vendor/free-a\n", ""));
+        Assert.DoesNotContain(unsupported.OfType<NoticeEvent>(), n => n.IsError);
+    }
+
+    [Fact]
+    public async Task No_model_selected_means_no_probe_at_all()
+    {
+        var sandboxes = new FakeSandboxProvider();
+        var events = await OpenWithProbeAsync(
+            sandboxes, new ProbeableAgentAdapter("probe", ["models"]), modelId: null,
+            _ => new SandboxExecResult(0, "vendor/free-a\n", ""));
+
+        Assert.DoesNotContain(events.OfType<NoticeEvent>(), n => n.IsError);
+        Assert.DoesNotContain(sandboxes.Last.Execs, argv => argv.SequenceEqual(new[] { "models" }));
     }
 
     [Fact]
@@ -361,6 +542,69 @@ public class SandboxWiringTests
         {
             if (File.Exists(file)) File.Delete(file);
         }
+    }
+
+    /// <summary>
+    /// A session that asked for a screen has to launch from the image that HAS one. The headless tiers carry
+    /// no X server, so a graphical session booted from one comes up rendering nothing and its capture waits
+    /// forever for a first scanout — a failure that reports itself nowhere.
+    /// </summary>
+    [Fact]
+    public async Task A_graphical_session_launches_from_the_graphical_image_and_says_it_has_a_screen()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"agnes-img-{Guid.NewGuid():n}.json");
+        try
+        {
+            var builder = new SandboxImageManagerTests.FakeImageBuilder { Exists = false };
+            var images = new Agnes.Host.Sessions.SandboxImageManager(
+                builder, file, NullLogger<Agnes.Host.Sessions.SandboxImageManager>.Instance);
+            var sandboxes = new FakeSandboxProvider();
+            await using var manager = new SessionManager(
+                TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex")), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()], images: images,
+                security: new SessionSecurityOptions { AllowGraphicalSandboxes = true });
+
+            var info = await manager.OpenSessionAsync("codex", "/tmp/project", graphical: true);
+
+            var spec = sandboxes.Specs.Single();
+            Assert.Equal("agnes-graphical", spec.ImageReference);
+            Assert.NotNull(spec.Display);
+            Assert.Contains("xserver-xorg-core", builder.LastManifest!.AptPackages);
+            // And the client is told, on the open itself, that the request was honoured — asking is not the
+            // same as getting, and a client that assumed would offer a screen that isn't there.
+            Assert.True(info.HasDisplay);
+        }
+        finally
+        {
+            if (File.Exists(file)) File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public async Task A_headless_session_says_it_has_no_screen()
+    {
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex")), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()]);
+
+        var info = await manager.OpenSessionAsync("codex", "/tmp/project");
+
+        Assert.Null(sandboxes.Specs.Single().Display);
+        Assert.False(info.HasDisplay);
+    }
+
+    [Fact]
+    public async Task A_host_that_forbids_graphical_sandboxes_refuses_rather_than_opening_a_blind_one()
+    {
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex")), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()]);
+
+        await Assert.ThrowsAsync<SessionSecurityException>(
+            () => manager.OpenSessionAsync("codex", "/tmp/project", graphical: true));
+        Assert.Empty(sandboxes.Specs);
     }
 
     [Fact]

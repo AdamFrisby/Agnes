@@ -36,6 +36,29 @@ internal sealed class HostSession : IAsyncDisposable
     private bool _turnActive;
     private SendPolicy _sendPolicy = SendPolicy.QueueInAgent;
 
+    // What the in-flight turn has produced, and how many turns in a row have now stalled. Both are touched
+    // only from the single-threaded event pump (plus the turn start), so they need no lock.
+    private readonly AutoContinueOptions _autoContinue;
+    private TurnProductivity _turn = TurnProductivity.Empty;
+    private int _consecutiveStalls;
+
+    // How many appends in a row have failed. Storage is allowed to hiccup without costing the session its
+    // agent (see TryAppendAndPublishAsync); a run this long means it is broken rather than busy.
+    private int _consecutiveAppendFailures;
+    private const int MaxConsecutiveAppendFailures = 20;
+
+    // Liveness: when this session last emitted anything, and how many tool calls are still outstanding.
+    // Together they separate "working" from "wedged" — a tool call can legitimately run for hours with no
+    // events at all (a subagent), so silence only means something when nothing is outstanding.
+    private long _lastEventTicks = DateTimeOffset.UtcNow.UtcTicks;
+    private int _toolCallsInFlight;
+
+    /// <summary>When this session last emitted an event.</summary>
+    public DateTimeOffset LastEventAt => new(Interlocked.Read(ref _lastEventTicks), TimeSpan.Zero);
+
+    /// <summary>Tool calls started but not yet reported completed or failed.</summary>
+    public int ToolCallsInFlight => Volatile.Read(ref _toolCallsInFlight);
+
     public HostSession(
         string sessionId,
         string adapterId,
@@ -44,7 +67,8 @@ internal sealed class HostSession : IAsyncDisposable
         IEventStore store,
         ISessionBroadcaster broadcaster,
         ILogger logger,
-        Agnes.Abstractions.Events.IEventBus? bus = null)
+        Agnes.Abstractions.Events.IEventBus? bus = null,
+        AutoContinueOptions? autoContinue = null)
     {
         SessionId = sessionId;
         AdapterId = adapterId;
@@ -54,6 +78,7 @@ internal sealed class HostSession : IAsyncDisposable
         _broadcaster = broadcaster;
         _logger = logger;
         _bus = bus ?? new Agnes.Abstractions.Events.EventBus();
+        _autoContinue = autoContinue ?? new AutoContinueOptions();
         _pump = Task.Run(PumpAsync);
     }
 
@@ -118,6 +143,8 @@ internal sealed class HostSession : IAsyncDisposable
     /// by <see cref="SubmitAsync"/>, and this is also the auto-send target when a queued message is drained).</summary>
     public async Task PromptAsync(IReadOnlyList<ContentBlock> content)
     {
+        // Claim the turn before the message is logged (StartTurn re-asserts it): between the two there is
+        // otherwise a window where a concurrent Submit sees an idle session and sends instead of queueing.
         lock (_queueGate)
         {
             _turnActive = true;
@@ -133,6 +160,21 @@ internal sealed class HostSession : IAsyncDisposable
             toAgent = [.. seed, .. content];
             _pendingSeed = null;
         }
+
+        StartTurn(toAgent);
+    }
+
+    /// <summary>Drives an agent turn without logging a user message. Split out from
+    /// <see cref="PromptAsync"/> so the host can continue a stalled turn without the transcript claiming the
+    /// person typed the continuation.</summary>
+    private void StartTurn(IReadOnlyList<ContentBlock> toAgent)
+    {
+        lock (_queueGate)
+        {
+            _turnActive = true;
+        }
+
+        _turn = TurnProductivity.Empty;
 
         _ = Task.Run(async () =>
         {
@@ -343,7 +385,9 @@ internal sealed class HostSession : IAsyncDisposable
 
     // Turn just ended: clear the busy flag, and under the default QueueInAgent policy auto-send the head of
     // the queue (seamlessly continuing into the next turn so a concurrent submit can't slip in between).
-    private async Task OnTurnEndedAsync()
+    /// <summary>Drains the next queued message into a new turn, if the policy allows one. Returns whether a
+    /// message was drained — i.e. whether the session has already moved on to the user's next instruction.</summary>
+    private async Task<bool> OnTurnEndedAsync()
     {
         PendingMessage? next;
         lock (_queueGate)
@@ -361,11 +405,59 @@ internal sealed class HostSession : IAsyncDisposable
             }
         }
 
-        if (next is not null)
+        if (next is null)
         {
-            await PublishQueueAsync().ConfigureAwait(false);
-            await PromptAsync(next.Content).ConfigureAwait(false);
+            return false;
         }
+
+        await PublishQueueAsync().ConfigureAwait(false);
+        await PromptAsync(next.Content).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Reacts to a turn that ended having produced nothing actionable. The stall is always reported — that
+    /// is the point, since the agent itself called it a normal completion — and then optionally continued,
+    /// up to <see cref="AutoContinueOptions.MaxAttempts"/> consecutive times.
+    /// </summary>
+    private async Task HandleStalledTurnAsync(TurnEndedEvent turnEnded)
+    {
+        if (_cts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _consecutiveStalls++;
+
+        // The agent's own wire value, when it said something more specific than the narrowed enum.
+        var detail = turnEnded.RawReason is { Length: > 0 } raw && raw != "end_turn"
+            ? $" (the agent reported '{raw}')"
+            : string.Empty;
+
+        var max = _autoContinue.MaxAttempts;
+        if (!_autoContinue.Enabled || max <= 0 || _consecutiveStalls > max)
+        {
+            var giveUp = _autoContinue.Enabled && max > 0
+                ? $" Auto-continue already retried {max} time(s) without progress, so it has stopped."
+                : string.Empty;
+            _logger.LogWarning(
+                "Session {SessionId}: turn produced no message and no tool call{Detail}; not continuing " +
+                "(attempt {Attempt}, cap {Cap}, enabled {Enabled})",
+                SessionId, detail, _consecutiveStalls, max, _autoContinue.Enabled);
+            await AppendAndPublishAsync(new NoticeEvent(
+                $"The agent ended its turn without producing a result{detail}.{giveUp} Send a message to continue.",
+                IsError: true)).ConfigureAwait(false);
+            return;
+        }
+
+        _logger.LogInformation(
+            "Session {SessionId}: turn produced no message and no tool call{Detail}; continuing automatically " +
+            "({Attempt}/{Cap})", SessionId, detail, _consecutiveStalls, max);
+        await AppendAndPublishAsync(new NoticeEvent(
+            $"The agent ended its turn without producing a result{detail} — continuing automatically "
+            + $"(attempt {_consecutiveStalls} of {max}).")).ConfigureAwait(false);
+
+        StartTurn([new TextContent(_autoContinue.Prompt)]);
     }
 
     public Task CancelAsync() => _agent.CancelAsync(_cts.Token);
@@ -392,10 +484,13 @@ internal sealed class HostSession : IAsyncDisposable
         => _agent.AnswerQuestionAsync(requestId, answers, _cts.Token);
 
     /// <summary>
-    /// Surfaces a permission card for a brokered git push and waits for the user's answer (times out to
-    /// a deny so a never-answered push doesn't hang the broker forever). Returns true iff allowed.
+    /// Surfaces a permission card for a brokered git push and waits for the user's answer. A card nobody
+    /// answers times out to a deny, so a never-answered push can't hang the broker — but the result
+    /// distinguishes that from a deliberate "Deny", because the two must not be remembered the same way:
+    /// caching an unanswered card as a refusal locks the repo out for the rest of the session and the user
+    /// is never asked again, so approving afterwards has no effect.
     /// </summary>
-    public async Task<bool> RequestGitPermissionAsync(string host, string? repo)
+    public async Task<GitConsentOutcome> RequestGitPermissionAsync(string host, string? repo)
     {
         var requestId = "gitcred-" + Guid.NewGuid().ToString("n");
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -410,6 +505,7 @@ internal sealed class HostSession : IAsyncDisposable
         await AppendAndPublishAsync(new PermissionRequestedEvent(requestId, string.Empty,
             $"Allow the sandboxed agent to use your GitHub account for {target}? (clone, fetch and push — asked once for this repository)", options)).ConfigureAwait(false);
 
+        var answered = false;
         bool allowed;
         try
         {
@@ -417,15 +513,28 @@ internal sealed class HostSession : IAsyncDisposable
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, _cts.Token);
             await using var registration = linked.Token.Register(() => tcs.TrySetResult(false));
             allowed = await tcs.Task.ConfigureAwait(false);
+            // The card is removed by whoever answers it; still present means nothing answered, so this
+            // result came from the timeout rather than from a person.
+            answered = !_hostPermissions.ContainsKey(requestId);
         }
         finally
         {
             _hostPermissions.TryRemove(requestId, out _);
         }
 
+        var outcome = allowed ? GitConsentOutcome.Allowed
+            : answered ? GitConsentOutcome.Denied
+            : GitConsentOutcome.Unanswered;
+
         await AppendAndPublishAsync(new PermissionResolvedEvent(requestId, allowed ? "allow" : "deny",
-            allowed ? PermissionOutcome.Allowed : PermissionOutcome.Denied)).ConfigureAwait(false);
-        return allowed;
+            outcome switch
+            {
+                GitConsentOutcome.Allowed => PermissionOutcome.Allowed,
+                GitConsentOutcome.Denied => PermissionOutcome.Denied,
+                // Cancelled reads correctly in the transcript: nobody refused, the card simply expired.
+                _ => PermissionOutcome.Cancelled,
+            })).ConfigureAwait(false);
+        return outcome;
     }
 
     private async Task PumpAsync()
@@ -439,12 +548,29 @@ internal sealed class HostSession : IAsyncDisposable
                     AgentSessionStarted?.Invoke(started.AgentSessionId);
                 }
 
-                await AppendAndPublishAsync(@event).ConfigureAwait(false);
+                _turn = _turn.WithEvent(@event);
+                TrackLiveness(@event);
 
-                if (@event is TurnEndedEvent)
+                await TryAppendAndPublishAsync(@event).ConfigureAwait(false);
+
+                if (@event is TurnEndedEvent turnEnded)
                 {
+                    // Decide before draining: OnTurnEndedAsync may start the next turn and reset the tally.
+                    var stalled = _turn.IsStall(turnEnded.Reason);
+                    if (!stalled)
+                    {
+                        _consecutiveStalls = 0;
+                    }
+
                     TurnCompleted?.Invoke();
-                    await OnTurnEndedAsync().ConfigureAwait(false);
+
+                    // A queued user message wins over auto-continue — the person has already said what
+                    // should happen next, so resuming the stalled turn would talk over them.
+                    var drained = await OnTurnEndedAsync().ConfigureAwait(false);
+                    if (stalled && !drained)
+                    {
+                        await HandleStalledTurnAsync(turnEnded).ConfigureAwait(false);
+                    }
                 }
                 else if (@event is AgentErrorEvent error)
                 {
@@ -467,6 +593,37 @@ internal sealed class HostSession : IAsyncDisposable
         }
     }
 
+    /// <summary>Updates the liveness counters from one streamed event. Only the tool-call lifecycle moves
+    /// the in-flight count; every event counts as a sign of life.</summary>
+    private void TrackLiveness(SessionEvent @event)
+    {
+        Interlocked.Exchange(ref _lastEventTicks, DateTimeOffset.UtcNow.UtcTicks);
+
+        switch (@event)
+        {
+            case ToolCallEvent { Status: ToolCallStatus.Pending or ToolCallStatus.InProgress }:
+                Interlocked.Increment(ref _toolCallsInFlight);
+                break;
+
+            // A tool that arrives already finished never counted as outstanding, so nothing to release.
+            case ToolCallUpdateEvent { Status: ToolCallStatus.Completed or ToolCallStatus.Failed }:
+                // Clamp at zero: an agent may report a terminal update for a call we never saw start
+                // (a resumed session replays mid-flight work), and a negative count would read as "idle".
+                if (Volatile.Read(ref _toolCallsInFlight) > 0)
+                {
+                    Interlocked.Decrement(ref _toolCallsInFlight);
+                }
+
+                break;
+
+            case TurnEndedEvent:
+                // A finished turn owns nothing: anything still outstanding was abandoned with it, and
+                // carrying it forward would make the next quiet turn look permanently busy.
+                Interlocked.Exchange(ref _toolCallsInFlight, 0);
+                break;
+        }
+    }
+
     private void SignalFaultIfUnexpected()
     {
         if (_cts.IsCancellationRequested)
@@ -482,7 +639,53 @@ internal sealed class HostSession : IAsyncDisposable
         }
     }
 
-    private async Task AppendAndPublishAsync(SessionEvent @event)
+    /// <summary>
+    /// Persists and publishes one event, absorbing a failure rather than letting it escape the pump.
+    /// </summary>
+    /// <remarks>
+    /// <para>The pump reads the agent's stream in a single loop, so an exception thrown here used to unwind
+    /// out of that loop, trip the catch-all, and signal a fault — which restarts the CLI and resumes it with
+    /// <c>session/load</c>, replaying the entire conversation. A transient SQLite lock lasting milliseconds
+    /// therefore cost a live session its agent and forced a replay proportional to everything said so far.
+    /// That trade is never worth making: the durable log is behind us, the agent is still streaming, and
+    /// dropping one event is a smaller loss than tearing down the session that produces them.</para>
+    ///
+    /// <para>It is not unconditional. A storage layer that has failed <see cref="MaxConsecutiveAppendFailures"/>
+    /// times running is not hiccupping, and carrying on would mean recording nothing while appearing healthy;
+    /// at that point the original behaviour — fault, restart, resume — is the right one, so the exception is
+    /// allowed through. Any success resets the count, so only an unbroken run escalates.</para>
+    /// </remarks>
+    private async Task TryAppendAndPublishAsync(SessionEvent @event)
+    {
+        try
+        {
+            await AppendAndPublishAsync(@event).ConfigureAwait(false);
+            _consecutiveAppendFailures = 0;
+        }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+            // Session disposed mid-append — an intentional stop. Let the pump's own handler see it.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _consecutiveAppendFailures++;
+            _logger.LogError(
+                ex,
+                "Failed to record event for session {SessionId}; dropping it and continuing "
+                + "(consecutive failure {Failures} of {Max})",
+                SessionId, _consecutiveAppendFailures, MaxConsecutiveAppendFailures);
+
+            if (_consecutiveAppendFailures >= MaxConsecutiveAppendFailures)
+            {
+                throw;
+            }
+        }
+    }
+
+    /// <summary>Returns the STORED event — the same record carrying the sequence the log gave it — so a
+    /// caller that has to tell someone what it wrote (the file-sharing tool) can name that moment.</summary>
+    private async Task<SessionEvent> AppendAndPublishAsync(SessionEvent @event)
     {
         // Redaction hook: a plugin may suppress this event from reaching clients (still logged).
         var gate = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeAgentEventEvent(SessionId, @event)).ConfigureAwait(false);
@@ -496,6 +699,7 @@ internal sealed class HostSession : IAsyncDisposable
         // Every inbound agent event is dispatchable on the spine with full typing (SessionEvent : IAgnesEvent),
         // so a plugin can observe ToolCallEvent, TurnEndedEvent, etc. directly.
         await _bus.DispatchAsync(stored).ConfigureAwait(false);
+        return stored;
     }
 
     /// <summary>Records a forwarded MCP tool call in the session log (audit; from the forward proxy).</summary>
@@ -505,6 +709,32 @@ internal sealed class HostSession : IAsyncDisposable
     /// <summary>Records a brokered git-credential grant/denial in the session log (audit).</summary>
     public Task RecordGitCredentialAsync(string host, string? repo, bool allowed)
         => AppendAndPublishAsync(new GitCredentialEvent(host, repo, allowed));
+
+    /// <summary>
+    /// Records a file the agent sent the user. It takes the SAME path an agent's own events take —
+    /// interceptor gate, append, broadcast, spine — because that is exactly what makes it persisted,
+    /// sequenced, replayed to a client that joins later, and observable by a plugin. The push dispatcher
+    /// watches <c>BeforeAgentEventEvent</c>, so this is also how a phone learns a file arrived.
+    /// </summary>
+    public Task<SessionEvent> RecordFileSharedAsync(FileSharedEvent shared)
+        => AppendAndPublishAsync(shared);
+
+    /// <summary>
+    /// Records that control of the session's display changed hands. It takes the same path as everything
+    /// else here for the same reason: a client that joins tomorrow must be able to read, from the log alone,
+    /// that a person drove the screen between two of the agent's tool calls. The person's actual pointer and
+    /// keystrokes are never recorded — this handover is the whole trace they leave.
+    /// </summary>
+    public Task<SessionEvent> RecordDisplayControlAsync(DisplayControlChangedEvent changed)
+        => AppendAndPublishAsync(changed);
+
+    /// <summary>
+    /// Records the agent's own one-line status. Same path as everything else here, and for the same reason:
+    /// "what were you doing at half past two" is answerable only if the line is in the log next to the tool
+    /// calls it describes, rather than kept as a mutable field somewhere that only shows the latest one.
+    /// </summary>
+    public Task<SessionEvent> RecordAgentStatusAsync(AgentStatusEvent status)
+        => AppendAndPublishAsync(status);
 
     public async ValueTask DisposeAsync()
     {

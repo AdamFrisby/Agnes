@@ -35,4 +35,16 @@ public class NativeModelSelectionTests
 
         Assert.Equal(["--model", "opus"], spec.ModelArguments!("opus"));
     }
+
+    [Fact]
+    public void Native_claude_adapter_carries_the_system_prompt_addition()
+    {
+        // The host's composed system prompt (status nudge, prompt-library additions) must reach the native
+        // claude CLI too, not only the ACP adapter — a nudge heard only as MCP server instructions was ignored
+        // on a real turn. The CLI takes it as `--append-system-prompt <text>`.
+        var launch = ClaudeCodeNative.Create(NullLoggerFactory.Instance).Spec;
+
+        Assert.NotNull(launch.SystemPromptArguments);
+        Assert.Equal(["--append-system-prompt", "report often"], launch.SystemPromptArguments!("report often"));
+    }
 }

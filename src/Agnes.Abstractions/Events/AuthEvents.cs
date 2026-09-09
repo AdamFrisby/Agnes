@@ -21,3 +21,12 @@ public sealed class DeviceRevokedEvent(string deviceId) : IAgnesEvent
 {
     public string DeviceId { get; } = deviceId;
 }
+
+/// <summary>After an Owner promoted or demoted a device. <see cref="Role"/> is the new role's name
+/// ("Owner"/"Member") — a string, so this audit fact carries no dependency on the wire enum. Observe-only:
+/// the change has already been made and validated (the host's last Owner cannot be demoted).</summary>
+public sealed class DeviceRoleChangedEvent(string deviceId, string role) : IAgnesEvent
+{
+    public string DeviceId { get; } = deviceId;
+    public string Role { get; } = role;
+}

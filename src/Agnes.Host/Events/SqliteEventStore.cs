@@ -15,14 +15,10 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
 
     public SqliteEventStore(string databasePath)
     {
-        _connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
-        }.ToString();
+        _connectionString = SqliteDatabase.BuildConnectionString(databasePath);
 
         using var connection = Open();
+        SqliteDatabase.ConfigureFile(connection);
         using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -191,12 +187,7 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         return Convert.ToInt64(result);
     }
 
-    private SqliteConnection Open()
-    {
-        var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        return connection;
-    }
+    private SqliteConnection Open() => SqliteDatabase.Open(_connectionString);
 
     public void Dispose()
     {

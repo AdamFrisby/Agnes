@@ -87,6 +87,11 @@ public partial class App : Application
                         window.Activate();
                     }
                 });
+            // Save/open for files an agent sends. Resolved per call to whichever window is active, so a
+            // session dragged out into its own window parents its picker there rather than behind the shell.
+            viewModel.ReceivedFiles = new DesktopReceivedFileHandler(() =>
+                desktop.Windows.FirstOrDefault(w => w.IsActive) ?? window);
+
             window.Activated += (_, _) => viewModel.WindowActive = true;
             window.Deactivated += (_, _) => viewModel.WindowActive = false;
 

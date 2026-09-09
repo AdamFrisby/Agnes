@@ -32,6 +32,10 @@ public partial class SessionTabView : UserControl
     private bool _indexActive;    // the transcript is past the threshold: the bar's unit is a message index
     private bool _indexSeekScheduled;
     private KeymapService? _keymap;
+    // Ages ("2 min ago", "no update for 12 min") are computed, not pushed: nothing re-raises them when the
+    // clock moves, so the view that shows them ticks them — and only while it is on screen, which is why
+    // this starts and stops with the visual tree rather than with the session.
+    private readonly DispatcherTimer _statusTick = new() { Interval = System.TimeSpan.FromSeconds(30) };
 
     public SessionTabView()
     {
@@ -46,17 +50,27 @@ public partial class SessionTabView : UserControl
         }
 
         // Activating a tab re-attaches its view; land at the latest message rather than wherever it was.
+        // It is also the person arriving at this session, which is what retires the away band.
         AttachedToVisualTree += (_, _) =>
         {
             RequestScrollToBottom();
+            _session?.NoteUserInteraction();
+            _statusTick.Start();
             SetKeymap(KeymapBinder.GetService(this));
         };
         DetachedFromVisualTree += (_, _) =>
         {
             CancelWheelIdle();
             _scrollPolicy.ReadHistory();
+            _statusTick.Stop();
             SetKeymap(null);
         };
+        _statusTick.Tick += (_, _) => _session?.RaiseStatusAge();
+
+        // Any click inside the tab is a person paying attention to it. Tunnelled from the root so it covers
+        // the transcript, the panels and the composer alike, rather than one handler per surface.
+        AddHandler(InputElement.PointerPressedEvent, OnAnyPointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        AddHandler(InputElement.KeyDownEvent, OnAnyKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // Drop files (or an image) anywhere on the session to attach them to the composer.
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
@@ -222,8 +236,18 @@ public partial class SessionTabView : UserControl
             || sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height) <= 1;
     }
 
+    // ---- "someone is here" ----
+    // The away band exists to catch a person coming back to a tab they left running. Every one of these is
+    // proof they are back, so each one retires it; none of them does anything else.
+    private void OnAnyPointerPressed(object? sender, PointerPressedEventArgs e) => _session?.NoteUserInteraction();
+
+    private void OnAnyKeyDown(object? sender, KeyEventArgs e) => _session?.NoteUserInteraction();
+
     private void OnTranscriptWheel(object? sender, PointerWheelEventArgs e)
-        => BeginWheelGesture();
+    {
+        _session?.NoteUserInteraction(); // scrolling the conversation is reading it
+        BeginWheelGesture();
+    }
 
     private void BeginWheelGesture()
     {
@@ -793,6 +817,72 @@ public partial class SessionTabView : UserControl
         columns[4].MaxWidth = 760;
         Apply(columns[0], columns[1], vm.ShowLeftPanel, ref _leftWidth);
         Apply(columns[4], columns[3], vm.ShowRightPanel, ref _rightWidth);
+    }
+
+    // ---- inline previews for files the agent sent ----
+    // Decoded bitmaps, keyed by the shared file's id. Two reasons to keep them: the transcript virtualizes,
+    // so the same card is realized again every time it scrolls back into view, and a fetch costs a round
+    // trip to the host. The set is bounded by how many files one session received, which is small.
+    private readonly Dictionary<string, Avalonia.Media.Imaging.Bitmap> _sharedImages = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _sharedImagesLoading = new(StringComparer.Ordinal);
+
+    private async void OnSharedImageAttached(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        // The template realizes this element for every shared file and hides it for the ones that aren't
+        // images; attachment fires either way, so the kind is checked here or a pdf costs a pointless fetch.
+        if (sender is not Image image || image.DataContext is not SharedFileItem { IsImage: true } item)
+        {
+            return;
+        }
+
+        if (_sharedImages.TryGetValue(item.FileId, out var cached))
+        {
+            image.Source = cached;
+            return;
+        }
+
+        image.Source = null;
+        if (_session is null || !_sharedImagesLoading.Add(item.FileId))
+        {
+            return; // already in flight for this file; whoever started it will paint every card showing it
+        }
+
+        Avalonia.Media.Imaging.Bitmap? bitmap = null;
+        try
+        {
+            var content = await _session.PreviewSharedFileAsync(item);
+            if (content is { Bytes.Length: > 0 })
+            {
+                using var stream = new System.IO.MemoryStream(content.Bytes);
+                bitmap = new Avalonia.Media.Imaging.Bitmap(stream);
+            }
+        }
+        catch (Exception)
+        {
+            // A corrupt or oversized image decodes to nothing: the card keeps its placeholder rather than
+            // taking the transcript down. Same stance as the file browser's preview.
+            bitmap = null;
+        }
+        finally
+        {
+            _sharedImagesLoading.Remove(item.FileId);
+        }
+
+        if (bitmap is null)
+        {
+            return;
+        }
+
+        _sharedImages[item.FileId] = bitmap;
+        // The container may have been recycled onto a different file while the fetch was in flight — so
+        // paint by what each Image is currently showing, not by the one that started the load.
+        foreach (var target in this.GetVisualDescendants().OfType<Image>())
+        {
+            if (target.Name == "SharedImage" && target.DataContext is SharedFileItem shown && shown.FileId == item.FileId)
+            {
+                target.Source = bitmap;
+            }
+        }
     }
 
     private async void OnBrowseWorkingDirectory(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

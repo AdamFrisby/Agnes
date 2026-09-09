@@ -143,4 +143,54 @@ public sealed class SessionListTests : IDisposable
             await Task.Delay(20);
         }
     }
+
+    // ---- discovery: the host owns the session list, not the device ----
+
+    [Fact]
+    public void A_dismissed_session_stays_dismissed_across_relaunches()
+    {
+        // "Remove from this device" has to outlive the process, or discovery re-adds it on next launch.
+        DismissedSessions.Add("sess-1");
+
+        Assert.Contains("sess-1", DismissedSessions.Load());
+    }
+
+    [Fact]
+    public void Dismissing_is_idempotent_and_reversible()
+    {
+        DismissedSessions.Add("sess-1");
+        DismissedSessions.Add("sess-1");
+        Assert.Single(DismissedSessions.Load());
+
+        DismissedSessions.Remove("sess-1");
+        Assert.Empty(DismissedSessions.Load());
+    }
+
+    [Fact]
+    public async Task Forgetting_a_session_records_it_so_discovery_will_not_resurrect_it()
+    {
+        // Discovery lists what the HOST has. Without a record of the dismissal, forgetting a session
+        // would undo itself on the very next pull-to-refresh.
+        var shell = NewShell();
+        await shell.StartAsync();
+        await WaitFor(() => shell.Sessions.All.Count > 0);
+        var forgotten = shell.Sessions.All[0].SessionId;
+
+        shell.Sessions.Forget(shell.Sessions.All[0]);
+
+        Assert.Contains(forgotten, DismissedSessions.Load());
+    }
+
+    [Fact]
+    public async Task Refreshing_does_not_resurrect_a_forgotten_session()
+    {
+        var shell = NewShell();
+        await shell.StartAsync();
+        await WaitFor(() => shell.Sessions.All.Count > 0);
+        shell.Sessions.Forget(shell.Sessions.All[0]);
+
+        await shell.Sessions.RefreshAsync();
+
+        Assert.Empty(shell.Sessions.All);
+    }
 }

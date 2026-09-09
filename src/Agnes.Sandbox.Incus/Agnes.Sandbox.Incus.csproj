@@ -8,6 +8,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <!-- The D-Bus client for QEMU's display protocol. Already in the tree via Avalonia.FreeDesktop,
+         first-party to the .NET Linux ecosystem (Tom Deseyn / Red Hat), and the low-level, allocation-
+         light half of it — a 4 MB scanout should not become garbage. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.94.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,6 +21,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Agnes.Sandbox.Tests" />
+    <InternalsVisibleTo Include="Agnes.DisplaySpike" />
   </ItemGroup>
 
 </Project>

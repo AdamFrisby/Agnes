@@ -26,11 +26,25 @@ public class KeypairAuthEndpointTests : IDisposable
 
     private sealed class Factory(string keysFile, string devicesFile) : WebApplicationFactory<Program>
     {
+        // Every host-state default hangs off Agnes:Home; pointing it at a temp directory is what keeps a
+        // test run out of the operator's real ~/.agnes. See Agnes.TestKit.IsolatedHostHome.
+        private readonly Agnes.TestKit.IsolatedHostHome _home = new();
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                _home.Dispose();
+            }
+        }
+
         protected override IHost CreateHost(IHostBuilder builder)
         {
             builder.ConfigureHostConfiguration(config =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
+                    ["Agnes:Home"] = _home.Path,
                     ["Agnes:Auth:Pairing:Enabled"] = "false",
                     ["Agnes:Auth:Keypair:Enabled"] = "true",
                     ["Agnes:Auth:Keypair:AuthorizedKeysFile"] = keysFile,
