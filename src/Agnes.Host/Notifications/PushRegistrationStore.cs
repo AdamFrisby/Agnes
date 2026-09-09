@@ -7,14 +7,17 @@ using Microsoft.Extensions.Logging;
 namespace Agnes.Host.Notifications;
 
 /// <summary>
-/// Per-device, per-trigger push toggles plus a master on/off. Each of the three triggers is independently
-/// controllable because a user waiting on a long build might want turn-ready pings but find permission pings
-/// noisy (or vice versa on a security-sensitive repo). Immutable — a change produces a new record.
+/// Per-device, per-trigger push toggles plus a master on/off. Each trigger is independently controllable
+/// because a user waiting on a long build might want turn-ready pings but find permission pings noisy (or vice
+/// versa on a security-sensitive repo). Immutable — a change produces a new record. New triggers are appended
+/// with a default of true, so a registration persisted before the trigger existed opts into it on load rather
+/// than silently going dark.
 /// </summary>
 public sealed record PushTriggerPrefs(
     bool TurnReady = true,
     bool PermissionRequest = true,
-    bool UserActionRequest = true)
+    bool UserActionRequest = true,
+    bool FileShared = true)
 {
     /// <summary>Whether this device wants pushes for <paramref name="trigger"/>.</summary>
     public bool IsEnabled(NotificationTrigger trigger) => trigger switch
@@ -22,6 +25,7 @@ public sealed record PushTriggerPrefs(
         NotificationTrigger.TurnReady => TurnReady,
         NotificationTrigger.PermissionRequest => PermissionRequest,
         NotificationTrigger.UserActionRequest => UserActionRequest,
+        NotificationTrigger.FileShared => FileShared,
         _ => false,
     };
 }

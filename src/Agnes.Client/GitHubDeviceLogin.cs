@@ -75,7 +75,7 @@ public static class GitHubDeviceLogin
                     $"The host rejected this GitHub account ({(int)exchange.StatusCode}). It may not be on the allowlist.");
             }
 
-            return await exchange.Content.ReadFromJsonAsync<PairResponse>(cancellationToken).ConfigureAwait(false)
+            return await exchange.Content.ReadFromJsonAsync<PairResponse>(DeviceRoleJson.Read, cancellationToken).ConfigureAwait(false)
                    ?? throw new InvalidOperationException("The host returned no token.");
         }
         finally

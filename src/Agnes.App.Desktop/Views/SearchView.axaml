@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.SearchView">
 
     <!-- DataContext is a SearchDocument; narrow it to its MemorySearchViewModel so bindings are direct. -->
@@ -8,11 +9,8 @@
         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
             <TextBox Width="360"
                      Text="{Binding Query, Mode=TwoWay}"
-                     Watermark="Search every session's history…">
-                <TextBox.KeyBindings>
-                    <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
-                </TextBox.KeyBindings>
-            </TextBox>
+                     Watermark="Search every session's history…"
+                     km:KeymapBinder.Context="AllSessionsSearchFocus" />
             <Button Content="Search" Command="{Binding SearchCommand}" IsEnabled="{Binding !IsBusy}" />
         </StackPanel>
 

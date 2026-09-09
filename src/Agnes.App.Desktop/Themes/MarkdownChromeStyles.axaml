@@ -1,0 +1,57 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- App-level chrome for Agnes-owned Markdown controls. Markdown.Avalonia's own renderer overrides
+       remain local in MarkdownStyles.axaml because the library attaches its stock theme locally. -->
+
+  <!-- Explicit ```markdown / ```md fences remain code-block surfaces while their contents render. -->
+  <Style Selector="Border.markdownFence">
+    <Setter Property="Background" Value="{DynamicResource CodeBg}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Margin" Value="0,4" />
+  </Style>
+  <Style Selector="Grid.markdownFenceToolbar">
+    <Setter Property="MinHeight" Value="28" />
+  </Style>
+  <Style Selector="Button.markdownFenceToggle">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Padding" Value="7,2" />
+    <Setter Property="Margin" Value="4,3" />
+    <Setter Property="MinHeight" Value="22" />
+  </Style>
+  <Style Selector="ContentControl.markdownFenceBody">
+    <Setter Property="Padding" Value="10,7" />
+  </Style>
+  <Style Selector="SelectableTextBlock.markdownFenceSource">
+    <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <!-- A complete assistant response is one surface whose rendered and raw forms trade places. -->
+  <Style Selector="Border.markdownMessage">
+    <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Margin" Value="0,4" />
+  </Style>
+  <Style Selector="Grid.markdownMessageToolbar">
+    <Setter Property="MinHeight" Value="28" />
+  </Style>
+  <Style Selector="Button.markdownMessageToggle">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Padding" Value="7,2" />
+    <Setter Property="Margin" Value="4,3" />
+    <Setter Property="MinHeight" Value="22" />
+  </Style>
+  <Style Selector="Grid.markdownMessageBody">
+    <Setter Property="Margin" Value="10,0,10,7" />
+  </Style>
+  <Style Selector="SelectableTextBlock.markdownMessageSource">
+    <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+</Styles>

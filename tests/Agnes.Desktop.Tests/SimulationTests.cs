@@ -143,9 +143,13 @@ public class SimulatedHostTests
         var info = await host.OpenSessionAsync("opencode", "/tmp/agnes");
         var view = await host.SubscribeAsync(info.SessionId);
 
-        // A long, word-by-word streaming response we can interrupt mid-turn.
+        // A long, word-by-word streaming response we can interrupt mid-turn. The ready-session
+        // greeting is also an assistant message, so take a baseline to ensure we wait for this turn.
+        var assistantMessagesBeforePrompt = view.Events.OfType<MessageChunkEvent>()
+            .Count(m => m.Role == MessageRole.Assistant);
         await host.PromptAsync(info.SessionId, [new TextContent("explain the protocol in detail")]);
-        await WaitAsync(() => view.Events.OfType<MessageChunkEvent>().Any(m => m.Role == MessageRole.Assistant));
+        await WaitAsync(() => view.Events.OfType<MessageChunkEvent>()
+            .Count(m => m.Role == MessageRole.Assistant) > assistantMessagesBeforePrompt);
 
         await host.CancelAsync(info.SessionId);
         await WaitAsync(() => view.Events.OfType<TurnEndedEvent>().Any(e => e.Reason == StopReason.Cancelled));

@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
@@ -23,7 +24,9 @@
     <ProjectReference Include="..\..\src\Agnes.Client\Agnes.Client.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Recording\Agnes.Recording.csproj" />
-    <ProjectReference Include="..\..\src\Agnes.App.Desktop\Agnes.App.Desktop.csproj" />
+    <!-- Desktop view-model tests exercise the debug-only simulated host. Keep the production Release
+         build independent, but link this test harness to its Debug configuration. -->
+    <ProjectReference Include="..\..\src\Agnes.App.Desktop\Agnes.App.Desktop.csproj" SetConfiguration="Configuration=Debug" />
     <!-- Built but not linked: the dynamic-client-plugin loader test loads this DLL at runtime. -->
     <ProjectReference Include="..\Agnes.TestClientPluginFixture\Agnes.TestClientPluginFixture.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>

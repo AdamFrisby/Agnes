@@ -14,6 +14,13 @@ public sealed record AcpLaunchSpec
     /// <summary>Arguments that put the CLI into ACP mode.</summary>
     public IReadOnlyList<string> Arguments { get; init; } = [];
 
+    /// <summary>
+    /// Arguments that run this CLI as a human-facing interactive console instead of an ACP peer — usually
+    /// none, since ACP mode is the flagged one. Null (the default) means this CLI offers no console, which
+    /// is not the same as an empty list: empty means "run it bare".
+    /// </summary>
+    public IReadOnlyList<string>? ConsoleArguments { get; init; }
+
     /// <summary>Extra environment variables for the agent process.</summary>
     public IReadOnlyDictionary<string, string>? Environment { get; init; }
 
@@ -28,14 +35,56 @@ public sealed record AcpLaunchSpec
     /// to <see cref="Models"/>.</summary>
     public Func<CancellationToken, Task<IReadOnlyList<ModelInfo>?>>? LiveModelProbe { get; init; }
 
+    /// <summary>Argv that makes this CLI print the models it can reach (e.g. <c>["models"]</c>), for probing
+    /// inside the environment the agent runs in. Null means the CLI can't be asked, so no verification.</summary>
+    public IReadOnlyList<string>? ModelProbeArguments { get; init; }
+
+    /// <summary>Parses <see cref="ModelProbeArguments"/> output. Null falls back to an empty catalogue,
+    /// which is treated as "couldn't determine" rather than "no models".</summary>
+    public Func<string, IReadOnlyList<ModelInfo>>? ModelProbeParser { get; init; }
+
     /// <summary>Builds the CLI arguments that select a model id (e.g. <c>--model &lt;id&gt;</c>). Null means
     /// this CLI doesn't take a model flag, so a requested <see cref="AgentSessionOptions.ModelId"/> is ignored.</summary>
     public Func<string, IReadOnlyList<string>>? ModelArguments { get; init; }
+
+    /// <summary>Builds the environment carrying this CLI's inline configuration — model and MCP servers
+    /// together (e.g. OpenCode's <c>OPENCODE_CONFIG_CONTENT</c>). Null means this CLI isn't configured
+    /// through the environment. Independent of the argv hooks: a CLI whose ACP mode takes no model flag sets
+    /// only this one, and Agnes then materializes it into the sandbox rather than appending to a command.</summary>
+    public Func<string?, IReadOnlyList<InlineMcpServer>, IReadOnlyDictionary<string, string>>? InlineConfig { get; init; }
 
     /// <summary>Builds the CLI arguments that inject extra system-prompt text (e.g. Claude Code's
     /// <c>--append-system-prompt &lt;text&gt;</c>). Null means this CLI has no system-prompt flag Agnes knows,
     /// so a requested <see cref="AgentSessionOptions.SystemPrompt"/> is ignored.</summary>
     public Func<string, IReadOnlyList<string>>? SystemPromptArguments { get; init; }
+
+    /// <summary>
+    /// Builds the CLI arguments that select the permission model, given the session's
+    /// <see cref="PermissionStance"/>. The ACP default is the safe one — the agent asks per tool call over
+    /// <c>session/request_permission</c> and Agnes surfaces it — so most CLIs need no flag at all and leave
+    /// this null. A CLI that only runs unattended behind an explicit blanket-allow flag (Copilot's
+    /// <c>--allow-all-tools</c>) states it here, and it is reached <b>only</b> when the user has opted into
+    /// autonomous operation. Mirrors <c>INativeStreamMapper.PermissionLaunchArguments</c>.
+    /// </summary>
+    public Func<PermissionStance, IReadOnlyList<string>>? PermissionArguments { get; init; }
+
+    /// <summary>Builds the CLI arguments that load the Agnes-managed MCP config file at
+    /// <see cref="AgentSessionOptions.McpConfigPath"/> (e.g. Copilot's
+    /// <c>--additional-mcp-config @&lt;path&gt;</c>). Null means this CLI takes no such flag, so a supplied
+    /// path is ignored.</summary>
+    public Func<string, IReadOnlyList<string>>? McpConfigArguments { get; init; }
+
+    /// <summary>
+    /// Slash commands to invoke once, immediately after the session opens — for a CLI whose feature is
+    /// reachable only as an in-session command, with no flag and no config key. ACP carries these as an
+    /// ordinary prompt: an agent that supports commands parses a prompt that is a single text block
+    /// beginning with <c>/</c> and runs the command instead of asking the model, which is how Copilot's
+    /// <c>/fleet</c> is reached (it advertises 32 such commands in <c>available_commands_update</c>).
+    ///
+    /// Best-effort by contract: these run before the caller can see the session, so their output is not
+    /// transcript, and a command that fails or hangs must cost the feature, never the session.
+    /// </summary>
+    public IReadOnlyList<string> StartupCommands { get; init; } = [];
 }
 
 /// <summary>
@@ -44,10 +93,14 @@ public sealed record AcpLaunchSpec
 /// it to add an optional capability its CLI supports (e.g. Claude Code adds <see cref="IMcpDiscoveryAdapter"/>)
 /// without re-implementing the ACP launch/session plumbing.
 /// </summary>
-public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
+public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter, IModelEnvironmentAdapter, IModelProbeAdapter
 {
     private readonly AcpLaunchSpec _spec;
     private readonly ILoggerFactory _loggerFactory;
+
+    /// <summary>How long a startup command gets. Generous — these invoke native CLI machinery rather than
+    /// a model turn — but finite, because it runs inside the session open.</summary>
+    private static readonly TimeSpan StartupCommandTimeout = TimeSpan.FromSeconds(30);
 
     public AcpAgentAdapter(AcpLaunchSpec spec, ILoggerFactory loggerFactory)
     {
@@ -80,8 +133,45 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
             args.AddRange(buildSystem(systemPrompt));
         }
 
+        // The permission model. Asked for unconditionally (not only when skipping) so a CLI that needs a
+        // flag for BOTH stances can state both; the flag for the attended case is the default one.
+        if (spec.PermissionArguments is { } buildPermissions)
+        {
+            args.AddRange(buildPermissions(new PermissionStance(options.SkipPermissions, options.Sandbox is not null)));
+        }
+
+        if (options.McpConfigPath is { Length: > 0 } mcpConfig && spec.McpConfigArguments is { } buildMcp)
+        {
+            args.AddRange(buildMcp(mcpConfig));
+        }
+
         return args;
     }
+
+    /// <summary>The inline-config environment for a launch, or empty when this CLI has no such axis. Pure,
+    /// and shared by the two paths it has to reach: the host process launched here, and the guest agent-env
+    /// file the host materializes for a sandboxed session.</summary>
+    public static IReadOnlyDictionary<string, string> BuildAgentEnvironment(AcpLaunchSpec spec, AgentSessionOptions options)
+        => spec.InlineConfig is { } build
+            ? build(options.ModelId, [])
+            : new Dictionary<string, string>();
+
+    /// <inheritdoc />
+    public AgentConsoleCommand? GetInteractiveConsoleCommand()
+        => _spec.ConsoleArguments is { } args ? new AgentConsoleCommand(_spec.Command, args) : null;
+
+    /// <inheritdoc />
+    public IReadOnlyList<string>? ProbeArguments => _spec.ModelProbeArguments;
+
+    /// <inheritdoc />
+    public IReadOnlyList<ModelInfo> ParseProbeOutput(string stdout)
+        => _spec.ModelProbeParser is { } parse ? parse(stdout) : [];
+
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, string> InlineConfigEnvironment(string? modelId, IReadOnlyList<InlineMcpServer> mcpServers)
+        => _spec.InlineConfig is { } build
+            ? build(modelId, mcpServers)
+            : new Dictionary<string, string>();
 
     public async Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
     {
@@ -94,8 +184,9 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
             lifetime);
         try
         {
-            await connection.InitializeAsync(cancellationToken).ConfigureAwait(false);
-            var session = await connection.NewSessionAsync(options.WorkingDirectory, cancellationToken).ConfigureAwait(false);
+            var init = await connection.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            var session = await OpenSessionAsync(connection, init, options, cancellationToken).ConfigureAwait(false);
+            await RunStartupCommandsAsync(session, cancellationToken).ConfigureAwait(false);
             return new ConnectionOwningSession(session, connection);
         }
         catch
@@ -103,6 +194,65 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
             await connection.DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Runs <see cref="AcpLaunchSpec.StartupCommands"/> against a freshly opened session, bounded and
+    /// swallowed. Bounded because these are sent before the session is handed back, so a command that never
+    /// answers would hang the open itself; swallowed because they enable a feature on top of a session that
+    /// is already working, and trading a working session for an unavailable extra is the wrong way round.
+    /// </summary>
+    private async Task RunStartupCommandsAsync(AcpAgentSession session, CancellationToken cancellationToken)
+    {
+        var logger = _loggerFactory.CreateLogger<AcpAgentAdapter>();
+        foreach (var command in _spec.StartupCommands)
+        {
+            using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            bounded.CancelAfter(StartupCommandTimeout);
+            try
+            {
+                await session.PromptAsync([new TextContent(command)], bounded.Token).ConfigureAwait(false);
+                logger.LogInformation("Ran startup command {Command}", command);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw; // the caller gave up on the whole session, not just this command
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Startup command {Command} did not run; the session continues without it", command);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resumes the agent's prior conversation when one was asked for and the agent says it can
+    /// (<c>agentCapabilities.loadSession</c>), else starts a fresh one. Resuming is best-effort: an agent
+    /// that advertises the capability but rejects this particular id (expired, pruned, or from another
+    /// machine) must still yield a working session, so a failed load falls back to <c>session/new</c> —
+    /// losing the history is bad, failing to open at all is worse.
+    /// </summary>
+    private static async Task<AcpAgentSession> OpenSessionAsync(
+        AcpConnection connection,
+        Wire.AcpInitializeResult init,
+        AgentSessionOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (options.ResumeSessionId is { Length: > 0 } resumeId && init.AgentCapabilities?.LoadSession == true)
+        {
+            try
+            {
+                return await connection.LoadSessionAsync(resumeId, options.WorkingDirectory, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Fall through to a new session; the connection is still healthy (a rejected load is an
+                // ordinary JSON-RPC error response, not a transport fault).
+            }
+        }
+
+        return await connection.NewSessionAsync(options.WorkingDirectory, cancellationToken).ConfigureAwait(false);
     }
 
     private Process StartProcess(AgentSessionOptions options)
@@ -135,6 +285,10 @@ public class AcpAgentAdapter : IAgentAdapter, IModelListingAdapter
         }
 
         ApplyEnvironment(startInfo, _spec.Environment);
+        // Model-selection env for the host path. A sandboxed launch scrubs this (the run wrapper's
+        // `env -i`), so there the same variables are materialized into the guest agent-env file instead —
+        // see SessionManager.AddSandboxModel.
+        ApplyEnvironment(startInfo, BuildAgentEnvironment(_spec, options));
         ApplyEnvironment(startInfo, options.Environment);
 
         var process = Process.Start(startInfo)

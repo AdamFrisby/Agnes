@@ -36,9 +36,13 @@ public interface ITabController
     /// <summary>Remove a saved host from the picker (and persistence), then refresh the tab's host list.</summary>
     Task ForgetHostAsync(SessionDocument doc, KnownHost host);
 
+    /// <summary>Opens the Settings tab on the Devices page — where a member is told to go, and therefore
+    /// where the notice that tells it should be able to take it.</summary>
+    void OpenDevicesSettings();
+
     /// <summary>Whether a host can be removed by the user (built-in Simulated/Recorded hosts can't).</summary>
     bool IsForgettableHost(string url);
-    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
+    Task SelectAgentAsync(SessionDocument doc, string adapterId, string displayName, bool skipPermissions = false, string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false);
 
     /// <summary>Finds sessions a CLI created outside Agnes for the tab's working directory (from the CLI's own
     /// on-disk logs) and lists them on the tab for a read-only "Watch" (sessions/02).</summary>
@@ -107,19 +111,33 @@ public interface ITabController
 
     /// <summary>Remembers the working directory a session was opened in, as the next default.</summary>
     void RememberWorkingDirectory(string path);
+
+    /// <summary>Moves the shared chat-only font scale one step up or down.</summary>
+    void AdjustChatFontSize(int direction);
 }
 
 /// <summary>A cross-session search result: a transcript hit plus the tab it lives in.</summary>
 public sealed class GlobalHit
 {
-    public GlobalHit(SessionDocument tab, Agnes.Ui.Core.ViewModels.SearchHit hit)
+    public GlobalHit(SessionDocument tab, Agnes.Ui.Core.ViewModels.SearchHit hit, bool inCurrentTab = false)
     {
         Tab = tab;
         Hit = hit;
+        InCurrentTab = inCurrentTab;
     }
 
     public SessionDocument Tab { get; }
     public Agnes.Ui.Core.ViewModels.SearchHit Hit { get; }
+
+    /// <summary>Whether this hit is in the tab the user is already looking at. Results are grouped on it.</summary>
+    public bool InCurrentTab { get; }
+
+    /// <summary>
+    /// Whether the row should name its session. Only for hits from elsewhere: the "This session" group is
+    /// already headed by the fact, so repeating one title down every row of it is noise, while a hit from
+    /// another tab is useless without knowing which.
+    /// </summary>
+    public bool ShowSessionTitle => !InCurrentTab;
 
     public string SessionTitle => Hit.SessionTitle ?? Tab.Title ?? "session";
     public string Kind => Hit.Kind;
@@ -147,7 +165,7 @@ public sealed class HostChoice
     public bool CanForget => Forget is not null;
 }
 
-/// <summary>An entry in the command palette (Ctrl+K): a session to jump to or a global action.</summary>
+/// <summary>An entry in the command palette: a session to jump to or a global action.</summary>
 public sealed record PaletteItem(string Label, string Hint, System.Action Invoke);
 
 /// <summary>A model option on the new-tab model picker (per the selected agent). Built from a reconciled

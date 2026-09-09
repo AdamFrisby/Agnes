@@ -88,6 +88,7 @@ bundle_macos() { # dir arch
   echo "==> mac bundle    · $arch → ${app#$ROOT/}"
   rm -rf "$app"
   mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+  cp "$ROOT/packaging/macos/Agnes.icns" "$app/Contents/Resources/Agnes.icns"
 
   # Everything the publish produced belongs inside the bundle; the app host must sit in Contents/MacOS.
   find "$dir" -maxdepth 1 -mindepth 1 ! -name 'Agnes.app' ! -name 'host' -exec mv -f {} "$app/Contents/MacOS/" \;
@@ -102,6 +103,7 @@ bundle_macos() { # dir arch
   <key>CFBundleIdentifier</key><string>com.multitudal.agnes</string>
   <key>CFBundleExecutable</key><string>Agnes</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>Agnes.icns</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>0.1.0</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>

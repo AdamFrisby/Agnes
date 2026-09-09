@@ -19,6 +19,8 @@ COPY . .
 RUN dotnet publish src/Agnes.Relay/Agnes.Relay.csproj -c Release -o /app
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0
+RUN groupadd --gid 10001 agnes-relay \
+    && useradd --uid 10001 --gid agnes-relay --create-home --home-dir /home/agnes-relay --shell /usr/sbin/nologin agnes-relay
 WORKDIR /app
 COPY --from=build /app .
 
@@ -26,5 +28,7 @@ EXPOSE 5100
 ENV AGNES_RELAY_LISTEN=0.0.0.0 \
     AGNES_RELAY_PORT=5100
 VOLUME ["/etc/agnes"]
+
+USER agnes-relay
 
 ENTRYPOINT ["dotnet", "agnes-relay.dll"]

@@ -170,7 +170,7 @@ public class CredentialBrokerTests
     {
         var cache = new GitConsentCache();
         var asks = new List<string?>();
-        Task<bool> Ask(string? repo) { asks.Add(repo); return Task.FromResult(true); }
+        Task<GitConsentOutcome> Ask(string? repo) { asks.Add(repo); return Task.FromResult(GitConsentOutcome.Allowed); }
 
         // First touch of each repo prompts; subsequent touches of the same repo don't.
         Assert.True(await cache.DecideAsync("s1", "github.com", "a/b", "Ask", () => Ask("a/b")));
@@ -179,14 +179,37 @@ public class CredentialBrokerTests
         Assert.Equal(new[] { "a/b", "c/d" }, asks); // asked once per distinct repo
 
         // A denial is remembered too (no re-nagging).
-        Assert.False(await cache.DecideAsync("s2", "github.com", "x/y", "Ask", () => Task.FromResult(false)));
+        Assert.False(await cache.DecideAsync("s2", "github.com", "x/y", "Ask", () => Task.FromResult(GitConsentOutcome.Denied)));
         var reAsked = false;
-        Assert.False(await cache.DecideAsync("s2", "github.com", "x/y", "Ask", () => { reAsked = true; return Task.FromResult(true); }));
+        Assert.False(await cache.DecideAsync("s2", "github.com", "x/y", "Ask", () => { reAsked = true; return Task.FromResult(GitConsentOutcome.Allowed); }));
         Assert.False(reAsked);
+
+        // An UNANSWERED card refuses this attempt but is not remembered: the operator may simply have been
+        // away, and caching that locked the repo out for the session with no way back (observed in the wild).
+        var timeoutAsks = 0;
+        Assert.False(await cache.DecideAsync("s4", "github.com", "p/q", "Ask",
+            () => { timeoutAsks++; return Task.FromResult(GitConsentOutcome.Unanswered); }));
+        Assert.False(await cache.DecideAsync("s4", "github.com", "p/q", "Ask",
+            () => { timeoutAsks++; return Task.FromResult(GitConsentOutcome.Unanswered); }));
+        Assert.Equal(2, timeoutAsks); // asked again rather than refused from cache
+
+        // …and once they do answer, that answer sticks.
+        Assert.True(await cache.DecideAsync("s4", "github.com", "p/q", "Ask", () => Task.FromResult(GitConsentOutcome.Allowed)));
+        var afterApproval = false;
+        Assert.True(await cache.DecideAsync("s4", "github.com", "p/q", "Ask",
+            () => { afterApproval = true; return Task.FromResult(GitConsentOutcome.Denied); }));
+        Assert.False(afterApproval);
+
+        // A remembered decision can be revisited without restarting the session.
+        Assert.True(cache.Reconsider("s2", "github.com", "x/y"));
+        var reconsidered = false;
+        Assert.True(await cache.DecideAsync("s2", "github.com", "x/y", "Ask",
+            () => { reconsidered = true; return Task.FromResult(GitConsentOutcome.Allowed); }));
+        Assert.True(reconsidered);
 
         // Trust never prompts; Forget makes a re-opened session ask again.
         var trustAsked = false;
-        Assert.True(await cache.DecideAsync("s3", "github.com", "a/b", "Trust", () => { trustAsked = true; return Task.FromResult(false); }));
+        Assert.True(await cache.DecideAsync("s3", "github.com", "a/b", "Trust", () => { trustAsked = true; return Task.FromResult(GitConsentOutcome.Denied); }));
         Assert.False(trustAsked);
 
         cache.Forget("s1");

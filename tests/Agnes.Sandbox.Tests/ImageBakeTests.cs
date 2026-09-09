@@ -87,7 +87,7 @@ public class ImageBakeTests
     }
 
     [Fact]
-    public void Manifest_defaults_bake_claude_and_codex_with_node_and_core_tools()
+    public void Manifest_defaults_bake_claude_codex_and_opencode_with_node_and_core_tools()
     {
         var m = new SandboxImageManifest();
         Assert.True(m.Node);
@@ -95,6 +95,35 @@ public class ImageBakeTests
         Assert.Contains("build-essential", m.AptPackages);
         Assert.Contains(m.Agents, a => a.AdapterId == "claude-code-native" && a.Source == "copy:claude");
         Assert.Contains(m.Agents, a => a.AdapterId == "codex" && a.Source == "copy:codex");
+        // OpenCode ships a self-contained binary, so it copies like the others rather than
+        // needing an NpmGlobal — a new project gets it without the user knowing to ask.
+        Assert.Contains(m.Agents, a => a.AdapterId == "opencode" && a.Source == "copy:opencode");
+    }
+
+    /// <summary>
+    /// Instance names carry the configured prefix. On a shared Incus, "agnes-*" is the operator's real
+    /// sessions; a probe or a second daemon that names its VMs the same way makes cleanup a guess.
+    /// </summary>
+    [Fact]
+    public async Task Instances_are_named_with_the_configured_prefix()
+    {
+        var runner = new RecordingRunner();
+        var provider = new IncusSandboxProvider(
+            new IncusOptions { InstancePrefix = "agnes-probe-" }, NullLoggerFactory.Instance, runner);
+
+        var sandbox = await provider.CreateAsync(new SandboxSpec());
+
+        Assert.StartsWith("agnes-probe-", sandbox.Id, StringComparison.Ordinal);
+        Assert.Contains(runner.Calls, c => c.Contains("init") && c.Contains(sandbox.Id));
+    }
+
+    [Fact]
+    public async Task An_instance_prefix_that_cannot_make_a_legal_name_is_refused_up_front()
+    {
+        var provider = new IncusSandboxProvider(
+            new IncusOptions { InstancePrefix = "agnes probe/" }, NullLoggerFactory.Instance, new RecordingRunner());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => provider.CreateAsync(new SandboxSpec()));
     }
 
     [Fact]

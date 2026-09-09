@@ -30,7 +30,7 @@ public sealed class PairingGrants
 
     public PairingGrants(Func<DateTimeOffset>? now = null) => _now = now ?? (() => DateTimeOffset.UtcNow);
 
-    private sealed record Entry(DateTimeOffset ExpiresAt, string? SessionId);
+    private sealed record Entry(DateTimeOffset ExpiresAt, string? SessionId, DeviceRole Role);
 
     /// <summary>
     /// Mints a grant. Callers must already be authenticated — that authentication *is* the vouching:
@@ -38,17 +38,22 @@ public sealed class PairingGrants
     /// </summary>
     /// <param name="sessionId">Optional session to hand over alongside the host, so a scanned QR can land
     /// the new device directly in the session it was generated from.</param>
+    /// <param name="minterRole">The role of the device doing the vouching. A grant hands over the minter's
+    /// own standing and no more: an Owner's QR admits an Owner, a Member's admits a Member. Without this cap
+    /// "show a QR" would be a promotion path for anybody already inside — the same reason an approval by a
+    /// Member cannot admit an Owner.</param>
     public PairingGrant Mint(
         string reachableAddress,
         string? sessionId = null,
         IReadOnlyList<string>? addresses = null,
-        string? fingerprint = null)
+        string? fingerprint = null,
+        DeviceRole minterRole = DeviceRole.Owner)
     {
         Sweep();
 
         var secret = Base64Url(RandomNumberGenerator.GetBytes(SecretBytes));
         var expires = _now() + Lifetime;
-        _grants[secret] = new Entry(expires, sessionId);
+        _grants[secret] = new Entry(expires, sessionId, minterRole);
 
         return new PairingGrant(
             secret,
@@ -63,8 +68,13 @@ public sealed class PairingGrants
     /// whether or not the caller goes on to succeed, so a leaked QR can't be replayed.
     /// </summary>
     public bool TryRedeem(string? secret, out string? sessionId)
+        => TryRedeem(secret, out sessionId, out _);
+
+    /// <summary>Redeems a grant, also reporting the role its minter was entitled to hand over.</summary>
+    public bool TryRedeem(string? secret, out string? sessionId, out DeviceRole role)
     {
         sessionId = null;
+        role = DeviceRole.Member;
         if (string.IsNullOrWhiteSpace(secret))
         {
             return false;
@@ -87,6 +97,7 @@ public sealed class PairingGrants
         }
 
         sessionId = entry.SessionId;
+        role = entry.Role;
         return true;
     }
 

@@ -237,7 +237,7 @@ public enum PairApprovalState
 
 /// <summary>The result of polling a pairing request. <see cref="Token"/> is set exactly once, on the
 /// first poll after approval.</summary>
-public sealed record PairApprovalStatus(PairApprovalState State, string? DeviceId = null, string? Token = null);
+public sealed record PairApprovalStatus(PairApprovalState State, string? DeviceId = null, string? Token = null, DeviceRole Role = DeviceRole.Member);
 
 /// <summary>
 /// The six digits shown on both screens during approval pairing.
@@ -261,7 +261,37 @@ public static class PairVerification
 
 /// <summary>A successful pairing — the per-device token to store and connect with (shown once).
 /// Shared by every bootstrap method (pairing code, GitHub SSO, keypair).</summary>
-public sealed record PairResponse(string DeviceId, string DeviceName, string Token);
+public sealed record PairResponse(string DeviceId, string DeviceName, string Token, DeviceRole Role = DeviceRole.Member);
+
+/// <summary>
+/// What a paired device may do on the host, decided by HOW it was admitted rather than by the order it
+/// arrived in. A device admitted with the operator's own secret (the pairing code, a pairing grant, the
+/// bootstrap token) or an operator-authorized key is an <see cref="Owner"/>; a device vouched for by
+/// another device is a <see cref="Member"/> unless an Owner chose otherwise at approval time. Owners can
+/// promote, demote (never the last Owner) and prune devices.
+/// </summary>
+/// <remarks>
+/// A Member is not a second-class guest: it can open sessions and always sees the sessions it started,
+/// plus anything shared with it. It cannot see other people's sessions or change host-wide configuration.
+/// The role exists so that "why can't this device see anything" has an answer on the Devices page rather
+/// than an empty list.
+/// </remarks>
+public enum DeviceRole
+{
+    Member,
+    Owner,
+}
+
+/// <summary>Body of <c>POST /pair/approve/{requestId}</c>: the role the approver admits the device with.
+/// Only an Owner may grant <see cref="DeviceRole.Owner"/>; anything else is admitted as a Member.</summary>
+public sealed record PairApprovalDecision(DeviceRole Role = DeviceRole.Member);
+
+/// <summary>Body of <c>PUT /devices/{id}/role</c> (Owner only).</summary>
+public sealed record DeviceRoleRequest(DeviceRole Role);
+
+/// <summary>Body of <c>POST /devices/prune</c> (Owner only): remove devices not seen for this many days
+/// (never the caller's own device, never the last Owner).</summary>
+public sealed record DevicePruneRequest(int UnusedForDays = 30);
 
 /// <summary>Which bootstrap auth methods a host offers (advertised at <c>GET /auth/methods</c>) so a
 /// client shows only the enabled ones. <see cref="GitHubClientId"/> is a public OAuth client id for the
@@ -297,6 +327,10 @@ public sealed record GitHubExchangeRequest(string Token, string DeviceName);
 /// <summary>Exchange an OIDC-issued token (validated against the configured issuer's JWKS/audience) for an
 /// Agnes device token. The OIDC token is verified then discarded.</summary>
 public sealed record OidcExchangeRequest(string Token, string DeviceName);
+
+/// <summary>Exchange the signed Cloudflare Access assertion forwarded with this browser request for a
+/// per-device Agnes token. The assertion stays in the request header; the body carries no credential.</summary>
+public sealed record CloudflareAccessExchangeRequest(string DeviceName);
 
 /// <summary>The start of the interactive OIDC authorization-code (PKCE) redirect flow (from
 /// <c>GET /auth/oidc/start</c>): the client opens <see cref="AuthorizationUrl"/> in a browser and the host
@@ -471,7 +505,14 @@ public sealed record SessionInfo(
     bool SkipPermissions = false,
     string? Project = null,
     bool ReadOnly = false,
-    string? CurrentModelId = null);
+    string? CurrentModelId = null,
+    /// <summary>Whether this session actually has a screen (see <c>docs/display-channel.md</c>). The host's
+    /// answer, not the client's request: asking for a graphical session is a request the host can decline —
+    /// the operator may have graphical sandboxes switched off, or a project default may have granted one
+    /// nobody asked for — and a client that assumed its own request was honoured would offer a screen that
+    /// isn't there, or hide one that is. Mirrors <see cref="SessionSummary.HasDisplay"/> for the session
+    /// just opened, which the catalogue would otherwise only reveal on the next listing.</summary>
+    bool HasDisplay = false);
 
 /// <summary>How busy a catalogued session is right now, as the host sees it. Deliberately coarse — it is
 /// derived from live state (is a turn running?) rather than stored, so it needs no new bookkeeping. "Needs a
@@ -509,14 +550,20 @@ public sealed record SessionSummary(
     string? CurrentModeId = null,
     string? CurrentModelId = null,
     bool ReadOnly = false,
-    bool Sandboxed = false)
+    bool Sandboxed = false,
+    // Whether the session's sandbox has a display a client may open over the display channel.
+    bool HasDisplay = false,
+    // The agent's latest one-line status (see AgentStatusEvent) and when it said it, so a list of sessions
+    // can say what each agent is doing without opening any of them.
+    string? LatestStatus = null,
+    DateTimeOffset? LatestStatusAt = null)
 {
     /// <summary>Whether this session is waiting on a human (one or more unanswered permission requests).</summary>
     public bool IsBlocked => OpenApprovals > 0;
 }
 
 /// <summary>The per-session defaults a project suggests.</summary>
-public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask");
+public sealed record ProjectDefaultsDto(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask", bool Graphical = false);
 
 /// <summary>
 /// A project as the client sees it: the per-repo bundle of sandbox contents, MCP servers, GitHub
@@ -575,7 +622,11 @@ public sealed record DeviceInfo(
     DateTimeOffset PairedAt,
     DateTimeOffset? LastSeenAt,
     string? Subject = null,
-    bool IsCurrentDevice = false);
+    bool IsCurrentDevice = false,
+    // How the device may act on this host (see DeviceRole) and how it was admitted ("pairing", "approval",
+    // "keypair", "github", ...), so the Devices page can say both without guessing from the subject.
+    DeviceRole Role = DeviceRole.Member,
+    string? Kind = null);
 
 /// <summary>
 /// How widely an MCP server applies, resolved at session start. <see cref="AllHosts"/> and
@@ -607,6 +658,57 @@ public enum McpApplyScope
 /// effective-config preview so the user knows it's active, but not removable/editable here. Both are trailing
 /// and default to "not native", so an entry persisted before they existed deserializes to an Agnes-managed one.
 /// </summary>
+/// <summary>
+/// A local (or otherwise self-hosted) model provider the host will run Copilot against, as reported to a
+/// client.
+///
+/// <para>The API key is deliberately <b>not</b> a field. A settings screen needs to know whether a key is
+/// set so it can say so and offer to replace it; it never needs the key back, and sending one to every
+/// paired device to render a form would be handing out a credential for a UI affordance.</para>
+/// </summary>
+public sealed record LocalProviderInfo(
+    string? BaseUrl,
+    string ProviderType,
+    /// <summary>Whether a key is stored. See the note above on why the key itself is absent.</summary>
+    bool HasApiKey,
+    /// <summary>Well-known model id used for agent configuration — prompting strategy, token limits and
+    /// the reasoning-effort value sent to the provider.</summary>
+    string? ModelId,
+    /// <summary>The model name actually sent to the provider.</summary>
+    string? WireModel,
+    /// <summary>Tools withheld from the model. Empty means "use the recommended set".</summary>
+    IReadOnlyList<string> ExcludedTools,
+    /// <summary>Whether Copilot runs with no GitHub access at all.</summary>
+    bool Offline,
+    /// <summary>Reasoning effort sent to the provider, or null to leave Copilot's own choice alone.
+    /// Some servers accept only a subset and reject the rest outright.</summary>
+    string? Effort,
+    /// <summary>Whether this provider is configured enough to be used.</summary>
+    bool IsConfigured);
+
+/// <summary>A change to the local model provider.</summary>
+/// <param name="ApiKey">Null leaves any stored key untouched; empty string clears it. Without that
+/// distinction a settings form could never be saved without either resending or destroying the key.</param>
+public sealed record LocalProviderRequest(
+    string? BaseUrl,
+    string? ProviderType,
+    string? ApiKey,
+    string? ModelId,
+    string? WireModel,
+    IReadOnlyList<string>? ExcludedTools,
+    bool Offline,
+    string? Effort = null);
+
+/// <summary>One model an endpoint reports, for a picker.</summary>
+public sealed record LocalProviderModel(string Id, string DisplayName);
+
+/// <summary>
+/// The result of asking an endpoint what it serves.
+/// </summary>
+/// <param name="Reachable">False means the endpoint could not be asked at all — a different answer from
+/// a reachable server with an empty catalogue, and the two need different words in the UI.</param>
+public sealed record LocalProviderModels(bool Reachable, IReadOnlyList<LocalProviderModel> Models, string? Error);
+
 public sealed record McpServerInfo(
     string Id,
     string Name,
@@ -693,7 +795,10 @@ public sealed record SessionSnapshot(
 /// pre-model callers keep compiling.</param>
 public sealed record OpenSessionRequest(
     string AdapterId, string WorkingDirectory, bool UseWorktree = false, bool SkipPermissions = false,
-    string McpApproval = "Ask", string GitCredentialMode = "Off", bool UseSandbox = true, string? ModelId = null);
+    string McpApproval = "Ask", string GitCredentialMode = "Off", bool UseSandbox = true, string? ModelId = null,
+    // A graphical sandbox: a fixed 1280×800 display the agent can see and drive and a person can watch.
+    // Implies UseSandbox; refused unless the operator allows graphical sandboxes.
+    bool Graphical = false);
 
 /// <summary>
 /// A named, reusable bundle of new-session launch options — pick it once, reuse it forever. It captures the
@@ -839,7 +944,8 @@ public sealed record PushNotificationPrefs(
     bool Enabled = true,
     bool TurnReady = true,
     bool PermissionRequest = true,
-    bool UserActionRequest = true);
+    bool UserActionRequest = true,
+    bool FileShared = true);
 
 /// <summary>A device registering (or re-registering) its push token against a notification channel, together
 /// with its toggles. <see cref="ChannelId"/> is the target <c>INotificationChannel</c> ("mobile-push",
@@ -969,6 +1075,42 @@ public sealed record ScheduleTaskRequest(
     string TargetKind = "new",
     string? TargetSessionId = null);
 
+/// <summary>
+/// A standing goal armed on one session: if that session falls <b>idle</b> for longer than
+/// <see cref="IdleSeconds"/> without the goal being disarmed, the host nudges it with <see cref="Goal"/>.
+/// </summary>
+/// <remarks>
+/// Idle-triggered rather than scheduled, which is the whole point: a fixed cadence either interrupts an
+/// agent that is working or waits pointlessly after one has stopped. Here the clock only starts once the
+/// session actually goes quiet, so a long turn is never talked over and a stalled one is picked up quickly.
+///
+/// Every armed goal is bounded twice over — <see cref="MaxProds"/> nudges and an optional
+/// <see cref="ExpiresAt"/> — because an agent that can arm unbounded self-prompting is a runaway: each nudge
+/// costs a full turn. <see cref="DisarmedReason"/> records why a goal stopped (finished, stuck, exhausted,
+/// expired, or cancelled by hand), so a disarmed goal stays visible instead of vanishing.
+/// </remarks>
+public sealed record SessionGoal(
+    string Id,
+    string SessionId,
+    string Goal,
+    int IdleSeconds,
+    int MaxProds,
+    int ProdsUsed,
+    bool Armed,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ExpiresAt = null,
+    DateTimeOffset? LastProddedAt = null,
+    string? DisarmedReason = null);
+
+/// <summary>A request to arm a goal on a session (see <see cref="SessionGoal"/> for field meanings).
+/// <paramref name="ExpiresInSeconds"/> is relative so a caller never has to reason about host clock skew.</summary>
+public sealed record ArmGoalRequest(
+    string SessionId,
+    string Goal,
+    int IdleSeconds,
+    int MaxProds = 5,
+    int? ExpiresInSeconds = null);
+
 /// <summary>A completed background run, collected in the inbox.</summary>
 public sealed record InboxRun(
     string Id,
@@ -1008,7 +1150,18 @@ public sealed record OpenApproval(
     DateTimeOffset RequestedAt,
     OpenApprovalKind Kind = OpenApprovalKind.SessionPermission,
     string? Source = null,
-    IReadOnlyList<string>? Options = null);
+    IReadOnlyList<string>? Options = null,
+    bool Expired = false)
+{
+    /// <summary>
+    /// Whether answering this still does anything. An expired entry is reported rather than dropped —
+    /// what the agent asked for is worth reviewing, and reviewing it is how a standing rule gets set so
+    /// the next one isn't missed — but it must never be counted as work waiting on someone, which is how
+    /// an inbox came to show sixteen approvals that could not be cleared. See
+    /// <see cref="Agnes.Abstractions.PermissionLifecycle"/>.
+    /// </summary>
+    [JsonIgnore] public bool IsActionable => !Expired;
+}
 
 /// <summary>A human's answer to an external attention request, sent from any Agnes client. Answered by
 /// request id alone (there is no session) with the chosen option text.</summary>

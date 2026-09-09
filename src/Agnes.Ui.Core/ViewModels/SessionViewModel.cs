@@ -16,7 +16,7 @@ namespace Agnes.Ui.Core.ViewModels;
 /// prompt-history persistence, tool-output collapse, full-screen review, and clear connection/
 /// session state banners (offline / reconnecting / interrupted / stale).
 /// </summary>
-public sealed class SessionViewModel : ObservableObject
+public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly IAgnesHost _host;
     private readonly Agnes.Abstractions.Events.IEventBus _bus;
@@ -24,6 +24,7 @@ public sealed class SessionViewModel : ObservableObject
     private readonly IUiDispatcher _dispatcher;
     private readonly IPromptStore _prompts;
     private readonly IPermissionPolicy _policy;
+    private readonly IReceivedFileHandler _receivedFiles;
 
     // The host's prompt library, loaded lazily so typing a template's slash token (e.g. /review) expands it.
     private IReadOnlyList<Agnes.Abstractions.LibraryPrompt> _libraryPrompts = [];
@@ -69,15 +70,33 @@ public sealed class SessionViewModel : ObservableObject
     private int _promptCursor = -1;
     private int _changeCursor = -1;
     private bool _showDiscarded;
+    // True only while the constructor rebuilds the transcript from the log — see the replay guard there.
+    private bool _replaying;
+    private readonly Func<DateTimeOffset> _now;
+    private readonly DateTimeOffset _openedAt;
+    private string? _latestStatus;
+    private DateTimeOffset? _latestStatusAt;
+    private DateTimeOffset _lastUserInteractionAt;
+    private DateTimeOffset? _lastAgentActivityAt;
     private SendPolicy _sendPolicy = SendPolicy.QueueInAgent;
 
-    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null, Agnes.Abstractions.Events.IEventBus? eventBus = null)
+    public SessionViewModel(IAgnesHost host, SessionView view, IUiDispatcher dispatcher, string title, IPromptStore? prompts = null, IPermissionPolicy? policy = null, Agnes.Abstractions.Events.IEventBus? eventBus = null, IReceivedFileHandler? receivedFiles = null, Func<DateTimeOffset>? now = null)
     {
+        // Everything time-derived on this view model (the status age, staleness, whether the person has
+        // wandered off) reads the clock through this one function, so a test can state "eleven minutes
+        // later" instead of sleeping for eleven minutes.
+        _now = now ?? (() => DateTimeOffset.Now);
+        _openedAt = _now();
+        _lastUserInteractionAt = _openedAt;
         _host = host;
         _view = view;
         _dispatcher = dispatcher;
         _prompts = prompts ?? NullPromptStore.Instance;
         _policy = policy ?? NullPermissionPolicy.Instance;
+        // What this client can do with a file the agent sends it. Optional and defaulted, because the verbs
+        // are the one genuinely per-platform part of receiving a file: a desktop picks a folder and hands
+        // the file to the OS, a phone shares it. A head that hasn't wired one still renders the card.
+        _receivedFiles = receivedFiles ?? NullReceivedFileHandler.Instance;
         _bus = eventBus ?? new Agnes.Abstractions.Events.EventBus();
         Title = title;
 
@@ -100,6 +119,8 @@ public sealed class SessionViewModel : ObservableObject
         AllowCommand = new AsyncRelayCommand(() => RespondAsync(allow: true));
         DenyCommand = new AsyncRelayCommand(() => RespondAsync(allow: false));
         RespondWithCommand = new RelayCommand<PermissionOption>(o => { if (o is not null) { _ = RespondWithAsync(o); } });
+        AlwaysAllowLikeCommand = new RelayCommand<PermissionItem>(p => RememberLike(p, allow: true));
+        AlwaysDenyLikeCommand = new RelayCommand<PermissionItem>(p => RememberLike(p, allow: false));
         ToggleLeftCommand = new RelayCommand(() => { _leftHidden = !_leftHidden; OnPropertyChanged(nameof(ShowLeftPanel)); });
         ToggleToolsCommand = new RelayCommand(() => ToolsExpanded = !ToolsExpanded);
         TogglePlanCommand = new RelayCommand(() => PlanExpanded = !PlanExpanded);
@@ -108,6 +129,10 @@ public sealed class SessionViewModel : ObservableObject
         ToggleToolsListCommand = new RelayCommand(() => ToolsListExpanded = !ToolsListExpanded);
         ShowAllToolsCommand = new RelayCommand(() => ShowAllTools = true);
         ToggleCredentialsCommand = new RelayCommand(() => CredentialsExpanded = !CredentialsExpanded);
+        ToggleApprovalsCommand = new RelayCommand(() => ApprovalsExpanded = !ApprovalsExpanded);
+        ToggleUsageCommand = new RelayCommand(() => UsageExpanded = !UsageExpanded);
+        ToggleMcpCallsCommand = new RelayCommand(() => McpCallsExpanded = !McpCallsExpanded);
+        ToggleReviewCommentsCommand = new RelayCommand(() => ReviewCommentsExpanded = !ReviewCommentsExpanded);
         ToggleAgentsCommand = new RelayCommand(() => AgentsExpanded = !AgentsExpanded);
         ShowAllAgentsCommand = new RelayCommand(() => ShowAllAgents = true);
         ShowAllCredentialsCommand = new RelayCommand(() => ShowAllCredentials = true);
@@ -155,6 +180,9 @@ public sealed class SessionViewModel : ObservableObject
         // model axis, which hides the picker).
         _ = LoadModelsAsync(view.Info?.AdapterId);
         _sandbox = view.Info?.Sandbox;
+        // The host's own answer about the screen, straight off the snapshot: a session that just opened
+        // graphical says so here, without waiting for a catalogue round trip.
+        _hasDisplay = view.Info?.HasDisplay == true;
         PauseSandboxCommand = new AsyncRelayCommand(PauseSandboxAsync, () => HasSandbox && !SandboxPaused);
         ResumeSandboxCommand = new AsyncRelayCommand(ResumeSandboxAsync, () => HasSandbox && SandboxPaused);
         DeleteSandboxCommand = new AsyncRelayCommand(DeleteSandboxAsync, () => HasSandbox);
@@ -165,6 +193,9 @@ public sealed class SessionViewModel : ObservableObject
         RecallPreviousCommand = new RelayCommand(RecallPrevious);
         RecallNextCommand = new RelayCommand(RecallNext);
         DismissBannerCommand = new RelayCommand(DismissBanner);
+        // Dismissing the away band IS declaring yourself present — there is no separate "hide it" state to
+        // keep, which is why one method serves both the gesture and every other sign of life.
+        DismissAwayCommand = new RelayCommand(NoteUserInteraction);
         RetryCommand = new AsyncRelayCommand(RetryAsync);
         OpenSearchCommand = new RelayCommand(() => IsSearchOpen = true);
         CloseSearchCommand = new RelayCommand(() => { IsSearchOpen = false; SearchQuery = string.Empty; });
@@ -191,6 +222,15 @@ public sealed class SessionViewModel : ObservableObject
         // Only the null → first-plan transition needs announcing; after that the same PlanItemView is
         // updated in place and the panels are already bound to it.
         _transcript.PlanChanged += () => { OnPropertyChanged(nameof(Plan)); RaisePanels(); };
+        SaveSharedFileCommand = new AsyncRelayCommand<SharedFileItem>(
+            item => UseSharedFileAsync(item, (f, ct) => _receivedFiles.SaveAsync(f, ct), "save"),
+            _ => _receivedFiles.CanSave);
+        OpenSharedFileCommand = new AsyncRelayCommand<SharedFileItem>(
+            item => UseSharedFileAsync(item, (f, ct) => _receivedFiles.OpenAsync(f, ct), "open"),
+            _ => _receivedFiles.CanOpen);
+        ShareSharedFileCommand = new AsyncRelayCommand<SharedFileItem>(
+            item => UseSharedFileAsync(item, (f, ct) => _receivedFiles.ShareAsync(f, ct), "share"),
+            _ => _receivedFiles.CanShare);
         AnswerQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = AnswerQuestionAsync(item); });
         DismissQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = DismissQuestionAsync(item); });
 
@@ -201,6 +241,15 @@ public sealed class SessionViewModel : ObservableObject
         _transcript.SubagentAdded += AddSubagent;
         // The roster (participant panel) consumes the same SubagentAdded pipeline, de-duped independently.
         _transcript.SubagentAdded += Subagents.Add;
+        _transcript.SubagentFinished += FinishSubagent;
+        _transcript.SubagentDetached += id => _detachedSubagents.Add(id);
+        // An expired request drops out of "waiting on you" and into "worth reviewing".
+        _transcript.PermissionExpired += _ =>
+        {
+            OnPropertyChanged(nameof(ExpiredApprovals));
+            OnPropertyChanged(nameof(HasExpiredApprovals));
+            RaiseActivity();
+        };
         // The ListBox observes Items directly, but the empty-state flag is a computed bool — keep it in
         // sync with the collection so "No messages yet" disappears the moment the first item arrives.
         _transcript.Items.CollectionChanged += (_, e) =>
@@ -225,10 +274,27 @@ public sealed class SessionViewModel : ObservableObject
             }
         };
 
-        foreach (var @event in _view.Events)
+        // Rebuilding history is not the same as living through it. Every event in the log runs through the
+        // same Apply, and the acting parts of it — auto-answering a permission from a standing rule, raising
+        // a desktop notification — must not fire for something that happened hours ago. Replaying without
+        // this guard re-answered every still-open request on every reconnect: one host's log had 218
+        // discarded responses against a session that had only ever asked 17 times.
+        _replaying = true;
+        try
         {
-            Apply(@event);
+            foreach (var @event in _view.Events)
+            {
+                Apply(@event);
+            }
         }
+        finally
+        {
+            _replaying = false;
+        }
+
+        // Now decide once, on what is *still* open after the whole history is in — a live request that a
+        // standing rule covers is answered here, rather than sixteen dead ones being answered above.
+        AutoAnswerPendingPermission();
 
         _view.EventAppended += OnEvent;
         _host.StateChanged += OnHostStateChanged;
@@ -249,6 +315,23 @@ public sealed class SessionViewModel : ObservableObject
         ModifiedFiles.CollectionChanged += (_, _) => SyncReviewDiffs();
         _ = ReviewComments.LoadAsync();
         _ = LoadPromptTemplatesAsync();
+        _ = RefreshDisplayAvailabilityAsync();
+    }
+
+    /// <summary>
+    /// Releases what this session holds outside itself: the host subscriptions, and the display's WebSocket.
+    /// Everything else is managed state that the GC reclaims when the shell drops the view model.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        _view.EventAppended -= OnEvent;
+        _host.StateChanged -= OnHostStateChanged;
+        _host.ReadStateChanged -= OnReadStateChanged;
+        if (_display is { } display)
+        {
+            _display = null;
+            await display.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -327,6 +410,10 @@ public sealed class SessionViewModel : ObservableObject
         if (active)
         {
             _ = _host.MarkSessionReadAsync(SessionId, _view.LastSequence);
+            // Bringing the tab to the front is the person arriving, so it retires the away band here rather
+            // than in each head's activation glue — a phone pushing this page counts for the same reason a
+            // desktop tab click does.
+            NoteUserInteraction();
         }
 
         OnPropertyChanged(nameof(IsUnread));
@@ -334,6 +421,149 @@ public sealed class SessionViewModel : ObservableObject
 
     /// <summary>Marks this session unread (sticky — stays unread while open until the next focus).</summary>
     public void MarkUnread() => _ = _host.MarkSessionUnreadAsync(SessionId);
+
+    // ---- the agent's own one-line status ----
+    //
+    // A person running a dozen agents cannot read a dozen transcripts. The agent says, rarely and in its own
+    // words, what it found and what it is doing (AgentStatusEvent, via the host's report_status tool); this
+    // is where that sentence and its age live, for every surface that shows a session without opening it.
+    // All of it is derived from two fields and one clock, so it is testable without a UI and identical on
+    // every head.
+
+    /// <summary>How long the agent may go without a word before its silence is itself worth saying.</summary>
+    private static readonly TimeSpan StatusStaleAfter = TimeSpan.FromMinutes(10);
+
+    /// <summary>How long the person must be gone before the session counts as unattended. Short, because
+    /// three minutes away from a running agent is already long enough to have missed what it decided.</summary>
+    private static readonly TimeSpan UnattendedAfter = TimeSpan.FromMinutes(3);
+
+    /// <summary>The agent's latest one-line status, or null until it has reported one. Replay leaves the
+    /// last one in the log here; a live report replaces it. Never a placeholder — a surface with nothing to
+    /// say shows nothing.</summary>
+    public string? LatestStatus => _latestStatus;
+
+    /// <summary>When the agent said it (local time), or null if it never has.</summary>
+    public DateTimeOffset? LatestStatusAt => _latestStatusAt;
+
+    public bool HasStatus => !string.IsNullOrWhiteSpace(_latestStatus);
+
+    /// <summary>The status's age in prose — "just now", "2 min ago". Empty when there is no status.</summary>
+    public string StatusAge => RelativeTime.Ago(_latestStatusAt, _now());
+
+    /// <summary>
+    /// The agent is working and has gone quiet: no status for ten minutes (or none at all since this view
+    /// opened). Only ever true while it is *working* — an idle session that said nothing recently is simply
+    /// finished, not silent.
+    /// </summary>
+    public bool StatusIsStale => IsWorking && _now() - (_latestStatusAt ?? _openedAt) > StatusStaleAfter;
+
+    /// <summary>
+    /// What to show in place of the age when the agent has gone quiet: "no update for 12 min". Deliberately
+    /// not a status hue — see the one-meaning-per-hue rule. Silence is not a failure, and painting it amber
+    /// would say the session is blocked on a human, which is exactly what it is not.
+    /// </summary>
+    public string StaleText => StatusIsStale
+        ? $"no update for {RelativeTime.Elapsed(_now() - (_latestStatusAt ?? _openedAt))}"
+        : string.Empty;
+
+    /// <summary>
+    /// Whether the header's status line has anything to say — either a status, or the fact that a working
+    /// agent has stopped saying anything. Silence only counts as news while it is working, so a fresh idle
+    /// session shows no line at all rather than an empty one.
+    /// </summary>
+    public bool ShowStatusLine => HasStatus || StatusIsStale;
+
+    /// <summary>When the person last did anything with this session on this client (opening it counts).</summary>
+    public DateTimeOffset LastUserInteractionAt => _lastUserInteractionAt;
+
+    /// <summary>
+    /// The agent has done something since the person last touched this session, and that was more than
+    /// three minutes ago — the case where a status line stops being a nicety and becomes the whole point:
+    /// you come back to a tab and want one sentence, not a scroll.
+    /// </summary>
+    public bool IsUnattended => _lastAgentActivityAt is { } acted
+        && acted > _lastUserInteractionAt
+        && _now() - _lastUserInteractionAt > UnattendedAfter;
+
+    /// <summary>The status to show in the "while you were away" band — the latest one, but only while the
+    /// session actually is unattended, so a head can bind this alone and get both conditions.</summary>
+    public string? AwayStatus => IsUnattended ? _latestStatus : null;
+
+    /// <summary>Whether there is anything to put in that band (unattended *and* the agent said something).</summary>
+    public bool HasAwayStatus => !string.IsNullOrWhiteSpace(AwayStatus);
+
+    /// <summary>
+    /// Records that the person is here: it retires the away band and restarts the three-minute clock, since
+    /// everything the agent has done up to now is on the near side of this visit. Heads call it on scroll,
+    /// typing, a click into the transcript and tab activation — anything that means eyes on this session.
+    /// </summary>
+    public void NoteUserInteraction() => NoteUserInteraction(_now());
+
+    /// <summary>
+    /// As <see cref="NoteUserInteraction()"/>, but for an interaction at a stated moment — a head restoring
+    /// saved state, or a harness staging a session that was left alone eight minutes ago. Both sides of
+    /// "unattended" are timestamps rather than a flag precisely so this works: back-dating the visit leaves
+    /// the work the agent already did on the far side of it, which is what being away means.
+    /// </summary>
+    public void NoteUserInteraction(DateTimeOffset when)
+    {
+        // Every keystroke in the composer comes through here, so only announce a change when there is one:
+        // the visit time itself is not on screen, and the band's presence is the only thing it moves.
+        var wasUnattended = IsUnattended;
+        _lastUserInteractionAt = when;
+        if (wasUnattended || IsUnattended)
+        {
+            RaiseStatusAge();
+        }
+    }
+
+    /// <summary>
+    /// Re-raises everything the status line derives from the clock rather than from an event. Nothing here
+    /// changes on its own, so a surface showing an age ticks this (every 30s while it is visible) — the same
+    /// bargain the dashboard already makes with its relative timestamps.
+    /// </summary>
+    public void RaiseStatusAge()
+    {
+        OnPropertyChanged(nameof(StatusAge));
+        OnPropertyChanged(nameof(StatusIsStale));
+        OnPropertyChanged(nameof(StaleText));
+        OnPropertyChanged(nameof(ShowStatusLine));
+        OnPropertyChanged(nameof(LastUserInteractionAt));
+        OnPropertyChanged(nameof(IsUnattended));
+        OnPropertyChanged(nameof(AwayStatus));
+        OnPropertyChanged(nameof(HasAwayStatus));
+    }
+
+    // Stamped on every live event the agent produced. Guarded like the visit above, because a streamed reply
+    // arrives a word at a time and re-raising seven properties per word would be the expensive way to say
+    // nothing.
+    private void NoteAgentActivity()
+    {
+        var wasUnattended = IsUnattended;
+        _lastAgentActivityAt = _now();
+        if (wasUnattended != IsUnattended)
+        {
+            RaiseStatusAge();
+        }
+    }
+
+    // Applied identically in replay and live: each report simply replaces the last, so folding the whole log
+    // leaves the most recent one standing and a live report overwrites it.
+    private void ApplyStatus(AgentStatusEvent status)
+    {
+        var text = status.Status.Trim();
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        _latestStatus = text;
+        _latestStatusAt = status.Timestamp == default ? _now() : status.Timestamp.ToLocalTime();
+        OnPropertyChanged(nameof(LatestStatus));
+        OnPropertyChanged(nameof(LatestStatusAt));
+        OnPropertyChanged(nameof(HasStatus));
+        RaiseStatusAge();
+    }
 
     public string Title { get; }
     public string SessionId => _view.SessionId;
@@ -401,9 +631,20 @@ public sealed class SessionViewModel : ObservableObject
 
             // Main view shows the main agent's items only; subagent output is routed to its own view (select
             // the subagent in the roster) rather than cluttering the primary conversation.
-            return _selectedAgentId is null
-                ? basis.Where(i => i.AgentId is null).ToList()
-                : basis.Where(i => i.AgentId == _selectedAgentId).ToList();
+            if (_selectedAgentId is null)
+            {
+                return basis.Where(i => i.AgentId is null).ToList();
+            }
+
+            // The launching tool call belongs to the subagent's view as well as the parent's — it is where
+            // the work was described and where its result comes back. That matters most where it is *all*
+            // there is: an agent that runs a subagent in the background (Copilot's task tool, OpenCode's)
+            // streams none of its inner work, so a view filtered strictly by AgentId would be empty and
+            // the roster row would look broken.
+            return basis
+                .Where(i => i.AgentId == _selectedAgentId
+                            || (i is Transcript.ToolCallItem tool && tool.ToolCallId == _selectedAgentId))
+                .ToList();
         }
     }
 
@@ -449,6 +690,159 @@ public sealed class SessionViewModel : ObservableObject
 
     /// <summary>Shows/hides the terminal panel.</summary>
     public ICommand ToggleTerminalCommand => _toggleTerminal ??= new RelayCommand(() => IsTerminalVisible = !IsTerminalVisible);
+
+    // ---- graphical sandbox display ----
+    // A session whose sandbox has a screen. Lazily built like the terminal, so a session without a display
+    // (nearly all of them) pays nothing, and disposed with the session because it owns a WebSocket.
+    //
+    // Whether there IS a display is a fact only the host holds. It arrives on the snapshot's SessionInfo
+    // (seeded in the constructor) and on the catalogue's SessionSummary, and is settable besides, so a shell
+    // that already had the summary in hand can say so without a round trip. Default false: a head must never
+    // offer a screen that isn't there.
+    private DisplayViewModel? _display;
+    private ICommand? _toggleDisplay;
+    private bool _isDisplayVisible;
+    private bool _hasDisplay;
+
+    /// <summary>Whether this session has a graphical sandbox whose screen a client may open.</summary>
+    public bool HasDisplay
+    {
+        get => _hasDisplay;
+        set
+        {
+            if (SetProperty(ref _hasDisplay, value))
+            {
+                OnPropertyChanged(nameof(Display));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The session's screen, or null when it has none. Built on first use once <see cref="HasDisplay"/> is
+    /// true; the view model does not connect until a head asks it to, so an unopened panel costs no bandwidth.
+    /// </summary>
+    public DisplayViewModel? Display => HasDisplay ? _display ??= new DisplayViewModel(_host, SessionId, _dispatcher) : null;
+
+    /// <summary>Whether the screen panel is shown for this session. Showing it connects the channel; hiding it
+    /// disconnects, because a hidden screen that keeps pulling frames is pure waste on both ends.</summary>
+    public bool IsDisplayVisible
+    {
+        get => _isDisplayVisible;
+        set
+        {
+            if (!SetProperty(ref _isDisplayVisible, value))
+            {
+                return;
+            }
+
+            if (Display is not { } display)
+            {
+                return;
+            }
+
+            if (value)
+            {
+                display.ConnectCommand.Execute(null);
+            }
+            else
+            {
+                display.DisconnectCommand.Execute(null);
+            }
+        }
+    }
+
+    /// <summary>Shows/hides the screen panel.</summary>
+    public ICommand ToggleDisplayCommand => _toggleDisplay ??= new RelayCommand(() => IsDisplayVisible = !IsDisplayVisible);
+
+    /// <summary>
+    /// Asks the host's catalogue whether this session has a display. Best-effort and silent: a host that
+    /// predates graphical sandboxes simply never reports one, and the panel stays unavailable.
+    /// </summary>
+    public async Task RefreshDisplayAvailabilityAsync()
+    {
+        try
+        {
+            var sessions = await _host.ListSessionsAsync().ConfigureAwait(false);
+            var mine = sessions.FirstOrDefault(s => s.SessionId == SessionId);
+            if (mine is { HasDisplay: true })
+            {
+                _dispatcher.Post(() => HasDisplay = true);
+            }
+        }
+        catch
+        {
+            // No catalogue, no display — the same outcome as a host that has none.
+        }
+    }
+
+    // ---- agent console ----
+    // The agent's own CLI, run interactively in a PTY wherever the agent runs, for the slash commands and
+    // one-off actions ACP never exposes. A sibling of the terminal above, not a replacement: that one is a
+    // shell, this one is the agent. Pinned rather than adopting, because both write TerminalOutputEvents
+    // into the same session log and a panel that adopted whichever spoke first would show the wrong stream.
+    private TerminalPanelViewModel? _agentConsole;
+    private ICommand? _toggleAgentConsole;
+    private bool _isAgentConsoleVisible;
+    private bool _agentConsoleUnavailable;
+
+    /// <summary>The session's agent console, built on first use.</summary>
+    public TerminalPanelViewModel AgentConsole =>
+        _agentConsole ??= new TerminalPanelViewModel(_host, _view, _dispatcher, adoptFromStream: false);
+
+    /// <summary>
+    /// Whether the agent console panel is shown. Turning it on is what starts the console the first time —
+    /// nothing runs before that — and re-attaches to it thereafter, scrollback intact.
+    /// </summary>
+    public bool IsAgentConsoleVisible
+    {
+        get => _isAgentConsoleVisible;
+        set
+        {
+            if (!SetProperty(ref _isAgentConsoleVisible, value))
+            {
+                return;
+            }
+
+            AgentConsole.IsVisible = value;
+            if (value)
+            {
+                _ = AttachAgentConsoleAsync();
+            }
+        }
+    }
+
+    /// <summary>True once the host has told us this agent has no console, so the affordance can stop
+    /// offering something that will not open.</summary>
+    public bool AgentConsoleUnavailable
+    {
+        get => _agentConsoleUnavailable;
+        private set => SetProperty(ref _agentConsoleUnavailable, value);
+    }
+
+    private async Task AttachAgentConsoleAsync()
+    {
+        try
+        {
+            if (!await AgentConsole.OpenAgentConsoleAsync().ConfigureAwait(false))
+            {
+                _dispatcher.Post(() =>
+                {
+                    AgentConsoleUnavailable = true;
+                    IsAgentConsoleVisible = false;
+                });
+            }
+        }
+        catch
+        {
+            // An agent console is an extra on top of a session that already works; failing to attach must
+            // not disturb it. The panel simply stays closed.
+            _dispatcher.Post(() => IsAgentConsoleVisible = false);
+        }
+    }
+
+    /// <summary>Shows/hides the agent console panel.</summary>
+    public ICommand ToggleAgentConsoleCommand =>
+        _toggleAgentConsole ??= new RelayCommand(() => IsAgentConsoleVisible = !IsAgentConsoleVisible);
 
     // ---- file browser (git-and-files/03) ----
     // Built once per session (keyed by this SessionView) and lazily, so a session that never opens the
@@ -554,10 +948,34 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasInactiveAgents => !ShowAllAgents && AgentRows.Any(n => !n.IsMain && !n.IsActive && !n.IsSelected);
     public string MoreAgentsLabel => $"Show all {AgentRows.Count}";
 
-    /// <summary>Marks a subagent finished when its Task tool call reaches a terminal status.</summary>
+    /// <summary>
+    /// Retires a subagent that reported its own completion. Distinct from <see cref="MarkAgentInactive"/>,
+    /// which infers the end from the launching tool call: that inference is right for Claude, where the
+    /// Task call runs as long as the subagent does, and wrong for a backgrounded one, whose launch returns
+    /// immediately. The row also moves out of the transcript at this point, so re-raise what's displayed.
+    /// </summary>
+    private void FinishSubagent(string subagentId)
+    {
+        _detachedSubagents.Remove(subagentId); // it reported for itself; the guard has done its job
+        MarkAgentInactive(subagentId);
+        OnPropertyChanged(nameof(DisplayItems));
+        OnPropertyChanged(nameof(IsTranscriptEmpty));
+    }
+
+    /// <summary>
+    /// Subagents that outlive the call that launched them — a background dispatch. Their fate comes from
+    /// their own reports (<see cref="FinishSubagent"/>), never from that call's status.
+    /// </summary>
+    private readonly HashSet<string> _detachedSubagents = new(StringComparer.Ordinal);
+
+    /// <summary>Marks a subagent finished when its Task tool call reaches a terminal status. Right for an
+    /// adapter whose launch call runs as long as the subagent does (Claude's Task tool); skipped for one
+    /// that dispatched into the background and said so, where the call returns in seconds and the work
+    /// carries on without it.</summary>
     private void MarkAgentInactive(string? toolCallId)
     {
-        if (toolCallId is not null && _agentNodes.TryGetValue(toolCallId, out var node) && node.IsActive)
+        if (toolCallId is not null && !_detachedSubagents.Contains(toolCallId)
+            && _agentNodes.TryGetValue(toolCallId, out var node) && node.IsActive)
         {
             node.IsActive = false;
             RaiseAgentRows();
@@ -587,6 +1005,10 @@ public sealed class SessionViewModel : ObservableObject
     /// reconnect to the same live session by subscribing to (host, sessionId) — the event-sourced
     /// snapshot+tail replays full history, so a phone can pick up exactly where the desktop left off.
     /// </summary>
+    /// <summary>The host this session lives on. Exposed so a shell can act on the session's own host —
+    /// arming a goal, say — instead of guessing which of several connected hosts owns it.</summary>
+    public IAgnesHost Host => _host;
+
     public string HandoffReference => $"{_host.HostUrl}#{SessionId}";
     public ObservableCollection<TranscriptItem> Items => _transcript.Items;
     public PermissionItem? PendingPermission => _transcript.PendingPermission;
@@ -673,6 +1095,13 @@ public sealed class SessionViewModel : ObservableObject
     public System.Windows.Input.ICommand ToggleToolsListCommand { get; }
     public System.Windows.Input.ICommand ShowAllToolsCommand { get; }
     public System.Windows.Input.ICommand ToggleCredentialsCommand { get; }
+
+    // Every audit-trail section on the sidebar folds. Approvals in particular grows without bound in a
+    // long autonomous session — a hundred "allow the sandboxed agent to…" rows pushed everything else
+    // off the panel, and it was the one list with no way to get them back.
+    public System.Windows.Input.ICommand ToggleApprovalsCommand { get; }
+    public System.Windows.Input.ICommand ToggleMcpCallsCommand { get; }
+    public System.Windows.Input.ICommand ToggleReviewCommentsCommand { get; }
     public System.Windows.Input.ICommand ToggleAgentsCommand { get; }
     public System.Windows.Input.ICommand ShowAllAgentsCommand { get; }
     public System.Windows.Input.ICommand ShowAllCredentialsCommand { get; }
@@ -708,6 +1137,15 @@ public sealed class SessionViewModel : ObservableObject
     }
     public bool HasApprovals => Approvals.Count > 0;
     public bool HasMcpCalls => McpCalls.Count > 0;
+
+    private bool _approvalsExpanded = true;
+    public bool ApprovalsExpanded { get => _approvalsExpanded; set => SetProperty(ref _approvalsExpanded, value); }
+
+    private bool _mcpCallsExpanded = true;
+    public bool McpCallsExpanded { get => _mcpCallsExpanded; set => SetProperty(ref _mcpCallsExpanded, value); }
+
+    private bool _reviewCommentsExpanded = true;
+    public bool ReviewCommentsExpanded { get => _reviewCommentsExpanded; set => SetProperty(ref _reviewCommentsExpanded, value); }
 
     /// <summary>Audit trail of brokered git-credential grants/denials for this session.</summary>
     public ObservableCollection<CredentialUseEntry> CredentialUses { get; } = [];
@@ -746,7 +1184,7 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasMoreCredentialUses => !ShowAllCredentials && CredentialUses.Count > VisibleCredentialUses.Count();
     public string MoreCredentialsLabel => $"Show all {CredentialUses.Count}";
 
-    public bool HasSidebarContent => HasAgentTitle || Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents || HasReviewComments;
+    public bool HasSidebarContent => HasAgentTitle || Plan is not null || HasFiles || HasTools || HasApprovals || HasMcpCalls || HasCredentialUses || HasSubagents || HasReviewComments || HasUsageStats;
     public bool ShowLeftPanel => HasSidebarContent && !_leftHidden && !IsPreviewFullScreen;
     public bool ShowRightPanel => SelectedPreview is not null;
 
@@ -842,6 +1280,11 @@ public sealed class SessionViewModel : ObservableObject
         OnPropertyChanged(nameof(IsAwaitingInput));
         OnPropertyChanged(nameof(IsReadyForReview));
         OnPropertyChanged(nameof(IsFaulted));
+        // Staleness is "working AND quiet", so a change of activity can make silence meaningful or
+        // meaningless without a single new status arriving.
+        OnPropertyChanged(nameof(StatusIsStale));
+        OnPropertyChanged(nameof(StaleText));
+        OnPropertyChanged(nameof(ShowStatusLine));
     }
 
     /// <summary>
@@ -863,6 +1306,23 @@ public sealed class SessionViewModel : ObservableObject
 
     /// <summary>A compact status caption (reported cost), or null when there's nothing real to show.</summary>
     public string? UsageSummary => _usage?.Summary;
+
+    /// <summary>What this session has consumed, by token kind, over the last day/week/its whole life.
+    /// The context meter says how full the window is now; this says what it has cost to get here.</summary>
+    public SessionUsageStats UsageStats { get; } = new();
+
+    /// <summary>Whether any agent has reported a token breakdown — the panel stays away otherwise
+    /// rather than showing zeroes that would read as "this session used nothing".</summary>
+    public bool HasUsageStats => UsageStats.HasBreakdown;
+
+    private bool _usageExpanded = true;
+    public bool UsageExpanded { get => _usageExpanded; set => SetProperty(ref _usageExpanded, value); }
+
+    public System.Windows.Input.ICommand ToggleUsageCommand { get; }
+
+    /// <summary>Decide the next request like this one in advance (offered on an expired card).</summary>
+    public System.Windows.Input.ICommand AlwaysAllowLikeCommand { get; }
+    public System.Windows.Input.ICommand AlwaysDenyLikeCommand { get; }
 
     // Running usage figures, each updated only when the agent reports that field (partial events merge).
     private UsageInfo? _usage;
@@ -1720,6 +2180,10 @@ public sealed class SessionViewModel : ObservableObject
     public ICommand RecallPreviousCommand { get; }
     public ICommand RecallNextCommand { get; }
     public ICommand DismissBannerCommand { get; }
+
+    /// <summary>Dismisses the "while you were away" band — which is simply <see cref="NoteUserInteraction()"/>
+    /// under a button, since the band is present exactly while nobody has been.</summary>
+    public ICommand DismissAwayCommand { get; }
     public ICommand OpenSearchCommand { get; }
     public ICommand CloseSearchCommand { get; }
     public ICommand NextMatchCommand { get; }
@@ -1767,6 +2231,9 @@ public sealed class SessionViewModel : ObservableObject
             or ToolCallEvent { Status: ToolCallStatus.Pending or ToolCallStatus.InProgress })
         {
             IsTurnActive = true;
+            // The agent is demonstrably working, which retracts any claim that its last turn was
+            // interrupted. See ClearInterrupted.
+            ClearInterrupted();
         }
 
         // A subagent's Task tool call reaching a terminal status means that subagent finished → mark it
@@ -1785,12 +2252,13 @@ public sealed class SessionViewModel : ObservableObject
         {
             case PermissionRequestedEvent pr:
                 _permissionTitles[pr.RequestId] = pr.Title;
-                var toolKind = _transcript.PendingPermission?.ToolKind;
-                if (_policy.Decide(_host.HostUrl, toolKind) is bool auto
-                    && PickOption(pr.Options, auto) is { } chosen)
+                if (_replaying)
                 {
-                    // A standing trust rule answers this one; the resolution is still audited.
-                    _ = _host.RespondPermissionAsync(SessionId, pr.RequestId, chosen.OptionId);
+                    break; // history: rebuild the card, don't answer it and don't ring the doorbell
+                }
+
+                if (AutoAnswerPendingPermission())
+                {
                     break;
                 }
 
@@ -1804,9 +2272,22 @@ public sealed class SessionViewModel : ObservableObject
                 RaisePanels();
                 break;
 
-            case TurnEndedEvent { Reason: not StopReason.Cancelled }:
+            case TurnEndedEvent { Reason: not StopReason.Cancelled } turnEnd:
                 IsTurnActive = false;
-                NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId, Items.LastOrDefault()?.AnchorId));
+                if (turnEnd.Reason is StopReason.EndTurn)
+                {
+                    // A turn that finished normally settles the question. Refusal is deliberately excluded:
+                    // the native mapper emits AgentError then TurnEnded(Refusal) for the same failure, so
+                    // clearing on any turn end would erase the banner one event after raising it.
+                    ClearInterrupted();
+                }
+
+                if (!_replaying)
+                {
+                    // Reconnecting must not announce every turn the session ever finished.
+                    NotificationRaised?.Invoke(new AppNotification($"{Title}: response ready", "The agent finished its turn.", NotificationKind.Completion, SessionId, Items.LastOrDefault()?.AnchorId));
+                }
+
                 DrainQueue();
                 _ = RefreshGitAsync(); // changes likely landed this turn
                 break;
@@ -1819,7 +2300,38 @@ public sealed class SessionViewModel : ObservableObject
                 IsTurnActive = false;
                 _interrupted = true;
                 UpdateBanner();
-                NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId, Items.LastOrDefault()?.AnchorId));
+                if (!_replaying)
+                {
+                    // Likewise: an error from three hours ago is history, not news.
+                    NotificationRaised?.Invoke(new AppNotification("Agent error", ae.Message, NotificationKind.Error, SessionId, Items.LastOrDefault()?.AnchorId));
+                }
+
+                break;
+
+            case FileSharedEvent shared:
+                // The builder has already put the card in the transcript (this runs after _transcript.Apply),
+                // so pick that same instance up rather than making a second one: the "all files this session"
+                // list and the card the user scrolls to must be the same object, or a link into one lands on
+                // the other.
+                if (Items.OfType<SharedFileItem>().LastOrDefault(i => i.FileId == shared.FileId) is { } card)
+                {
+                    SharedFiles.Add(card);
+                    OnPropertyChanged(nameof(HasSharedFiles));
+                    if (!_replaying)
+                    {
+                        // Replay is not delivery. Reconnecting to a session that received a file yesterday
+                        // rebuilds the card and the list, but must not re-announce it — same rule as
+                        // permissions and turn-end above.
+                        SharedFileReceived?.Invoke(card);
+                        NotificationRaised?.Invoke(new AppNotification(
+                            $"{DisplayTitle} sent you a file",
+                            card.HasCaption ? $"{card.FileName} — {card.Caption}" : card.FileName,
+                            NotificationKind.File,
+                            SessionId,
+                            card.AnchorId));
+                    }
+                }
+
                 break;
 
             case SessionTitleEvent titleEvent when !string.IsNullOrWhiteSpace(titleEvent.Title):
@@ -1828,6 +2340,10 @@ public sealed class SessionViewModel : ObservableObject
 
             case ModeChangedEvent mode:
                 CurrentModeId = mode.ModeId;
+                break;
+
+            case AgentStatusEvent status:
+                ApplyStatus(status);
                 break;
 
             case PendingQueueEvent queue:
@@ -1852,6 +2368,16 @@ public sealed class SessionViewModel : ObservableObject
                 break;
 
             case UsageReportedEvent u when u.Metrics is { } m:
+                // Consumption is totalled separately from occupancy — see SessionUsageStats for why the
+                // two must not be mixed. The event's own timestamp places it, so a replayed session's
+                // "last 24 hours" means the session's clock, not this client's session start.
+                UsageStats.Add(m, u.Timestamp == default ? DateTimeOffset.Now : u.Timestamp.ToLocalTime());
+                if (UsageStats.HasBreakdown)
+                {
+                    OnPropertyChanged(nameof(HasUsageStats));
+                    RaisePanels();
+                }
+
                 // Merge: each event may carry only some fields (context from a message, cost from the
                 // result), so keep the last real value for any field this event didn't report. Metrics can
                 // be null for events persisted before UsageReportedEvent wrapped a UsageMetrics — those
@@ -1862,6 +2388,15 @@ public sealed class SessionViewModel : ObservableObject
                 if (m.CostUsd is not null) _costUsd = m.CostUsd;
                 Usage = new UsageInfo(_ctxUsed, _ctxWindow, _outputTokens, _costUsd);
                 break;
+        }
+
+        // "When did the agent last do anything?" — the other half of IsUnattended. Two exclusions, both
+        // load-bearing: replay is not activity (the whole log arrives at once, before anyone could have
+        // interacted with it, so a reconnect must not open onto an away band about work already seen), and
+        // the user's own prompt echoing back off the host is the person, not the agent.
+        if (!_replaying && @event is not MessageChunkEvent { Role: MessageRole.User })
+        {
+            NoteAgentActivity();
         }
 
         // While filtered to a subagent, refresh the (snapshot) view as its events arrive.
@@ -1886,6 +2421,99 @@ public sealed class SessionViewModel : ObservableObject
     /// <summary>Raised when the session wants a notification surfaced (blocker / completion / error).</summary>
     public event Action<AppNotification>? NotificationRaised;
 
+    // ---- files the agent sent (see Agnes.Ui.Core/ReceivedFiles.cs) ----
+
+    /// <summary>
+    /// Every file the agent has sent in this session, oldest first — the same <see cref="SharedFileItem"/>
+    /// instances that sit in the transcript, so a head can offer a "files" list without a second model that
+    /// could disagree with the cards. Rebuilt by replay, appended live.
+    /// </summary>
+    public ObservableCollection<SharedFileItem> SharedFiles { get; } = [];
+
+    public bool HasSharedFiles => SharedFiles.Count > 0;
+
+    /// <summary>
+    /// Raised for a file arriving <em>now</em> — never for one replayed out of the log. A head uses it to
+    /// react (flash a panel, pop a sheet); the corresponding <see cref="AppNotification"/> is raised on the
+    /// same terms through <see cref="NotificationRaised"/>.
+    /// </summary>
+    public event Action<SharedFileItem>? SharedFileReceived;
+
+    /// <summary>What this client can do with a received file. Never null; a head that wired nothing gets
+    /// <see cref="NullReceivedFileHandler"/>, whose three flags are all false so no dead button renders.</summary>
+    public IReceivedFileHandler ReceivedFiles => _receivedFiles;
+
+    /// <summary>
+    /// Fetches a shared file's bytes from the host. The card carries only metadata — a transcript of a
+    /// hundred screenshots must not be a hundred megabytes in memory — so the bytes are pulled on the one
+    /// occasion someone actually asks for them.
+    /// </summary>
+    public async Task<ReceivedFile> DownloadSharedFileAsync(SharedFileItem item, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        cancellationToken.ThrowIfCancellationRequested();
+        var bytes = await _host.DownloadFileAsync(SessionId, item.RelativePath).ConfigureAwait(false);
+        return new ReceivedFile(item.FileName, item.MimeType, bytes);
+    }
+
+    /// <summary>
+    /// Reads a shared file for inline preview (an image's bytes, a text file's text). Returns null rather
+    /// than throwing when the host can't serve it — a preview that fails is a card without a thumbnail, not
+    /// a dead session.
+    /// </summary>
+    public async Task<FileContent?> PreviewSharedFileAsync(SharedFileItem item, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return await _host.ReadFileAsync(SessionId, item.RelativePath).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Saves a received file wherever the head's handler puts it (desktop: a file picker).</summary>
+    public IAsyncRelayCommand<SharedFileItem> SaveSharedFileCommand { get; }
+
+    /// <summary>Opens a received file in whatever the platform uses for its type.</summary>
+    public IAsyncRelayCommand<SharedFileItem> OpenSharedFileCommand { get; }
+
+    /// <summary>Hands a received file to the platform's share surface (phones; not desktop).</summary>
+    public IAsyncRelayCommand<SharedFileItem> ShareSharedFileCommand { get; }
+
+    // Download once, then hand the bytes to the head's handler. A failure anywhere in that chain is the
+    // user's problem to see, not the app's to die of: it lands in the transcript as an error notice, which
+    // is where this session already reports things that went wrong.
+    private async Task UseSharedFileAsync(SharedFileItem? item, Func<ReceivedFile, CancellationToken, Task> use, string verb)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var file = await DownloadSharedFileAsync(item).ConfigureAwait(false);
+            await use(file, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The person closed the picker / backed out. Not a failure.
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => _transcript.Items.Add(
+                new NoticeItem($"Could not {verb} \u201c{item.FileName}\u201d: {ex.Message}", isError: true)));
+        }
+    }
+
     private void OnHostStateChanged(AgnesConnectionState state) => _dispatcher.Post(UpdateBanner);
 
     private void UpdateBanner()
@@ -1905,6 +2533,32 @@ public sealed class SessionViewModel : ObservableObject
         };
 
         RaiseActivity();
+    }
+
+    /// <summary>
+    /// Retracts the "last turn was interrupted" state on evidence that it is no longer true.
+    /// </summary>
+    /// <remarks>
+    /// The flag was raised by an <see cref="AgentErrorEvent"/> and, until this existed, only a human
+    /// clicking Dismiss ever lowered it — so a session that hit a rate limit and then carried on happily
+    /// went on announcing the failure indefinitely, over the top of the agent visibly working. It also
+    /// outlived the session: replaying the log on reconnect re-raised an error from hours earlier and left
+    /// it up, since the recovery that followed said nothing to contradict it.
+    ///
+    /// <para>The evidence is the same signal that already decides a turn is running — a message, a
+    /// thought, a tool call starting — plus a turn ending normally. Deliberately not a passive one like a
+    /// usage report or a host notice: those can arrive around a failure without the agent having recovered
+    /// from it.</para>
+    /// </remarks>
+    private void ClearInterrupted()
+    {
+        if (!_interrupted)
+        {
+            return;
+        }
+
+        _interrupted = false;
+        UpdateBanner();
     }
 
     private void DismissBanner()
@@ -2160,6 +2814,9 @@ public sealed class SessionViewModel : ObservableObject
 
     private void Record(string text)
     {
+        // Sending is the most unambiguous form of "I am here": it ends any away band and restarts the
+        // three-minute clock, whichever head the keystrokes came from.
+        NoteUserInteraction();
         _history.Add(text);
         _prompts.AppendHistory(SessionId, text);
         _historyIndex = _history.Count;
@@ -2315,6 +2972,68 @@ public sealed class SessionViewModel : ObservableObject
         }
 
         await _host.RespondPermissionAsync(SessionId, permission.RequestId, option.OptionId);
+    }
+
+    /// <summary>
+    /// Decides in advance what happens to the next request like this one. Offered on an expired card,
+    /// where it is the only action left worth taking: the request went unanswered because nobody was
+    /// there, and answering it now is impossible — but a standing rule means the next one doesn't wait.
+    /// </summary>
+    /// <remarks>
+    /// The rule is by tool kind and host, the same granularity an "always allow" answer records, and it
+    /// is enforced client-side against future requests only. It cannot retroactively grant anything: the
+    /// expired request is gone, and this deliberately does not try to revive it.
+    /// </remarks>
+    private void RememberLike(PermissionItem? permission, bool allow)
+    {
+        if (permission?.ToolKind is not { } kind)
+        {
+            return;
+        }
+
+        _policy.Remember(_host.HostUrl, kind, allow);
+        StandingRuleSet?.Invoke(permission, allow);
+        OnPropertyChanged(nameof(ExpiredApprovals));
+        OnPropertyChanged(nameof(HasExpiredApprovals));
+    }
+
+    /// <summary>Raised when the user sets a standing rule from an expired card, so a shell can confirm it.</summary>
+    public event Action<PermissionItem, bool>? StandingRuleSet;
+
+    /// <summary>Requests that went unanswered and can no longer be answered — what the user comes back
+    /// to after stepping away. Newest first.</summary>
+    public IEnumerable<PermissionItem> ExpiredApprovals
+        => _transcript.Items.OfType<PermissionItem>().Where(p => p.Expired).Reverse();
+
+    public bool HasExpiredApprovals => _transcript.Items.OfType<PermissionItem>().Any(p => p.Expired);
+
+    /// <summary>
+    /// Answers the outstanding request from a standing trust rule, if there is one and it applies. Returns
+    /// whether it did, so the caller knows whether to fall through to notifying a human.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately reads <see cref="PendingPermission"/> rather than taking a request: that property is
+    /// what the answer bar acts on, so this answers exactly what the user would have. It also means a
+    /// request already retired — resolved, or withdrawn because the agent stopped waiting — is not
+    /// answered at all, which is the whole point: a response to a withdrawn request goes nowhere, records
+    /// nothing, and leaves the card on screen looking like the button did not work.
+    /// </remarks>
+    private bool AutoAnswerPendingPermission()
+    {
+        if (PendingPermission is not { } permission || !permission.IsAnswerable)
+        {
+            return false;
+        }
+
+        if (_policy.Decide(_host.HostUrl, permission.ToolKind) is not bool auto
+            || PickOption(permission.Options, auto) is not { } chosen)
+        {
+            return false;
+        }
+
+        // The resolution is still audited — an auto-answer is a decision, and the trail records it as one.
+        _ = _host.RespondPermissionAsync(SessionId, permission.RequestId, chosen.OptionId);
+        return true;
     }
 
     // Narrowest matching option: prefer "once" over "always".
