@@ -250,6 +250,7 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
         private readonly Agnes.TestKit.IsolatedHostHome _home = new();
 
         // Throwaway files so the test never touches the real ~/.agnes/*.
+        public string DeviceFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-devices-it-{Guid.NewGuid():n}.json");
         public string McpFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-mcp-it-{Guid.NewGuid():n}.json");
         public string ImageFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-img-it-{Guid.NewGuid():n}.json");
 
@@ -260,6 +261,7 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
                 {
                     ["Agnes:Home"] = _home.Path,
                     ["Agnes:PairingToken"] = Token,
+                    ["Agnes:DevicesFile"] = DeviceFile,
                     ["Agnes:McpFile"] = McpFile,
                 }));
             builder.ConfigureServices(services =>
@@ -278,6 +280,7 @@ public class EndToEndTests : IClassFixture<EndToEndTests.HostFactory>
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
+            if (disposing && File.Exists(DeviceFile)) File.Delete(DeviceFile);
             if (disposing && File.Exists(McpFile)) File.Delete(McpFile);
             if (disposing && File.Exists(ImageFile)) File.Delete(ImageFile);
             if (disposing) _home.Dispose();

@@ -43,4 +43,5 @@ internal sealed class NullTabController : ITabController
     public Task SaveCurrentAsLaunchProfileAsync(SessionDocument doc, string name) => Task.CompletedTask;
     public void ApplyLaunchProfileMcpApproval(string mcpApproval) { }
     public void RememberWorkingDirectory(string path) { }
+    public void AdjustChatFontSize(int direction) { }
 }
