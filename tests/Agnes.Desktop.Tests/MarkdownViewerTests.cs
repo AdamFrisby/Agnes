@@ -9,7 +9,7 @@ using Avalonia.VisualTree;
 
 namespace Agnes.Desktop.Tests;
 
-[Collection("desktop-headless")]
+[Collection("Avalonia headless")]
 public sealed class MarkdownViewerTests
 {
     [Fact]
@@ -253,5 +253,9 @@ public static class DesktopMarkdownAppBuilder
 {
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<Agnes.App.Desktop.App>()
-            .UseHeadless(new AvaloniaHeadlessPlatformOptions());
+            // Markdown.Avalonia lays out AvaloniaEdit controls. It needs the same real renderer as the
+            // other layout tests; using the null headless drawing backend made this suite pass or fail
+            // depending on another test's global Avalonia initialization order.
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+            .UseSkia();
 }
