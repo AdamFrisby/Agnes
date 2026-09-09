@@ -9,6 +9,7 @@ namespace Agnes.Mobile.Tests;
 /// phone's best trick is unblocking an agent started somewhere else, and that only works if the sessions
 /// are offered rather than hunted for.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class HostSessionsPageTests : IDisposable
 {
     private readonly string _state = Path.Combine(Path.GetTempPath(), "agnes-mobile-tests-" + Guid.NewGuid().ToString("n"));

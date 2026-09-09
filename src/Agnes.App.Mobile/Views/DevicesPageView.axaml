@@ -25,23 +25,47 @@
 
         <ItemsControl ItemsSource="{Binding Devices}">
           <ItemsControl.ItemTemplate>
-            <DataTemplate>
+            <DataTemplate x:DataType="vm:MobileDeviceRow">
               <Border Classes="card" Margin="0,0,0,8" Padding="14">
-                <Grid ColumnDefinitions="*,Auto">
-                  <StackPanel Grid.Column="0" Spacing="3" Margin="0,0,10,0">
-                    <TextBlock Text="{Binding Name}" Classes="strong" />
-                    <TextBlock Classes="caption"
-                               Text="{Binding PairedAt, StringFormat='Paired {0:d MMM yyyy}'}" />
-                  </StackPanel>
-                  <Button Grid.Column="1" Theme="{StaticResource DangerButton}" MinHeight="38"
-                          Padding="14,0" Content="Revoke"
-                          Command="{Binding $parent[UserControl].DataContext.RevokeCommand}"
+                <StackPanel Spacing="10">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,10,0">
+                      <StackPanel Orientation="Horizontal" Spacing="7">
+                        <TextBlock Text="{Binding Name}" Classes="strong" VerticalAlignment="Center" />
+                        <!-- The role, as a plain pill. Not one of the status tints: those already mean
+                             needs-you / running / failed, and a role is none of those. -->
+                        <Border Name="RoleChip" Classes="pill"><TextBlock Text="{Binding RoleChip}" /></Border>
+                        <Border Classes="pill accent" IsVisible="{Binding IsCurrentDevice}">
+                          <TextBlock Text="this device" />
+                        </Border>
+                      </StackPanel>
+                      <TextBlock Classes="caption" Text="{Binding Admission}" IsVisible="{Binding Admission, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      <TextBlock Classes="caption" Text="{Binding LastSeen}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Theme="{StaticResource DangerButton}" MinHeight="38"
+                            Padding="14,0" Content="Revoke"
+                            Command="{Binding $parent[UserControl].DataContext.RevokeCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+                  <Button Name="RoleButton" Theme="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
+                          MinHeight="38" Content="{Binding RoleActionLabel}"
+                          IsVisible="{Binding $parent[UserControl].DataContext.CanManage}"
+                          IsEnabled="{Binding CanChangeRole}"
+                          Command="{Binding $parent[UserControl].DataContext.SetRoleCommand}"
                           CommandParameter="{Binding}" />
-                </Grid>
+                </StackPanel>
               </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+
+        <!-- A member sees the same list, read-only, and is told why rather than left to wonder. -->
+        <TextBlock Name="OnlyOwnersNote" Classes="muted" TextWrapping="Wrap"
+                   IsVisible="{Binding ShowOnlyOwnersNote}" Text="{Binding OnlyOwnersNote}" />
+
+        <Button Name="PruneButton" Theme="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
+                MinHeight="42" IsVisible="{Binding CanManage}" Content="{Binding PruneButtonLabel}"
+                Command="{Binding PruneCommand}" />
 
       </StackPanel>
     </ScrollViewer>

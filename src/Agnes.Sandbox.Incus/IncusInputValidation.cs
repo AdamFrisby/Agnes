@@ -51,6 +51,23 @@ internal static class IncusInputValidation
         }
     }
 
+    /// <summary>
+    /// Validates a config *value* — the right-hand side of <c>key=value</c>. Looser than
+    /// <see cref="ValidateOpaque"/> in exactly two ways it has to be: a leading <c>-</c> is fine
+    /// (<c>raw.qemu</c> values are QEMU flags, and the argv element still begins with the key, so
+    /// nothing can be read as an option), and newlines are fine (<c>raw.apparmor</c> is several rules).
+    /// Everything else that could confuse a parser — NUL and other control characters — is still out.
+    /// </summary>
+    internal static void ValidateConfigValue(string value, string parameterName, int maximumLength)
+    {
+        if (value is null || value.Length is < 1 || value.Length > maximumLength
+            || string.IsNullOrWhiteSpace(value)
+            || value.Any(c => char.IsControl(c) && c is not ('\n' or '\t')))
+        {
+            throw new ArgumentException($"The config value must be non-empty, at most {maximumLength} chars, and free of control characters.", parameterName);
+        }
+    }
+
     internal static void ValidateAbsoluteHostPath(string value)
     {
         if (value is null || value.Length is < 1 or > 4096

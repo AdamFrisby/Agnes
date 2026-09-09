@@ -4,7 +4,14 @@ using Agnes.Sandbox;
 namespace Agnes.Host.Projects;
 
 /// <summary>The defaults a project suggests for a new session (the user can still override at open time).</summary>
-public sealed record ProjectDefaults(bool SkipPermissions = false, string GitCredentialMode = "Ask", string McpApproval = "Ask");
+/// <param name="Graphical">Open this project's sessions in a graphical sandbox (a VM with a display the agent
+/// can see and drive). Only ever honoured when the operator has set
+/// <c>Agnes:Security:AllowGraphicalSandboxes</c> — a project default can raise the floor, never the ceiling.</param>
+public sealed record ProjectDefaults(
+    bool SkipPermissions = false,
+    string GitCredentialMode = "Ask",
+    string McpApproval = "Ask",
+    bool Graphical = false);
 
 /// <summary>
 /// A project: the host-side bundle of everything that shapes a session — its sandbox contents, MCP

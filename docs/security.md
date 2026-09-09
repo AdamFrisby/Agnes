@@ -21,6 +21,7 @@ historical behaviour, so upgrading changes nothing until you turn it on.
 | `RequireSandbox` | bool | `false` | The host **refuses any session that would run outside a sandbox** (sandbox opted out, or no provider configured). Fails loud instead of silently running the agent on the host. |
 | `RequirePermissionPrompts` | bool | `false` | The host **forbids autonomous / `--dangerously-skip-permissions` sessions** entirely — every tool call must be prompted. The strongest autonomy control. |
 | `AllowUnsandboxedSkipPermissions` | bool | `false` | Whether autonomous mode may run **outside** a sandbox. Default `false`: dangerous autonomous mode is confined to a sandbox unless you explicitly opt in. |
+| `AllowGraphicalSandboxes` | bool | `false` | Whether a session may ask for a **graphical** sandbox — a VM with a real display the agent can see and drive over `computer_*`, and a person can watch over the display channel. Default `false`, and deliberately so: a screen is a second, much wider interface into the guest than a shell; capture means the host is continuously holding pixels of whatever the guest is showing (a logged-in browser session, a password manager); and an agent that can move a mouse can click through confirmations no permission prompt ever sees. Implies a sandbox — the display exists at the VM boundary, so "a screen but on the host" is refused rather than silently downgraded. See [display-channel.md](display-channel.md) for the channel's own auth, the control arbiter and the input budget. |
 | `AllowedHostMcpServers` | string[] | `[]` (unrestricted) | Allowlist (by MCP server **name**, case-insensitive) of the only servers permitted to run with `RunAt=Host` — i.e. execute a command **on the host, outside the sandbox**. A non-allowlisted host server is dropped from the session's MCP set (with a visible notice) on both the direct and the sandbox-forward paths. Sandbox-run servers are unaffected. |
 | `SessionIsolation` | `Shared` \| `PerUser` \| `PerGroup` | `Shared` | How sessions are scoped to callers. `Shared` = today's behaviour (host owner sees all; others need an explicit share). `PerUser` also lets a caller reach the sessions **they own** (matched across their devices). `PerGroup` also lets **group members** reach a session (read/drive, not manage) via an `IGroupProvider`. The host owner stays an admin super-user in every mode; these are additive grants on top of shares. |
 | `RestrictConfigToOwner` | bool | `false` | Restricts host-wide config mutations — sandbox image manifest, project config, MCP registry, sandbox delete/reap — to the **host owner** rather than any paired device. |
@@ -59,7 +60,17 @@ access** as membership (via the linked GitHub App's collaborator-permission API)
 everyone who can push to repo X can collaborate on X's sessions, and no one else can. Other membership
 backends (LDAP, SSO teams, a static roster) can ship as additional `IGroupProvider` plugins without
 touching core. A session's owner is the caller's GitHub login (falling back to device id), recorded at
-open time; the host owner remains an admin who can reach every session.
+open time; a host Owner remains an admin who can reach every session.
+
+**The session-owner match applies in every mode, including the default `Shared`.** Whoever started a
+session reaches it — matched across their identities, so a phone reaches what a laptop began when both
+resolve to the same GitHub login. This is not an isolation feature; it is the baseline. Making it
+conditional on isolation being *on* is what left a non-Owner device unable to subscribe to the session
+it had just opened. What `Shared` still adds nothing for is somebody *else's* session: that needs an
+explicit share, or host ownership.
+
+Opening a session requires a paired device of any role, and stamps it as the owner. A public-link
+viewer cannot open one at all.
 
 ### Egress control
 
@@ -122,6 +133,45 @@ manifest pre-compromises every subsequent sandbox. Plugin installation is admin-
 unsigned packages by default; keep that on. `Agnes:CustomBackends` lets config point the launcher
 at an arbitrary command — treat it as admin-only.
 
+## Production plugin provenance (`Agnes:Plugins:*`)
+
+Plugins execute code in the host process. In Production, Agnes therefore accepts only an
+operator-approved, exact package artifact: the source URL, package id, normalized version, and
+SHA-512 of the complete `.nupkg` must all match. Search results are limited to approved packages;
+installs cannot use `latest`; and an enabled plugin is rebuilt from a verified local archive before
+the host accepts clients. Legacy enabled-plugin records without provenance fail closed until they
+are reinstalled.
+
+Leave both arrays empty when third-party plugins are not needed. To approve one, configure the
+specific HTTPS source and its immutable artifact together (the source list and approvals must agree):
+
+```jsonc
+"Agnes": {
+  "Plugins": {
+    "Sources": ["https://api.nuget.org/v3/index.json"],
+    "ApprovedPackages": [
+      {
+        "Source": "https://api.nuget.org/v3/index.json",
+        "PackageId": "Example.Agnes.Plugin",
+        "Version": "1.2.3",
+        "Sha512": "<base64 SHA-512 of the downloaded .nupkg>"
+      }
+    ],
+    "AllowUnsignedPackages": false
+  }
+}
+```
+
+Calculate the digest over the downloaded package, not over an extracted directory:
+
+```bash
+openssl dgst -sha512 -binary Example.Agnes.Plugin.1.2.3.nupkg | base64 --wrap=0
+```
+
+Treat adding or upgrading an approval as a security-sensitive production change. It remains
+subject to normal NuGet signature verification; `AllowUnsignedPackages` is rejected outside the
+Development environment.
+
 ## Authentication
 
 - **Bootstrap methods** are opt-in. Prefer **GitHub SSO restricted to your org/users** or OIDC
@@ -132,6 +182,48 @@ at an arbitrary command — treat it as admin-only.
 - **CORS**: never set `Agnes:AllowAllOrigins=true` on a shared/public host (it defaults to
   `false`). Set an explicit `Agnes:AllowedOrigins` for the web client.
 - Auth endpoints are rate-limited (`Agnes:Auth:RateLimit:*`).
+
+### Device roles: Owner and Member
+
+A paired device is either an **Owner** or a **Member**, and which one it is depends on **how it was
+admitted** — never on when it arrived.
+
+The rule this replaces was "the earliest-paired device owns the host". It reads as a sensible
+first-run heuristic and it is a booby trap: whatever wrote the *first* record into `devices.json` owned
+the machine, whether or not that was ever a real device. On the machine this was found on, the earliest
+record was a months-old test fixture — so no real device was the owner, and under the default
+`SessionIsolation=Shared` the operator was refused every session on their own host, including ones they
+had just opened. Ownership is now a fact on the record, written when the device is admitted.
+
+| Admitted by | Role | Why |
+|---|---|---|
+| Typed pairing code | **Owner** | The code is printed on the host's own console. Presenting it *is* the operator acting. |
+| QR grant (`POST /pair/grant` → `POST /pair`) | **the minter's own role** | A grant hands over the standing of the device that showed it, and no more: an Owner's QR admits an Owner, a Member's admits a Member. Otherwise "show a QR" would be a promotion path for anyone already inside. |
+| Configured bootstrap token (`Agnes:PairingToken`) | **Owner** | It is the operator's own secret, in the host's own configuration. It has no device record. |
+| Authorized key (`authorized_keys`) | **Owner** by default | Somebody with access to the host's filesystem put it there. A host that hands keys to a team can set `Agnes:Auth:Keypair:Role=Member` and promote individually. |
+| GitHub SSO | **Owner** if the login is in `Agnes:Auth:GitHub:Owners`, else Member | A GitHub login proves *who* somebody is, not that they administer this host. |
+| OIDC / Cloudflare Access / mTLS | **Owner** if the subject (or, for Cloudflare, the email) is in the matching `…:Owners` list, else Member | Same reasoning. |
+| Approval (`POST /pair/approve/{id}`) | the role in the request body, **capped at Member unless the approver is an Owner** | Vouching is not promotion. A Member's approval admits a Member however the body is crafted. |
+
+**A Member is not a guest.** It opens sessions like anybody else and always reaches the sessions it
+started, plus anything explicitly shared with it. What it cannot do is see *other people's* sessions or
+change host-wide configuration.
+
+**Owner-only, and enforced host-side:** `PUT /devices/{id}/role`, `POST /devices/prune`, and (when
+`Agnes:Security:RestrictConfigToOwner` is set) the host-wide config mutations. The host **refuses to be
+left with no Owner**: the last one cannot be demoted or pruned, because a host with no Owner can never
+promote anybody back.
+
+**Upgrading an existing host changes nothing.** A `devices.json` written before roles existed has none,
+so on first load Agnes marks the earliest-paired device an Owner — exactly what the old rule computed
+on every call — records that decision, logs it once, and never re-derives it again. An explicit
+`Member` on disk is somebody's decision and is never migrated over.
+
+**One device, one row.** A sign-in that presents the *same* credential — the same key fingerprint, or
+the same GitHub/OIDC identity from the same device name — **rotates** that device's token instead of
+minting a second identity: same id, same role, same paired-at date, and the old token stops working.
+Two devices behind one account stay two rows, because the device name is part of the identity. A
+pairing code stands for nothing durable (it is single-use), so those always mint fresh.
 
 ### The typed pairing code is a bootstrap, not a way in
 
@@ -223,6 +315,58 @@ The approval flow is reachable from both ends in both clients:
 Both approver surfaces show the digits *next to the buttons*, because approving without comparing them
 is the one way to use this mechanism and get nothing from it. Declining is the same size and distance
 as approving: "I wasn't expecting this" should be the cheap answer.
+
+## The plaintext MCP listeners (`/mcp-agnes`)
+
+Agnes offers its **own** MCP tools (`send_user_file`, `arm_goal`, …) back to the agents it runs. Two extra
+listeners carry that, both plain HTTP, both serving `/mcp-agnes` and nothing else:
+
+| Listener | Bound to | Reached by | Key |
+|---|---|---|---|
+| Sandbox bridge | the bridge gateway, e.g. `10.99.5.1:5099` | sandboxed sessions | `Agnes:Sandbox:GuestMcpBindUrl` / `…:GuestMcpUrl` (off unless set) |
+| Loopback | `127.0.0.1:5117` | agents running on the host itself | `Agnes:Mcp:LocalUrl`, `Agnes:Mcp:LocalEnabled` (**on** by default) |
+
+**Why not the main TLS listener.** Two reasons, and either alone is decisive. It is commonly self-signed or
+pinned — the deployment Agnes is built for — and an agent CLI has no way to be handed that trust anchor; and
+it is authenticated by **device tokens**, which carry the authority of a paired human across every session on
+the host. Handing one to an agent would be strictly worse than plaintext on loopback.
+
+**Why plaintext is acceptable here.** Three properties, enforced in code rather than assumed:
+
+- **Path allowlist, first in the pipeline.** `GuestMcpEndpoint.IsAllowedPath` refuses everything but
+  `/mcp-agnes` on these ports, and the middleware runs *before* authentication — registered later, the auth
+  layer would answer `/agnes` with a 401, which both admits the hub is there and would serve it outright to
+  anyone holding a device token. The hub, the REST API, the web head **and the display channel** are
+  unreachable on both ports — a plaintext, unauthenticated socket onto a session's screen is exactly what
+  that allowlist exists to prevent, so do not widen it.
+- **No device authority crosses them.** The only credential that works is a per-session token
+  (`SessionMcpTokens`) which *is* that session's identity to the tool layer: an agent presenting one can act
+  only on its own session, cannot name another, and is explicitly refused by the tools that need a paired
+  device. Tokens are in-memory, are revoked when the session closes, and do not survive a host restart.
+- **A device token buys no more here than at the hub.** Every session-scoped tool asks the same
+  `SessionAccessDecider` the SignalR hub and the display channel ask, for the same verb the equivalent hub
+  method requires: `read_session_transcript` and `get_session_status` need Subscribe, `send_prompt`,
+  `set_mode`, the goal tools and `computer_*` need Prompt, `respond_permission` needs Approve. The catalogue
+  tools (`list_sessions`, `list_open_approvals`, `list_goals all`) **filter** rather than refuse, exactly as
+  `AgnesHub.ListSessions` does, so they can never advertise a session the caller would then be denied.
+  Before this, a device token the hub refused could list and drive every session on the host by arriving over
+  `/mcp-agnes` instead.
+- **Neither address is routable off-box.** The bridge gateway is reachable only from that bridge's
+  sandboxes; loopback only from this machine.
+
+**They are added to your listener, never in place of it.** Kestrel takes endpoints from two channels that do
+not merge symmetrically, so Agnes picks the one that composes: an explicit `Listen` when you configure
+`Kestrel:Endpoints`, an appended address when you set `ASPNETCORE_URLS` (as the Docker image does). If you
+have configured **neither** — Kestrel is on its own default endpoint, which applies only while both channels
+are empty — Agnes logs a line and binds no MCP listener at all, because adding one would take the main
+listener away with it. Configure a listener and they come up alongside it.
+
+**What loopback does mean.** Any *local* process running as any user on the host can reach `127.0.0.1:5117` —
+but it gains nothing without a session token, and the tokens live only in files written for one session
+(`0600` for the host-session config; a sandbox's own home otherwise). On a shared machine where you do not
+trust local users, set `Agnes:Mcp:LocalEnabled=false`; unsandboxed sessions then simply get no `agnes` server.
+If the configured port is already taken (a second Agnes on the same box), the host logs it and starts without
+the local endpoint rather than failing to start.
 
 ## Data at rest
 

@@ -17,6 +17,22 @@ public class CommitMessageGenerationTests
         public Task PublishAsync(string sessionId, SessionEvent @event) => Task.CompletedTask;
     }
 
+    /// <summary>The manager opens one interactive session and commit generation opens a separate one-shot
+    /// session. Real adapters return a fresh session for each start; using the general test adapter's one
+    /// shared single-reader channel here lets the interactive event pump steal the one-shot result.</summary>
+    private sealed class FreshSessionAdapter : IAgentAdapter
+    {
+        public AgentDescriptor Descriptor { get; } = new() { Id = "scripted", DisplayName = "Scripted Agent" };
+        public Func<IReadOnlyList<ContentBlock>, ScriptedAgentSession, Task<StopReason>> OnPrompt { get; set; }
+            = (_, _) => Task.FromResult(StopReason.EndTurn);
+
+        public Task<IAgentSession> StartSessionAsync(AgentSessionOptions options, CancellationToken cancellationToken = default)
+        {
+            var session = new ScriptedAgentSession { OnPrompt = OnPrompt };
+            return Task.FromResult<IAgentSession>(session);
+        }
+    }
+
     [Fact]
     public async Task Generates_a_message_from_the_staged_diff()
     {
@@ -35,8 +51,8 @@ public class CommitMessageGenerationTests
             await File.WriteAllTextAsync(Path.Combine(repo, "hello.txt"), "hello world");
             Git(repo, "add", "-A"); // stage it, so `git diff --cached` is non-empty
 
-            var adapter = new ScriptedAgentAdapter();
-            adapter.Session.OnPrompt = (_, session) =>
+            var adapter = new FreshSessionAdapter();
+            adapter.OnPrompt = (_, session) =>
             {
                 session.Emit(new MessageChunkEvent(MessageRole.Assistant, new TextContent("feat: add greeting file")));
                 session.Emit(new TurnEndedEvent(StopReason.EndTurn));

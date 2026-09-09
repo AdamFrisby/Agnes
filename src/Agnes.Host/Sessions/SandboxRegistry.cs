@@ -19,7 +19,10 @@ public sealed record SandboxRecord(
     // The session's open-time options, persisted so a resume restores it faithfully.
     bool SkipPermissions = false,
     string McpApproval = "Ask",
-    string GitCredentialMode = "Ask");
+    string GitCredentialMode = "Ask",
+    // A graphical sandbox is a property of the VM, not of the request that made it: resuming one without its
+    // display would silently hand back a headless machine the agent's computer_* tools no longer work on.
+    bool Graphical = false);
 
 /// <summary>
 /// Persists the sandboxes Agnes owns (<c>~/.agnes/sandboxes.json</c>) so closed/stopped VMs stay visible

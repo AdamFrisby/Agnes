@@ -79,10 +79,16 @@ public sealed record OidcOptions
 }
 
 /// <summary>Outcome of validating an OIDC token: accepted (with a subject) or rejected (with a reason).</summary>
-public sealed record OidcResult(bool Ok, string? Subject, string? Reason)
+public sealed record OidcResult(
+    bool Ok,
+    string? Subject,
+    string? Reason,
+    string? Email = null,
+    string? TokenSubject = null)
 {
     public static OidcResult Reject(string reason) => new(false, null, reason);
-    public static OidcResult Accept(string subject) => new(true, subject, null);
+    public static OidcResult Accept(string subject, string? email = null, string? tokenSubject = null) =>
+        new(true, subject, null, email, tokenSubject);
 }
 
 /// <summary>
@@ -155,10 +161,13 @@ public sealed class OidcIdentity(OidcOptions options, HttpClient? http = null, I
             ?? identity?.FindFirst("email")?.Value
             ?? identity?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
             ?? identity?.FindFirst("sub")?.Value;
+        var email = identity?.FindFirst("email")?.Value;
+        var tokenSubject = identity?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+            ?? identity?.FindFirst("sub")?.Value;
 
         return string.IsNullOrWhiteSpace(subject)
             ? OidcResult.Reject("The token carried no subject claim.")
-            : OidcResult.Accept(subject);
+            : OidcResult.Accept(subject, email, tokenSubject);
     }
 
     private async Task<IReadOnlyCollection<SecurityKey>> ResolveSigningKeysAsync(CancellationToken cancellationToken)

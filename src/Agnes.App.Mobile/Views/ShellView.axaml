@@ -37,6 +37,7 @@
     <DataTemplate DataType="vm:SessionInfoSheetViewModel"><v:SessionInfoSheetView /></DataTemplate>
     <DataTemplate DataType="vm:SessionActionsSheetViewModel"><v:SessionActionsSheetView /></DataTemplate>
     <DataTemplate DataType="vm:HostsSheetViewModel"><v:HostsSheetView /></DataTemplate>
+    <DataTemplate DataType="vm:ReceivedFileSheetViewModel"><v:ReceivedFileSheetView /></DataTemplate>
   </UserControl.DataTemplates>
 
   <Panel>

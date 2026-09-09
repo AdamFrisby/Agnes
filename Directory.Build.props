@@ -20,7 +20,11 @@
     <!-- PH2075 (Philips) demands AssemblyVersion 1.0.0.0; we're intentionally pre-1.0. It's an
          assembly-level diagnostic with no file location, so it can't be silenced from .editorconfig
          (which is why it lives here rather than beside the other disabled PH rules). -->
-    <NoWarn>$(NoWarn);PH2075</NoWarn>
+    <!-- PH2088 ("path too long") measures a file's *absolute* path, so what it fails on is where the
+         repository was cloned, not anything in the code: a checkout a few directories deep (a git
+         worktree, say) overflows it. It fires on the MVVM source generator's own output under obj/,
+         which an .editorconfig severity does not reach — so, like PH2075, it is silenced here. -->
+    <NoWarn>$(NoWarn);PH2075;PH2088</NoWarn>
   </PropertyGroup>
 
   <!--

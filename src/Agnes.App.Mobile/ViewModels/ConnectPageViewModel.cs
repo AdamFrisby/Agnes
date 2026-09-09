@@ -1,6 +1,7 @@
 using Agnes.App.Mobile.Services;
 using Agnes.Client;
 using Agnes.Protocol;
+using Agnes.Ui.Core;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -83,6 +84,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
             IsAwaitingApproval = false;
             Status = string.Empty;
         });
+        ContinueCommand = new RelayCommand(Continue);
 
         if (prefillUrl is not null)
         {
@@ -625,22 +627,72 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         // starting one, because an empty list is not worth a screen.
         var running = await ListRunningAsync(host).ConfigureAwait(false);
 
+        // What this device was admitted as, from the host rather than from the pairing response.
+        // PairResponse.Role is a trailing-optional field defaulting to Member, so a host too old to have
+        // roles returns a response that *says* Member — announcing that would tell an operator's own first
+        // device it is a guest. This endpoint answering at all is the proof the host has roles; null means
+        // it doesn't, and then nothing is said.
+        var role = await link.RefreshRoleAsync().ConfigureAwait(false);
+
         _shell.Dispatcher.Post(() =>
         {
             IsBusy = false;
             _shell.Haptics.Success();
-            _shell.Toast($"Paired with {name}", ToastKind.Success);
-            _shell.Pop();
-            if (running > 0)
+
+            // What it just became, said out loud. A member is also told what that means and gets to read
+            // it before the screen moves — being handed a short list with no explanation is exactly the
+            // dead end this exists to remove. An owner has nothing to learn, so it goes straight through.
+            _afterPairing = () =>
             {
-                _shell.Push(new HostSessionsPageViewModel(_shell, _hosts, _sessions, link));
-            }
-            else
+                _shell.Pop();
+                if (running > 0)
+                {
+                    _shell.Push(new HostSessionsPageViewModel(_shell, _hosts, _sessions, link));
+                }
+                else
+                {
+                    _sessions.StartNew();
+                }
+            };
+
+            if (role == DeviceRole.Member)
             {
-                _sessions.StartNew();
+                GrantedRoleNotice = DeviceRoleText.Paired(DeviceRole.Member);
+                GrantedRoleScope = DeviceRoleText.MemberScope;
+                _shell.Toast($"Paired with {name} as a member", ToastKind.Success);
+                return;
             }
+
+            _shell.Toast(
+                role == DeviceRole.Owner ? $"Paired with {name} as an owner" : $"Paired with {name}",
+                ToastKind.Success);
+            Continue();
         });
         return true;
+    }
+
+    /// <summary>What was granted, held on screen for a member to read. Empty otherwise.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowGrantedRole))]
+    private string _grantedRoleNotice = string.Empty;
+
+    /// <summary>The one line on what a member can actually do, beside the notice.</summary>
+    [ObservableProperty]
+    private string _grantedRoleScope = string.Empty;
+
+    public bool ShowGrantedRole => GrantedRoleNotice.Length > 0;
+
+    /// <summary>Leaves the pairing screen for wherever pairing was heading.</summary>
+    public IRelayCommand ContinueCommand { get; }
+
+    private Action? _afterPairing;
+
+    private void Continue()
+    {
+        var go = _afterPairing;
+        _afterPairing = null;
+        GrantedRoleNotice = string.Empty;
+        go?.Invoke();
     }
 
     /// <summary>How many sessions this device may reach on the host it just paired with. Best-effort — any
