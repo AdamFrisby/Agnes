@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using Agnes.Host.Sharing;
 using Agnes.Protocol;
 
 namespace Agnes.Host.Mcp;
@@ -10,25 +11,39 @@ namespace Agnes.Host.Mcp;
 /// client — can drive Agnes without any new server-side authority. Every call first resolves the caller from
 /// the request's Agnes device token (the same token a paired client uses); an unauthenticated call is
 /// rejected. This is the "Agnes as MCP server" seam; voice is one consumer of it.
+/// <para>
+/// "No new authority" has to be enforced, not merely intended. Every session-scoped tool asks the SAME
+/// <see cref="SessionAccessDecider"/> the SignalR hub and the display channel ask, for the same
+/// <see cref="SessionAccessKind"/> the equivalent hub method requires — because a device token that the hub
+/// refuses must not be able to list, read and drive every session on the host merely by arriving over
+/// <c>/mcp-agnes</c> instead. The catalogue tools filter rather than refuse, exactly as
+/// <c>AgnesHub.ListSessions</c> does, so a caller is never shown a session it would then be denied.
+/// </para>
 /// </summary>
 [McpServerToolType]
-public sealed class AgnesMcpTools
+public sealed partial class AgnesMcpTools
 {
     private readonly IAgnesMcpBackend _backend;
     private readonly IMcpDeviceAuthenticator _authenticator;
     private readonly IMcpCallerTokenSource _tokenSource;
     private readonly SessionMcpTokens _sessionTokens;
+    private readonly IAgnesDisplayBackend _display;
+    private readonly SessionAccessDecider _access;
 
     public AgnesMcpTools(
         IAgnesMcpBackend backend,
         IMcpDeviceAuthenticator authenticator,
         IMcpCallerTokenSource tokenSource,
-        SessionMcpTokens sessionTokens)
+        SessionMcpTokens sessionTokens,
+        IAgnesDisplayBackend display,
+        SessionAccessDecider access)
     {
         _backend = backend;
         _authenticator = authenticator;
         _tokenSource = tokenSource;
         _sessionTokens = sessionTokens;
+        _display = display;
+        _access = access;
     }
 
     /// <summary>Authenticates the current request and returns the caller id, or throws so the tool call is
@@ -53,31 +68,68 @@ public sealed class AgnesMcpTools
         return caller;
     }
 
-    /// <summary>Authenticates a goal-tool call and returns the session it may act on: the caller's own when a
-    /// session token was presented (any <c>sessionId</c> argument is then ignored rather than trusted), or
-    /// the named one for a paired device.</summary>
-    private string RequireGoalSession(string? sessionId)
+    /// <summary>Authenticates a call to a tool that acts on ONE session (the goal tools, sending the user a
+    /// file) and returns the session it may act on: the caller's own when a session token was presented (any
+    /// <c>sessionId</c> argument is then ignored rather than trusted), or the named one for a paired device.
+    /// The token is the identity, never the argument — that is what stops an agent naming somebody else's
+    /// session.</summary>
+    private async Task<string> RequireActingSessionAsync(string? sessionId, CancellationToken cancellationToken)
     {
         if (_sessionTokens.SessionFor(_tokenSource.CurrentToken) is { } own)
         {
-            return own; // an agent may only ever arm/inspect goals on itself
+            return own; // an agent may only ever act on itself
         }
 
+        // Authenticate first: a caller with no credential at all is "who are you", not "which session".
         RequireCaller();
-        return sessionId is { Length: > 0 } named
-            ? named
+        var named = sessionId is { Length: > 0 } value
+            ? value
             : throw new ArgumentException("A sessionId is required when calling with a device token.", nameof(sessionId));
+
+        // A device naming somebody else's session is doing what send_prompt does, so it needs what send_prompt needs.
+        await RequireSessionAsync(named, SessionAccessKind.Prompt, cancellationToken).ConfigureAwait(false);
+        return named;
     }
 
     /// <summary>The calling session when it is an agent, else null for a paired device.</summary>
     private string? CallerSession => _sessionTokens.SessionFor(_tokenSource.CurrentToken);
+
+    /// <summary>
+    /// Authenticates the caller AND checks it may do <paramref name="kind"/> to <paramref name="sessionId"/>.
+    /// One line at the top of every session-scoped tool — the whole point being that the answer comes from the
+    /// hub's decider, so a change to sharing reaches this endpoint in the same commit.
+    /// </summary>
+    private async Task RequireSessionAsync(string sessionId, SessionAccessKind kind, CancellationToken cancellationToken)
+    {
+        RequireCaller();
+        if (!await _access.DecideAsync(sessionId, kind, _access.CallerFor(_tokenSource.CurrentToken), cancellationToken)
+                .ConfigureAwait(false))
+        {
+            throw new McpForbiddenException(
+                $"This device has no {kind.ToString().ToLowerInvariant()} access to session '{sessionId}'.");
+        }
+    }
+
+    /// <summary>Whether the caller may watch a session — used to filter the catalogue tools.</summary>
+    private Task<bool> CanSeeAsync(string sessionId, CancellationToken cancellationToken)
+        => _access.DecideAsync(sessionId, SessionAccessKind.Subscribe, _access.CallerFor(_tokenSource.CurrentToken), cancellationToken);
 
     [McpServerTool(Name = "list_sessions", ReadOnly = true)]
     [Description("List the coding-agent sessions on this Agnes host (id, title, and coarse status: working, idle, or dormant).")]
     public async Task<IReadOnlyList<McpSessionSummary>> ListSessions(CancellationToken cancellationToken = default)
     {
         RequireCaller();
-        return await _backend.ListSessionsAsync(cancellationToken).ConfigureAwait(false);
+        var sessions = await _backend.ListSessionsAsync(cancellationToken).ConfigureAwait(false);
+        var visible = new List<McpSessionSummary>(sessions.Count);
+        foreach (var session in sessions)
+        {
+            if (await CanSeeAsync(session.SessionId, cancellationToken).ConfigureAwait(false))
+            {
+                visible.Add(session);
+            }
+        }
+
+        return visible;
     }
 
     [McpServerTool(Name = "get_session_status", ReadOnly = true)]
@@ -86,7 +138,7 @@ public sealed class AgnesMcpTools
         [Description("The session id to inspect.")] string sessionId,
         CancellationToken cancellationToken = default)
     {
-        RequireCaller();
+        await RequireSessionAsync(sessionId, SessionAccessKind.Subscribe, cancellationToken).ConfigureAwait(false);
         return await _backend.GetSessionStatusAsync(sessionId, cancellationToken).ConfigureAwait(false)
             ?? throw new ArgumentException($"Unknown session '{sessionId}'.", nameof(sessionId));
     }
@@ -98,7 +150,7 @@ public sealed class AgnesMcpTools
         [Description("The instruction to deliver to the agent.")] string text,
         CancellationToken cancellationToken = default)
     {
-        RequireCaller();
+        await RequireSessionAsync(sessionId, SessionAccessKind.Prompt, cancellationToken).ConfigureAwait(false);
         await _backend.SendPromptAsync(sessionId, text, cancellationToken).ConfigureAwait(false);
         return McpActionResult.Success($"Prompt sent to session {sessionId}.");
     }
@@ -111,7 +163,7 @@ public sealed class AgnesMcpTools
         [Description("The chosen option id from the request's options.")] string optionId,
         CancellationToken cancellationToken = default)
     {
-        RequireCaller();
+        await RequireSessionAsync(sessionId, SessionAccessKind.Approve, cancellationToken).ConfigureAwait(false);
         await _backend.RespondPermissionAsync(sessionId, requestId, optionId, cancellationToken).ConfigureAwait(false);
         return McpActionResult.Success($"Responded to permission {requestId} with option {optionId}.");
     }
@@ -123,7 +175,7 @@ public sealed class AgnesMcpTools
         [Description("The mode id to switch to.")] string modeId,
         CancellationToken cancellationToken = default)
     {
-        RequireCaller();
+        await RequireSessionAsync(sessionId, SessionAccessKind.Prompt, cancellationToken).ConfigureAwait(false);
         await _backend.SetModeAsync(sessionId, modeId, cancellationToken).ConfigureAwait(false);
         return McpActionResult.Success($"Session {sessionId} switched to mode {modeId}.");
     }
@@ -134,9 +186,17 @@ public sealed class AgnesMcpTools
     {
         RequireCaller();
         var approvals = await _backend.ListOpenApprovalsAsync(cancellationToken).ConfigureAwait(false);
-        return approvals
-            .Select(a => new McpOpenApproval(a.SessionId, a.RequestId, a.Title, a.Kind.ToString(), a.RequestedAt))
-            .ToArray();
+        var visible = new List<McpOpenApproval>(approvals.Count);
+        foreach (var a in approvals)
+        {
+            // An approval with no session can't be attributed to one, so it stays owner-visible only.
+            if (a.SessionId is { Length: > 0 } id && await CanSeeAsync(id, cancellationToken).ConfigureAwait(false))
+            {
+                visible.Add(new McpOpenApproval(a.SessionId, a.RequestId, a.Title, a.Kind.ToString(), a.RequestedAt));
+            }
+        }
+
+        return visible;
     }
 
     [McpServerTool(Name = "arm_goal")]
@@ -152,7 +212,7 @@ public sealed class AgnesMcpTools
         [Description("The session to arm. Omit to use the calling session.")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var target = RequireGoalSession(sessionId);
+        var target = await RequireActingSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         return await _backend.ArmGoalAsync(
             new ArmGoalRequest(target, goal, idleSeconds, maxProds, expiresInSeconds), cancellationToken).ConfigureAwait(false);
     }
@@ -176,7 +236,13 @@ public sealed class AgnesMcpTools
         }
         else
         {
+            // A device may disarm any goal it could have armed: the check is on the goal's OWN session, which
+            // the goal id has to be resolved to first — there is no session argument to check against.
             RequireCaller();
+            var all = await _backend.ListGoalsAsync(null, cancellationToken).ConfigureAwait(false);
+            var goal = all.FirstOrDefault(g => string.Equals(g.Id, goalId, StringComparison.Ordinal))
+                ?? throw new ArgumentException($"Unknown goal '{goalId}'.", nameof(goalId));
+            await RequireSessionAsync(goal.SessionId, SessionAccessKind.Prompt, cancellationToken).ConfigureAwait(false);
         }
 
         return await _backend.DisarmGoalAsync(goalId, reason, cancellationToken).ConfigureAwait(false)
@@ -194,11 +260,78 @@ public sealed class AgnesMcpTools
             return await _backend.ListGoalsAsync(own, cancellationToken).ConfigureAwait(false); // never other sessions
         }
 
-        RequireCaller();
         var target = string.Equals(sessionId, "all", StringComparison.OrdinalIgnoreCase) ? null : sessionId;
-        return await _backend.ListGoalsAsync(target, cancellationToken).ConfigureAwait(false);
+        if (target is { Length: > 0 })
+        {
+            await RequireSessionAsync(target, SessionAccessKind.Subscribe, cancellationToken).ConfigureAwait(false);
+            return await _backend.ListGoalsAsync(target, cancellationToken).ConfigureAwait(false);
+        }
+
+        // "all" is a catalogue read, so it filters rather than refuses — same rule as list_sessions.
+        RequireCaller();
+        var goals = await _backend.ListGoalsAsync(null, cancellationToken).ConfigureAwait(false);
+        var visible = new List<SessionGoal>(goals.Count);
+        foreach (var goal in goals)
+        {
+            if (await CanSeeAsync(goal.SessionId, cancellationToken).ConfigureAwait(false))
+            {
+                visible.Add(goal);
+            }
+        }
+
+        return visible;
     }
 
+
+    [McpServerTool(Name = "send_user_file")]
+    [Description("Send a file to the user to look at — a screenshot, a report, a diagram, a built artifact. "
+        + "Use it for deliverables the person would want in front of them rather than merely mentioned; "
+        + "do not send routine working files.")]
+    public async Task<string> SendUserFile(
+        [Description("Absolute path, or a path relative to the working directory, or the /work/… path as seen inside a sandbox")] string path,
+        [Description("One line of context shown with the file, e.g. 'before vs after'")] string? caption = null,
+        [Description("Omit when called by the agent itself; required with a device token")] string? sessionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var target = await RequireActingSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        var shared = await _backend.ShareFileAsync(target, path, caption, cancellationToken).ConfigureAwait(false);
+        return $"Sent {shared.FileName} ({DescribeSize(shared.Size)}) to the user.";
+    }
+
+    [McpServerTool(Name = "report_status")]
+    [Description("Report your one-line status: what you found, what you are doing now, and how it fits the "
+        + "plan. One or two sentences, up to " + Sessions.StatusOptions.DefaultMaxCharsText + " characters; "
+        + "the first line only. Call it when you start a new piece of work, when you hit a problem, and about "
+        + "every few minutes during long work — not every step.")]
+    public async Task<string> ReportStatus(
+        [Description("Your status: one or two sentences, up to " + Sessions.StatusOptions.DefaultMaxCharsText
+            + " characters, on a single line. A longer report is kept up to the limit rather than refused, "
+            + "and the reply tells you what was kept.")] string status,
+        [Description("Omit when called by the agent itself; required with a device token")] string? sessionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var target = await RequireActingSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        var recorded = await _backend.ReportStatusAsync(target, status, cancellationToken).ConfigureAwait(false);
+
+        // The acknowledgement is where truncation stops being silent. A model that is told "noted" after
+        // having half its sentence thrown away learns nothing and writes the same paragraph next time.
+        return Sessions.AgentStatusText.Acknowledge(recorded);
+    }
+
+    /// <summary>A human-sized rendering of a byte count for the confirmation the model reads back. Rounded on
+    /// purpose: the agent is being told the send worked, not being handed a figure to compute with.</summary>
+    private static string DescribeSize(long bytes)
+    {
+        const long Kb = 1024;
+        const long Mb = Kb * 1024;
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        return bytes switch
+        {
+            < Kb => string.Create(culture, $"{bytes} bytes"),
+            < Mb => string.Create(culture, $"{Math.Round(bytes / (double)Kb)} KB"),
+            _ => string.Create(culture, $"{bytes / (double)Mb:0.#} MB"),
+        };
+    }
 
     [McpServerTool(Name = "read_session_transcript", ReadOnly = true)]
     [Description("Read a privacy-filtered transcript of a session. By default raw tool-call arguments and file contents/paths are excluded; set forwardRawContext to true only if the user has explicitly opted in to sharing them with this endpoint.")]
@@ -207,7 +340,7 @@ public sealed class AgnesMcpTools
         [Description("Opt in to include raw tool-call arguments and file paths/contents. Defaults to false (conservative privacy).")] bool forwardRawContext = false,
         CancellationToken cancellationToken = default)
     {
-        RequireCaller();
+        await RequireSessionAsync(sessionId, SessionAccessKind.Subscribe, cancellationToken).ConfigureAwait(false);
         return await _backend.ReadSessionTranscriptAsync(sessionId, forwardRawContext, cancellationToken).ConfigureAwait(false);
     }
 }

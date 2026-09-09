@@ -28,6 +28,7 @@
       "tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj",
       "tests/Agnes.Agents.Codex.Tests/Agnes.Agents.Codex.Tests.csproj",
       "tests/Agnes.Agents.Native.Tests/Agnes.Agents.Native.Tests.csproj",
+      "tests/Agnes.Agents.Antigravity.Tests/Agnes.Agents.Antigravity.Tests.csproj",
       "tests/Agnes.Agents.Pi.Tests/Agnes.Agents.Pi.Tests.csproj",
       "tests/Agnes.Cli.Tests/Agnes.Cli.Tests.csproj",
       "tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj",

@@ -3,6 +3,7 @@ using Agnes.Abstractions;
 using Agnes.App.Mobile.Services;
 using Agnes.Protocol;
 using Agnes.Client;
+using Agnes.Ui.Core;
 using Agnes.Ui.Core.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -46,6 +47,14 @@ public sealed partial class AppearancePageViewModel : PageViewModel
             Shell.UpdateSettings(s => s with { ReducedMotion = !s.ReducedMotion });
             OnPropertyChanged(nameof(ReducedMotion));
         });
+        ToggleScreenDataCommand = new RelayCommand(() =>
+        {
+            Shell.UpdateSettings(s => s with
+            {
+                LowerScreenQualityOnMobileData = !s.LowerScreenQualityOnMobileData,
+            });
+            OnPropertyChanged(nameof(LowerScreenQualityOnMobileData));
+        });
     }
 
     private ShellViewModel Shell => (ShellViewModel)_shell;
@@ -57,6 +66,7 @@ public sealed partial class AppearancePageViewModel : PageViewModel
     public IRelayCommand<string> SetScaleCommand { get; }
     public IRelayCommand ToggleThinkingCommand { get; }
     public IRelayCommand ToggleMotionCommand { get; }
+    public IRelayCommand ToggleScreenDataCommand { get; }
 
     public bool ThemeSystem => _shell.Settings.Theme is not "Light" and not "Dark";
     public bool ThemeLight => _shell.Settings.Theme == "Light";
@@ -72,6 +82,11 @@ public sealed partial class AppearancePageViewModel : PageViewModel
     public bool ShowThinking => _shell.Settings.ShowThinking;
 
     public bool ReducedMotion => _shell.Settings.ReducedMotion;
+
+    /// <summary>Whether a graphical session drops to the cheap tier on a metered network. On by default:
+    /// a screen stream is the only thing in this app that can quietly spend a data plan, and the cheap
+    /// tier still answers "what is it doing".</summary>
+    public bool LowerScreenQualityOnMobileData => _shell.Settings.LowerScreenQualityOnMobileData;
 
     private void RaiseTheme()
     {
@@ -107,6 +122,11 @@ public sealed partial class NotificationsPageViewModel : PageViewModel
             Shell.UpdateSettings(s => s with { NotifyOnComplete = !s.NotifyOnComplete });
             OnPropertyChanged(nameof(NotifyOnComplete));
         });
+        ToggleFileCommand = new RelayCommand(() =>
+        {
+            Shell.UpdateSettings(s => s with { NotifyOnFile = !s.NotifyOnFile });
+            OnPropertyChanged(nameof(NotifyOnFile));
+        });
         ToggleHapticsCommand = new RelayCommand(() =>
         {
             Shell.UpdateSettings(s => s with { Haptics = !s.Haptics });
@@ -125,10 +145,17 @@ public sealed partial class NotificationsPageViewModel : PageViewModel
 
     public IRelayCommand ToggleBlockedCommand { get; }
     public IRelayCommand ToggleCompleteCommand { get; }
+
+    /// <summary>Whether a file an agent sends should reach the shade. Its own switch rather than riding
+    /// on "a turn finished": a file is the one thing you might want told about even when you've turned the
+    /// chatter off, because it's the only kind of notification with something to take away from it.</summary>
+    public IRelayCommand ToggleFileCommand { get; }
+
     public IRelayCommand ToggleHapticsCommand { get; }
 
     public bool NotifyOnBlocked => _shell.Settings.NotifyOnBlocked;
     public bool NotifyOnComplete => _shell.Settings.NotifyOnComplete;
+    public bool NotifyOnFile => _shell.Settings.NotifyOnFile;
     public bool Haptics => _shell.Settings.Haptics;
 }
 
@@ -163,24 +190,92 @@ public sealed partial class PromptsPageViewModel : PageViewModel
     public IRelayCommand<Agnes.Abstractions.LibraryPrompt> CopyCommand { get; }
 }
 
+/// <summary>
+/// One paired device on the phone's Devices page. The protocol record alone can't say when a device was
+/// last used in words, what its role is called, or how it got in — and those three are what turn a list of
+/// names into a list you can act on. It also holds the row's own role button, since promoting is per-row.
+/// </summary>
+public sealed class MobileDeviceRow
+{
+    public MobileDeviceRow(DeviceInfo info, DateTimeOffset now, bool isLastOwner)
+    {
+        Info = info;
+        IsLastOwner = isLastOwner;
+        LastSeen = Describe(info, now);
+    }
+
+    public DeviceInfo Info { get; }
+
+    public string Id => Info.Id;
+    public string Name => Info.Name;
+    public bool IsCurrentDevice => Info.IsCurrentDevice;
+    public bool IsOwner => Info.Role == DeviceRole.Owner;
+
+    /// <summary>"Owner" / "Member" — a neutral label, never a status hue.</summary>
+    public string RoleChip => DeviceRoleText.Chip(Info.Role);
+
+    /// <summary>How it was admitted, in words; empty for a kind this build doesn't know.</summary>
+    public string Admission => DeviceRoleText.Admission(Info.Kind) ?? string.Empty;
+
+    /// <summary>Pairing date and last use, the two facts that identify a device you meant to remove.</summary>
+    public string LastSeen { get; }
+
+    public DeviceRole TargetRole => IsOwner ? DeviceRole.Member : DeviceRole.Owner;
+
+    public string RoleActionLabel => IsOwner ? "Make member" : "Make owner";
+
+    /// <summary>The only owner left can't be demoted — the host refuses, and offering it anyway would be
+    /// a button whose whole purpose is to fail.</summary>
+    public bool IsLastOwner { get; }
+
+    public bool CanChangeRole => !(IsOwner && IsLastOwner);
+
+    private static string Describe(DeviceInfo info, DateTimeOffset now)
+    {
+        var paired = $"Paired {info.PairedAt.ToLocalTime():d MMM yyyy}";
+        if (info.LastSeenAt is not { } seen)
+        {
+            return paired + " · never connected";
+        }
+
+        var ago = now - seen;
+        var last = ago switch
+        {
+            { TotalMinutes: < 5 } => "active now",
+            { TotalMinutes: < 60 } => $"last seen {(int)ago.TotalMinutes} min ago",
+            { TotalHours: < 24 } => $"last seen {(int)ago.TotalHours}h ago",
+            { TotalDays: < 30 } => $"last seen {(int)ago.TotalDays}d ago",
+            _ => $"last seen {seen.ToLocalTime():d MMM yyyy}",
+        };
+
+        return $"{paired} · {last}";
+    }
+}
+
 /// <summary>The devices paired with a host, and the ability to revoke one. Worth having on a phone: if
-/// you lose a laptop, this is the fastest way to cut it off.</summary>
+/// you lose a laptop, this is the fastest way to cut it off. An owner can also promote, demote and prune
+/// from here; a member sees the same list read-only, and is told why.</summary>
 public sealed partial class DevicesPageViewModel : PageViewModel
 {
     private readonly IAppShell _shell;
+
+    /// <summary>How long a device may go unused before the prune offer will remove it.</summary>
+    public const int PruneUnusedForDays = 30;
 
     public DevicesPageViewModel(IAppShell shell)
     {
         _shell = shell;
         RefreshCommand = new AsyncRelayCommand(LoadAsync);
-        RevokeCommand = new AsyncRelayCommand<DeviceInfo>(RevokeAsync);
+        RevokeCommand = new AsyncRelayCommand<MobileDeviceRow>(RevokeAsync);
+        SetRoleCommand = new AsyncRelayCommand<MobileDeviceRow>(SetRoleAsync);
+        PruneCommand = new AsyncRelayCommand(PruneAsync);
         _ = LoadAsync();
     }
 
     public override string Title => "Paired devices";
 
 
-    public ObservableCollection<DeviceInfo> Devices { get; } = [];
+    public ObservableCollection<MobileDeviceRow> Devices { get; } = [];
 
     [ObservableProperty]
     private string _status = "Loading…";
@@ -188,8 +283,42 @@ public sealed partial class DevicesPageViewModel : PageViewModel
     [ObservableProperty]
     private bool _isBusy;
 
+    /// <summary>Whether this device may manage the others. False until the host has said so, so the
+    /// buttons never appear on a guess.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowOnlyOwnersNote))]
+    private bool _canManage;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowOnlyOwnersNote))]
+    private bool _isRoleKnown;
+
+    public bool ShowOnlyOwnersNote => IsRoleKnown && !CanManage;
+
+    public static string OnlyOwnersNote => DeviceRoleText.OnlyOwnersManage;
+
+    public static string PruneLabel => DeviceRoleText.PruneAction(PruneUnusedForDays);
+
+    /// <summary>Armed by the first tap, which names the number; the second tap removes them. A phone has
+    /// no hover and no undo, so the count has to be in the button itself.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PruneButtonLabel))]
+    private bool _isConfirmingPrune;
+
+    public string PruneButtonLabel => IsConfirmingPrune
+        ? DeviceRoleText.ConfirmPrune(StaleCount, PruneUnusedForDays)
+        : PruneLabel;
+
+    private int StaleCount => Devices.Count(d =>
+        !d.IsCurrentDevice
+        && !d.IsOwner
+        && (d.Info.LastSeenAt is not { } seen
+            || DateTimeOffset.UtcNow - seen > TimeSpan.FromDays(PruneUnusedForDays)));
+
     public IAsyncRelayCommand RefreshCommand { get; }
-    public IAsyncRelayCommand<DeviceInfo> RevokeCommand { get; }
+    public IAsyncRelayCommand<MobileDeviceRow> RevokeCommand { get; }
+    public IAsyncRelayCommand<MobileDeviceRow> SetRoleCommand { get; }
+    public IAsyncRelayCommand PruneCommand { get; }
 
     private HostLink? Target => _shell.Hosts.Real.FirstOrDefault(l => l.IsOnline);
 
@@ -205,14 +334,30 @@ public sealed partial class DevicesPageViewModel : PageViewModel
         try
         {
             var list = await DeviceManagement.ListAsync(link.Url, link.Saved.Token, link.Http).ConfigureAwait(false);
+
+            // What this device is, on the same trip. Null means the host predates roles: leave the page
+            // exactly as it was before they existed rather than guessing.
+            var me = await PairingManagement.MeAsync(link.Url, link.Saved.Token, link.Http).ConfigureAwait(false);
+            if (me is not null)
+            {
+                link.SetRole(me.Role);
+            }
+
+            var owners = list.Count(d => d.Role == DeviceRole.Owner);
+            var now = DateTimeOffset.UtcNow;
             _shell.Dispatcher.Post(() =>
             {
+                IsRoleKnown = me is not null;
+                CanManage = me?.Role == DeviceRole.Owner;
+                IsConfirmingPrune = false;
+
                 Devices.Clear();
                 foreach (var device in list)
                 {
-                    Devices.Add(device);
+                    Devices.Add(new MobileDeviceRow(device, now, owners <= 1));
                 }
 
+                OnPropertyChanged(nameof(PruneButtonLabel));
                 Status = list.Count == 0 ? "No paired devices." : $"{list.Count} paired with {link.Name}.";
             });
         }
@@ -226,7 +371,7 @@ public sealed partial class DevicesPageViewModel : PageViewModel
         }
     }
 
-    private async Task RevokeAsync(DeviceInfo? device)
+    private async Task RevokeAsync(MobileDeviceRow? device)
     {
         if (device is null || Target is not { } link)
         {
@@ -243,6 +388,56 @@ public sealed partial class DevicesPageViewModel : PageViewModel
         {
             _shell.Toast("Couldn't revoke: " + ex.Message, ToastKind.Danger);
         }
+    }
+
+    /// <summary>Promotes or demotes one device. The host is the authority — it refuses a demotion that
+    /// would leave no owner — so a refusal is reported rather than pre-empted.</summary>
+    private async Task SetRoleAsync(MobileDeviceRow? device)
+    {
+        if (device is null || Target is not { } link)
+        {
+            return;
+        }
+
+        var wanted = device.TargetRole;
+        var ok = await PairingManagement
+            .SetRoleAsync(link.Url, link.Saved.Token, device.Id, wanted, link.Http).ConfigureAwait(false);
+
+        _shell.Toast(
+            ok ? $"{device.Name} is now {(wanted == DeviceRole.Owner ? "an owner" : "a member")}"
+               : "The host refused — it keeps at least one owner",
+            ok ? ToastKind.Success : ToastKind.Warning);
+
+        await LoadAsync().ConfigureAwait(false);
+    }
+
+    private async Task PruneAsync()
+    {
+        if (Target is not { } link)
+        {
+            return;
+        }
+
+        if (!IsConfirmingPrune)
+        {
+            _shell.Dispatcher.Post(() =>
+            {
+                IsConfirmingPrune = true;
+                Status = StaleCount == 0
+                    ? $"Nothing has been idle for {PruneUnusedForDays} days."
+                    : "Tap again to remove them.";
+            });
+            return;
+        }
+
+        var ok = await PairingManagement
+            .PruneAsync(link.Url, link.Saved.Token, PruneUnusedForDays, link.Http).ConfigureAwait(false);
+
+        _shell.Toast(
+            ok ? $"Removed the devices unused for {PruneUnusedForDays} days" : "Only an owner can prune devices",
+            ok ? ToastKind.Success : ToastKind.Warning);
+
+        await LoadAsync().ConfigureAwait(false);
     }
 }
 

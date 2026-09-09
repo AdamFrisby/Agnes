@@ -1,0 +1,107 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:v="using:Agnes.App.Mobile.Views"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.ReceivedFileSheetView"
+             x:DataType="vm:ReceivedFileSheetViewModel">
+  <!--
+    A file the agent sent you.
+
+    The preview is the top of the sheet and gets whatever room is left, because "what is this" is the
+    question you opened it to answer. The three verbs are pinned to the bottom, full width, in the order
+    a phone actually uses them: share it on, keep it, hand it to another app.
+  -->
+  <Grid RowDefinitions="*,Auto">
+
+    <ScrollViewer Grid.Row="0">
+      <StackPanel Margin="16,4,16,8" Spacing="12">
+
+        <!-- What the agent said about it, above the thing itself: the caption is the reason it was sent. -->
+        <TextBlock Text="{Binding Caption}" Classes="dim" LineHeight="22" IsVisible="{Binding HasCaption}" />
+
+        <!-- ===== image ===== -->
+        <Border CornerRadius="{StaticResource RadiusLg}" ClipToBounds="True"
+                Background="{DynamicResource Surface2}"
+                BorderBrush="{DynamicResource Border}" BorderThickness="1"
+                IsVisible="{Binding HasImage}">
+          <Image Source="{Binding Image}" Stretch="Uniform" HorizontalAlignment="Stretch" />
+        </Border>
+
+        <!-- ===== text =====
+             Monospace and unwrapped, scrolling sideways in its own box: a log or a diff shown wrapped is
+             a different document. -->
+        <Border Classes="inset" MaxHeight="420" IsVisible="{Binding HasText}" Padding="10,8">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <SelectableTextBlock Text="{Binding Text}" Classes="mono" TextWrapping="NoWrap" />
+          </ScrollViewer>
+        </Border>
+
+        <!-- ===== neither ===== -->
+        <StackPanel Spacing="10" Margin="0,20" IsVisible="{Binding HasNoPreview}">
+          <c:Icon Data="{StaticResource IconImage}" Size="42" HorizontalAlignment="Center"
+                  Stroke="{DynamicResource AccentText}"
+                  IsVisible="{Binding File, Converter={x:Static v:SharedFileKindConverter.Instance},
+                                       ConverterParameter=image}" />
+          <c:Icon Data="{StaticResource IconFileText}" Size="42" HorizontalAlignment="Center"
+                  Stroke="{DynamicResource AccentText}"
+                  IsVisible="{Binding File, Converter={x:Static v:SharedFileKindConverter.Instance},
+                                       ConverterParameter=document}" />
+          <c:Icon Data="{StaticResource IconFile}" Size="42" HorizontalAlignment="Center"
+                  Stroke="{DynamicResource AccentText}"
+                  IsVisible="{Binding File, Converter={x:Static v:SharedFileKindConverter.Instance},
+                                       ConverterParameter=other}" />
+          <TextBlock Text="No preview" Classes="title" HorizontalAlignment="Center" />
+          <TextBlock Classes="dim" TextAlignment="Center" LineHeight="22"
+                     Text="Save it or hand it to an app that knows the format." />
+        </StackPanel>
+
+        <TextBlock Text="Loading…" Classes="dim" HorizontalAlignment="Center" Margin="0,24"
+                   IsVisible="{Binding IsLoadingPreview}" />
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- ===== actions ===== -->
+    <StackPanel Grid.Row="1" Margin="16,8,16,20" Spacing="9">
+
+      <!-- One line, in words, for whatever just happened. In the sheet rather than as a toast: a toast
+           over a sheet reads as belonging to the screen behind it. -->
+      <Border Classes="inset" IsVisible="{Binding HasStatus}" Padding="12,9">
+        <Panel>
+          <TextBlock Text="{Binding Status}" FontSize="{StaticResource TextSm}"
+                     Foreground="{DynamicResource TextDim}" IsVisible="{Binding !StatusIsError}" />
+          <TextBlock Text="{Binding Status}" FontSize="{StaticResource TextSm}"
+                     Foreground="{DynamicResource Danger}" IsVisible="{Binding StatusIsError}" />
+        </Panel>
+      </Border>
+
+      <TextBlock Classes="caption" TextAlignment="Center" IsVisible="{Binding CanDoNothing}"
+                 Text="This build can't save or share files." />
+
+      <Button Theme="{StaticResource AccentButton}" HorizontalAlignment="Stretch"
+              Command="{Binding ShareCommand}" IsVisible="{Binding CanShare}">
+        <StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center">
+          <c:Icon Data="{StaticResource IconShare}" Size="17" Stroke="{DynamicResource TextOnAccent}" />
+          <TextBlock Text="Share" Foreground="{DynamicResource TextOnAccent}" />
+        </StackPanel>
+      </Button>
+
+      <Button Theme="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
+              Command="{Binding SaveCommand}" IsVisible="{Binding CanSave}">
+        <StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center">
+          <c:Icon Data="{StaticResource IconDownload}" Size="17" Stroke="{DynamicResource Text}" />
+          <TextBlock Text="Save to Downloads" />
+        </StackPanel>
+      </Button>
+
+      <Button Theme="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
+              Command="{Binding OpenCommand}" IsVisible="{Binding CanOpen}">
+        <StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center">
+          <c:Icon Data="{StaticResource IconExternalLink}" Size="17" Stroke="{DynamicResource Text}" />
+          <TextBlock Text="Open" />
+        </StackPanel>
+      </Button>
+    </StackPanel>
+  </Grid>
+</UserControl>

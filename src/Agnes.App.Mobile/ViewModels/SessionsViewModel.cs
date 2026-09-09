@@ -41,6 +41,7 @@ public sealed partial class SessionsViewModel : ObservableObject
         NewSessionCommand = new RelayCommand(StartNew);
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         ShowHostsCommand = new RelayCommand(() => _shell.ShowSheet(new HostsSheetViewModel(_shell, _hosts, this)));
+        ShowDevicesCommand = new RelayCommand(() => _shell.Push(new DevicesPageViewModel(_shell)));
         EntryActionsCommand = new RelayCommand<SessionEntry>(e => { if (e is not null) { _shell.ShowSheet(new SessionActionsSheetViewModel(_shell, this, e)); } });
 
         // Relative timestamps go stale silently, which makes a live list look frozen. One cheap tick a
@@ -71,6 +72,22 @@ public sealed partial class SessionsViewModel : ObservableObject
 
     /// <summary>True when there is genuinely nothing to show (as opposed to "not loaded yet").</summary>
     public bool IsEmpty => All.Count == 0 && !IsRestoring;
+
+    /// <summary>
+    /// The role explanation, when a connected host has told this phone it is a member.
+    ///
+    /// An owner's empty list means nothing is running. A member's may only mean it can't see what is.
+    /// Those two screens are identical, and the second one is the one that made a newly-paired device
+    /// look broken — so it says which it is, and where the fix lives.
+    /// </summary>
+    public string MemberNotice => _hosts.Real.FirstOrDefault(l => l.IsMember) is { } link
+        ? DeviceRoleText.EmptyStateForMember(link.Name, "More › Devices")
+        : string.Empty;
+
+    public bool HasMemberNotice => MemberNotice.Length > 0;
+
+    /// <summary>Takes the reader to the page the notice names, rather than making them find it.</summary>
+    public IRelayCommand ShowDevicesCommand { get; }
 
     /// <summary>How many sessions are blocked on the user — the Inbox tab's badge.</summary>
     public int AttentionCount => All.Count(e => e.NeedsAttention);
@@ -192,7 +209,10 @@ public sealed partial class SessionsViewModel : ObservableObject
                     string.IsNullOrWhiteSpace(r.Title)
                         ? (string.IsNullOrWhiteSpace(r.WorkingDirectory) ? r.SessionId : r.WorkingDirectory)
                         : r.Title!,
-                    r.WorkingDirectory))
+                    r.WorkingDirectory,
+                    HasDisplay: r.HasDisplay,
+                    LatestStatus: r.LatestStatus,
+                    LatestStatusAt: r.LatestStatusAt))
                 .ToList();
 
             if (added.Count == 0)
@@ -261,7 +281,22 @@ public sealed partial class SessionsViewModel : ObservableObject
     /// <summary>Builds a session view model wired to this app's stores, policy and notifier.</summary>
     private SessionViewModel CreateSession(IAgnesHost host, SessionView view, string title)
     {
-        var session = new SessionViewModel(host, view, _shell.Dispatcher, title, _prompts, _policy);
+        // This is the one place the app builds a session, so it is where the device's file handler joins
+        // one: every session gets the shell's single Android handler, and the received-file sheet reads
+        // the same instance off the shell — one object either way.
+        var session = new SessionViewModel(host, view, _shell.Dispatcher, title, _prompts, _policy, receivedFiles: _shell.ReceivedFiles);
+
+        // Files an agent sent are a live projection over the transcript, the way the blocked list is a live
+        // projection over attention state — the Inbox subscribes to this rather than polling every session.
+        session.Items.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset
+                || e.NewItems?.OfType<Agnes.Ui.Core.Transcript.SharedFileItem>().Any() == true)
+            {
+                _shell.Dispatcher.Post(() => SharedFilesChanged?.Invoke());
+            }
+        };
+
         session.NotificationRaised += n =>
         {
             _notifier.Notify(n);
@@ -278,6 +313,12 @@ public sealed partial class SessionsViewModel : ObservableObject
                     case NotificationKind.Error:
                         _shell.Haptics.Alert();
                         _shell.Toast(n.Body, ToastKind.Danger);
+                        break;
+                    case NotificationKind.File:
+                        // A file arriving while you're looking at another session is worth a line: the card
+                        // that carries it is somewhere off-screen, and the Inbox row is a tab away.
+                        _shell.Haptics.Success();
+                        _shell.Toast(n.Body, ToastKind.Info);
                         break;
                     default:
                         _shell.Haptics.Success();
@@ -297,8 +338,19 @@ public sealed partial class SessionsViewModel : ObservableObject
                 entry.UpdateSavedTitle(session.AgentTitle!);
                 Persist();
             }
+            else if (e.PropertyName == LiveStatusProperty)
+            {
+                // Saved for the same reason the title is: the list is read cold, on a phone that has been
+                // in a pocket, and the status is the one line worth being right before the host answers.
+                entry.AdoptLiveStatus();
+                Persist();
+            }
         };
     }
+
+    /// <summary>The shared session view model's status property, by name — this head persists what it
+    /// reports without owning the member. See <see cref="LiveAgentStatus"/> for why it is a string.</summary>
+    private const string LiveStatusProperty = "LatestStatus";
 
     // ---- opening / creating ----
 
@@ -365,6 +417,20 @@ public sealed partial class SessionsViewModel : ObservableObject
                 await Task.Delay(250).ConfigureAwait(false);
             }
         });
+    }
+
+    /// <summary>
+    /// Opens a session and lands on one moment in it — an inbox row for a file, a notification tap, a
+    /// shared link. Same path as <see cref="Open"/>, then the same retrying scroll a link uses, because the
+    /// session is usually still attaching when the page appears.
+    /// </summary>
+    public void OpenAt(SessionEntry entry, long sequence)
+    {
+        Open(entry);
+        if (sequence > 0)
+        {
+            RevealSequence(entry, sequence);
+        }
     }
 
     public void StartNew()
@@ -505,9 +571,15 @@ public sealed partial class SessionsViewModel : ObservableObject
         OnPropertyChanged(nameof(HostSummary));
         OnPropertyChanged(nameof(AnyHostOnline));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(MemberNotice));
+        OnPropertyChanged(nameof(HasMemberNotice));
         AttentionChanged?.Invoke();
     }
 
     /// <summary>Raised when the blocked-session count may have changed (drives the Inbox badge).</summary>
     public event Action? AttentionChanged;
+
+    /// <summary>Raised when any open session's list of received files may have changed (drives the Inbox's
+    /// "Sent to you" section).</summary>
+    public event Action? SharedFilesChanged;
 }

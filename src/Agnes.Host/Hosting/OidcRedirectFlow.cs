@@ -99,6 +99,7 @@ public sealed class OidcRedirectFlow
     private readonly ILogger<OidcRedirectFlow>? _logger;
 
     private readonly object _gate = new();
+    private readonly DeviceRoleOptions _roles;
     private OidcEndpoints? _cachedEndpoints;
 
     public OidcRedirectFlow(
@@ -107,10 +108,12 @@ public sealed class OidcRedirectFlow
         HttpClient http,
         IOidcStateStore store,
         TimeProvider clock,
-        ILogger<OidcRedirectFlow>? logger = null)
+        ILogger<OidcRedirectFlow>? logger = null,
+        DeviceRoleOptions? roles = null)
     {
         _oidc = oidc;
         _tokens = tokens;
+        _roles = roles ?? new DeviceRoleOptions();
         _http = http;
         _store = store;
         _clock = clock;
@@ -245,9 +248,12 @@ public sealed class OidcRedirectFlow
             return OidcCallbackResult.Reject("The id_token's nonce did not match the sign-in request.");
         }
 
-        var minted = _tokens.IssueDeviceToken(pending.DeviceName, subject: "oidc:" + validated.Subject, kind: "oidc");
+        var minted = _tokens.IssueDeviceToken(
+            pending.DeviceName, subject: "oidc:" + validated.Subject, kind: "oidc",
+            role: _roles.ForOidc(validated.Subject),
+            identity: DeviceIdentity.For("oidc:" + validated.Subject, pending.DeviceName));
         _logger?.LogInformation("OIDC redirect sign-in completed for {Subject}.", validated.Subject);
-        return OidcCallbackResult.Accept(new PairResponse(minted.DeviceId, minted.DeviceName, minted.Token));
+        return OidcCallbackResult.Accept(new PairResponse(minted.DeviceId, minted.DeviceName, minted.Token, minted.Role));
     }
 
     private async Task<string?> ExchangeCodeAsync(string tokenEndpoint, string code, string codeVerifier, CancellationToken cancellationToken)

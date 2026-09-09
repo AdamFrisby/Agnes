@@ -50,7 +50,8 @@ public sealed class SessionAccessAuthorizer
         _isolation = security?.SessionIsolation ?? SessionIsolation.Shared;
     }
 
-    /// <summary>Whether session isolation is off (the common case) — lets callers skip the async owner/group path.</summary>
+    /// <summary>Whether session isolation is off (the common case), i.e. no group grants are in play.
+    /// Note this does NOT mean "no owner match": reaching the session you started applies in every mode.</summary>
     public bool IsolationDisabled => _isolation == SessionIsolation.Shared;
 
     /// <summary>Whether the caller may subscribe to (watch) the session: the owner, or any active share of any
@@ -76,10 +77,11 @@ public sealed class SessionAccessAuthorizer
     private SessionShareRecord? ShareFor(string sessionId, SharingCaller caller)
         => _shares.FindActiveForAny(sessionId, caller.Identities());
 
-    // ---- session-isolation grants (Agnes:Security:SessionIsolation) ----
-    // These layer ADDITIVE access on top of the share checks above: under PerUser a caller reaches sessions they
-    // own; under PerGroup, also sessions whose group they belong to. The host owner and explicit shares are
-    // unaffected. Callers use the *Async variants when isolation is on (IsolationDisabled == false).
+    // ---- owner-match + session-isolation grants ----
+    // These layer ADDITIVE access on top of the share checks above. The owner-match applies in EVERY isolation
+    // mode: whoever started a session reaches it. The group grants are the isolation feature proper — under
+    // PerGroup a caller also reaches sessions whose group they belong to. Host owners and explicit shares are
+    // unaffected.
 
     /// <summary>Subscribe (watch) including isolation grants: base decision, or the caller owns / is in the group.</summary>
     public async Task<bool> CanSubscribeAsync(string sessionId, string? owner, string? group, SharingCaller caller, CancellationToken cancellationToken = default)
@@ -99,15 +101,20 @@ public sealed class SessionAccessAuthorizer
 
     private async Task<bool> OwnsOrInGroupAsync(string? owner, string? group, SharingCaller caller, bool allowGroup, CancellationToken cancellationToken)
     {
-        if (_isolation == SessionIsolation.Shared)
-        {
-            return false; // isolation off — no additive grant beyond shares/host-owner.
-        }
-
+        // A caller always reaches the sessions they started — in every isolation mode, including the default
+        // Shared one. Without this, a device that is not the host Owner could open a session and then be
+        // refused its own transcript on the very next call, which is how "this device can see nothing, not
+        // even the session it just started" happened. Matched across the caller's identities, so a user's
+        // phone reaches what their laptop began when both resolve to the same GitHub login.
         if (owner is { Length: > 0 }
             && caller.Identities().Any(id => string.Equals(id, owner, StringComparison.OrdinalIgnoreCase)))
         {
-            return true; // the caller owns this session (matched across their devices).
+            return true;
+        }
+
+        if (_isolation == SessionIsolation.Shared)
+        {
+            return false; // isolation off — no group grants, only shares/host-owner/session-owner.
         }
 
         if (allowGroup && _isolation == SessionIsolation.PerGroup && group is { Length: > 0 } && _groups is not null)

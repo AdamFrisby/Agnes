@@ -75,6 +75,49 @@ internal sealed class FakeAgnesMcpBackend : IAgnesMcpBackend
     public Task<IReadOnlyList<SessionGoal>> ListGoalsAsync(string? sessionId, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<SessionGoal>>(
             sessionId is { Length: > 0 } id ? [.. Goals.Where(g => g.SessionId == id)] : Goals);
+
+    // ---- sending the user a file ----
+    public List<(string SessionId, string Path, string? Caption)> Shared { get; } = [];
+
+    /// <summary>Set to make ShareFileAsync throw — how the real backend reports a veto or a bad path.</summary>
+    public Exception? ShareFailure { get; set; }
+
+    public Agnes.Abstractions.FileSharedEvent Share { get; set; } =
+        new("abc123", "report.md", ".agnes/shared/abc123/report.md", 12 * 1024, "text/markdown", null);
+
+    public Task<Agnes.Abstractions.FileSharedEvent> ShareFileAsync(
+        string sessionId, string path, string? caption, CancellationToken cancellationToken = default)
+    {
+        if (ShareFailure is { } failure)
+        {
+            return Task.FromException<Agnes.Abstractions.FileSharedEvent>(failure);
+        }
+
+        Shared.Add((sessionId, path, caption));
+        return Task.FromResult(Share with { Caption = caption });
+    }
+
+    // ---- the agent's one-line status ----
+    public List<(string SessionId, string Status)> Statuses { get; } = [];
+
+    /// <summary>Set to make ReportStatusAsync throw — how the real backend reports a veto or an empty line.</summary>
+    public Exception? StatusFailure { get; set; }
+
+    /// <summary>What the host claims it kept. Defaults to "nothing was taken away".</summary>
+    public Func<string, Agnes.Host.Sessions.StatusReportResult> StatusResult { get; set; } =
+        status => new Agnes.Host.Sessions.StatusReportResult(status, Clipped: false, TrimmedToFirstLine: false, MaxChars: 240);
+
+    public Task<Agnes.Host.Sessions.StatusReportResult> ReportStatusAsync(
+        string sessionId, string status, CancellationToken cancellationToken = default)
+    {
+        if (StatusFailure is { } failure)
+        {
+            return Task.FromException<Agnes.Host.Sessions.StatusReportResult>(failure);
+        }
+
+        Statuses.Add((sessionId, status));
+        return Task.FromResult(StatusResult(status));
+    }
 }
 
 /// <summary>A fixed-token caller source for offline tool tests.</summary>

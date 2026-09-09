@@ -31,11 +31,23 @@ public sealed class SessionManager : IAsyncDisposable
     private readonly SessionSecurityOptions _security;
     private readonly IReadOnlyList<IAgentCredentialProvider> _credentialProviders;
     private readonly AutoContinueOptions _autoContinue;
+    private readonly SharingOptions _sharing;
+    private readonly StatusOptions _status;
+    // Injected so the status window is testable without waiting on wall-clock time. Everything else in this
+    // class still reads DateTimeOffset.UtcNow directly; only the coalescing window needs a movable clock.
+    private readonly TimeProvider _time;
+    // Cancels the deferred status flushes at teardown, so a disposed manager stops writing to its store.
+    private readonly CancellationTokenSource _statusFlushes = new();
     private readonly Mcp.SessionMcpTokens _sessionMcpTokens;
 
     /// <summary>Where a sandboxed agent reaches Agnes's own MCP endpoint (bridge-local plain HTTP), or null
     /// when the guest endpoint isn't configured — in which case no agnes server is offered to agents.</summary>
     private readonly string? _guestMcp;
+
+    /// <summary>Where an agent running on the host reaches the same endpoint (loopback plain HTTP), or null
+    /// when the local listener is disabled. See <see cref="Mcp.LocalMcpOptions"/> for why it isn't the main
+    /// TLS listener.</summary>
+    private readonly string? _localMcp;
     private readonly ClaudeTokenRotationPusher? _rotationPusher;
     private readonly McpRegistry? _mcp;
     private readonly bool _mcpStrict;
@@ -97,6 +109,25 @@ public sealed class SessionManager : IAsyncDisposable
         // Direct/watch session: a read-only live tail of a CLI session Agnes did not start (sessions/02). Its
         // agent handle only tails an on-disk log — sending to it is rejected, and no crash-recovery is wired.
         public bool ReadOnly;
+
+        // Whether this session was actually handed Agnes's own MCP server at launch. Set by the two
+        // materialization paths (config file / inline environment); read when composing the system prompt,
+        // so a model is only ever nudged about a tool it can really call.
+        public bool HasAgnesTools;
+
+        // The agent's latest one-line status and when it said it, so ListSessionSummariesAsync can answer
+        // without re-scanning the log; StatusScanned records that the one-time backfill has happened (a
+        // session restored from the catalogue has a status in its log but nothing in memory yet).
+        public string? LatestStatus;
+        public DateTimeOffset? LatestStatusAt;
+        public bool StatusScanned;
+
+        // The status coalescing window (Agnes:Status:MinIntervalSeconds). Guarded by StatusGate: reports can
+        // arrive from an agent's tool call and from the deferred flush at the same moment.
+        public readonly object StatusGate = new();
+        public DateTimeOffset? LastStatusWrittenAt;
+        public string? PendingStatus;
+        public bool StatusFlushScheduled;
     }
 
     /// <summary>The session's metadata entry, created on first write.</summary>
@@ -153,7 +184,11 @@ public sealed class SessionManager : IAsyncDisposable
         SessionSecurityOptions? security = null,
         AutoContinueOptions? autoContinue = null,
         Mcp.SessionMcpTokens? sessionMcpTokens = null,
-        GuestMcpOptions? guestMcp = null)
+        GuestMcpOptions? guestMcp = null,
+        SharingOptions? sharing = null,
+        Mcp.LocalMcpOptions? localMcp = null,
+        StatusOptions? status = null,
+        TimeProvider? timeProvider = null)
     {
         _adapters = adapters;
         _gitHosts = gitHosts?.All.ToArray() ?? [];
@@ -165,8 +200,12 @@ public sealed class SessionManager : IAsyncDisposable
         _sandboxes = sandboxProviders?.All.FirstOrDefault();
         _security = security ?? new SessionSecurityOptions();
         _autoContinue = autoContinue ?? new AutoContinueOptions();
+        _sharing = sharing ?? new SharingOptions();
+        _status = status ?? new StatusOptions();
+        _time = timeProvider ?? TimeProvider.System;
         _sessionMcpTokens = sessionMcpTokens ?? new Mcp.SessionMcpTokens();
         _guestMcp = guestMcp?.Url;
+        _localMcp = localMcp?.Url;
         _credentialProviders = credentialProviders?.ToArray() ?? [];
         _rotationPusher = rotationPusher;
         _mcp = mcp;
@@ -535,6 +574,33 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Refuses a graphical session unless the operator has opted in (<c>Agnes:Security:AllowGraphicalSandboxes</c>).
+    /// A no-op for a headless session. Loud rather than silent: a caller that asked for a screen and got a
+    /// blank one would burn a whole turn discovering it.
+    /// </summary>
+    private void EnforceGraphicalPolicy(string sessionId, bool graphical)
+    {
+        if (!graphical)
+        {
+            return;
+        }
+
+        if (!_security.AllowGraphicalSandboxes)
+        {
+            _logger.LogWarning("Refused a graphical session {SessionId}: graphical sandboxes are disabled on this host.", sessionId);
+            throw new SessionSecurityException(
+                "Refused a graphical session: this host does not allow graphical sandboxes "
+                + "(set Agnes:Security:AllowGraphicalSandboxes=true to enable them).");
+        }
+
+        if (_sandboxes is null)
+        {
+            throw new SessionSecurityException(
+                "Refused a graphical session: a graphical display lives at the sandbox boundary, and no sandbox provider is configured on this host.");
+        }
+    }
+
     /// <summary>Which host-level plugin-point capabilities are actually populated right now (AC2/AC3 of
     /// .ideas/00-plugin-architecture.md) — queried live rather than cached, so it reflects the current
     /// registry state if plugins are ever installed/enabled/disabled without a restart.</summary>
@@ -544,7 +610,7 @@ public sealed class SessionManager : IAsyncDisposable
         new HostCapability(HostCapabilityIds.SandboxProvider, SandboxAvailable, FailClosed: false),
     ];
 
-    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, string? owner = null, CancellationToken cancellationToken = default)
+    public async Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, string? owner = null, bool graphical = false, CancellationToken cancellationToken = default)
     {
         // Event spine: a plugin may redirect the adapter/working directory or veto the open.
         var open = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeSessionOpenEvent(adapterId, workingDirectory), cancellationToken).ConfigureAwait(false);
@@ -578,7 +644,8 @@ public sealed class SessionManager : IAsyncDisposable
 
         var info = await OpenSessionCoreAsync(
             sessionId, adapterId, effectiveDirectory, skipPermissions, mcpApproval, gitCredentialMode,
-            useSandbox, modelId, existingSandbox: null, worktree: useWorktree, cancellationToken, owner: owner).ConfigureAwait(false);
+            useSandbox, modelId, existingSandbox: null, worktree: useWorktree, cancellationToken, owner: owner,
+            graphical: graphical).ConfigureAwait(false);
         await _bus.DispatchAsync(new Agnes.Abstractions.Events.SessionOpenedEvent(info.SessionId, adapterId), cancellationToken).ConfigureAwait(false);
         return info;
     }
@@ -673,7 +740,8 @@ public sealed class SessionManager : IAsyncDisposable
     private async Task<SessionInfo> OpenSessionCoreAsync(
         string sessionId, string adapterId, string effectiveDirectory,
         bool skipPermissions, string mcpApproval, string gitCredentialMode, bool useSandbox, string? modelId,
-        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken, string? resumeSessionId = null, string? owner = null)
+        ISandbox? existingSandbox, bool worktree, CancellationToken cancellationToken, string? resumeSessionId = null, string? owner = null,
+        bool graphical = false)
     {
         var adapter = _adapters.Find(adapterId);
         if (adapter is null)
@@ -684,6 +752,15 @@ public sealed class SessionManager : IAsyncDisposable
         // Host policy, checked here at the single shared open path so every entry — new, fork, cross-host
         // handoff — is covered, and before any project checkout / credential work happens. `willSandbox` is
         // whether this session will actually run inside a sandbox (an adopted / CoW-cloned VM counts).
+        // A graphical session is a sandboxed session by construction: the display exists at the VM boundary,
+        // so "give the agent a screen but run it on the host" is not a thing that can be built, and silently
+        // dropping the flag would be worse than refusing.
+        EnforceGraphicalPolicy(sessionId, graphical);
+        if (graphical)
+        {
+            useSandbox = true;
+        }
+
         var willSandbox = existingSandbox is not null || (_sandboxes is not null && useSandbox);
         if (_security.EnforceIsolationPolicy
             && _security.WorkloadTrust == WorkloadTrust.Untrusted
@@ -730,6 +807,16 @@ public sealed class SessionManager : IAsyncDisposable
             State(sessionId).Project = project;
             _logger.LogInformation("Session {SessionId} uses project '{Project}' ({Scope}).",
                 sessionId, project.Name, repoKey.Length == 0 ? "default" : repoKey);
+
+            // A project may ask for a screen by default (a repo whose work IS a UI). It can only ever raise
+            // the floor: the operator guardrail is re-checked, so a project file can't turn on a capability
+            // the host has switched off.
+            if (!graphical && project.Defaults.Graphical && _security.AllowGraphicalSandboxes && _sandboxes is not null)
+            {
+                graphical = true;
+                useSandbox = true;
+                willSandbox = true;
+            }
         }
 
         // Auto-checkout: if the project declares a repo and the working dir is empty, clone it (host-side,
@@ -762,10 +849,21 @@ public sealed class SessionManager : IAsyncDisposable
 
                 // Ensure the image exists (bake if missing) before launching from it — the resolved
                 // project's own sandbox image when we have a project, else the legacy global baseline.
+                //
+                // A session with a screen launches from the GRAPHICAL tier instead, and must: the headless
+                // images carry no X server, so a graphical session booted from one comes up with a guest
+                // that renders nothing and a capture path that waits forever for a first scanout. The
+                // graphical tier is one image per host (alias `agnes-graphical`, matching the Incus
+                // backend's own default) rather than one per project — a desktop is a big, slow bake and
+                // nothing in it is project-specific yet.
                 var image = string.Empty;
                 if (_images is not null)
                 {
-                    if (project is not null)
+                    if (graphical)
+                    {
+                        image = await _images.EnsureGraphicalAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    else if (project is not null)
                     {
                         image = await _images.EnsureForProjectAsync(project, cancellationToken).ConfigureAwait(false);
                     }
@@ -777,7 +875,15 @@ public sealed class SessionManager : IAsyncDisposable
                 }
 
                 sandbox = await _sandboxes.CreateAsync(
-                    new SandboxSpec { HostWorkingDirectory = effectiveDirectory, ImageReference = image, ResourceOverride = project?.SandboxResources }, cancellationToken).ConfigureAwait(false);
+                    new SandboxSpec
+                    {
+                        HostWorkingDirectory = effectiveDirectory,
+                        ImageReference = image,
+                        ResourceOverride = project?.SandboxResources,
+                        // Null = headless, which is every session that didn't ask. The display is fixed at
+                        // launch because the guest's framebuffer is: it cannot be added to a running VM.
+                        Display = graphical ? GraphicalDisplay.Default : null,
+                    }, cancellationToken).ConfigureAwait(false);
             }
 
             _sandboxBySession[sessionId] = sandbox;
@@ -787,7 +893,7 @@ public sealed class SessionManager : IAsyncDisposable
             _sandboxRegistry?.Upsert(new SandboxRecord(
                 sessionId, sandbox.Id, sandbox.Info.Provider, adapterId, effectiveDirectory,
                 project?.Name, SandboxTitle(project, effectiveDirectory), "running", now, now,
-                skipPermissions, mcpApproval, gitCredentialMode));
+                skipPermissions, mcpApproval, gitCredentialMode, graphical));
 
             // (Re-)stamp this session's own credentials + MCP + forward token into the sandbox. Critical
             // for a clone: it inherited the SOURCE session's tokens, which must be overwritten here.
@@ -797,7 +903,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
         else
         {
-            mcpConfigPath = await MaterializeHostMcpAsync(adapterId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
+            mcpConfigPath = await MaterializeHostMcpAsync(adapterId, sessionId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
             await ApplyHostSettingsAsync(adapterId, modelId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -812,9 +918,7 @@ public sealed class SessionManager : IAsyncDisposable
                 // A native-fork handoff (connectivity/03) resumes the CLI's own conversation from the token
                 // the source host exported; a plain open passes null and starts fresh.
                 ResumeSessionId = resumeSessionId,
-                // Prepend the library's enabled system-prompt additions; adapters whose CLI accepts a
-                // system-prompt flag (e.g. Claude Code's --append-system-prompt) thread this through.
-                SystemPrompt = _prompts?.AssembleSystemPromptAdditions(),
+                SystemPrompt = ComposeSystemPrompt(sessionId),
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -831,7 +935,10 @@ public sealed class SessionManager : IAsyncDisposable
         _logger.LogInformation("Opened session {SessionId} on {AdapterId}", sessionId, adapterId);
 
         var head = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name, CurrentModelId: modelId);
+        return new SessionInfo(sessionId, adapterId, effectiveDirectory, head, agent.Modes, agent.CurrentModeId, MapSandbox(sandbox), skipPermissions, project?.Name, CurrentModelId: modelId,
+            // What the host actually did with the request for a screen — which is not always what was asked
+            // for (the operator may forbid it; a project default may grant it).
+            HasDisplay: DisplaySourceFor(sessionId) is not null);
     }
 
     /// <summary>Computes a fork plan for a live session: a proposed non-existing target folder (numeral-
@@ -1046,20 +1153,84 @@ public sealed class SessionManager : IAsyncDisposable
         return text.Length > header.Length ? new TextContent(text) : null;
     }
 
-    // Which agents Agnes can inject an MCP config into, and how: (config format, home-relative file,
-    // whether the CLI loads it via a flag). ACP bridges (claude-code, opencode) and host-side Codex
-    // are deferred — see the plan.
-    private static (string Format, string HomeRel, bool UsesFlag)? McpTargetFor(string adapterId) => adapterId switch
+    /// <summary>The config format an agent CLI reads its MCP servers from.</summary>
+    internal enum McpConfigFormat
     {
-        "claude-code-native" => ("claude", ".agnes/mcp.json", true),
-        "codex" => ("codex", ".codex/config.toml", false),
+        /// <summary>Claude Code's <c>{"mcpServers": …}</c> JSON; Copilot reads the same shape.</summary>
+        Claude,
+
+        /// <summary>Codex's <c>config.toml</c> <c>[mcp_servers.name]</c> tables.</summary>
+        Codex,
+    }
+
+    /// <summary>How a CLI's config can carry the bearer that authenticates it to Agnes's own MCP endpoint.</summary>
+    internal enum McpTokenCarriage
+    {
+        /// <summary>A literal <c>headers.Authorization</c> on the http entry (Claude Code, Copilot).</summary>
+        AuthorizationHeader,
+
+        /// <summary>The <i>name</i> of an environment variable the CLI reads at launch (Codex's
+        /// <c>bearer_token_env_var</c> — its config has no header map), which the launcher must also set.</summary>
+        BearerTokenEnvVar,
+    }
+
+    /// <summary>
+    /// Which agents Agnes can inject an MCP config into, and how. This is the one seam a new adapter fills
+    /// in to get everything MCP-related — the operator's servers, the host-server forward, and Agnes's own
+    /// <c>agnes</c> server — rather than each of those growing its own per-adapter special case.
+    /// </summary>
+    /// <param name="Format">The file format to render.</param>
+    /// <param name="HomeRelativePath">Where the file goes in a sandbox's home.</param>
+    /// <param name="UsesFlag">Whether the CLI is *pointed at* the file by a launch flag, rather than
+    /// discovering it at a fixed path of its own.</param>
+    /// <param name="TokenCarriage">How this format carries a bearer token.</param>
+    /// <param name="TokenEnvVar">The environment variable holding that bearer, for
+    /// <see cref="McpTokenCarriage.BearerTokenEnvVar"/>.</param>
+    internal sealed record McpTarget(
+        McpConfigFormat Format,
+        string HomeRelativePath,
+        bool UsesFlag,
+        McpTokenCarriage TokenCarriage,
+        string? TokenEnvVar = null)
+    {
+        /// <summary>
+        /// Whether Agnes may write this adapter's MCP config for an <b>unsandboxed</b> session.
+        /// </summary>
+        /// <remarks>
+        /// Only a flag-loaded file can be: Agnes generates it under a temp path and hands the CLI the path,
+        /// so nothing of the operator's is touched. A CLI that instead discovers its config at a fixed place
+        /// in the real home directory (Codex's <c>~/.codex/config.toml</c>) owns that file — the person using
+        /// this machine put their own servers, models and auth in it, and Agnes overwriting or merging into
+        /// it would be editing a user's configuration behind their back. In a sandbox the same path is
+        /// Agnes's to write, because the home directory is one Agnes created for that session.
+        /// </remarks>
+        public bool SupportsHostSessions => UsesFlag;
+    }
+
+    // ACP bridges (claude-code, opencode) reach Agnes's MCP endpoint through the model-environment path
+    // (AddSandboxModel/IModelEnvironmentAdapter) instead, so they are absent here on purpose rather than by
+    // omission. Pi ships no MCP client at all and Antigravity exposes no MCP config surface: nothing is
+    // written for either, and nothing pretends to be.
+    internal static McpTarget? McpTargetFor(string adapterId) => adapterId switch
+    {
+        "claude-code-native" => new(McpConfigFormat.Claude, ".agnes/mcp.json", true, McpTokenCarriage.AuthorizationHeader),
+        "codex" => new(McpConfigFormat.Codex, ".codex/config.toml", false, McpTokenCarriage.BearerTokenEnvVar, AgnesMcpTokenEnvVar),
         // Copilot reads Claude's {"mcpServers": …} shape unchanged (verified live against CLI v1.0.78, for
         // stdio and http entries alike) and loads an extra config with --additional-mcp-config. The file
         // goes under .agnes/ rather than .copilot/ deliberately: .copilot/mcp-config.json is auto-loaded,
         // so writing there AND passing the flag would offer every server to the agent twice.
-        "copilot" => ("claude", ".agnes/mcp.json", true),
+        "copilot" => new(McpConfigFormat.Claude, ".agnes/mcp.json", true, McpTokenCarriage.AuthorizationHeader),
         _ => null,
     };
+
+    /// <summary>The name Agnes's own MCP server is offered under. One name across every adapter, so a prompt
+    /// or skill can say "use the agnes tools" and mean the same thing everywhere.</summary>
+    internal const string AgnesMcpServerName = "agnes";
+
+    /// <summary>Environment variable carrying the session's bearer for CLIs that take one only by name.
+    /// Distinct from <c>AGNES_MCP_TOKEN</c>, which is the *forward shim's* grant — a different credential
+    /// for a different listener, and conflating them would hand each the other's authority.</summary>
+    internal const string AgnesMcpTokenEnvVar = "AGNES_MCP_BEARER";
 
     /// <summary>
     /// Builds a sandboxed session's MCP config into the given bundle (env + files): RunAt=Sandbox
@@ -1137,7 +1308,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
-    private string? AddSandboxMcp(string adapterId, ISandbox sandbox, string sessionId,
+    internal string? AddSandboxMcp(string adapterId, ISandbox sandbox, string sessionId,
         bool skipPermissions, string mcpApproval, Projects.Project? project, string? workspaceId,
         Dictionary<string, string> env, List<SandboxCredentialFile> files)
     {
@@ -1146,7 +1317,7 @@ public sealed class SessionManager : IAsyncDisposable
             return null;
         }
 
-        var entries = new List<McpServerInfo>(ApplicableMcp(project, McpRunAt.Sandbox, workspaceId));
+        var entries = McpConfigEntry.From(ApplicableMcp(project, McpRunAt.Sandbox, workspaceId));
 
         // An autonomous session doesn't prompt per tool, so host servers are only forwarded to it
         // when the user has chosen to trust them (the "Ask vs Trust" preference). Attended sessions
@@ -1169,21 +1340,96 @@ public sealed class SessionManager : IAsyncDisposable
             entries.AddRange(hostServers.Select(s => ShimEntry(s, shimVmPath)));
         }
 
+        // Agnes's own MCP server, at the address the guest can reach it on.
+        AddAgnesMcpEntry(entries, target, sessionId, _guestMcp, env);
+
         if (entries.Count == 0)
         {
             return null;
         }
 
-        var content = target.Format == "claude" ? McpConfig.ForClaude(entries) : McpConfig.ForCodex(entries);
-        files.Add(new SandboxCredentialFile(target.HomeRel, content));
+        var content = Render(target.Format, entries);
+        files.Add(new SandboxCredentialFile(target.HomeRelativePath, content));
         _logger.LogInformation("Materialized {Count} MCP server(s) into sandbox {SandboxId}", entries.Count, sandbox.Id);
-        return target.UsesFlag ? $"{sandbox.HomeDirectory.TrimEnd('/')}/{target.HomeRel}" : null;
+        return target.UsesFlag ? $"{sandbox.HomeDirectory.TrimEnd('/')}/{target.HomeRelativePath}" : null;
+    }
+
+    private static string Render(McpConfigFormat format, IReadOnlyList<McpConfigEntry> entries)
+        => format == McpConfigFormat.Claude ? McpConfig.ForClaude(entries) : McpConfig.ForCodex(entries);
+
+    /// <summary>
+    /// Appends Agnes's own MCP server — the <c>agnes</c> tools (<c>send_user_file</c>, <c>arm_goal</c>, …) —
+    /// to a session's config, carrying that session's bearer token in whatever place the adapter's format
+    /// takes one.
+    /// </summary>
+    /// <remarks>
+    /// The token <b>is</b> the session's identity to the tool layer, so the agent needs no session id of its
+    /// own and cannot name another session's (see <see cref="Mcp.SessionMcpTokens"/>). It is not a device
+    /// token and confers none of a paired human's authority.
+    ///
+    /// An operator who has configured their own server called <c>agnes</c> keeps it: silently replacing a
+    /// server someone deliberately configured is the kind of surprise that makes a tool untrustworthy. The
+    /// consequence — this session has no Agnes tools — is logged rather than swallowed.
+    /// </remarks>
+    private void AddAgnesMcpEntry(
+        List<McpConfigEntry> entries, McpTarget target, string sessionId, string? endpointUrl,
+        Dictionary<string, string>? env)
+    {
+        if (endpointUrl is not { Length: > 0 })
+        {
+            return; // no endpoint configured for this location — nothing to offer.
+        }
+
+        if (entries.Any(e => string.Equals(e.Name, AgnesMcpServerName, StringComparison.OrdinalIgnoreCase)))
+        {
+            _logger.LogWarning(
+                "Session {SessionId}: an MCP server named '{Name}' is already configured, so Agnes's own tools "
+                + "are not being offered to this session. Rename that server to get them back.",
+                sessionId, AgnesMcpServerName);
+            return;
+        }
+
+        var token = _sessionMcpTokens.Issue(sessionId);
+        var entry = new McpConfigEntry
+        {
+            Name = AgnesMcpServerName,
+            Transport = "http",
+            Url = endpointUrl,
+        };
+
+        if (target.TokenCarriage == McpTokenCarriage.BearerTokenEnvVar && target.TokenEnvVar is { Length: > 0 } variable)
+        {
+            // The config names a variable; the launcher has to actually set it. With nowhere to put it
+            // (a host session for a CLI that reads a fixed config path) the entry would authenticate with
+            // nothing, so it is not written at all.
+            if (env is null)
+            {
+                return;
+            }
+
+            env[variable] = token;
+            entry = entry with { BearerTokenEnv = variable };
+        }
+        else
+        {
+            entry = entry with
+            {
+                Headers = new Dictionary<string, string> { ["Authorization"] = $"Bearer {token}" },
+            };
+        }
+
+        entries.Add(entry);
+        State(sessionId).HasAgnesTools = true;
     }
 
     // A RunAt=Host server, as the sandbox sees it: launch the forward shim, which tunnels to the host.
-    private static McpServerInfo ShimEntry(McpServerInfo s, string shimVmPath) => new(
-        s.Id, s.Name, s.RunAt, s.Enabled, "stdio", "python3", [shimVmPath, s.Name],
-        new Dictionary<string, string>(), null, null);
+    private static McpConfigEntry ShimEntry(McpServerInfo s, string shimVmPath) => new()
+    {
+        Name = s.Name,
+        Transport = "stdio",
+        Command = "python3",
+        Args = [shimVmPath, s.Name],
+    };
 
     /// <summary>
     /// Wires git credential brokering into a sandboxed session's bundle: derives the push scope from
@@ -1231,24 +1477,54 @@ public sealed class SessionManager : IAsyncDisposable
         _logger.LogInformation("Session {SessionId}: GitHub access on {Host} brokered ({Mode}, per-repo consent).", sessionId, host, mode);
     }
 
-    /// <summary>Writes a host (non-sandbox) session's RunAt=Host MCP config to a temp file for the CLI flag.</summary>
-    private async Task<string?> MaterializeHostMcpAsync(string adapterId, Projects.Project? project, string? workspaceId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Writes an unsandboxed session's MCP config — the operator's RunAt=Host servers plus Agnes's own
+    /// <c>agnes</c> server on the loopback endpoint — to a temp file for the CLI flag. Returns its path, or
+    /// null when this adapter takes no Agnes-written config on the host or there is nothing to write.
+    /// </summary>
+    internal async Task<string?> MaterializeHostMcpAsync(
+        string adapterId, string sessionId, Projects.Project? project, string? workspaceId, CancellationToken cancellationToken)
     {
-        if (McpTargetFor(adapterId) is not { UsesFlag: true })
-        {
-            return null; // only the config-flag (Claude) host path is wired; host-Codex/ACP deferred
-        }
+        // Re-decided from scratch on every launch — see the note on the sandbox path.
+        State(sessionId).HasAgnesTools = false;
 
-        var servers = ApplicableMcp(project, McpRunAt.Host, workspaceId);
-        if (servers.Count == 0)
+        // A CLI that discovers its config at a fixed path in the real home directory is excluded here — see
+        // McpTarget.SupportsHostSessions. Writing there would edit the operator's own configuration.
+        if (McpTargetFor(adapterId) is not { SupportsHostSessions: true } target)
         {
             return null;
         }
 
-        var tempFile = Path.Combine(Path.GetTempPath(), $"agnes-mcp-{Guid.NewGuid():n}.json");
-        await File.WriteAllTextAsync(tempFile, McpConfig.ForClaude(servers), cancellationToken).ConfigureAwait(false);
-        return tempFile;
+        var entries = McpConfigEntry.From(ApplicableMcp(project, McpRunAt.Host, workspaceId));
+        AddAgnesMcpEntry(entries, target, sessionId, _localMcp, env: null);
+        if (entries.Count == 0)
+        {
+            return null;
+        }
+
+        // Named for the session rather than a fresh GUID: this now runs for every host session and again on
+        // every relaunch, so a random name would leave a growing pile of files each holding a live bearer.
+        // One file per session, overwritten in place, is the bound.
+        var directory = Path.Combine(Path.GetTempPath(), "agnes-mcp");
+        Directory.CreateDirectory(directory);
+        var file = Path.Combine(directory, $"{SafeFileName(sessionId)}.json");
+        await File.WriteAllTextAsync(file, Render(target.Format, entries), cancellationToken).ConfigureAwait(false);
+
+        // It carries a session bearer, so no other user of this machine may read it — the default
+        // temp-directory umask is not enough on a shared host.
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        return file;
     }
+
+    // Session ids are Agnes-generated, but this path is joined into a filename — keep it incapable of
+    // escaping the directory whatever a future id format looks like.
+    private static string SafeFileName(string sessionId)
+        => new(sessionId.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
 
     /// <summary>Loads the persisted session catalogue on startup. Sessions are dormant (history
     /// replays immediately); the agent re-attaches lazily on the first prompt.</summary>
@@ -1380,7 +1656,15 @@ public sealed class SessionManager : IAsyncDisposable
             else if (sandboxRecord is not null)
             {
                 sandbox = await _sandboxes.AttachAsync(
-                    sandboxRecord.VmName, new SandboxSpec { HostWorkingDirectory = effectiveDirectory }, start: true, cancellationToken).ConfigureAwait(false);
+                    sandboxRecord.VmName,
+                    new SandboxSpec
+                    {
+                        HostWorkingDirectory = effectiveDirectory,
+                        // The VM was built graphical; re-attaching without saying so would hand back a
+                        // handle with no display and quietly break every computer_* tool on resume.
+                        Display = sandboxRecord.Graphical ? GraphicalDisplay.Default : null,
+                    },
+                    start: true, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -1397,7 +1681,7 @@ public sealed class SessionManager : IAsyncDisposable
         }
         else
         {
-            mcpConfigPath = await MaterializeHostMcpAsync(record.AdapterId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
+            mcpConfigPath = await MaterializeHostMcpAsync(record.AdapterId, sessionId, project, effectiveDirectory, cancellationToken).ConfigureAwait(false);
             await ApplyHostSettingsAsync(record.AdapterId, record.ModelId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -1414,6 +1698,10 @@ public sealed class SessionManager : IAsyncDisposable
                 // Only resume when the agent reported a real session id (a UUID); the pre-init placeholder
                 // (a dash-less GUID) would make `--resume` fail, so start fresh in that case.
                 ResumeSessionId = LooksResumable(record.AgentSessionId) ? record.AgentSessionId : null,
+                // A relaunch is a fresh CLI process with a fresh system prompt, so it needs the same
+                // composition the open did — without this, a resumed session quietly lost the operator's
+                // prompt-library additions and the status nudge along with them.
+                SystemPrompt = ComposeSystemPrompt(sessionId),
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -1774,7 +2062,8 @@ public sealed class SessionManager : IAsyncDisposable
         if (_guestMcp is { Length: > 0 } guestMcpUrl)
         {
             var token = _sessionMcpTokens.Issue(sessionId);
-            servers = [new InlineMcpServer("agnes", guestMcpUrl, $"Bearer {token}")];
+            servers = [new InlineMcpServer(AgnesMcpServerName, guestMcpUrl, $"Bearer {token}")];
+            State(sessionId).HasAgnesTools = true;
         }
 
         foreach (var (key, value) in adapter.InlineConfigEnvironment(modelId, servers))
@@ -1933,6 +2222,10 @@ public sealed class SessionManager : IAsyncDisposable
         var env = new Dictionary<string, string>();
         var files = new List<SandboxCredentialFile>();
 
+        // Re-decided from scratch on every provision (open, resume, model switch), so a session that loses
+        // the agnes server — an operator's own server took the name, the endpoint went away — also stops
+        // being told about tools it no longer has.
+        State(sessionId).HasAgnesTools = false;
         AddSandboxModel(adapterId, modelId, sessionId, env);
 
         var credentialProvider = _credentialProviders.FirstOrDefault(p => p.Handles(adapterId));
@@ -1987,7 +2280,8 @@ public sealed class SessionManager : IAsyncDisposable
             var liveHead = await _store.GetHeadAsync(sessionId, cancellationToken).ConfigureAwait(false);
             return new SessionInfo(sessionId, already.AdapterId, "/work", liveHead, already.Modes, already.CurrentModeId,
                 _sandboxBySession.TryGetValue(sessionId, out var s) ? MapSandbox(s) : null, false, null,
-                CurrentModelId: _catalog.TryGetValue(sessionId, out var arec) ? arec.ModelId : null);
+                CurrentModelId: _catalog.TryGetValue(sessionId, out var arec) ? arec.ModelId : null,
+                HasDisplay: DisplaySourceFor(sessionId) is not null);
         }
 
         var record = _sandboxRegistry?.Get(sessionId)
@@ -2019,7 +2313,10 @@ public sealed class SessionManager : IAsyncDisposable
         var project = StateOrNull(sessionId)?.Project;
         return new SessionInfo(sessionId, record.AdapterId, "/work", head, session.Modes, session.CurrentModeId,
             MapSandbox(sandbox), record.SkipPermissions, project?.Name,
-            CurrentModelId: _catalog.TryGetValue(sessionId, out var crec) ? crec.ModelId : null);
+            CurrentModelId: _catalog.TryGetValue(sessionId, out var crec) ? crec.ModelId : null,
+            // A resumed VM that was built graphical comes back graphical (the attach re-states the display),
+            // so the client that reopened it learns its screen is there without waiting for a catalogue poll.
+            HasDisplay: DisplaySourceFor(sessionId) is not null);
     }
 
     /// <summary>Re-resolves the project for a working directory (same rule as open).</summary>
@@ -2479,9 +2776,7 @@ public sealed class SessionManager : IAsyncDisposable
     public async Task<string> UploadAttachmentAsync(string sessionId, string fileName, byte[] data, AttachmentConflict conflict = AttachmentConflict.KeepBoth)
     {
         var hostDir = WorkingDirectoryOf(sessionId);
-        var attachDir = Files.WorkspacePaths.ResolveWithin(hostDir, Path.Combine(".agnes", "attachments"))
-            ?? throw new InvalidOperationException("Could not resolve the attachments directory within the workspace.");
-        Directory.CreateDirectory(attachDir);
+        var attachDir = Files.AgnesDirectory.EnsureIn(hostDir, "attachments");
 
         var leaf = Path.GetFileName(fileName);
         if (string.IsNullOrWhiteSpace(leaf))
@@ -2530,6 +2825,407 @@ public sealed class SessionManager : IAsyncDisposable
                 return candidate;
             }
         }
+    }
+
+    // ---- sending the user a file (the mirror image of an attachment upload) ----
+
+    /// <summary>
+    /// The agent's "here, look at this": copies <paramref name="path"/> to a stable place under the session's
+    /// workspace and appends a <see cref="FileSharedEvent"/> naming it, which is what every connected client
+    /// then renders and downloads.
+    /// <para>
+    /// Three things are deliberate. It <b>copies</b>: the agent keeps working, and a file the person opens
+    /// tomorrow must be the file that was sent today, not whatever that path has become — so the copy, under
+    /// an id nothing else writes to, is the artifact. It never <b>moves</b> the original, which is still the
+    /// agent's working file. And it resolves through <see cref="Files.WorkspacePaths.ResolveWithin"/> first,
+    /// so a path outside the workspace is refused <i>before</i> anything is read: "send me
+    /// /home/you/.ssh/id_ed25519" must fail at the boundary, not at the copy.
+    /// </para>
+    /// </summary>
+    /// <param name="path">An absolute host path, a workspace-relative path, or the <c>/work/…</c> path the
+    /// agent sees inside its sandbox (the host workspace is bind-mounted there).</param>
+    /// <param name="caption">One line of context, or null. An interceptor may rewrite it.</param>
+    /// <returns>The appended event, carrying the sequence the log gave it.</returns>
+    /// <exception cref="InvalidOperationException">The path escapes the workspace, the file is missing or is a
+    /// directory, it exceeds <see cref="SharingOptions.EffectiveMaxBytes"/>, or an interceptor vetoed the send.
+    /// The message names the reason, because it is shown to the agent as the tool's error text.</exception>
+    public async Task<FileSharedEvent> ShareFileAsync(
+        string sessionId, string path, string? caption, CancellationToken cancellationToken = default)
+    {
+        var workspace = WorkingDirectoryOf(sessionId);
+        var source = ResolveShareSource(workspace, path)
+            ?? throw new InvalidOperationException(
+                $"'{path}' is outside this session's workspace, so it can't be sent. Copy it into the working "
+                + "directory first if the user should have it.");
+
+        if (Directory.Exists(source))
+        {
+            throw new InvalidOperationException($"'{path}' is a directory. Send a single file — archive it first if you meant the whole folder.");
+        }
+
+        if (!File.Exists(source))
+        {
+            throw new InvalidOperationException($"There is no file at '{path}' to send.");
+        }
+
+        var info = new FileInfo(source);
+        var max = _sharing.EffectiveMaxBytes;
+        if (info.Length > max)
+        {
+            throw new InvalidOperationException(
+                $"'{Path.GetFileName(source)}' is {info.Length / (1024 * 1024)} MB, over this host's "
+                + $"{max / (1024 * 1024)} MB limit for a sent file. Send something smaller, or tell the user where it is.");
+        }
+
+        var leaf = Path.GetFileName(source) is { Length: > 0 } name ? name : "file";
+
+        // The veto point (a secrets scanner is the motivating case). Dispatched BEFORE the copy, so a vetoed
+        // file leaves nothing behind, and the reason travels back to the agent as the tool's error.
+        var gate = await _bus.DispatchAsync(
+            new BeforeFileSharedEvent(sessionId, source, leaf, info.Length, caption)).ConfigureAwait(false);
+        if (gate.IsCanceled)
+        {
+            throw new InvalidOperationException(
+                $"Sending '{leaf}' was blocked: {gate.CancelReason ?? "no reason given"}.");
+        }
+
+        var fileId = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+        var directory = Files.AgnesDirectory.EnsureIn(workspace, "shared", fileId);
+        var target = Path.Combine(directory, leaf);
+        File.Copy(source, target, overwrite: false);
+
+        var shared = new FileSharedEvent(
+            fileId,
+            leaf,
+            Path.GetRelativePath(workspace, target).Replace(Path.DirectorySeparatorChar, '/'),
+            info.Length,
+            Files.SharedFileTypes.MimeTypeFor(leaf),
+            gate.Caption);
+
+        var stored = await AppendFileSharedAsync(sessionId, shared, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation(
+            "Session {SessionId}: sent the user {FileName} ({Bytes} bytes) as {FileId}", sessionId, leaf, info.Length, fileId);
+        return stored;
+    }
+
+    /// <summary>
+    /// The three forms an agent may name a file in, resolved to one absolute host path inside the workspace —
+    /// or null if it lies outside. A sandboxed agent's cwd is <c>/work</c>, which IS the host working
+    /// directory bind-mounted, so stripping that prefix is a rename, not a trust decision: whatever is left
+    /// still goes through the same guard as a path typed by a client.
+    /// </summary>
+    internal static string? ResolveShareSource(string workspace, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        const string SandboxRoot = "/work";
+        var candidate = path.Trim();
+
+        if (candidate == SandboxRoot || candidate.StartsWith(SandboxRoot + "/", StringComparison.Ordinal))
+        {
+            candidate = candidate[SandboxRoot.Length..].TrimStart('/');
+            return candidate.Length == 0 ? null : Files.WorkspacePaths.ResolveWithin(workspace, candidate);
+        }
+
+        if (Path.IsPathRooted(candidate))
+        {
+            // Re-express an absolute path relative to the workspace and let the shared guard rule on it, so
+            // there is exactly ONE containment check in the system rather than a second one written here.
+            string relative;
+            try
+            {
+                relative = Path.GetRelativePath(Path.GetFullPath(workspace), Path.GetFullPath(candidate));
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return null;
+            }
+
+            return Files.WorkspacePaths.ResolveWithin(workspace, relative);
+        }
+
+        return Files.WorkspacePaths.ResolveWithin(workspace, candidate);
+    }
+
+    // ---- the agent's one-line status (see docs/agent-status.md) ----
+
+    /// <summary>
+    /// The system-prompt append a session launches with: the prompt library's enabled additions, plus the
+    /// status nudge when this session was actually handed Agnes's own MCP server. Null when there is nothing
+    /// to say, so an adapter that takes a system prompt isn't passed an empty flag.
+    /// </summary>
+    /// <remarks>
+    /// The nudge is gated on <see cref="SessionState.HasAgnesTools"/> rather than added unconditionally
+    /// because telling a model to call a tool it does not have is worse than saying nothing: it will try,
+    /// fail, and spend a turn deciding what to do about the failure. Only adapters whose CLI accepts a
+    /// system-prompt flag see any of this (Claude Code's <c>--append-system-prompt</c>); every other adapter
+    /// gets the same sentence from the MCP server's own <c>ServerInstructions</c>, which is why the text is
+    /// one constant in <see cref="Mcp.AgentStatusNudge"/> and not two.
+    /// </remarks>
+    internal string? ComposeSystemPrompt(string sessionId)
+    {
+        var additions = _prompts?.AssembleSystemPromptAdditions();
+        var nudge = StateOrNull(sessionId)?.HasAgnesTools == true ? Mcp.AgentStatusNudge.Text : null;
+        return (additions, nudge) switch
+        {
+            ({ Length: > 0 }, { Length: > 0 }) => additions + "\n\n" + nudge,
+            ({ Length: > 0 }, _) => additions,
+            (_, { Length: > 0 }) => nudge,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Records the agent's own answer to "what are you doing?" — one line, appended to the session log like
+    /// any other fact about the session, so every client that is watching sees it and every client that opens
+    /// the session tomorrow replays it.
+    /// <para>
+    /// Three things happen to a report before it lands. It is <b>normalised</b> (first line, collapsed
+    /// whitespace, clipped at a word boundary to <see cref="StatusOptions.EffectiveMaxChars"/>) — the caller
+    /// gets back what was kept and whether anything was cut, because an agent that isn't told it was
+    /// truncated writes the same paragraph again. It is put to the <b>spine</b> as a
+    /// <see cref="BeforeStatusReportedEvent"/>, so a plugin can redact or refuse it. And it is
+    /// <b>coalesced</b>: at most one line per <see cref="StatusOptions.MinInterval"/> reaches the log, with a
+    /// report arriving inside the window replacing whatever was pending and being written when the window
+    /// closes. Coalescing never drops the newest line, which is the only one anybody reads.
+    /// </para>
+    /// </summary>
+    /// <returns>What was kept, so the caller can tell the agent. Never null — an unusable report throws.</returns>
+    /// <exception cref="ArgumentException">The report is empty once normalised.</exception>
+    /// <exception cref="InvalidOperationException">An interceptor vetoed it; the message carries the reason,
+    /// because it is shown to the agent as the tool's error text.</exception>
+    public async Task<StatusReportResult> ReportStatusAsync(
+        string sessionId, string status, CancellationToken cancellationToken = default)
+    {
+        var normalized = AgentStatusText.Normalize(status, _status.EffectiveMaxChars)
+            ?? throw new ArgumentException("A status report needs some text in it.", nameof(status));
+
+        // The veto/rewrite point, dispatched for EVERY report rather than only the ones that get written:
+        // an interceptor that redacts a secret must see the line the agent actually wrote, and a veto must
+        // reach the agent as an error now, not silently at flush time.
+        var gate = await _bus.DispatchAsync(
+            new BeforeStatusReportedEvent(sessionId, normalized.Status), cancellationToken).ConfigureAwait(false);
+        if (gate.IsCanceled)
+        {
+            throw new InvalidOperationException(
+                $"That status wasn't recorded: {gate.CancelReason ?? "no reason given"}.");
+        }
+
+        // A rewrite is re-normalised so the invariant (one line, within the limit) holds however careless the
+        // interceptor was — quietly, since the agent is not the author of that text and can't act on it. An
+        // interceptor that rewrites the line away entirely (a redactor finding nothing safe to keep) records
+        // nothing; the agent is still told what its own text would have become.
+        var effective = normalized;
+        if (!string.Equals(gate.Status, normalized.Status, StringComparison.Ordinal))
+        {
+            if (AgentStatusText.Normalize(gate.Status, _status.EffectiveMaxChars) is not { } rewritten)
+            {
+                return normalized;
+            }
+
+            effective = rewritten with
+            {
+                Clipped = normalized.Clipped,
+                TrimmedToFirstLine = normalized.TrimmedToFirstLine,
+            };
+        }
+
+        var state = State(sessionId);
+        var window = _status.MinInterval;
+        DateTimeOffset? flushAt = null;
+        var writeNow = false;
+        lock (state.StatusGate)
+        {
+            var now = _time.GetUtcNow();
+            if (window <= TimeSpan.Zero || state.LastStatusWrittenAt is not { } last || now - last >= window)
+            {
+                state.LastStatusWrittenAt = now;
+                state.PendingStatus = null;
+                writeNow = true;
+            }
+            else
+            {
+                // Inside the window: the newest line replaces whatever was waiting (nobody wants the stale
+                // one) and a single flush is scheduled for the moment the window closes.
+                state.PendingStatus = effective.Status;
+                if (!state.StatusFlushScheduled)
+                {
+                    state.StatusFlushScheduled = true;
+                    flushAt = last + window;
+                }
+            }
+        }
+
+        if (writeNow)
+        {
+            await AppendStatusAsync(sessionId, effective.Status, cancellationToken).ConfigureAwait(false);
+        }
+        else if (flushAt is { } due)
+        {
+            ScheduleStatusFlush(sessionId, due);
+        }
+
+        return effective;
+    }
+
+    /// <summary>Waits out the rest of the coalescing window, then writes whatever the latest pending line is.
+    /// Fire-and-forget by design: the agent's tool call returns as soon as the report is accepted, and the
+    /// write is the host's business from then on.</summary>
+    private void ScheduleStatusFlush(string sessionId, DateTimeOffset due)
+        => _ = Task.Run(async () =>
+        {
+            try
+            {
+                var delay = due - _time.GetUtcNow();
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay, _time, _statusFlushes.Token).ConfigureAwait(false);
+                }
+
+                await FlushPendingStatusAsync(sessionId, _statusFlushes.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Host shutting down; the pending line dies with the process, which is the right outcome.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Session {SessionId}: deferred status write failed", sessionId);
+            }
+        });
+
+    /// <summary>Writes the line held back by the coalescing window, if there still is one. Internal so a test
+    /// can drive the flush directly instead of racing a timer.</summary>
+    internal async Task<SessionEvent?> FlushPendingStatusAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        if (StateOrNull(sessionId) is not { } state)
+        {
+            return null;
+        }
+
+        string? pending;
+        lock (state.StatusGate)
+        {
+            state.StatusFlushScheduled = false;
+            pending = state.PendingStatus;
+            state.PendingStatus = null;
+            if (pending is not null)
+            {
+                state.LastStatusWrittenAt = _time.GetUtcNow();
+            }
+        }
+
+        return pending is null ? null : await AppendStatusAsync(sessionId, pending, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Appends the status fact on the path every other session fact takes, and refreshes the cached
+    /// line the session catalogue reads (so a listing never has to go back to the log for it).</summary>
+    private async Task<SessionEvent> AppendStatusAsync(string sessionId, string status, CancellationToken cancellationToken)
+    {
+        var fact = new AgentStatusEvent(status);
+        var stored = _sessions.TryGetValue(sessionId, out var live)
+            ? await live.RecordAgentStatusAsync(fact).ConfigureAwait(false)
+            : await AppendDormantFactAsync(sessionId, fact, cancellationToken).ConfigureAwait(false);
+
+        var state = State(sessionId);
+        state.LatestStatus = status;
+        state.LatestStatusAt = stored.Timestamp;
+        state.StatusScanned = true;
+        _logger.LogDebug("Session {SessionId} status: {Status}", sessionId, status);
+        return stored;
+    }
+
+    /// <summary>
+    /// The session's latest status line, from the in-memory cache — backfilled once from the log for a
+    /// session this process has not seen report yet (a restored, dormant session has a status in its log and
+    /// nothing in memory). The scan happens at most once per session per host lifetime; every later listing
+    /// is free, because <see cref="AppendStatusAsync"/> keeps the cache current.
+    /// </summary>
+    private async Task<(string? Status, DateTimeOffset? At)> LatestStatusAsync(
+        string sessionId, long head, CancellationToken cancellationToken)
+    {
+        var state = State(sessionId);
+        if (state.StatusScanned || head <= 0)
+        {
+            state.StatusScanned = true;
+            return (state.LatestStatus, state.LatestStatusAt);
+        }
+
+        var events = await _store.ReadSinceAsync(sessionId, 0, cancellationToken).ConfigureAwait(false);
+        for (var i = events.Count - 1; i >= 0; i--)
+        {
+            if (events[i] is AgentStatusEvent latest)
+            {
+                state.LatestStatus = latest.Status;
+                state.LatestStatusAt = latest.Timestamp;
+                break;
+            }
+        }
+
+        state.StatusScanned = true;
+        return (state.LatestStatus, state.LatestStatusAt);
+    }
+
+    // ---- the graphical sandbox's display (see docs/display-channel.md) ----
+
+    /// <summary>
+    /// The session's sandbox as a display source, or null when the session is headless, unsandboxed, or gone.
+    /// The capability test is the sandbox <em>implementing</em> <see cref="IDisplaySource"/> — the same
+    /// optional-capability shape as <c>IPausableSandbox</c> — so a provider that cannot capture a screen
+    /// simply never offers one, rather than there being a flag to disagree with.
+    /// </summary>
+    public IDisplaySource? DisplaySourceFor(string sessionId)
+        => _sandboxBySession.TryGetValue(sessionId, out var sandbox) ? sandbox as IDisplaySource : null;
+
+    /// <summary>Whether an agent turn is running — the display broker's other half of "is anyone using this".</summary>
+    public bool IsTurnActive(string sessionId)
+        => _sessions.TryGetValue(sessionId, out var live) && live.IsTurnActive;
+
+    /// <summary>
+    /// Appends a display-control handover on exactly the path <see cref="ShareFileAsync"/> uses: persisted,
+    /// broadcast to every subscribed client, and dispatched on the spine. A control change is a fact about the
+    /// session, so it belongs in the log even though the frames it governs never do.
+    /// </summary>
+    public async Task<SessionEvent> AppendDisplayControlAsync(
+        string sessionId, DisplayControlChangedEvent changed, CancellationToken cancellationToken = default)
+    {
+        return _sessions.TryGetValue(sessionId, out var live)
+            ? await live.RecordDisplayControlAsync(changed).ConfigureAwait(false)
+            : await AppendDormantFactAsync(sessionId, changed, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Appends a fact about a session with no live handle: the same three steps <see cref="HostSession"/>
+    /// takes for an agent's own events — interceptor gate, append + broadcast, dispatch the fact on the
+    /// spine — rather than waking an agent process purely to write one row. One copy, because a fourth
+    /// hand-written version of these six lines is how the display path and the sharing path would quietly
+    /// stop agreeing about what "appending" means.
+    /// </summary>
+    private async Task<SessionEvent> AppendDormantFactAsync(
+        string sessionId, SessionEvent fact, CancellationToken cancellationToken)
+    {
+        var gate = await _bus.DispatchAsync(new BeforeAgentEventEvent(sessionId, fact)).ConfigureAwait(false);
+        var stored = await _store.AppendAsync(sessionId, fact, cancellationToken).ConfigureAwait(false);
+        if (!gate.IsCanceled)
+        {
+            await _broadcaster.PublishAsync(sessionId, stored).ConfigureAwait(false);
+        }
+
+        await _bus.DispatchAsync(stored).ConfigureAwait(false);
+        return stored;
+    }
+
+    /// <summary>Appends the shared-file fact on the same path an agent's own events take.</summary>
+    private async Task<FileSharedEvent> AppendFileSharedAsync(
+        string sessionId, FileSharedEvent shared, CancellationToken cancellationToken)
+    {
+        // No live handle — a dormant session shared from a paired device — takes the shared dormant path.
+        return (FileSharedEvent)(_sessions.TryGetValue(sessionId, out var live)
+            ? await live.RecordFileSharedAsync(shared).ConfigureAwait(false)
+            : await AppendDormantFactAsync(sessionId, shared, cancellationToken).ConfigureAwait(false));
     }
 
     // ---- file browser (see .ideas/git-and-files/03-attachments-and-file-browser.md) ----
@@ -2961,7 +3657,7 @@ public sealed class SessionManager : IAsyncDisposable
         var skipPermissions = _catalog.TryGetValue(sessionId, out var rec) && rec.SkipPermissions;
         var info = new SessionInfo(sessionId, adapterId, workingDirectory, head,
             live?.Modes, live?.CurrentModeId, GetSandboxStatus(sessionId), skipPermissions, Project: null, ReadOnly: IsReadOnly(sessionId),
-            CurrentModelId: rec?.ModelId);
+            CurrentModelId: rec?.ModelId, HasDisplay: DisplaySourceFor(sessionId) is not null);
         return new SessionSnapshot(info, events, head);
     }
 
@@ -2999,6 +3695,7 @@ public sealed class SessionManager : IAsyncDisposable
                 : live.IsTurnActive ? SessionRunState.Working
                 : SessionRunState.Idle;
             var head = await _store.GetHeadAsync(id, cancellationToken).ConfigureAwait(false);
+            var (latestStatus, latestStatusAt) = await LatestStatusAsync(id, head, cancellationToken).ConfigureAwait(false);
             result.Add(new SessionSummary(
                 id,
                 adapterId,
@@ -3012,7 +3709,15 @@ public sealed class SessionManager : IAsyncDisposable
                 CurrentModeId: live?.CurrentModeId,
                 CurrentModelId: record?.ModelId,
                 ReadOnly: IsReadOnly(id),
-                Sandboxed: record?.Sandboxed ?? false));
+                Sandboxed: record?.Sandboxed ?? false,
+                // Asked of the live sandbox, not of a stored flag: a client offering a "watch the screen"
+                // affordance must be told what is actually connectable right now, and a dormant session's VM
+                // has no display until it is resumed.
+                HasDisplay: DisplaySourceFor(id) is not null,
+                // The agent's own sentence about what it is doing, so a list of twenty sessions reads without
+                // opening any of them. Null until the agent has reported at least once.
+                LatestStatus: latestStatus,
+                LatestStatusAt: latestStatusAt));
         }
 
         return result;
@@ -3113,6 +3818,10 @@ public sealed class SessionManager : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Stop the deferred status flushes before the store goes: a pending line is worth less than a write
+        // into a disposed store.
+        await _statusFlushes.CancelAsync().ConfigureAwait(false);
+
         foreach (var session in _sessions.Values)
         {
             await session.DisposeAsync().ConfigureAwait(false);
@@ -3132,5 +3841,6 @@ public sealed class SessionManager : IAsyncDisposable
         }
 
         _attachGate.Dispose();
+        _statusFlushes.Dispose();
     }
 }

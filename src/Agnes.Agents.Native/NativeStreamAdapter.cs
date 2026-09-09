@@ -28,6 +28,14 @@ public sealed record NativeLaunchSpec
     /// this CLI takes no model flag, so a requested <see cref="AgentSessionOptions.ModelId"/> is ignored.</summary>
     public Func<string, IReadOnlyList<string>>? ModelArguments { get; init; }
 
+    /// <summary>
+    /// How to hand the CLI a standing system-prompt addition (e.g. <c>claude --append-system-prompt</c>), or
+    /// null when this CLI takes none. The host composes the text (prompt-library additions, the status nudge);
+    /// the adapter only carries it. Without this, a native adapter's model hears the nudge solely as MCP
+    /// server instructions, which a model reads as "a thing you may use" rather than "a thing you are to do".
+    /// </summary>
+    public Func<string, IReadOnlyList<string>>? SystemPromptArguments { get; init; }
+
     /// <summary>Optional live model probe, for a CLI that can be asked what it can reach
     /// (see <see cref="IModelListingAdapter.ListModelsAsync"/>). Null means "no live listing" — resolution
     /// falls back to <see cref="Models"/>.</summary>
@@ -37,6 +45,20 @@ public sealed record NativeLaunchSpec
     /// <c>--resume &lt;id&gt;</c>, which is what Claude Code takes; a CLI that spells it differently
     /// (Pi's <c>--session-id &lt;id&gt;</c>) states its own.</summary>
     public Func<string, IReadOnlyList<string>> ResumeArguments { get; init; } = id => ["--resume", id];
+
+    /// <summary>
+    /// Arguments derived from the session's working directory, for a CLI that will not treat its own cwd
+    /// as writable until told to.
+    ///
+    /// <para>Antigravity is the reason this exists. Given nothing, <c>agy</c> silently redirects file
+    /// writes to <c>~/.gemini/antigravity-cli/scratch/</c> and reports success — even with
+    /// <c>--dangerously-skip-permissions</c> — so an agent appears to work while the repository is never
+    /// touched. Passing <c>--add-dir &lt;cwd&gt;</c> is what makes the working directory real to it.</para>
+    ///
+    /// <para>The value passed is the <b>session's</b> working directory, which under a sandbox is the
+    /// guest path — the same one that travels in the wrapped argv — not the host launcher's cwd.</para>
+    /// </summary>
+    public Func<string, IReadOnlyList<string>>? WorkingDirectoryArguments { get; init; }
 
     /// <summary>CLI flag that loads an MCP config file (e.g. "--mcp-config"), or null if unsupported.</summary>
     public string? McpConfigFlag { get; init; }
@@ -59,6 +81,9 @@ public sealed record NativeLaunchSpec
 public class NativeStreamAdapter : IAgentAdapter, IModelListingAdapter
 {
     private readonly NativeLaunchSpec _spec;
+
+    /// <summary>The launch spec this adapter was built from — for tests that check what a plugin wires.</summary>
+    internal NativeLaunchSpec Spec => _spec;
     private readonly ILoggerFactory _loggerFactory;
 
     public NativeStreamAdapter(NativeLaunchSpec spec, ILoggerFactory loggerFactory)
@@ -113,6 +138,22 @@ public class NativeStreamAdapter : IAgentAdapter, IModelListingAdapter
         if (options.ModelId is { Length: > 0 } modelId && _spec.ModelArguments is { } buildModel)
         {
             baseArgs.AddRange(buildModel(modelId));
+        }
+
+        // Carry the host's composed system-prompt addition where the CLI accepts one. An adapter with no
+        // SystemPromptArguments relies on the MCP server's instructions alone.
+        if (options.SystemPrompt is { Length: > 0 } systemPrompt && _spec.SystemPromptArguments is { } buildPrompt)
+        {
+            baseArgs.AddRange(buildPrompt(systemPrompt));
+        }
+
+        // Tell the CLI its working directory is part of the workspace, where that is not implied. See
+        // WorkingDirectoryArguments: for Antigravity, omitting this is the difference between editing the
+        // repository and writing to a scratch directory while reporting success.
+        if (_spec.WorkingDirectoryArguments is { } buildWorkingDirectory
+            && options.WorkingDirectory is { Length: > 0 } workingDirectory)
+        {
+            baseArgs.AddRange(buildWorkingDirectory(workingDirectory));
         }
 
         // Load Agnes-managed MCP servers via the CLI's config-file flag (e.g. claude --mcp-config).

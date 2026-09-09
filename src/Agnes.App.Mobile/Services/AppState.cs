@@ -8,10 +8,14 @@ public sealed record MobileSettings(
     bool Haptics = true,
     bool NotifyOnBlocked = true,
     bool NotifyOnComplete = true,
+    bool NotifyOnFile = true,
     bool ReducedMotion = false,
     bool ShowThinking = false,
     string LastWorkingDirectory = "",
-    bool DemoSeeded = false)
+    bool DemoSeeded = false,
+    // Graphical sessions are the one screen that can spend a megabyte a second. Android tells us when
+    // the active network is metered; this says what to do about it.
+    bool LowerScreenQualityOnMobileData = true)
 {
     public static MobileSettings Load() => JsonStore.Load("mobile-settings.json", new MobileSettings());
 
@@ -20,7 +24,15 @@ public sealed record MobileSettings(
 
 /// <summary>A host this device has paired with. The token is the per-device bearer token issued at
 /// pairing — revocable host-side, and never shared between devices.</summary>
-public sealed record SavedHost(string Name, string Url, string Token, string? Fingerprint = null);
+/// <param name="Role">
+/// What this device last knew itself to be on that host, remembered only so an empty session list can be
+/// explained on the screen that shows it rather than one round trip later. Null means "not asked yet",
+/// which is what every host saved before roles existed says — and is why it isn't defaulted to Member:
+/// an owner must never be told, even for a moment, that it is a member. The host re-answers on connect.
+/// </param>
+public sealed record SavedHost(
+    string Name, string Url, string Token, string? Fingerprint = null,
+    Agnes.Protocol.DeviceRole? Role = null);
 
 /// <summary>The device's paired hosts.</summary>
 public static class HostRegistry
@@ -50,7 +62,16 @@ public sealed record SavedSession(
     string AdapterId,
     string Title,
     string WorkingDirectory = "",
-    bool Pinned = false);
+    bool Pinned = false,
+    // Whether this session has a graphical sandbox to watch. Learned from the host's catalogue
+    // (SessionSummary.HasDisplay) or from having asked for one at launch, and saved so the Screen
+    // segment is offered the moment the card is opened rather than one round trip later.
+    bool HasDisplay = false,
+    // The agent's own one-line report of what it is doing, and when it said it. Saved for the same
+    // reason the title is: the sessions list is read at a glance, and a card that says nothing until
+    // the host answers is a card that says nothing in the moment it is actually looked at.
+    string? LatestStatus = null,
+    DateTimeOffset? LatestStatusAt = null);
 
 /// <summary>
 /// Sessions this device was told to stop showing. Discovery lists what the <b>host</b> has, so without

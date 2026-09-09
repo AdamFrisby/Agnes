@@ -444,7 +444,21 @@ public sealed record Project(
     // The audit budget an item is measured against. Not on the work item itself on this deployment, so
     // the project is where the progress bar's denominator comes from.
     [property: JsonPropertyName("auditMaxIterations")] int AuditMaxIterations = 0,
-    [property: JsonPropertyName("auditTypes")] IReadOnlyList<string>? AuditTypes = null);
+    [property: JsonPropertyName("auditTypes")] IReadOnlyList<string>? AuditTypes = null,
+    // The per-project ceiling on work-item priority. Nullable because "unset" is a real answer and a
+    // different one from zero: unset means no project cap beyond the global [-1000, 1000], while 0 would
+    // mean nothing here may ever be pushed above the default. Verified against the live instance, where
+    // /projects omits the field entirely on all four projects — so it deserializes to null, which is
+    // exactly right. The board's reorder maths reads it through Project.PriorityCeiling.
+    [property: JsonPropertyName("maxPriority")] int? MaxPriority = null)
+{
+    /// <summary>The highest priority this project accepts: its own cap, else the orchestrator's global
+    /// one. The number reordering is allowed to climb to.</summary>
+    public int PriorityCeiling => MaxPriority ?? GlobalMaxPriority;
+
+    /// <summary>The orchestrator's global priority range is [-1000, 1000].</summary>
+    public const int GlobalMaxPriority = 1000;
+}
 
 /// <summary>A task template that can be queued by name.</summary>
 public sealed record TaskTemplate(
@@ -748,14 +762,27 @@ public sealed record QuotaProbe(
     [property: JsonPropertyName("paused")] bool Paused,
     [property: JsonPropertyName("pausedReason")] string? PausedReason,
     [property: JsonPropertyName("wouldAllow")] bool? WouldAllow,
-    [property: JsonPropertyName("observedFailuresLast60m")] int ObservedFailuresLast60m,
+    // Modelled as an int when this was written, which is what the name reads like. It is an ARRAY: one
+    // entry per (project, model, failure kind) with its own count. A whole live /quota response therefore
+    // failed to deserialize on the instance this was built against — and since the failure surfaces as a
+    // caught exception and an empty panel, the quota section simply showed nothing and looked switched
+    // off. The lesson is the file header's: read the shape off the running server, not off the name.
+    [property: JsonPropertyName("observedFailuresLast60m")] IReadOnlyList<QuotaFailureGroup>? ObservedFailures,
     [property: JsonPropertyName("latestSnapshot")] QuotaSnapshot? LatestSnapshot)
 {
+    /// <summary>How many quota failures this agent has actually been seen to hit in the window.</summary>
+    /// <remarks>Ignored by the serializer: its camelCased name is the very wire name the constructor
+    /// parameter above already claims, and the two colliding is a run-time throw, not a compile error.</remarks>
+    [JsonIgnore]
+    public int ObservedFailuresLast60m => ObservedFailures?.Sum(f => f.Count) ?? 0;
+
     /// <summary>Only probes that actually reported a number are worth a bar. Most rows on this instance
     /// carry no snapshot at all, and drawing them at 0% would read as "exhausted" rather than "unknown".</summary>
     public bool IsKnown => LatestSnapshot is { IsKnown: true, AvailablePct: not null };
 
-    public int Available => LatestSnapshot?.AvailablePct ?? 0;
+    /// <summary>Headroom as a whole number, rounded DOWN: overstating what is left is the direction that
+    /// gets a dispatch refused, and 10.9% left is not 11% worth of work.</summary>
+    public int Available => LatestSnapshot?.AvailablePct is { } pct ? (int)Math.Floor(pct) : 0;
 
     public double BarWidth => IsKnown ? Math.Max(2, Available / 100.0 * 140) : 0;
 
@@ -774,10 +801,21 @@ public sealed record QuotaProbe(
     public bool HasReset => LatestSnapshot?.ResetAt is not null;
 }
 
+/// <param name="AvailablePct">A double, not an int: the orchestrator reports fractional headroom for some
+/// providers, and modelling it as an int made a whole live <c>/quota</c> response fail to deserialize —
+/// silently, since the caller turns a failed read into an empty panel.</param>
 public sealed record QuotaSnapshot(
-    [property: JsonPropertyName("availablePct")] int? AvailablePct,
+    [property: JsonPropertyName("availablePct")] double? AvailablePct,
     [property: JsonPropertyName("isKnown")] bool IsKnown,
     [property: JsonPropertyName("resetAt")] DateTimeOffset? ResetAt);
+
+/// <summary>Quota failures the orchestrator actually observed, grouped the way it groups them.</summary>
+public sealed record QuotaFailureGroup(
+    [property: JsonPropertyName("projectId")] string? ProjectId,
+    [property: JsonPropertyName("modelId")] string? ModelId,
+    [property: JsonPropertyName("failureKind")] string? FailureKind,
+    [property: JsonPropertyName("count")] int Count,
+    [property: JsonPropertyName("latestObservedAt")] DateTimeOffset? LatestObservedAt);
 
 /// <summary>The orchestrator's dispatch capacity right now.</summary>
 public sealed record Concurrency(
@@ -879,3 +917,164 @@ public sealed record AuditProgressRow(
 /// <summary>The list response.</summary>
 public sealed record AuditProgressList(
     [property: JsonPropertyName("progress")] IReadOnlyList<AuditProgressRow>? Progress);
+
+// ---- quota history (the statistics plugin) ------------------------------------------------------
+// Optional on any given host: the route exists but resolves its store from DI, so an orchestrator without
+// the plugin loaded answers 503. Modelled as a real shape rather than left in the diagnostics JSON dump,
+// because the overview's burn-down is the one place a subscription's UNSPENT quota becomes visible — and
+// under a subscription that is the only waste there is.
+
+/// <summary>
+/// One normalised quota sample. Two row families share the shape: a row with a <see cref="WindowName"/>
+/// carries the provider's own window (<c>five_hour</c>, <c>seven_day</c>) in <see cref="WindowPct"/>, and
+/// the aggregated row has a null window and carries <see cref="OverallPct"/> instead.
+/// </summary>
+public sealed record QuotaHistoryRow(
+    [property: JsonPropertyName("sampledAt")] DateTimeOffset SampledAt,
+    [property: JsonPropertyName("agent")] string Agent,
+    [property: JsonPropertyName("modelId")] string? ModelId,
+    [property: JsonPropertyName("overallPct")] double? OverallPct,
+    [property: JsonPropertyName("wouldAllow")] bool? WouldAllow,
+    [property: JsonPropertyName("notes")] string? Notes,
+    [property: JsonPropertyName("windowName")] string? WindowName,
+    [property: JsonPropertyName("windowPct")] double? WindowPct,
+    [property: JsonPropertyName("windowResetAt")] DateTimeOffset? WindowResetAt,
+    [property: JsonPropertyName("isKnown")] bool IsKnown,
+    [property: JsonPropertyName("unknownReason")] string? UnknownReason)
+{
+    /// <summary>The reading this row is actually about. Null when the probe returned no number — a
+    /// different fact from zero, and one that must never be drawn as one.</summary>
+    public double? Pct => WindowName is { Length: > 0 } ? WindowPct : OverallPct;
+
+    /// <summary>Whether this row contributes a point to a burn-down.</summary>
+    public bool IsSample => IsKnown && Pct is not null;
+}
+
+/// <summary>The <c>/quota/history</c> envelope.</summary>
+public sealed record QuotaHistoryPage(
+    [property: JsonPropertyName("count")] int Count,
+    [property: JsonPropertyName("rows")] IReadOnlyList<QuotaHistoryRow>? Rows);
+
+/// <summary>
+/// Turns the flat sample table into the per-window burn-downs the overview draws. Pure, so the rules
+/// below are pinned against a canned page rather than against whatever a live orchestrator happens to
+/// have sampled this hour.
+/// </summary>
+public static class QuotaHistoryMap
+{
+    /// <summary>How many windows one agent may contribute. Providers publish several overlapping windows
+    /// and the two nearest their reset are the two that can actually bind next.</summary>
+    private const int WindowsPerAgent = 2;
+
+    /// <summary>
+    /// How many points one burn-down carries. A week of one agent is around 8 000 samples on a busy
+    /// instance and no sparkline is 8 000 pixels wide, so the series is strided down — always keeping the
+    /// newest sample, because that one is the reading.
+    /// </summary>
+    private const int MaxSamples = 240;
+
+    /// <summary>
+    /// One <see cref="QuotaBurn"/> per (agent, window), samples oldest first.
+    ///
+    /// <para>Window rows win over the aggregated row: where a provider reports both, the overall number is
+    /// a roll-up of those windows and drawing it beside them says the same thing twice. The aggregated row
+    /// is kept only for an agent that reports nothing else.</para>
+    ///
+    /// <para><see cref="QuotaBurn.ProjectedUnspentPct"/> and <see cref="QuotaBurn.Eligible"/> are left at
+    /// null/false on purpose: the projection is the model's arithmetic over the whole series, and
+    /// eligibility is the router's present-tense answer from <c>/quota</c> — neither is something a
+    /// historical sample can know.</para>
+    /// </summary>
+    public static IReadOnlyList<QuotaBurn> ToBurnDown(IEnumerable<QuotaHistoryRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var burns = new List<QuotaBurn>();
+
+        foreach (var agent in rows
+                     .Where(r => r.IsSample && !string.IsNullOrWhiteSpace(r.Agent))
+                     .GroupBy(r => r.Agent, StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var windowed = agent
+                .Where(r => r.WindowName is { Length: > 0 })
+                .GroupBy(r => r.WindowName!, StringComparer.OrdinalIgnoreCase)
+                .Select(g => Burn(agent.Key, g.Key, g))
+                .ToList();
+
+            if (windowed.Count > 0)
+            {
+                // Nearest reset first; an unknown reset sorts last, because a window that never says when
+                // it turns over cannot be the one about to bind.
+                burns.AddRange(windowed
+                    .OrderBy(b => b.ResetAt ?? DateTimeOffset.MaxValue)
+                    .ThenBy(b => b.Window, StringComparer.OrdinalIgnoreCase)
+                    .Take(WindowsPerAgent));
+                continue;
+            }
+
+            var overall = agent.Where(r => string.IsNullOrEmpty(r.WindowName)).ToList();
+            if (overall.Count > 0)
+            {
+                burns.Add(Burn(agent.Key, null, overall));
+            }
+        }
+
+        return burns;
+    }
+
+    private static QuotaBurn Burn(string agent, string? window, IEnumerable<QuotaHistoryRow> rows)
+    {
+        var ordered = rows.OrderBy(r => r.SampledAt).ToList();
+        var samples = Stride(ordered.ConvertAll(r => new BurnSample(r.SampledAt, r.Pct!.Value)));
+
+        // The LATEST reset the series carries, not the first: a window that has rolled over part-way
+        // through reports the next reset only on its newer rows.
+        var resetAt = ordered
+            .Where(r => r.WindowResetAt is not null)
+            .Select(r => r.WindowResetAt)
+            .LastOrDefault();
+
+        return new QuotaBurn(
+            agent,
+            window,
+            samples,
+            resetAt,
+            samples.Count == 0 ? null : samples[^1].Pct,
+            ProjectedUnspentPct: null,
+            Eligible: false);
+    }
+
+    /// <summary>
+    /// Evenly thins an oldest-first series to <see cref="MaxSamples"/>, walking from the newest end so the
+    /// current reading is the one point that can never be dropped.
+    /// </summary>
+    private static List<BurnSample> Stride(List<BurnSample> samples)
+    {
+        if (samples.Count <= MaxSamples)
+        {
+            return samples;
+        }
+
+        var step = (samples.Count + MaxSamples - 1) / MaxSamples;
+        var kept = new List<BurnSample>(MaxSamples + 1);
+        for (var i = samples.Count - 1; i >= 0; i -= step)
+        {
+            kept.Add(samples[i]);
+        }
+
+        kept.Reverse();
+        return kept;
+    }
+}
+
+/// <summary>
+/// The body of a dependency replace-set: <c>PATCH /workitems/{id}</c> with only <c>dependsOn</c>.
+/// </summary>
+/// <remarks>
+/// A named record rather than an anonymous object so the one field the board ever patches is part of the
+/// compiled surface — the generic <see cref="CodeyBoxClient.PatchWorkItemAsync"/> exists for operator-typed
+/// JSON, which is a genuinely untyped boundary; this is not.
+/// </remarks>
+public sealed record DependencyPatch(
+    [property: JsonPropertyName("dependsOn")] IReadOnlyList<string> DependsOn);

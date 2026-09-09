@@ -199,6 +199,36 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public Task<RawJson?> GetQuotaHistoryAsync(CancellationToken cancellationToken = default)
         => GetRaw("quota/history", cancellationToken);
 
+    /// <summary>
+    /// One agent's quota samples since a moment, typed — the series the overview's burn-down is drawn
+    /// from.
+    /// </summary>
+    /// <remarks>
+    /// Empty is a first-class answer, not a failure: the route is served by the statistics plugin and an
+    /// orchestrator without it loaded answers 503, so an absent series means "this host does not record
+    /// quota over time" and the overview simply draws no burn-down. The untyped overload above stays for
+    /// the diagnostics dump, which shows the body verbatim on purpose.
+    /// </remarks>
+    public async Task<IReadOnlyList<QuotaHistoryRow>> GetQuotaHistoryAsync(
+        string agent, DateTimeOffset since, CancellationToken cancellationToken = default)
+    {
+        var from = since.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        var path = $"quota/history?agent={Uri.EscapeDataString(agent)}&from={Uri.EscapeDataString(from)}&limit={QuotaHistoryLimit}";
+        return (await Get<QuotaHistoryPage>(path, cancellationToken).ConfigureAwait(false))?.Rows ?? [];
+    }
+
+    /// <summary>
+    /// The endpoint's own clamp, asked for deliberately.
+    /// </summary>
+    /// <remarks>
+    /// <c>limit</c> truncates a series that is ordered <b>ascending</b> by sample time, so a limit below
+    /// the row count drops the NEWEST rows, not the oldest — which is the one thing a burn-down cannot
+    /// survive. A week of one agent on this instance is 7 881 rows; a limit of 5 000 came back with its
+    /// latest reading three days stale and looked entirely plausible. Ask for the lot; the series is
+    /// thinned for drawing afterwards, where doing so cannot cost the current reading.
+    /// </remarks>
+    private const int QuotaHistoryLimit = 50_000;
+
     public Task<RawJson?> GetQuotaResetAdviceAsync(CancellationToken cancellationToken = default)
         => GetRaw("quota/reset-advice", cancellationToken);
 
@@ -460,6 +490,23 @@ public sealed class CodeyBoxClient : IAsyncDisposable
         => SendAsync(new HttpRequestMessage(HttpMethod.Patch, $"workitems/{id}")
         {
             Content = JsonContent.Create(changes, options: Json),
+        }, cancellationToken);
+
+    /// <summary>
+    /// Replaces a work item's dependency set.
+    /// </summary>
+    /// <remarks>
+    /// A REPLACE, not an append: the orchestrator takes <c>dependsOn</c> as the whole set, so a caller
+    /// adding one edge must send the existing ones back with it and a caller removing one sends what is
+    /// left. Allowed in any state, and each entry may be a UUID, an <c>externalId</c>, or
+    /// <c>&lt;projectId&gt;:&lt;externalId&gt;</c>. Typed rather than handed to
+    /// <see cref="PatchWorkItemAsync"/> as loose JSON, because this is our own call shape and not a
+    /// boundary schema we are merely relaying.
+    /// </remarks>
+    public Task SetDependenciesAsync(string id, IReadOnlyList<string> dependsOn, CancellationToken cancellationToken = default)
+        => SendAsync(new HttpRequestMessage(HttpMethod.Patch, $"workitems/{id}")
+        {
+            Content = JsonContent.Create(new DependencyPatch(dependsOn), options: Json),
         }, cancellationToken);
 
     public Task PatchExternalIdsAsync(string id, IReadOnlyDictionary<string, string> externalIds, CancellationToken cancellationToken = default)

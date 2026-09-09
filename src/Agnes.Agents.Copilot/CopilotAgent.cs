@@ -20,6 +20,47 @@ public sealed record CopilotOptions
     public CopilotProviderOptions? Provider { get; init; }
 
     /// <summary>
+    /// Tools withheld from the model (<c>--excluded-tools</c>). Empty by default.
+    ///
+    /// <para>This exists because of one specific incompatibility. Copilot offers <c>apply_patch</c> as an
+    /// OpenAI <b>custom tool with a Lark grammar</b> — <c>"type": "custom"</c> rather than
+    /// <c>"type": "function"</c> — and a local OpenAI-compatible server that implements only the function
+    /// form rejects the whole request: <c>Failed to parse tools: Unsupported tool type</c>. Excluding it
+    /// costs one editing tool and is the difference between a local model working and not starting at
+    /// all. See <see cref="CopilotLocalCompatibility"/>.</para>
+    /// </summary>
+    public IReadOnlyList<string> ExcludedTools { get; init; } = [];
+
+    /// <summary>
+    /// Reasoning effort (<c>--effort</c>, also spelled <c>--reasoning-effort</c>). Null leaves Copilot's
+    /// own choice alone.
+    ///
+    /// <para>This is the direct control over the <c>reasoning_effort</c> field Copilot puts on the wire,
+    /// and it is the right lever for a local server that only accepts some values — one rejected
+    /// Copilot's unrecognised-model default of <c>max</c> outright with
+    /// <c>Unexpected reasoning effort max. Supported types are xhigh (default), medium, and low.</c></para>
+    ///
+    /// <para>The alternative is to steer it indirectly by naming a well-known
+    /// <see cref="CopilotProviderOptions.ModelId"/>, which also works but changes prompting strategy and
+    /// token limits as a side effect. Prefer this: it says exactly what it does and nothing else.</para>
+    /// </summary>
+    public CopilotEffort? Effort { get; init; }
+
+    /// <summary>
+    /// Runs Copilot with no network access beyond the model provider (<c>COPILOT_OFFLINE</c>): no GitHub
+    /// authentication, telemetry, web tools, GitHub MCP server or auto-update.
+    ///
+    /// <para>This is what "local models with no GitHub credentials" actually means, and it is worth
+    /// setting deliberately rather than relying on BYOK alone: with a provider configured but offline
+    /// mode off, Copilot still reaches GitHub for everything that is not inference.</para>
+    ///
+    /// <para>Copilot requires a provider for this, so it is ignored unless <see cref="Provider"/> is
+    /// configured — turning it on without one would produce a CLI that can neither authenticate nor
+    /// infer.</para>
+    /// </summary>
+    public bool Offline { get; init; }
+
+    /// <summary>
     /// Which built-in subagents get pointed at the session's model. Defaults to the ones whose shipped
     /// definition pins a model (<c>explore</c>, <c>task</c>, <c>research</c>) — see
     /// <see cref="CopilotSubagentSettings"/>. Empty disables the rewrite entirely, for an operator who would
@@ -166,15 +207,76 @@ public static class CopilotAgent
         }
     }
 
+    /// <summary>
+    /// The full environment for a launch: the BYOK provider variables, plus offline mode when asked for
+    /// and actually usable.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> BuildEnvironment(CopilotOptions options)
+    {
+        var env = new Dictionary<string, string>(BuildProviderEnvironment(options.Provider), StringComparer.Ordinal);
+
+        // Copilot refuses offline mode without a provider — with nothing to infer against it could
+        // neither authenticate nor answer — so the flag is honoured only when BYOK is configured rather
+        // than passed through to fail at launch.
+        if (options.Offline && options.Provider is { IsConfigured: true })
+        {
+            env["COPILOT_OFFLINE"] = "true";
+        }
+
+        return env;
+    }
+
+    /// <summary>
+    /// The launch argv: the configured arguments plus one <c>--excluded-tools</c> entry per withheld
+    /// tool. Copilot takes the flag repeatably rather than as a list, so each is passed separately.
+    /// </summary>
+    public static IReadOnlyList<string> BuildArguments(CopilotOptions options)
+    {
+        var excluded = options.ExcludedTools.Where(t => !string.IsNullOrWhiteSpace(t)).ToArray();
+        if (excluded.Length == 0 && options.Effort is null)
+        {
+            return options.Arguments;
+        }
+
+        var arguments = new List<string>(options.Arguments);
+        foreach (var tool in excluded)
+        {
+            arguments.Add("--excluded-tools");
+            arguments.Add(tool.Trim());
+        }
+
+        if (options.Effort is { } effort)
+        {
+            arguments.Add("--effort");
+            arguments.Add(EffortValue(effort));
+        }
+
+        return arguments;
+    }
+
+    /// <summary>The spelling Copilot accepts. Its own list is
+    /// none / minimal / low / medium / high / xhigh / max.</summary>
+    internal static string EffortValue(CopilotEffort effort) => effort switch
+    {
+        CopilotEffort.None => "none",
+        CopilotEffort.Minimal => "minimal",
+        CopilotEffort.Low => "low",
+        CopilotEffort.Medium => "medium",
+        CopilotEffort.High => "high",
+        CopilotEffort.XHigh => "xhigh",
+        _ => "max",
+    };
+
     public static AcpLaunchSpec CreateLaunchSpec(CopilotOptions? options = null)
     {
         options ??= new CopilotOptions();
+        var arguments = BuildArguments(options);
         var lister = options.ModelLister
-            ?? (ct => CopilotModelCatalog.ProbeAsync(options.Command, options.Arguments, ct));
+            ?? (ct => CopilotModelCatalog.ProbeAsync(options.Command, arguments, ct));
         return new AcpLaunchSpec
         {
             Command = options.Command,
-            Arguments = options.Arguments,
+            Arguments = arguments,
             // Bare `copilot` is the interactive console: ACP is the flagged mode, so the console is the
             // command with none of the ACP argv. Explicitly empty, not null — null would mean "no console".
             ConsoleArguments = [],
@@ -190,7 +292,7 @@ public static class CopilotAgent
             // The model travels on argv (--model), which the sandbox wrapper carries into the guest with the
             // rest of the command, so this axis carries only BYOK — the settings Copilot exposes NOWHERE
             // else. Threading the model here too would give one choice two sources of truth.
-            InlineConfig = (_, _) => BuildProviderEnvironment(options.Provider),
+            InlineConfig = (_, _) => BuildEnvironment(options),
             // Copilot can't be asked to print its catalogue from argv (an unknown --model answers "not
             // available" without listing the alternatives), so there is no in-sandbox verification probe.
             StartupCommands = options.FleetMode ? ["/fleet"] : [],

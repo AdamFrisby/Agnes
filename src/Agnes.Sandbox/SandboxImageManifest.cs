@@ -38,6 +38,37 @@ public sealed record SandboxImageManifest
         new("opencode", "copy:opencode"),
     ];
 
+    /// <summary>
+    /// The packages a guest needs to put something on a screen: an X server on the virtual GPU, a
+    /// window manager, a terminal, and fonts. Listed here rather than in a provider because a graphical
+    /// tier is a property of the *image*, and any provider that boots a Linux guest needs the same set.
+    /// </summary>
+    /// <remarks>
+    /// <c>xserver-xorg-core</c> carries the <c>modesetting</c> driver, which is what drives virtio-gpu;
+    /// no vendor DDX is wanted. <c>x11-xserver-utils</c> is <c>xrandr</c> and <c>xsetroot</c>, used once
+    /// at session start to force the mode. Nothing here captures or serves anything: the screen is read
+    /// from outside the guest (see <see cref="IDisplaySource"/>), which is the whole point.
+    /// </remarks>
+    public static IReadOnlyList<string> GraphicalAptPackages =>
+    [
+        "xserver-xorg-core",
+        "x11-xserver-utils",
+        "xinit",
+        "openbox",
+        "xterm",
+        "fonts-dejavu-core",
+        "dbus-x11",
+        "x11-utils",
+    ];
+
+    /// <summary>
+    /// The graphical tier of a baseline manifest: the same image plus a desktop, under its own alias so
+    /// a host that never asks for a display never pays for one. The X server's *configuration* is not
+    /// baked in — it is written per session by cloud-init, because it carries the session's resolution.
+    /// </summary>
+    public SandboxImageManifest AsGraphical(string alias = "agnes-graphical")
+        => this with { Alias = alias, AptPackages = [.. AptPackages, .. GraphicalAptPackages] };
+
     /// <summary>A short, stable fingerprint of the manifest — changes when a rebuild is warranted.</summary>
     public string Fingerprint()
     {

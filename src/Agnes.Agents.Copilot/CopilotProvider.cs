@@ -78,3 +78,22 @@ public sealed record CopilotProviderOptions
     /// <summary>Whether BYOK is actually configured. Everything else is inert without a base URL.</summary>
     public bool IsConfigured => !string.IsNullOrWhiteSpace(BaseUrl);
 }
+
+/// <summary>
+/// Reasoning effort, as Copilot's <c>--effort</c> flag accepts it. Its own choices, in its own order.
+/// </summary>
+/// <remarks>
+/// Worth stating because it decides whether a local model answers at all: Copilot sends this as
+/// <c>reasoning_effort</c>, and for a model id it does not recognise it defaults to <c>max</c> — which is
+/// not one of the OpenAI-standard values, so a server that validates the field refuses the request.
+/// </remarks>
+public enum CopilotEffort
+{
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    XHigh,
+    Max,
+}

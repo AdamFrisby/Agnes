@@ -16,7 +16,7 @@ public class SandboxWiringTests
     }
 
     /// <summary>A fake sandbox that records lifecycle calls and wraps commands like Incus would.</summary>
-    private sealed class FakeSandbox : ISandbox, IPausableSandbox
+    private class FakeSandbox : ISandbox, IPausableSandbox
     {
         public string Id { get; } = "fake-vm-1";
         public string HomeDirectory => "/home/agnes";
@@ -59,6 +59,19 @@ public class SandboxWiringTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask; // persist — never deletes
     }
 
+    /// <summary>
+    /// The same fake, with a screen. A separate type rather than a flag because that is how the question is
+    /// asked in production: <c>SessionManager.DisplaySourceFor</c> tests whether the sandbox <em>is</em> an
+    /// <see cref="IDisplaySource"/>, so a headless sandbox pretending to have a display would prove nothing.
+    /// </summary>
+    private sealed class FakeGraphicalSandbox(GraphicalDisplay display) : FakeSandbox, IDisplaySource
+    {
+        public GraphicalDisplay Display { get; } = display;
+
+        public Task<IDisplaySession> OpenDisplayAsync(CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("These tests never open the capture; the display layer has its own.");
+    }
+
     private sealed class FakeSandboxProvider : ISandboxProvider
     {
         public FakeSandbox Last { get; private set; } = null!;
@@ -72,7 +85,9 @@ public class SandboxWiringTests
         public Task<ISandbox> CreateAsync(SandboxSpec spec, CancellationToken cancellationToken = default)
         {
             Specs.Add(spec);
-            Last = new FakeSandbox();
+            // A spec with a display gets a sandbox that HAS one, the way a real provider hands back a
+            // different handle for a graphical VM.
+            Last = spec.Display is { } display ? new FakeGraphicalSandbox(display) : new FakeSandbox();
             OnCreated?.Invoke(Last);
             return Task.FromResult<ISandbox>(Last);
         }
@@ -527,6 +542,69 @@ public class SandboxWiringTests
         {
             if (File.Exists(file)) File.Delete(file);
         }
+    }
+
+    /// <summary>
+    /// A session that asked for a screen has to launch from the image that HAS one. The headless tiers carry
+    /// no X server, so a graphical session booted from one comes up rendering nothing and its capture waits
+    /// forever for a first scanout — a failure that reports itself nowhere.
+    /// </summary>
+    [Fact]
+    public async Task A_graphical_session_launches_from_the_graphical_image_and_says_it_has_a_screen()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"agnes-img-{Guid.NewGuid():n}.json");
+        try
+        {
+            var builder = new SandboxImageManagerTests.FakeImageBuilder { Exists = false };
+            var images = new Agnes.Host.Sessions.SandboxImageManager(
+                builder, file, NullLogger<Agnes.Host.Sessions.SandboxImageManager>.Instance);
+            var sandboxes = new FakeSandboxProvider();
+            await using var manager = new SessionManager(
+                TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex")), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()], images: images,
+                security: new SessionSecurityOptions { AllowGraphicalSandboxes = true });
+
+            var info = await manager.OpenSessionAsync("codex", "/tmp/project", graphical: true);
+
+            var spec = sandboxes.Specs.Single();
+            Assert.Equal("agnes-graphical", spec.ImageReference);
+            Assert.NotNull(spec.Display);
+            Assert.Contains("xserver-xorg-core", builder.LastManifest!.AptPackages);
+            // And the client is told, on the open itself, that the request was honoured — asking is not the
+            // same as getting, and a client that assumed would offer a screen that isn't there.
+            Assert.True(info.HasDisplay);
+        }
+        finally
+        {
+            if (File.Exists(file)) File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public async Task A_headless_session_says_it_has_no_screen()
+    {
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex")), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()]);
+
+        var info = await manager.OpenSessionAsync("codex", "/tmp/project");
+
+        Assert.Null(sandboxes.Specs.Single().Display);
+        Assert.False(info.HasDisplay);
+    }
+
+    [Fact]
+    public async Task A_host_that_forbids_graphical_sandboxes_refuses_rather_than_opening_a_blind_one()
+    {
+        var sandboxes = new FakeSandboxProvider();
+        await using var manager = new SessionManager(
+            TestPluginRegistries.Agents(new ScriptedAgentAdapter("codex")), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+            TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()]);
+
+        await Assert.ThrowsAsync<SessionSecurityException>(
+            () => manager.OpenSessionAsync("codex", "/tmp/project", graphical: true));
+        Assert.Empty(sandboxes.Specs);
     }
 
     [Fact]

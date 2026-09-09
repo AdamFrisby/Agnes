@@ -84,7 +84,10 @@ public interface IAgnesHost : IAsyncDisposable
     Task<NegotiatedCapabilities> NegotiateAsync(ClientCapabilities client)
         => Task.FromResult(new NegotiatedCapabilities([]));
 
-    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null);
+    /// <param name="graphical">Ask for a graphical sandbox — a 1280×800 display the agent can see and drive
+    /// and a person can watch over the display channel. Implies a sandbox, and the host refuses it unless the
+    /// operator allows graphical sandboxes. Trailing-optional so every existing caller is unaffected.</param>
+    Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false);
 
     /// <summary>The sessions already on this host that this client may reach — live or dormant — so a device
     /// that has just paired can rejoin work in progress rather than only start something new. The host filters
@@ -156,6 +159,11 @@ public interface IAgnesHost : IAsyncDisposable
 
     /// <summary>Writes raw input bytes (keystrokes/paste) to an open fallback terminal. Default no-op.</summary>
     Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data) => Task.CompletedTask;
+
+    /// <summary>Opens the session's display channel (see <see cref="DisplayWire"/>). Only meaningful when the
+    /// session summary says <c>HasDisplay</c>; a host without the feature throws.</summary>
+    Task<IDisplayChannel> OpenDisplayAsync(string sessionId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not offer a display channel.");
 
     /// <summary>Resizes an open fallback terminal. Default no-op.</summary>
     Task ResizeTerminalAsync(string sessionId, string terminalId, int columns, int rows) => Task.CompletedTask;

@@ -99,6 +99,7 @@ public sealed class RelayEndToEndTests
     /// </summary>
     private sealed class RelayHost : WebApplicationFactory<Program>
     {
+        private readonly Agnes.TestKit.IsolatedHostHome _home = new();
         private readonly InMemoryRelayHostKey _relayKey = new();
         private readonly RelayServer _relay;
         private readonly string _certPath = Path.Combine(Path.GetTempPath(), $"agnes-relay-cert-{Guid.NewGuid():n}.pfx");
@@ -143,6 +144,7 @@ public sealed class RelayEndToEndTests
             builder.ConfigureHostConfiguration(config =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
+                    ["Agnes:Home"] = _home.Path,
                     ["Agnes:PairingToken"] = Token,
                     ["Agnes:Transport:Relay:Url"] = $"127.0.0.1:{RelayPort}",
                     ["Agnes:Transport:Relay:HostId"] = HostId,
@@ -205,6 +207,7 @@ public sealed class RelayEndToEndTests
             _relay.DisposeAsync().AsTask().GetAwaiter().GetResult();
             _relayKey.Dispose();
             _cert.Dispose();
+            _home.Dispose();
             foreach (string path in (string[])[_certPath, _keyPath])
             {
                 if (File.Exists(path))

@@ -52,6 +52,43 @@ public sealed class SimulatedHost : IAgnesHost
         + "| xargs -0 grep -ln 'defaultConfig' "
         + "| while read -r f; do sed -i.bak 's/retries: 3/retries: 5/g' \"$f\" && rm -f \"$f.bak\"; done";
 
+    /// <summary>
+    /// The bytes behind the one file the simulated agent sends. A real 240x150 PNG (the Agnes gradient over
+    /// a dark footer) rather than a placeholder path, because the point of the offline host is that the
+    /// screenshot tool and the headless render tests decode and lay out a genuine image — a card that says
+    /// "image" and shows nothing proves nothing.
+    /// </summary>
+    private const string SharedPngBase64 =
+        """
+        iVBORw0KGgoAAAANSUhEUgAAAPAAAACWCAIAAABvmpKCAAAEjklEQVR42u3S5VKWCQCAUa9hZ3/uFUk3HyGiiNiFiK7t2t3d3d3dip2ACIhI
+        IyIiIKH7fnsB+3dnds7McwXPnH5TM35Ny/g5PVzfjPS+mem9s8L1zE7vmZPe/Vda0I+5aV3z0rrmp3UGLUjrWBjqWBT6HrQ41L4k1L409G1p
+        qG1Zatvy1K8rwrWuTG1dlfpldUpQy5qUlrUpn9eFa16f0rQhuWljcmPQpuSGzckNW5Lrg7Ym1W1LqtueVLs9qWZHUs3OpE+7EoOqdydW70n8
+        uDdc1b7Eqv0JHw4kVAYdTKg4lFBxOKE86Ej8+6Px74/FlwUdj393Ir70ZFxQyam4ktNxxWfCvT0b9/Zc7Jvz4V5fiH11MfbVpdiXl2OCXlyJ
+        eXE15vm1cM+uxzy7Ef30Zrgnt6If345+fCf6UdDdqKJ7UUX3ox4GPYh68DDqQVHk/aLIe48i7z2OvPsk3J2nkXeeRdx+Hu7Wi4hbLyNuvoq4
+        EfS6//U3/a+/7X8tqDjianHEleKIyyWRl0oiL5ZEXSyNulAadb40+ty76LPvYoLOlMWcLos9VRZ78n3ciX86Xh5/rDz+aHnCkYpwhysSD1Um
+        HqxMOlCZtP9DUPK+D8l7q1L2VKXsDvqYuutj6s7q0I7q0Pbq0LZPaUFbP6VvqUnfXJO+qSZjU23GxtrMDbWZ6+sy19UNWBtUn7WmPmt1fdaq
+        hoErGwauaMhe0Zi9vDF7WeOgpU2DljQNDlrcnLOoOWdhc86Cz0PmB7XkzmvJnduS+9eXoXPC5c1uzZvVmjezddiMr8Omfx0eNK1t+NS2EX+2
+        jZjybWTQ5G8jC9tHTWofVdA+euL3cPnfx0zoGDO+Y+y4oM6xYzvHjekcN7pr/Kiu8SODfkwY8WPC8O78Yd35ed35Q3smBuX2FAzpLcjpLRjc
+        O2lw36RBfYXZfYUDfxZm/Zw8IOjXlMxfUzL6AQ000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQ
+        QAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBA
+        Aw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EAD
+        DTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMN
+        NNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAA/2fgv79tz+k/01AC2gJaAloCWgBLQEtAS0BLQEtoCWgJaAloCWgBbQEtAS0BLQE
+        tICWgJaAloCWgBbQEtAS0BLQEtACWgJaAloCWgJaQEtAS0BLQAtoFwS0BLQEtAS0gJaAloCWgJaAFtAS0BLQEtDSv/Y3EKq7vjDqRq8AAAAA
+        SUVORK5CYII=
+        """;
+
+    /// <summary>Workspace-relative path of that file, in the same <c>.agnes/shared/&lt;id&gt;/&lt;name&gt;</c>
+    /// shape a real host stores a sent file at, so clients reach it by the ordinary download path.</summary>
+    private const string SharedPngPath = ".agnes/shared/shot-1/gradient-preview.png";
+
+    // The simulated workspace: path -> bytes. Only the files the script actually hands out live here, so a
+    // client's DownloadFileAsync/ReadFileAsync work against the sim exactly as they do against a host.
+    private static readonly Dictionary<string, byte[]> WorkspaceFiles = new(StringComparer.Ordinal)
+    {
+        [SharedPngPath] = Convert.FromBase64String(SharedPngBase64),
+    };
+
     private const string LongAnswer =
         """
         ## Agent Client Protocol (ACP)
@@ -136,7 +173,7 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(info);
     }
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false)
     {
         var id = $"sim-{Interlocked.Increment(ref _counter):x4}";
         var session = _sessions.GetOrAdd(id, _ => new SimSession(id, adapterId, workingDirectory));
@@ -145,7 +182,9 @@ public sealed class SimulatedHost : IAgnesHost
         session.Emit(new TurnEndedEvent(StopReason.EndTurn));
         session.RecordUsage(0, 0); // seed the context-window meter (same UsageReportedEvent a real agent emits)
         session.SkipPermissions = skipPermissions;
-        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id), skipPermissions));
+        // HasDisplay matches Summarize(): every simulated sandbox is graphical, so the offline host shows the
+        // screen affordance on the session it just opened as well as on the ones it lists.
+        return Task.FromResult(new SessionInfo(id, adapterId, workingDirectory, session.Head, Modes, session.CurrentModeId, SandboxFor(id), skipPermissions, HasDisplay: true));
     }
 
     /// <summary>
@@ -159,7 +198,7 @@ public sealed class SimulatedHost : IAgnesHost
         new("sim-prior-1", "claude-code-native", "/home/you/projects/agnes", "Port the Oceanic theme",
             SessionRunState.Working, HeadSequence: 184, OpenApprovals: 0,
             StartedAt: null, LastActivityAt: null, CurrentModeId: "code", CurrentModelId: null,
-            ReadOnly: false, Sandboxed: true),
+            ReadOnly: false, Sandboxed: true, HasDisplay: true),
         new("sim-prior-2", "opencode", "/home/you/projects/storefront", "Fix the checkout race",
             SessionRunState.Idle, HeadSequence: 96, OpenApprovals: 1,
             StartedAt: null, LastActivityAt: null, CurrentModeId: "ask", CurrentModelId: null,
@@ -186,6 +225,14 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult<IReadOnlyList<SessionSummary>>(
             _sessions.Values.Select(s => s.Summarize()).Concat(prior).ToArray());
     }
+
+    /// <summary>
+    /// Opens the simulated session's screen. Every simulated sandbox is graphical (see <see cref="SimSession.Summarize"/>),
+    /// so this always succeeds — the offline host's job is to make the panel real, not to reproduce the host's
+    /// refusals.
+    /// </summary>
+    public Task<IDisplayChannel> OpenDisplayAsync(string sessionId, CancellationToken cancellationToken = default)
+        => Task.FromResult<IDisplayChannel>(new SimulatedDisplayChannel());
 
     public Task<ForkPlan?> ProposeForkAsync(string sessionId)
     {
@@ -597,6 +644,29 @@ public sealed class SimulatedHost : IAgnesHost
         return Task.FromResult(CapabilityNegotiator.Reconcile(hostCaps, client));
     }
 
+    // ---- the simulated workspace's file surface ----
+    // Only the files the script hands out exist, but they are served through exactly the two calls a client
+    // uses for a shared file, so DownloadSharedFileAsync/PreviewSharedFileAsync work offline unchanged.
+
+    public Task<byte[]> DownloadFileAsync(string sessionId, string relativePath)
+        => Task.FromResult(WorkspaceFiles.TryGetValue(Normalize(relativePath), out var bytes) ? bytes : []);
+
+    public Task<FileContent> ReadFileAsync(string sessionId, string relativePath)
+    {
+        var path = Normalize(relativePath);
+        if (!WorkspaceFiles.TryGetValue(path, out var bytes))
+        {
+            throw new FileNotFoundException($"The simulated workspace has no file at '{path}'.", path);
+        }
+
+        return Task.FromResult(path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            ? new FileContent(path, FileContentKind.Image, null, bytes, "image/png", bytes.LongLength)
+            : new FileContent(path, FileContentKind.Text, System.Text.Encoding.UTF8.GetString(bytes), null, "text/plain", bytes.LongLength));
+    }
+
+    // Clients address workspace files POSIX-style; accept a Windows-separated path too rather than 404 on it.
+    private static string Normalize(string relativePath) => relativePath.Replace('\\', '/').TrimStart('/');
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     // ---- scripted behavior ----
@@ -607,6 +677,10 @@ public sealed class SimulatedHost : IAgnesHost
         {
             await Task.Delay(250, cancel).ConfigureAwait(false);
             session.Emit(new ThoughtChunkEvent(new TextContent("Reading the request and planning a response…")));
+            // The agent's own one-line status, as the host's report_status tool would record it. Emitted here
+            // (and again mid-turn below) so every offline surface that shows a status — the tab header, the
+            // dashboard rows, the "while you were away" band — has something real to render.
+            session.Emit(new AgentStatusEvent("Reading the request and planning a response."));
 
             // Once the conversation is under way, surface a sample agent-generated title (as Claude's
             // on-disk aiTitle does) so the session-name header + tab title are demoable offline.
@@ -644,8 +718,34 @@ public sealed class SimulatedHost : IAgnesHost
                 return; // wait for the client to answer (AnswerQuestionAsync continues the turn)
             }
 
+            // "Here, look at this." The agent finishes a piece of work and hands over the artifact itself
+            // rather than describing it — the case the shared-file card exists for.
+            if (Mentions(prompt, "screenshot", "send me", "share the"))
+            {
+                session.Emit(new ToolCallEvent("tc-shot", "capture the rendered header", ToolKind.Execute, ToolCallStatus.Completed,
+                    [new TextContent("wrote .agnes/shared/shot-1/gradient-preview.png")]));
+                await Task.Delay(200, cancel).ConfigureAwait(false);
+                session.Emit(new FileSharedEvent(
+                    "shot-1",
+                    "gradient-preview.png",
+                    SharedPngPath,
+                    WorkspaceFiles[SharedPngPath].LongLength,
+                    "image/png",
+                    "The header after the palette change — violet through magenta to coral."));
+                await Task.Delay(120, cancel).ConfigureAwait(false);
+                session.Emit(new MessageChunkEvent(MessageRole.Assistant,
+                    new TextContent("Sent it over — open it full size if the ramp looks off to you.")));
+                session.Emit(new TurnEndedEvent(StopReason.EndTurn));
+                return;
+            }
+
             if (Mentions(prompt, "explain", "detail", "describe", "overview"))
             {
+                // Same mid-turn report as the working path below: this branch answers and returns, so
+                // without its own emit the longest-running turn in the simulation would be the one with no
+                // status to show.
+                session.Emit(new AgentStatusEvent(
+                    "Found the config default is wrong; fixing it and adding a regression test, which is the last step of the plan."));
                 foreach (var chunk in LongAnswer.Split(' '))
                 {
                     await Task.Delay(12, cancel).ConfigureAwait(false);
@@ -691,6 +791,11 @@ public sealed class SimulatedHost : IAgnesHost
                 session.Emit(new MessageChunkEvent(MessageRole.Assistant,
                     new TextContent("Looks good — timeoutMs has a sensible default and retries stays bounded.")) { AgentId = "sub-review" });
             }
+
+            // Mid-turn: the shape the tool is actually for — what it found, what it is doing about it, and
+            // where that sits in the plan, in one breath.
+            session.Emit(new AgentStatusEvent(
+                "Found the config default is wrong; fixing it and adding a regression test, which is the last step of the plan."));
 
             var reply = BuildReply(prompt);
             foreach (var word in reply.Split(' '))
@@ -869,7 +974,7 @@ public sealed class SimulatedHost : IAgnesHost
             lock (_gate)
             {
                 return new SessionSnapshot(
-                    new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId, new SandboxStatus("incus", $"agnes-{Id}", "Running"), SkipPermissions),
+                    new SessionInfo(Id, AdapterId, Cwd, _seq, Modes, CurrentModeId, new SandboxStatus("incus", $"agnes-{Id}", "Running"), SkipPermissions, HasDisplay: true),
                     _log.ToArray(), _seq);
             }
         }
@@ -891,7 +996,11 @@ public sealed class SimulatedHost : IAgnesHost
                     StartedAt: _log.Count > 0 ? _log[0].Timestamp : null,
                     LastActivityAt: _log.Count > 0 ? _log[^1].Timestamp : null,
                     CurrentModeId: CurrentModeId,
-                    Sandboxed: true);
+                    Sandboxed: true,
+                    // Every simulated sandbox is graphical. The offline host exists to make surfaces visible —
+                    // a screen you can only see on one demo session out of three is a surface that mostly isn't
+                    // there, and the screenshot tool and the headless tests both need it on the session they open.
+                    HasDisplay: true);
             }
         }
     }

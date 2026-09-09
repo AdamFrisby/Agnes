@@ -264,6 +264,13 @@ public sealed class TranscriptBuilder
                 Items.Add(new NoticeItem(err.Message, isError: true) { AgentId = agentId });
                 break;
 
+            case FileSharedEvent f:
+                // A file the agent sent is a thing in its own right, not a line of chat: close whatever
+                // bubble was open so the card stands alone in the order it arrived.
+                CloseBubble();
+                Items.Add(new SharedFileItem(f) { AgentId = agentId });
+                break;
+
             case NoticeEvent notice:
                 CloseBubble();
                 Items.Add(new NoticeItem(notice.Message, notice.IsError) { AgentId = agentId });
@@ -272,6 +279,14 @@ public sealed class TranscriptBuilder
             case ForkedFromEvent:
                 CloseBubble();
                 Items.Add(new NoticeItem("Forked from a prior session — the branch continues below.") { AgentId = agentId });
+                break;
+
+            case AgentStatusEvent:
+                // Deliberately nothing. The agent's one-line status is a header/overview line, not a
+                // transcript item — a person reading the conversation already has the detail it summarises,
+                // and repeating it inline would be the same sentence twice. Note what is NOT called here:
+                // the status arrives *mid-turn*, in the middle of a streamed reply, so closing the open
+                // bubble would split one answer into two at whatever word the agent happened to report on.
                 break;
 
             case TurnEndedEvent:

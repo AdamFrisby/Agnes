@@ -85,6 +85,12 @@ public sealed class SessionManagerMcpBackend : IAgnesMcpBackend
     public Task<IReadOnlyList<OpenApproval>> ListOpenApprovalsAsync(CancellationToken cancellationToken = default)
         => _sessions.GetOpenApprovalsAsync(cancellationToken);
 
+    public Task<FileSharedEvent> ShareFileAsync(string sessionId, string path, string? caption, CancellationToken cancellationToken = default)
+        => _sessions.ShareFileAsync(sessionId, path, caption, cancellationToken);
+
+    public Task<StatusReportResult> ReportStatusAsync(string sessionId, string status, CancellationToken cancellationToken = default)
+        => _sessions.ReportStatusAsync(sessionId, status, cancellationToken);
+
     public async Task<McpTranscript> ReadSessionTranscriptAsync(string sessionId, bool forwardRawContext, CancellationToken cancellationToken = default)
     {
         var snapshot = await _sessions.GetSnapshotAsync(sessionId, sinceSequence: 0, cancellationToken).ConfigureAwait(false);

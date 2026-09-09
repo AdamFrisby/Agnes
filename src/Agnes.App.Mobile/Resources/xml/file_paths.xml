@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What AgnesFileProvider is allowed to hand out: one directory, and only one.
+
+  `cache-path` is the app's own cache, so the staged copy is disposable by design — Android may reclaim
+  it and the host still holds the original. Nothing else in the app's storage is reachable through the
+  provider, which is the point: a share grants read on exactly the file it names, for the life of the
+  Intent, and never a way to walk the app's data.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <cache-path name="received" path="received/" />
+</paths>

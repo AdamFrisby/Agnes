@@ -84,7 +84,22 @@
             Notice="{StaticResource NoticeTemplate}" />
     </UserControl.Resources>
 
-    <Grid RowSpacing="8">
+    <!--
+      Transcript on the left, the guest's screen on the right when there is one. A toggle rather than a
+      splitter: WinUI has no GridSplitter in the box, and adding one is a bigger change to this
+      transitional head than the feature is worth. The column is zero-width until asked for, so a session
+      without a screen lays out exactly as it did.
+    -->
+    <Grid ColumnSpacing="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="ScreenColumn" Width="0" />
+        </Grid.ColumnDefinitions>
+
+        <c:DisplayPane Grid.Column="1" x:Name="Screen" Display="{Binding Display}"
+                       Visibility="Collapsed" />
+
+    <Grid Grid.Column="0" RowSpacing="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -95,20 +110,34 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Title + activity + mode -->
+        <!-- Title + activity + mode, and under them the agent's own one-line status -->
         <Grid Grid.Row="0" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <Border Padding="8,2" CornerRadius="9" BorderThickness="1"
                         BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}" VerticalAlignment="Center">
                     <TextBlock Text="{Binding ActivityText}" FontSize="11" />
                 </Border>
             </StackPanel>
-            <ItemsControl Grid.Column="1" ItemsSource="{Binding Modes}"
+            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+            <!-- FallbackValue=Visible so the toggle exists before SessionViewModel grows HasDisplay;
+                 once it does, a session without a screen hides it properly. -->
+            <ToggleButton x:Name="ScreenToggle" Click="OnToggleScreen"
+                          Visibility="{Binding HasDisplay, Converter={StaticResource BoolToVisibility}, FallbackValue=Visible}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ic:SymbolIcon Symbol="Desktop" FontSize="15" VerticalAlignment="Center" />
+                    <TextBlock Text="Screen" />
+                </StackPanel>
+            </ToggleButton>
+            <ItemsControl ItemsSource="{Binding Modes}"
                           Visibility="{Binding HasModes, Converter={StaticResource BoolToVisibility}}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
@@ -121,6 +150,24 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+            </StackPanel>
+
+            <!-- The agent's own account of what it is doing, in its own words: the only line here that is
+                 not derived from its output. Two lines at most, with the age at the end — which reads
+                 "no update for 12 min" once a working agent has gone quiet, because an age alone looks
+                 like progress. FallbackValue=Collapsed so a build against a SessionViewModel that has not
+                 grown these members yet simply shows no row, rather than an empty one. -->
+            <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" ColumnSpacing="8" Margin="0,4,0,0"
+                  Visibility="{Binding HasStatus, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding LatestStatus}" TextWrapping="Wrap"
+                           MaxLines="2" TextTrimming="CharacterEllipsis" Opacity="0.75" />
+                <TextBlock Grid.Column="1" Text="{Binding StatusAge}" FontSize="11" Opacity="0.55"
+                           VerticalAlignment="Top" />
+            </Grid>
         </Grid>
 
         <!-- Connection / session banner -->
@@ -200,5 +247,6 @@
             <Button Grid.Column="1" Content="Stop" Command="{Binding CancelCommand}" VerticalAlignment="Stretch"
                     Visibility="{Binding IsTurnActive, Converter={StaticResource BoolToVisibility}}" />
         </Grid>
+    </Grid>
     </Grid>
 </UserControl>

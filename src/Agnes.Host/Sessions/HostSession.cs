@@ -683,7 +683,9 @@ internal sealed class HostSession : IAsyncDisposable
         }
     }
 
-    private async Task AppendAndPublishAsync(SessionEvent @event)
+    /// <summary>Returns the STORED event — the same record carrying the sequence the log gave it — so a
+    /// caller that has to tell someone what it wrote (the file-sharing tool) can name that moment.</summary>
+    private async Task<SessionEvent> AppendAndPublishAsync(SessionEvent @event)
     {
         // Redaction hook: a plugin may suppress this event from reaching clients (still logged).
         var gate = await _bus.DispatchAsync(new Agnes.Abstractions.Events.BeforeAgentEventEvent(SessionId, @event)).ConfigureAwait(false);
@@ -697,6 +699,7 @@ internal sealed class HostSession : IAsyncDisposable
         // Every inbound agent event is dispatchable on the spine with full typing (SessionEvent : IAgnesEvent),
         // so a plugin can observe ToolCallEvent, TurnEndedEvent, etc. directly.
         await _bus.DispatchAsync(stored).ConfigureAwait(false);
+        return stored;
     }
 
     /// <summary>Records a forwarded MCP tool call in the session log (audit; from the forward proxy).</summary>
@@ -706,6 +709,32 @@ internal sealed class HostSession : IAsyncDisposable
     /// <summary>Records a brokered git-credential grant/denial in the session log (audit).</summary>
     public Task RecordGitCredentialAsync(string host, string? repo, bool allowed)
         => AppendAndPublishAsync(new GitCredentialEvent(host, repo, allowed));
+
+    /// <summary>
+    /// Records a file the agent sent the user. It takes the SAME path an agent's own events take —
+    /// interceptor gate, append, broadcast, spine — because that is exactly what makes it persisted,
+    /// sequenced, replayed to a client that joins later, and observable by a plugin. The push dispatcher
+    /// watches <c>BeforeAgentEventEvent</c>, so this is also how a phone learns a file arrived.
+    /// </summary>
+    public Task<SessionEvent> RecordFileSharedAsync(FileSharedEvent shared)
+        => AppendAndPublishAsync(shared);
+
+    /// <summary>
+    /// Records that control of the session's display changed hands. It takes the same path as everything
+    /// else here for the same reason: a client that joins tomorrow must be able to read, from the log alone,
+    /// that a person drove the screen between two of the agent's tool calls. The person's actual pointer and
+    /// keystrokes are never recorded — this handover is the whole trace they leave.
+    /// </summary>
+    public Task<SessionEvent> RecordDisplayControlAsync(DisplayControlChangedEvent changed)
+        => AppendAndPublishAsync(changed);
+
+    /// <summary>
+    /// Records the agent's own one-line status. Same path as everything else here, and for the same reason:
+    /// "what were you doing at half past two" is answerable only if the line is in the log next to the tool
+    /// calls it describes, rather than kept as a mutable field somewhere that only shows the latest one.
+    /// </summary>
+    public Task<SessionEvent> RecordAgentStatusAsync(AgentStatusEvent status)
+        => AppendAndPublishAsync(status);
 
     public async ValueTask DisposeAsync()
     {

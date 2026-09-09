@@ -1,45 +1,12 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:cb="using:Agnes.Plugins.CodeyBox"
+             xmlns:v="using:Agnes.Plugins.CodeyBox.Views"
              x:Class="Agnes.Plugins.CodeyBox.Views.CodeyBoxQueueView">
   <!-- Every colour here is a DynamicResource role from the host's theme, never a literal: a plugin that
        hard-codes hexes stops matching the moment the user switches theme, and Agnes ships several. The
        role names are the app's own (Bg / Panel / Line / Fg / FgDim / FgFaint / Accent). -->
   <UserControl.Styles>
-    <!-- A destination, not an action. The selected one is filled so the operator can read their location
-         instead of inferring it: the previous header gave nine identical buttons and no current state. -->
-    <!-- A headline number. Tone is carried by the left edge and the value, never by a fill: five filled
-         panels in a row compete with each other and with the content below them. -->
-    <Style Selector="Border.tile">
-      <Setter Property="Background" Value="{DynamicResource Panel}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="12,10" />
-      <Setter Property="MinWidth" Value="182" />
-      <Setter Property="Margin" Value="0,0,10,10" />
-    </Style>
-    <Style Selector="TextBlock.tilelabel">
-      <Setter Property="FontSize" Value="10" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
-    </Style>
-    <Style Selector="TextBlock.tilevalue">
-      <Setter Property="FontSize" Value="24" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
-    </Style>
-    <Style Selector="TextBlock.tilecaption">
-      <Setter Property="FontSize" Value="10" />
-      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
-      <Setter Property="TextWrapping" Value="Wrap" />
-    </Style>
-    <Style Selector="TextBlock.cardhead">
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
-    </Style>
-
     <!-- What a destination has behind it, shown in the rail rather than discovered by clicking. Four of
          the nine sections are empty on this host and the rail sold them as equals. -->
     <Style Selector="TextBlock.badge">
@@ -49,6 +16,8 @@
       <Setter Property="Margin" Value="6,0,0,0" />
     </Style>
 
+    <!-- A destination, not an action. The selected one is filled so the operator can read their location
+         instead of inferring it: the previous header gave nine identical buttons and no current state. -->
     <Style Selector="Button.nav">
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Left" />
@@ -228,8 +197,6 @@
           <Button Content="{Binding PauseButtonText}" Command="{Binding TogglePauseCommand}"
                   IsEnabled="{Binding !IsBusy}" Padding="10,4" FontSize="12"
                   IsVisible="{Binding Sections.IsQueue}" />
-          <Button Content="New" Command="{Binding ToggleCreateCommand}" Padding="10,4" FontSize="12"
-                  IsVisible="{Binding Sections.IsQueue}" ToolTip.Tip="Queue a new work item" />
           <Button Content="Refresh" Command="{Binding RefreshCommand}" Padding="10,4" FontSize="12" />
         </StackPanel>
       </Grid>
@@ -257,182 +224,22 @@
                Text="No CodeyBox API key found. Run `codeybox configure`, or set CODEYBOX_CLI_API_URL and CODEYBOX_CLI_API_KEY, then reopen this tab." />
 
     <!-- THE OVERVIEW. The tab used to open on a 404-row list, which answers none of the questions asked
-         on arrival: is it running, can anything start, does anything need me, can it keep going.
+         on arrival: is it moving, is it converging, did it land whole. Its three bands, and everything
+         they are made of, live in OverviewView — this file only says where it goes and what a row can do.
 
-         The number that justifies the whole screen is "runnable now". On this host ten items are queued
-         and every one is blocked on a dependency, so nothing can start and resuming the queue would
-         change nothing — a state the list rendered as a perfectly healthy "10 queued". -->
+         The DataContext handed down is the Overview record itself, which is what lets the whole screen be
+         rendered (and screenshotted) from a hand-built record with no view model behind it. The two
+         commands a row needs cannot ride on that record, so they are set here, from THIS view's data
+         context, via $parent — an ordinary {Binding} on the element would resolve against the Overview. -->
     <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDashboard}" Padding="14">
-      <StackPanel Spacing="16">
-
-        <!-- Stopped without anyone having stopped it. Distinct from paused, which someone chose. -->
-        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Danger}" BorderThickness="1"
-                CornerRadius="8" Padding="12,10" IsVisible="{Binding Sections.IsStalled}">
-          <StackPanel Spacing="3">
-            <TextBlock Text="Nothing can start" Foreground="{DynamicResource Danger}" FontSize="12"
-                       FontWeight="SemiBold" />
-            <TextBlock Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap"
-                       Text="The queue is running and has work, but every queued item is waiting on a dependency that has not finished. Resuming or adding capacity will not change this." />
-          </StackPanel>
-        </Border>
-
-        <ItemsControl ItemsSource="{Binding Sections.Tiles}">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Border Classes="tile">
-                <Grid ColumnDefinitions="Auto,*">
-                  <!-- Tone on the edge only. -->
-                  <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
-                          Background="{DynamicResource Danger}" IsVisible="{Binding IsBad}" />
-                  <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
-                          Background="{DynamicResource Accent}" IsVisible="{Binding IsAttention}" />
-                  <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
-                          Background="{DynamicResource Accent}" IsVisible="{Binding IsActive}" />
-                  <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
-                          Background="Transparent" IsVisible="{Binding IsNeutral}" />
-                  <StackPanel Grid.Column="1" Spacing="2">
-                    <TextBlock Classes="tilelabel" Text="{Binding Label}" />
-                    <TextBlock Classes="tilevalue" Text="{Binding Value}" />
-                    <TextBlock Classes="tilecaption" Text="{Binding Caption}" />
-                  </StackPanel>
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <Grid ColumnDefinitions="*,14,*">
-
-          <!-- WHAT IS NEXT. Blocked items included: "the next thing cannot start" is the answer. -->
-          <StackPanel Grid.Column="0" Spacing="6">
-            <TextBlock Classes="cardhead" Text="Next up" />
-            <TextBlock Text="Nothing is queued." Foreground="{DynamicResource FgFaint}" FontSize="11"
-                       IsVisible="{Binding !Sections.HasNextUp}" />
-            <ItemsControl ItemsSource="{Binding Sections.NextUp}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="9,7" Margin="0,2">
-                    <Grid ColumnDefinitions="Auto,*,Auto">
-                      <TextBlock Grid.Column="0" Text="{Binding Priority, StringFormat='p{0}'}"
-                                 Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="monospace"
-                                 VerticalAlignment="Top" Margin="0,1,10,0" MinWidth="26" />
-                      <StackPanel Grid.Column="1" Spacing="2">
-                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="11"
-                                   TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding DependencySummary}" Foreground="{DynamicResource Danger}"
-                                   FontSize="10" IsVisible="{Binding IsBlockedByDependency}" />
-                      </StackPanel>
-                      <TextBlock Grid.Column="2" Text="{Binding ProjectId}" Foreground="{DynamicResource FgFaint}"
-                                 FontSize="10" VerticalAlignment="Top" Margin="8,1,0,0" />
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-
-          <StackPanel Grid.Column="2" Spacing="14">
-
-            <!-- CAN IT KEEP GOING. -->
-            <StackPanel Spacing="6">
-              <TextBlock Classes="cardhead" Text="Capacity and quota" />
-              <StackPanel Spacing="3" IsVisible="{Binding Sections.HasConcurrency}">
-                <TextBlock Text="{Binding Sections.Concurrency.Label}" Foreground="{DynamicResource FgDim}" FontSize="11" />
-                <Border Height="6" Width="140" CornerRadius="3" HorizontalAlignment="Left"
-                        Background="{DynamicResource PanelAlt}">
-                  <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
-                          Width="{Binding Sections.Concurrency.BarWidth}" Background="{DynamicResource Accent}" />
-                </Border>
-              </StackPanel>
-              <TextBlock Text="No agent has been probed for quota." Foreground="{DynamicResource FgFaint}"
-                         FontSize="10" IsVisible="{Binding !Sections.HasQuota}" />
-              <ItemsControl ItemsSource="{Binding Sections.Quota}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Grid ColumnDefinitions="*,144,Auto" Margin="0,1">
-                      <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{DynamicResource FgDim}"
-                                 FontSize="10" VerticalAlignment="Center" />
-                      <Border Grid.Column="1" Height="6" Width="140" CornerRadius="3" VerticalAlignment="Center"
-                              HorizontalAlignment="Left" Background="{DynamicResource PanelAlt}">
-                        <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
-                                Width="{Binding BarWidth}" Background="{DynamicResource Accent}"
-                                IsVisible="{Binding !IsLow}" />
-                      </Border>
-                      <Border Grid.Column="1" Height="6" Width="140" CornerRadius="3" VerticalAlignment="Center"
-                              HorizontalAlignment="Left" Background="Transparent" IsVisible="{Binding IsLow}">
-                        <Border Height="6" CornerRadius="3" HorizontalAlignment="Left"
-                                Width="{Binding BarWidth}" Background="{DynamicResource Danger}" />
-                      </Border>
-                      <TextBlock Grid.Column="2" Text="{Binding Headroom}" Foreground="{DynamicResource FgDim}"
-                                 FontSize="10" MinWidth="42" TextAlignment="Right" VerticalAlignment="Center" />
-                    </Grid>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-
-            <!-- PROJECTS. -->
-            <StackPanel Spacing="6">
-              <TextBlock Classes="cardhead" Text="Projects" />
-              <ItemsControl ItemsSource="{Binding Sections.Fleet}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="9,7" Margin="0,2">
-                      <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Grid.Column="0" Spacing="3">
-                          <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontSize="11" />
-                          <ItemsControl ItemsSource="{Binding Outcomes}" IsVisible="{Binding HasOutcomes}">
-                            <ItemsControl.ItemsPanel>
-                              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="3" /></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                              <DataTemplate>
-                                <Panel ToolTip.Tip="{Binding Outcome}">
-                                  <Border Width="12" Height="4" CornerRadius="2" IsVisible="{Binding IsGood}"
-                                          Background="{DynamicResource Accent}" />
-                                  <Border Width="12" Height="4" CornerRadius="2" IsVisible="{Binding IsBad}"
-                                          Background="{DynamicResource Danger}" />
-                                  <Border Width="12" Height="4" CornerRadius="2" IsVisible="{Binding IsNeutral}"
-                                          Background="{DynamicResource FgFaint}" />
-                                </Panel>
-                              </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                          </ItemsControl>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="2" HorizontalAlignment="Right">
-                          <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10" TextAlignment="Right">
-                            <Run Text="{Binding QueuedCount}" /><Run Text=" queued · " /><Run Text="{Binding InFlightCount}" /><Run Text=" in flight" />
-                          </TextBlock>
-                          <Border Height="5" Width="120" CornerRadius="3" HorizontalAlignment="Right"
-                                  Background="{DynamicResource PanelAlt}" IsVisible="{Binding HasBudget}">
-                            <Border Height="5" CornerRadius="3" HorizontalAlignment="Left"
-                                    Width="{Binding BudgetBarWidth}" Background="{DynamicResource Accent}"
-                                    IsVisible="{Binding !OverBudget}" />
-                          </Border>
-                        </StackPanel>
-                      </Grid>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-
-            <!-- Health, stated only when there is something to measure. -->
-            <StackPanel Spacing="3">
-              <TextBlock Classes="cardhead" Text="Pipeline health" />
-              <TextBlock Text="{Binding Sections.HealthLabel}" FontSize="11"
-                         Foreground="{DynamicResource FgDim}" IsVisible="{Binding Sections.HealthIsMeaningful}" />
-              <!-- An empty window scores a perfect 1.0. Rendering that as a green tick would turn silence
-                   into a health claim, so it is said plainly instead. -->
-              <TextBlock Text="{Binding Sections.HealthLabel}" FontSize="11"
-                         Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !Sections.HealthIsMeaningful}" />
-              <TextBlock Text="{Binding Sections.SpendLabel}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-            </StackPanel>
-          </StackPanel>
-        </Grid>
+      <StackPanel Spacing="14">
+        <!-- Until the first build lands there is nothing to say but what the pane header already says. -->
+        <TextBlock Text="Gathering the fleet's state…" Foreground="{DynamicResource FgFaint}" FontSize="11"
+                   IsVisible="{Binding !Sections.HasOverview}" />
+        <v:OverviewView DataContext="{Binding Sections.Overview}"
+                        IsVisible="{Binding $parent[UserControl].DataContext.Sections.HasOverview}"
+                        OpenItemCommand="{Binding $parent[UserControl].DataContext.Sections.OpenItemCommand}"
+                        ExtendCeilingCommand="{Binding $parent[UserControl].DataContext.Sections.ExtendCeilingCommand}" />
       </StackPanel>
     </ScrollViewer>
 
@@ -445,181 +252,32 @@
       </Grid.IsVisible>
 
 
-    <!-- Finding the item you mean, before anything else. A real queue here holds 404 items of which
-           only ~30 are actionable, so the default slice is the actionable one and the count states what
-           is being hidden. -->
-      <StackPanel Grid.Row="0" Grid.Column="0" Spacing="6" Margin="8,8,8,4">
-        <TextBox Text="{Binding Search, Mode=TwoWay}" FontSize="12"
-                 Watermark="Search title, id or branch…" />
-        <WrapPanel Orientation="Horizontal">
-          <Button Classes="chip" Classes.on="{Binding IsFilterNeedsAttention}" Content="Needs attention"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.NeedsAttention}"
-                  Margin="0,0,4,4" />
-          <Button Classes="chip" Classes.on="{Binding IsFilterActive}" Content="Running"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.Active}"
-                  Margin="0,0,4,4" />
-          <Button Classes="chip" Classes.on="{Binding IsFilterDone}" Content="Done"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.Done}"
-                  Margin="0,0,4,4" />
-          <Button Classes="chip" Classes.on="{Binding IsFilterCancelled}" Content="Cancelled"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.Cancelled}"
-                  Margin="0,0,4,4" />
-          <Button Classes="chip" Classes.on="{Binding IsFilterAll}" Content="All"
-                  Command="{Binding SetFilterCommand}" CommandParameter="{x:Static cb:QueueFilter.All}"
-                  Margin="0,0,4,4" />
-        </WrapPanel>
-        <WrapPanel Orientation="Horizontal">
-          <ComboBox ItemsSource="{Binding Projects}" SelectedValue="{Binding ProjectFilter, Mode=TwoWay}"
-                    SelectedValueBinding="{Binding Id}" DisplayMemberBinding="{Binding DisplayName}"
-                    PlaceholderText="All projects" FontSize="11" MinWidth="150" Margin="0,0,6,4" />
-          <ComboBox ItemsSource="{Binding Agents}" SelectedItem="{Binding AgentFilter, Mode=TwoWay}"
-                    PlaceholderText="All agents" FontSize="11" MinWidth="110" Margin="0,0,6,4" />
-          <Button Classes="chip" Classes.on="{Binding GroupByProject}" Content="Group by project"
-                  Command="{Binding ToggleGroupCommand}" Margin="0,0,6,4" />
-          <Button Classes="chip" Content="Clear" Command="{Binding ClearFiltersCommand}" Margin="0,0,6,4" />
-        </WrapPanel>
-        <StackPanel Orientation="Horizontal" Spacing="6">
-          <TextBlock Text="{Binding ViewSummary}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                     VerticalAlignment="Center" />
-          <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
-          <Button Classes="chip" Content="Priority" Command="{Binding SetSortCommand}"
-                  CommandParameter="{x:Static cb:QueueSort.Priority}" Padding="6,2" />
-          <Button Classes="chip" Content="Recent" Command="{Binding SetSortCommand}"
-                  CommandParameter="{x:Static cb:QueueSort.Recent}" Padding="6,2" />
-          <Button Classes="chip" Content="Cost" Command="{Binding SetSortCommand}"
-                  CommandParameter="{x:Static cb:QueueSort.Cost}" Padding="6,2" />
-        </StackPanel>
-      </StackPanel>
+    <!-- THE RUNWAY, and the composer that fills it. Both are their own controls over this same view
+         model — see BoardView and ComposerView for what each of them is and why.
 
-      <Border Grid.Row="1" Grid.Column="0" VerticalAlignment="Top" ZIndex="1" Margin="8" Padding="10,8" CornerRadius="6"
-              Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-              IsVisible="{Binding IsCreating}">
-        <StackPanel Spacing="6">
-          <TextBlock Text="New work item" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource Fg}" />
-          <ComboBox ItemsSource="{Binding Projects}" SelectedItem="{Binding NewProject, Mode=TwoWay}"
-                    DisplayMemberBinding="{Binding Label}" PlaceholderText="Choose a project"
-                    HorizontalAlignment="Stretch" FontSize="12" />
-          <TextBlock Text="{Binding NewProjectAgent}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-          <TextBox Text="{Binding NewTitle, Mode=TwoWay}" Watermark="Title" FontSize="12" />
-          <TextBox Text="{Binding NewPrompt, Mode=TwoWay}" Watermark="What should the agent do?"
-                   AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" FontSize="12" />
+         What was here before was a list: a search box, five filter chips, a flat ListBox of 404 rows in
+         no particular order, and a create form of twenty fields. It could not answer the question the
+         tab is opened with — what runs next, and can I change it — because a list has no order to show
+         and a filter chip hides the very thing the question is about. Four horizons have one.
 
-          <!-- The fast path is the three boxes above and stays that way. The endpoint accepts around
-               twenty fields; putting them all on screen would tax every ordinary item to serve the rare
-               one, so the rest are disclosed on request. -->
-          <Button Classes="linky" Content="{Binding CreateOptionsLabel}" HorizontalAlignment="Left"
-                  Command="{Binding ToggleCreateOptionsCommand}" />
+         Nothing renders until a board has been built. That is not defensive dressing: a half-drawn
+         runway with dead controls on it is worse than a sentence saying it is still coming, and the
+         same choice is made one section over for the overview. -->
+      <TextBlock Grid.Row="1" Grid.Column="0" Margin="16" VerticalAlignment="Top"
+                 Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                 Text="Building the runway…" IsVisible="{Binding !HasBoard}" />
 
-          <StackPanel Spacing="6" IsVisible="{Binding ShowCreateOptions}">
-            <!-- What the project would do unaided, so an empty box reads as "inherit" rather than "gap". -->
-            <TextBlock Text="{Binding CreateDefaultsLine}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                       TextWrapping="Wrap" />
+      <v:BoardView Grid.Row="0" Grid.RowSpan="2" Grid.Column="0"
+                   IsVisible="{Binding HasBoard, FallbackValue=False}"
+                   RunNextCommand="{Binding RunNextCommand}"
+                   BeginRunAfterCommand="{Binding BeginRunAfterCommand}"
+                   RunAfterCommand="{Binding RunAfterCommand}" />
 
-            <!-- Chosen from the agents that have actually run here, never typed. -->
-            <ComboBox ItemsSource="{Binding Agents}" SelectedItem="{Binding NewAgent, Mode=TwoWay}"
-                      PlaceholderText="Agent — project default" HorizontalAlignment="Stretch" FontSize="12" />
-
-            <ComboBox ItemsSource="{Binding AuditorProfiles}" SelectedItem="{Binding NewAuditorProfile, Mode=TwoWay}"
-                      PlaceholderText="Auditor profile — project default" HorizontalAlignment="Stretch"
-                      FontSize="12" IsVisible="{Binding HasAuditorProfiles}" />
-
-            <Grid ColumnDefinitions="*,8,*">
-              <TextBox Grid.Column="0" Text="{Binding NewPriority, Mode=TwoWay}" Watermark="Priority" FontSize="12" />
-              <TextBox Grid.Column="2" Text="{Binding NewAuditMaxIterations, Mode=TwoWay}"
-                       Watermark="Audit iterations" FontSize="12" />
-            </Grid>
-
-            <TextBox Text="{Binding NewBaseBranch, Mode=TwoWay}" Watermark="Base branch — project default"
-                     FontSize="12" />
-            <TextBox Text="{Binding NewDependsOn, Mode=TwoWay}"
-                     Watermark="Depends on — work item ids, comma separated" FontSize="12" />
-            <TextBox Text="{Binding NewExternalId, Mode=TwoWay}" Watermark="External tracker id" FontSize="12" />
-
-            <CheckBox IsChecked="{Binding NewIsRefactor, Mode=TwoWay}" FontSize="11"
-                      Content="Refactor — runs alone, no other item for this project starts while it does" />
-          </StackPanel>
-
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <Button Content="Queue it" Classes="accent" FontSize="11" Padding="10,4" Command="{Binding CreateCommand}" />
-            <Button Content="Cancel" FontSize="11" Padding="10,4" Command="{Binding ToggleCreateCommand}" />
-          </StackPanel>
-        </StackPanel>
-      </Border>
-
-      <ListBox Grid.Row="1" Grid.Column="0" ItemsSource="{Binding Items}"
-               SelectedItem="{Binding Selected, Mode=TwoWay}"
-               IsVisible="{Binding !GroupByProject}"
-               Background="Transparent" BorderThickness="0">
-        <ListBox.ItemTemplate>
-          <DataTemplate>
-            <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,3">
-              <!-- One dot carrying state, so the list scans vertically without reading every row. -->
-              <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                      Margin="0,0,10,0"
-                      Background="{DynamicResource FgFaint}"
-                      IsVisible="{Binding !IsActive}" />
-              <Border Grid.Column="0" Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
-                      Margin="0,0,10,0"
-                      Background="{DynamicResource Accent}" IsVisible="{Binding IsActive}" />
-              <StackPanel Grid.Column="1" Spacing="1">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                             TextTrimming="CharacterEllipsis" />
-                  <!-- A dependency that is not satisfied is why an item sits still; it belongs on the row
-                       rather than three clicks away in the detail pane. -->
-                  <Border Background="{DynamicResource PanelAlt}" CornerRadius="8" Padding="6,0"
-                          IsVisible="{Binding IsBlockedByDependency}" VerticalAlignment="Center">
-                    <TextBlock Text="blocked" Foreground="{DynamicResource Danger}" FontSize="9" />
-                  </Border>
-                </StackPanel>
-                <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                           TextTrimming="CharacterEllipsis" />
-              </StackPanel>
-              <TextBlock Grid.Column="2" Text="{Binding Age}" Foreground="{DynamicResource FgFaint}"
-                         FontSize="10" VerticalAlignment="Center" />
-            </Grid>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
-
-      <!-- Grouped by project, for a queue serving several repositories at once — this one serves three. -->
-      <ScrollViewer Grid.Row="1" Grid.Column="0" IsVisible="{Binding GroupByProject}">
-        <ItemsControl ItemsSource="{Binding Groups}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <StackPanel Margin="0,0,0,8">
-                <TextBlock Text="{Binding Header}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                           FontWeight="SemiBold" Margin="10,6,0,2" />
-                <ItemsControl ItemsSource="{Binding Items}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Button Command="{Binding $parent[ItemsControl].DataContext.SelectCommand}"
-                              CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                              Padding="10,4" Cursor="Hand">
-                        <StackPanel Spacing="1">
-                          <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                       TextTrimming="CharacterEllipsis" />
-                            <!-- Same signal as the flat list: grouping must not cost the one badge that
-                                 explains why an item is sitting still. -->
-                            <Border Background="{DynamicResource PanelAlt}" CornerRadius="8" Padding="6,0"
-                                    IsVisible="{Binding IsBlockedByDependency}" VerticalAlignment="Center">
-                              <TextBlock Text="blocked" Foreground="{DynamicResource Danger}" FontSize="9" />
-                            </Border>
-                          </StackPanel>
-                          <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                     TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-                      </Button>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
+      <!-- Over the runway rather than beside it: writing a prompt is the whole of what you are doing
+           while you are doing it, and the queue you were reading is still there when you cancel. -->
+      <v:ComposerView Grid.Row="0" Grid.RowSpan="2" Grid.Column="0"
+                      DataContext="{Binding Composer}"
+                      IsVisible="{Binding IsOpen, FallbackValue=False}" />
 
       <GridSplitter Grid.Row="1" Grid.Column="1" Background="{DynamicResource Line}" />
 
@@ -694,6 +352,12 @@
                          FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
             </StackPanel>
           </Border>
+
+          <!-- WHERE IT SITS. Between the facts about this item and the output it is producing, because
+               it is neither: every control in it acts on a DIFFERENT item — the parent to retry, the
+               child to open, the follow-up to create — and mixing those into the row of buttons below
+               would make "Retry" mean two things a centimetre apart. See RelationsBandView. -->
+          <v:RelationsBandView Margin="-10,2,-10,0" />
         </StackPanel>
 
         <!-- Nothing selected: say so, rather than leaving half the tab blank. -->
