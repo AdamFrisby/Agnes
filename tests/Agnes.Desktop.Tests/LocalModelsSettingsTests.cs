@@ -26,15 +26,11 @@ namespace Agnes.Desktop.Tests;
 /// does not name. The render test below is therefore honest about its scope: it proves the XAML parses
 /// and attaches without throwing, and nothing more.
 /// </remarks>
-[CollectionDefinition("desktop-headless", DisableParallelization = true)]
-public sealed class DesktopHeadlessCollection;
-
 /// <remarks>
-/// In its own non-parallel collection. Avalonia's headless session is process-global, and starting one
-/// while the rest of this project's tests run alongside it took the whole run down with
-/// <c>Internal CLR error (0x80131506)</c> — not a failing assertion, a dead runner.
+/// Avalonia's headless renderer is process-global. The shared nonparallel Skia collection makes the
+/// rendering backend deterministic for every desktop surface test.
 /// </remarks>
-[Collection("desktop-headless")]
+[Collection("Avalonia headless")]
 public class LocalModelsSettingsTests
 {
     private sealed class TestApp : Application
@@ -45,7 +41,9 @@ public class LocalModelsSettingsTests
     public static class TestAppBuilder
     {
         public static AppBuilder BuildAvaloniaApp()
-            => AppBuilder.Configure<TestApp>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+            => AppBuilder.Configure<TestApp>()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .UseSkia();
     }
 
     private static MainWindowViewModel NewVm()
