@@ -10,3 +10,10 @@ using Android.App;
 [assembly: UsesPermission(global::Android.Manifest.Permission.AccessNetworkState)]
 [assembly: UsesPermission(global::Android.Manifest.Permission.PostNotifications)]
 [assembly: UsesPermission(global::Android.Manifest.Permission.Vibrate)]
+
+// Saving a file an agent sent to Downloads. Capped at API 28 because from 29 the MediaStore write needs
+// no permission at all — asking for broad storage access on a modern device in order to save one
+// screenshot would be an enormous ask for a small feature, and Android rightly buries the setting.
+[assembly: UsesPermission(
+    global::Android.Manifest.Permission.WriteExternalStorage,
+    MaxSdkVersion = 28)]

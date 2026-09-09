@@ -4,6 +4,7 @@
              xmlns:sys="using:System"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.SettingsTabView">
 
     <UserControl.Styles>
@@ -118,11 +119,43 @@
                         </StackPanel>
 
                         <StackPanel Spacing="6">
-                            <TextBlock Classes="fieldLabel" Text="UI scale" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Interface font" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Enter the exact name of any installed font family. Leave it blank for the Agnes default (Manrope). Code and terminal text keep the dedicated monospace font." />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="280,Auto,Auto" ColumnSpacing="6" HorizontalAlignment="Left">
+                                <TextBox Grid.Column="0" Text="{Binding FontFamilyInput, Mode=TwoWay}"
+                                         Watermark="Default (Manrope)" Padding="9,5"
+                                         AutomationProperties.Name="Interface font family">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Gesture="Enter" Command="{Binding ApplyFontFamilyCommand}" />
+                                    </TextBox.KeyBindings>
+                                </TextBox>
+                                <Button Grid.Column="1" Content="Apply" Command="{Binding ApplyFontFamilyCommand}" Classes="seg" />
+                                <Button Grid.Column="2" Content="Default" Command="{Binding UseDefaultFontCommand}" Classes="seg" />
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="UI scale" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Scales the interface with the text so controls and spacing remain proportional." />
+                            </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <Button Content="Small" Command="{Binding SetScaleCommand}" CommandParameter="small" Classes.on="{Binding IsScaleSmall}" Classes="seg" />
                                 <Button Content="Default" Command="{Binding SetScaleCommand}" CommandParameter="default" Classes.on="{Binding IsScaleDefault}" Classes="seg" />
                                 <Button Content="Large" Command="{Binding SetScaleCommand}" CommandParameter="large" Classes.on="{Binding IsScaleLarge}" Classes="seg" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Classes="fieldLabel" Text="Chat font size" VerticalAlignment="Center" />
+                                <ctl:InfoHint Description="Shared by every chat. Use the configurable Increase/Decrease chat font size commands (Cmd+Plus and Cmd+Minus by default on macOS) while a chat is focused." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{Binding ChatFontScaleText}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" MinWidth="38" />
+                                <Button Content="Reset" Command="{Binding ResetChatFontScaleCommand}" Classes="seg" />
                             </StackPanel>
                         </StackPanel>
 
@@ -132,30 +165,52 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- KEYBOARD (this device). Rendered from KeyboardShortcuts.Groups so the page can't drift
-                         from the bindings, and narrowed by the search box above so you can ask it a question. -->
-                    <StackPanel Spacing="12" IsVisible="{Binding CatKeyboard}">
-                        <TextBlock Classes="sectionTitle" Text="Keyboard shortcuts" />
-                        <TextBlock Classes="scopeNote" TextWrapping="Wrap"
-                                   Text="These are fixed — Agnes doesn't support rebinding yet. Use the search box above to find one by what it does." />
+                    <StackPanel Spacing="12" IsVisible="{Binding CatKeymap}">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Keymap" />
+                            <Button Grid.Column="1" Content="Edit" Command="{Binding EditKeymapCommand}" Classes="seg" />
+                        </Grid>
+                        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Text="{Binding KeymapPath}" FontFamily="{StaticResource MonoFont}" />
+                        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Text="{Binding KeymapStatus}" />
+                        <Border Background="{DynamicResource DangerSoft}" BorderBrush="{DynamicResource Danger}" BorderThickness="1"
+                                CornerRadius="7" Padding="9,6" IsVisible="{Binding HasKeymapDiagnostic}">
+                            <TextBlock Text="{Binding KeymapDiagnostic}" Foreground="{DynamicResource Danger}" TextWrapping="Wrap"
+                                       FontFamily="{StaticResource MonoFont}" FontSize="11" />
+                        </Border>
 
                         <TextBlock Text="Nothing matches that search." Foreground="{DynamicResource FgFaint}" FontSize="11"
-                                   IsVisible="{Binding !HasKeyboardMatches}" />
+                                   IsVisible="{Binding !HasKeymapMatches}" />
 
-                        <ItemsControl ItemsSource="{Binding KeyboardGroups}">
+                        <ItemsControl ItemsSource="{Binding KeymapGroups}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Spacing="4" Margin="0,0,0,12">
                                         <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-                                        <ItemsControl ItemsSource="{Binding Shortcuts}">
+                                        <ItemsControl ItemsSource="{Binding Commands}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid ColumnDefinitions="160,*" Margin="0,2">
-                                                        <TextBlock Grid.Column="0" Text="{Binding Gesture}" Foreground="{DynamicResource Fg}" FontSize="11"
-                                                                   FontFamily="{StaticResource MonoFont}" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding Description}" Foreground="{DynamicResource FgDim}"
-                                                                   FontSize="11" TextWrapping="Wrap" />
-                                                    </Grid>
+                                                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
+                                                            BorderThickness="1" CornerRadius="7" Padding="8,6" Margin="0,3"
+                                                            ClipToBounds="True">
+                                                        <Grid ColumnDefinitions="120,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10">
+                                                            <TextBlock Grid.Column="0" Grid.RowSpan="3" Text="{Binding Gesture}"
+                                                                       Foreground="{DynamicResource Fg}" FontSize="11"
+                                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Grid.Column="1" Grid.Row="0" Text="{Binding Description}"
+                                                                       Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+                                                            <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding CommandId}"
+                                                                       Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                                            <TextBlock Grid.Column="1" Grid.Row="2" Text="{Binding Context}"
+                                                                       Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                                            <Button Grid.Column="2" Grid.RowSpan="3" Content="Copy JSON" Classes="chip"
+                                                                    IsEnabled="{Binding CanCopyJson}" Click="OnCopyKeymapJson"
+                                                                    VerticalAlignment="Center" Padding="8,4" FontSize="10"
+                                                                    ToolTip.Tip="Copy this effective keybinding as a JSON rule" />
+                                                        </Grid>
+                                                    </Border>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
@@ -232,8 +287,18 @@
                                                 <Button Classes="danger" Grid.Column="1" Content="Decline" FontSize="11" Padding="9,3"
                                                         BorderBrush="{DynamicResource Line}" BorderThickness="1"
                                                         Command="{Binding $parent[ItemsControl].DataContext.DenyDeviceCommand}" CommandParameter="{Binding RequestId}" />
-                                                <Button Grid.Column="2" Content="Approve" FontSize="11" Padding="9,3" Classes="seg"
-                                                        Command="{Binding $parent[ItemsControl].DataContext.ApproveDeviceCommand}" CommandParameter="{Binding RequestId}" />
+                                                <!-- Two ways in, not one: a member is the ordinary answer, and handing over
+                                                     the run of the host is a separate deliberate click that only an owner
+                                                     is offered at all. -->
+                                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                                                    <Button Content="Let in as member" FontSize="11" Padding="9,3" Classes="seg"
+                                                            ToolTip.Tip="It can open sessions and see its own"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.ApproveDeviceCommand}" CommandParameter="{Binding RequestId}" />
+                                                    <Button Content="Let in as owner" FontSize="11" Padding="9,3" Classes="seg"
+                                                            ToolTip.Tip="It sees everything on this host and can manage devices"
+                                                            IsVisible="{Binding $parent[ItemsControl].DataContext.CanManageDevices}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.ApproveDeviceAsOwnerCommand}" CommandParameter="{Binding RequestId}" />
+                                                </StackPanel>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -247,24 +312,45 @@
                         <ItemsControl ItemsSource="{Binding Devices}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,3">
                                         <StackPanel Grid.Column="0">
                                             <StackPanel Orientation="Horizontal" Spacing="7">
                                                 <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
+                                                <!-- The role, in neutral text. Deliberately not a status hue: those mean
+                                                     working / blocked / done / failed, and a role is none of those. -->
+                                                <Border Name="RoleChip" CornerRadius="8" Padding="7,1" Background="{DynamicResource PanelAlt}" VerticalAlignment="Center"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                                    <TextBlock Text="{Binding RoleChip}" FontSize="10" Foreground="{DynamicResource FgDim}" />
+                                                </Border>
                                                 <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource AccentSoft}" VerticalAlignment="Center"
                                                         IsVisible="{Binding IsCurrentDevice}">
                                                     <TextBlock Text="this device" FontSize="10" Foreground="{DynamicResource Fg}" />
                                                 </Border>
                                             </StackPanel>
-                                            <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
+                                            <TextBlock Text="{Binding DetailLine}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
                                         </StackPanel>
-                                        <Button Classes="danger" Grid.Column="1" Content="{Binding RevokeLabel}" FontSize="11" Padding="9,3"
+                                        <Button Name="RoleButton" Grid.Column="1" Classes="seg" Content="{Binding RoleActionLabel}" FontSize="11" Padding="9,3"
+                                                IsVisible="{Binding $parent[ItemsControl].DataContext.CanManageDevices}"
+                                                IsEnabled="{Binding CanChangeRole}" ToolTip.Tip="{Binding RoleActionTooltip}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.SetDeviceRoleCommand}" CommandParameter="{Binding}" />
+                                        <Button Classes="danger" Grid.Column="2" Content="{Binding RevokeLabel}" FontSize="11" Padding="9,3"
                                                 BorderBrush="{DynamicResource Line}" BorderThickness="1"
                                                 Command="{Binding $parent[ItemsControl].DataContext.RevokeDeviceCommand}" CommandParameter="{Binding}" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+
+                        <!-- A member sees the same list, read-only, and is told why rather than left to
+                             wonder where the other buttons went. -->
+                        <TextBlock Name="OnlyOwnersNote" Text="{Binding OnlyOwnersNote}" IsVisible="{Binding ShowOnlyOwnersNote}"
+                                   Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+
+                        <Button Name="PruneDevicesButton" Classes="seg" HorizontalAlignment="Left" FontSize="11" Padding="9,3"
+                                IsVisible="{Binding CanManageDevices}" Content="{Binding PruneButtonLabel}"
+                                ToolTip.Tip="The host never removes this device, and never the last owner"
+                                Command="{Binding PruneDevicesCommand}" />
+
                         <TextBlock Text="{Binding DevicesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
                     </StackPanel>
 
@@ -332,6 +418,104 @@
                     </StackPanel>
 
                     <!-- MCP SERVERS (host-level registry: presets · scope · preview) -->
+                    <!-- Local models. Copilot's BYOK mode points it at any OpenAI-compatible endpoint;
+                         the two compatibility switches below are not preferences but the difference
+                         between a local model working and not starting at all — see docs/local-models.md. -->
+                    <StackPanel x:Name="LocalModelsPanel" Spacing="12" IsVisible="{Binding CatLocalModels}">
+                        <Grid ColumnDefinitions="Auto,Auto,*">
+                            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Local models" />
+                            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                                          Description="Run sessions against your own hardware instead of GitHub's models. Point this at any OpenAI-compatible server — Ollama, vLLM, Lemonade, LM Studio, Foundry Local — and the GitHub Copilot agent uses it. Applies to new sessions; a running session keeps the model it started with."
+                                          Security="The endpoint and key are stored on the host, not on this device, and the key is never sent back to a client. With 'no GitHub access' on, the agent reaches nothing but your endpoint." />
+                        </Grid>
+                        <TextBlock Classes="scopeNote">
+                            <Run Text="Configured on the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
+                        </TextBlock>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Endpoint" Classes="fieldLabel" />
+                            <TextBox Text="{Binding LocalProviderUrl, Mode=TwoWay}"
+                                     Watermark="http://10.0.0.36:13305/v1" />
+                            <TextBlock Classes="scopeNote"
+                                       Text="With or without the trailing /v1 — either works." />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="API key" Classes="fieldLabel" />
+                            <TextBox Text="{Binding LocalProviderKey, Mode=TwoWay}" PasswordChar="•"
+                                     Watermark="Leave blank if the server needs none" />
+                            <!-- The host never returns the key, so the form cannot show it. Saying a key is
+                                 stored is the difference between an empty field meaning "none" and "unchanged". -->
+                            <TextBlock Classes="scopeNote" IsVisible="{Binding LocalProviderHasKey}"
+                                       Text="A key is stored on the host. Leave this blank to keep it." />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Model" Classes="fieldLabel" VerticalAlignment="Center" />
+                                <Button Content="Fetch models" Classes="seg"
+                                        Command="{Binding FetchLocalModelsCommand}"
+                                        IsEnabled="{Binding !LocalProviderBusy}" />
+                            </StackPanel>
+                            <TextBox Text="{Binding LocalProviderWireModel, Mode=TwoWay}"
+                                     Watermark="The model name your server uses" />
+                            <!-- Populated by Fetch, so a model is picked rather than typed from memory. -->
+                            <ComboBox ItemsSource="{Binding LocalProviderModels}"
+                                      SelectedValue="{Binding LocalProviderWireModel, Mode=TwoWay}"
+                                      SelectedValueBinding="{Binding Id}"
+                                      DisplayMemberBinding="{Binding DisplayName}"
+                                      HorizontalAlignment="Stretch"
+                                      IsVisible="{Binding HasLocalProviderModels}"
+                                      PlaceholderText="Pick one of the models found" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Behaves like" Classes="fieldLabel" />
+                            <ComboBox ItemsSource="{Binding LocalProviderModelIds}"
+                                      SelectedItem="{Binding LocalProviderModelId, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      PlaceholderText="Leave unset to use the model name" />
+                            <!-- Not cosmetic: this id selects prompting strategy, token limits, and the
+                                 reasoning-effort value sent to the server. An unrecognised id makes Copilot
+                                 send "max", which strict servers reject outright. -->
+                            <TextBlock Classes="scopeNote" TextWrapping="Wrap"
+                                       Text="Which well-known model the agent should treat yours as — it sets the prompting strategy and token limits. If your server rejects requests mentioning reasoning effort, choose gpt-5.4." />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Reasoning effort" Classes="fieldLabel" />
+                            <ComboBox ItemsSource="{Binding LocalProviderEfforts}"
+                                      SelectedItem="{Binding LocalProviderEffort, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      PlaceholderText="Let Copilot decide" />
+                            <!-- The direct control over what strict servers reject. Copilot decides for
+                                 itself only when it recognises the model; for one it does not, it decides
+                                 "max", and some servers refuse that outright. -->
+                            <TextBlock Classes="scopeNote" TextWrapping="Wrap"
+                                       Text="Leave blank unless your server complains about it. If it rejects requests mentioning reasoning effort, pick medium." />
+                        </StackPanel>
+
+                        <CheckBox IsChecked="{Binding LocalProviderOffline, Mode=TwoWay}"
+                                  Content="No GitHub access at all (recommended)" />
+                        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Margin="24,-6,0,0"
+                                   Text="Turns off GitHub sign-in, telemetry, web tools, the GitHub MCP server and auto-update. Without this the agent still reaches GitHub for everything except inference." />
+
+                        <CheckBox IsChecked="{Binding LocalProviderExcludeApplyPatch, Mode=TwoWay}"
+                                  Content="Withhold the apply_patch tool (recommended)" />
+                        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Margin="24,-6,0,0"
+                                   Text="Copilot offers apply_patch in a form most self-hosted servers cannot parse, and they reject the whole request rather than ignoring it. Leave this on unless your server handles custom grammar tools." />
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Save" Classes="accent" Command="{Binding SaveLocalProviderCommand}"
+                                    IsEnabled="{Binding !LocalProviderBusy}" />
+                            <Button Content="Use GitHub's models" Classes="seg"
+                                    Command="{Binding ClearLocalProviderCommand}"
+                                    IsEnabled="{Binding !LocalProviderBusy}" />
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding LocalProviderStatus}" Classes="scopeNote" TextWrapping="Wrap" />
+                    </StackPanel>
+
                     <StackPanel Spacing="12" IsVisible="{Binding CatMcp}">
                         <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
                             <TextBlock Grid.Column="0" Classes="sectionTitle" Text="MCP servers" />
@@ -371,11 +555,8 @@
                         <TextBlock Text="Find more" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                             <TextBox Grid.Column="0" Text="{Binding McpCatalogQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
-                                     Watermark="Search the MCP registries — e.g. postgres, figma, filesystem">
-                                <TextBox.KeyBindings>
-                                    <KeyBinding Gesture="Enter" Command="{Binding SearchMcpCatalogCommand}" />
-                                </TextBox.KeyBindings>
-                            </TextBox>
+                                     Watermark="Search the MCP registries — e.g. postgres, figma, filesystem"
+                                     km:KeymapBinder.Context="SettingsMcpSearchFocus" />
                             <Button Grid.Column="1" Content="Search" Command="{Binding SearchMcpCatalogCommand}" Classes="seg" />
                             <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
                                          IsVisible="{Binding IsSearchingMcpCatalog}"
@@ -681,11 +862,8 @@
                             <StackPanel Spacing="10" IsVisible="{Binding ShowBrowse}">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <!-- Enter searches, so finding a plugin doesn't need a trip to the mouse. -->
-                                    <TextBox Grid.Column="0" Watermark="Search plugins…" Text="{Binding SearchQuery, Mode=TwoWay}">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
+                                    <TextBox Grid.Column="0" Watermark="Search plugins…" Text="{Binding SearchQuery, Mode=TwoWay}"
+                                             km:KeymapBinder.Context="SettingsPluginSearchFocus" />
                                     <Button Grid.Column="1" Margin="8,0,0,0" Content="Search" Command="{Binding SearchCommand}" Classes="seg" />
                                 </Grid>
                                 <ItemsControl ItemsSource="{Binding SearchResults}">
@@ -941,11 +1119,8 @@
                             <StackPanel Spacing="8" IsVisible="{Binding HasSkillRegistries}">
                                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                                     <TextBox Grid.Column="0" Text="{Binding SkillQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
-                                             Watermark="Search every skill registry — e.g. pdf, terraform, code review">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Enter" Command="{Binding BrowseRegistryCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
+                                             Watermark="Search every skill registry — e.g. pdf, terraform, code review"
+                                             km:KeymapBinder.Context="SettingsSkillSearchFocus" />
                                     <Button Grid.Column="1" Content="Search" Command="{Binding BrowseRegistryCommand}" Classes="seg" />
                                     <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
                                                  IsVisible="{Binding IsSearchingSkills}"
@@ -1047,12 +1222,8 @@
                                                     <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
                                                                IsVisible="{Binding !IsRenaming}" />
                                                     <TextBox Text="{Binding DraftName, Mode=TwoWay}" FontSize="12" Padding="6,3" CornerRadius="6"
-                                                             MaxWidth="260" HorizontalAlignment="Left" IsVisible="{Binding IsRenaming}">
-                                                        <TextBox.KeyBindings>
-                                                            <KeyBinding Gesture="Enter" Command="{Binding $parent[ItemsControl].DataContext.CommitRenameCommand}" CommandParameter="{Binding}" />
-                                                            <KeyBinding Gesture="Escape" Command="{Binding $parent[ItemsControl].DataContext.CancelRenameCommand}" CommandParameter="{Binding}" />
-                                                        </TextBox.KeyBindings>
-                                                    </TextBox>
+                                                             MaxWidth="260" HorizontalAlignment="Left" IsVisible="{Binding IsRenaming}"
+                                                             km:KeymapBinder.Context="SettingsLaunchProfileRenameFocus" />
                                                     <TextBlock Text="{Binding Where}" Foreground="{DynamicResource FgDim}" FontSize="10" TextWrapping="Wrap" />
                                                     <TextBlock Text="{Binding Posture}" Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap" />
                                                 </StackPanel>

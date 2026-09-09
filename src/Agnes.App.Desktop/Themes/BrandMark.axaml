@@ -1,0 +1,114 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!--
+    The Agnes squid mark, ported path-for-path from the Multitudal brand asset kept beside this file at
+    Assets/Brand/agnes-squid.svg (the same artwork the Android head ships as its adaptive icon). Drawn
+    rather than imported: rendering an SVG at runtime would mean a new third-party dependency for one
+    image, and the dependency policy in CLAUDE.md says no to that for something this small.
+
+    Authored on the mark's native 256 grid, so every coordinate below matches the source exactly and a
+    future revision of the artwork can be diffed against it. The one deliberate departure is the
+    gradients: the source states them in user space (x1="128" y1="20" …) while an Avalonia brush maps
+    over the *geometry's own bounds*, so each is restated as the equivalent proportion of the shape it
+    fills. The stops, and therefore the violet → magenta → coral run across the tentacles, are verbatim.
+
+    This is the brand gradient, so per the brand rules it appears at most once in a view — the mark IS
+    that appearance in the chrome, which is why the top-bar tile it replaced was a bare gradient square.
+  -->
+  <DrawingImage x:Key="AgnesMark">
+    <DrawingGroup>
+
+      <!-- hood -->
+      <GeometryDrawing Geometry="M 111.30 38.32 Q 128.00 24.00 144.70 38.32 L 146.30 39.68 Q 163.00 54.00 168.89 75.20 L 172.11 86.80 Q 178.00 108.00 156.00 108.00 L 100.00 108.00 Q 78.00 108.00 83.89 86.80 L 87.11 75.20 Q 93.00 54.00 109.70 39.68 Z">
+        <GeometryDrawing.Brush>
+          <LinearGradientBrush StartPoint="50%,0%" EndPoint="50%,100%">
+            <GradientStop Color="#5940D6" Offset="0" />
+            <GradientStop Color="#7A4FE8" Offset="1" />
+          </LinearGradientBrush>
+        </GeometryDrawing.Brush>
+      </GeometryDrawing>
+
+      <!-- fins -->
+      <GeometryDrawing Brush="#6A48E0"
+                       Geometry="M 55.94 76.99 Q 48.00 76.00 53.09 69.82 L 70.91 48.18 Q 76.00 42.00 76.84 49.96 L 79.16 72.04 Q 80.00 80.00 72.06 79.01 Z" />
+      <GeometryDrawing Brush="#6A48E0"
+                       Geometry="M 200.06 76.99 Q 208.00 76.00 202.91 69.82 L 185.09 48.18 Q 180.00 42.00 179.16 49.96 L 176.84 72.04 Q 176.00 80.00 183.94 79.01 Z" />
+
+      <!-- head -->
+      <GeometryDrawing Geometry="M 84.00 138.00 Q 84.00 120.00 102.00 120.00 L 154.00 120.00 Q 172.00 120.00 172.00 138.00 L 172.00 160.00 Q 172.00 178.00 154.00 178.00 L 102.00 178.00 Q 84.00 178.00 84.00 160.00 Z">
+        <GeometryDrawing.Brush>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Color="#8A55EE" Offset="0" />
+            <GradientStop Color="#C858C8" Offset="1" />
+          </LinearGradientBrush>
+        </GeometryDrawing.Brush>
+      </GeometryDrawing>
+
+      <!-- tentacles, left to right: the far end of the brand gradient -->
+      <GeometryDrawing Geometry="M 96 192 L 96 214 Q 96 226 85 226">
+        <GeometryDrawing.Pen>
+          <Pen Thickness="16" LineCap="Round">
+            <Pen.Brush>
+              <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#B85CE0" Offset="0" />
+                <GradientStop Color="#D85CB8" Offset="1" />
+              </LinearGradientBrush>
+            </Pen.Brush>
+          </Pen>
+        </GeometryDrawing.Pen>
+      </GeometryDrawing>
+      <GeometryDrawing Geometry="M 118 192 L 118 210">
+        <GeometryDrawing.Pen>
+          <Pen Thickness="16" LineCap="Round">
+            <Pen.Brush>
+              <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#D055B0" Offset="0" />
+                <GradientStop Color="#E85D95" Offset="1" />
+              </LinearGradientBrush>
+            </Pen.Brush>
+          </Pen>
+        </GeometryDrawing.Pen>
+      </GeometryDrawing>
+      <GeometryDrawing Geometry="M 140 192 L 140 232">
+        <GeometryDrawing.Pen>
+          <Pen Thickness="16" LineCap="Round">
+            <Pen.Brush>
+              <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#E0558E" Offset="0" />
+                <GradientStop Color="#F27078" Offset="1" />
+              </LinearGradientBrush>
+            </Pen.Brush>
+          </Pen>
+        </GeometryDrawing.Pen>
+      </GeometryDrawing>
+      <GeometryDrawing Geometry="M 162 192 L 162 212 Q 162 224 173 224">
+        <GeometryDrawing.Pen>
+          <Pen Thickness="16" LineCap="Round">
+            <Pen.Brush>
+              <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#EF6A78" Offset="0" />
+                <GradientStop Color="#FF8A66" Offset="1" />
+              </LinearGradientBrush>
+            </Pen.Brush>
+          </Pen>
+        </GeometryDrawing.Pen>
+      </GeometryDrawing>
+
+      <!-- face: white on the mark's own colour, in both themes, because it sits on the gradient -->
+      <GeometryDrawing Brush="#FFFFFF" Geometry="M 102.5 129 A 4.5 4.5 0 1 0 111.5 129 A 4.5 4.5 0 1 0 102.5 129 Z" />
+      <GeometryDrawing Brush="#FFFFFF" Geometry="M 144.5 129 A 4.5 4.5 0 1 0 153.5 129 A 4.5 4.5 0 1 0 144.5 129 Z" />
+      <GeometryDrawing Geometry="M 95.5 152 A 11.5 11.5 0 1 0 118.5 152 A 11.5 11.5 0 1 0 95.5 152 Z">
+        <GeometryDrawing.Pen><Pen Brush="#FFFFFF" Thickness="6.5" /></GeometryDrawing.Pen>
+      </GeometryDrawing>
+      <GeometryDrawing Geometry="M 137.5 152 A 11.5 11.5 0 1 0 160.5 152 A 11.5 11.5 0 1 0 137.5 152 Z">
+        <GeometryDrawing.Pen><Pen Brush="#FFFFFF" Thickness="6.5" /></GeometryDrawing.Pen>
+      </GeometryDrawing>
+      <GeometryDrawing Geometry="M 119 152 L 137 152">
+        <GeometryDrawing.Pen><Pen Brush="#FFFFFF" Thickness="6.5" LineCap="Round" /></GeometryDrawing.Pen>
+      </GeometryDrawing>
+
+    </DrawingGroup>
+  </DrawingImage>
+
+</ResourceDictionary>

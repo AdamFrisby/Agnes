@@ -60,11 +60,19 @@ internal sealed class AcpAgentSession : IAgentSession
             cancellationToken).ConfigureAwait(false);
 
         var reason = AcpMap.ToStopReason(result.StopReason);
+        if (!AcpMap.IsKnownStopReason(result.StopReason))
+        {
+            // Loud on purpose: this is recorded as EndTurn, which otherwise reads as a clean completion.
+            _logger.LogWarning(
+                "Agent reported an unrecognised ACP stop reason '{RawStopReason}' for session {SessionId}; " +
+                "recording it as EndTurn with the raw value preserved on the event.",
+                result.StopReason, AgentSessionId);
+        }
 
         // Emit turn-end through the connection's serial dispatch queue so it is ordered
         // AFTER the session/update notifications that preceded the response on the wire
         // (the request completion runs off the dispatch thread and would otherwise race ahead).
-        _dispatch.Post(_ => Emit(new TurnEndedEvent(reason)), null);
+        _dispatch.Post(_ => Emit(new TurnEndedEvent(reason, result.StopReason)), null);
         return reason;
     }
 
@@ -89,11 +97,31 @@ internal sealed class AcpAgentSession : IAgentSession
 
     public void HandleUpdate(JsonElement update)
     {
+        // Say so when an agent tells us something this protocol version doesn't model. Silently discarding
+        // it is how OpenCode's usage_update went unnoticed for the life of a session: no tokens, no cost,
+        // and nothing anywhere to suggest the agent had been reporting them all along.
+        if (update.ValueKind == JsonValueKind.Object
+            && update.TryGetProperty("sessionUpdate", out var kindProp)
+            && !AcpMap.IsKnownUpdateKind(kindProp.GetString()))
+        {
+            var kind = kindProp.GetString();
+            if (_unknownUpdateKinds.Add(kind ?? string.Empty))
+            {
+                _logger.LogWarning(
+                    "Agent sent an unmodelled ACP session update '{UpdateKind}' for session {SessionId}; " +
+                    "it is being discarded (logged once per kind).", kind, AgentSessionId);
+            }
+        }
+
         foreach (var e in AcpMap.ToEvents(update))
         {
             Emit(e);
         }
     }
+
+    /// <summary>Kinds already reported, so an unmodelled update that arrives thousands of times a session
+    /// warns once rather than drowning the log.</summary>
+    private readonly HashSet<string> _unknownUpdateKinds = [];
 
     public async Task<AcpRequestPermissionResult> HandlePermissionRequestAsync(
         AcpRequestPermissionParams parameters,

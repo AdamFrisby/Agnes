@@ -10,7 +10,7 @@ using ColorTextBlock.Avalonia;
 namespace Agnes.App.Desktop.Controls;
 
 /// <summary>
-/// Adds a right-click <b>Copy</b> / <b>Copy all</b> menu (and Ctrl+C) to read-only selectable
+/// Adds a right-click <b>Copy</b> / <b>Copy all</b> menu (and the platform-native copy gesture) to read-only selectable
 /// transcript surfaces. Avalonia's <see cref="SelectableTextBlock"/> and Markdown.Avalonia's
 /// MarkdownScrollViewer both support text selection but ship no context menu, so selected transcript
 /// text previously had no copy affordance (unlike the input TextBox, which has the full system menu).
@@ -42,7 +42,7 @@ public static class SelectionContextMenu
 
     private static MenuFlyout BuildFlyout(Control control)
     {
-        var copy = new MenuItem { Header = "Copy", InputGesture = new KeyGesture(Key.C, KeyModifiers.Control) };
+        var copy = new MenuItem { Header = "Copy", InputGesture = new KeyGesture(Key.C, NativeCommandModifier) };
         copy.Click += (_, _) => CopyText(control, selectionOnly: true);
 
         var copyAll = new MenuItem { Header = "Copy all" };
@@ -59,12 +59,16 @@ public static class SelectionContextMenu
     private static void OnKeyDown(object? sender, KeyEventArgs e)
     {
         if (sender is Control control && e.Key == Key.C
-            && e.KeyModifiers.HasFlag(KeyModifiers.Control) && HasSelection(control))
+            && e.KeyModifiers.HasFlag(NativeCommandModifier) && HasSelection(control))
         {
             CopyText(control, selectionOnly: true);
             e.Handled = true;
         }
     }
+
+    private static KeyModifiers NativeCommandModifier => OperatingSystem.IsMacOS()
+        ? KeyModifiers.Meta
+        : KeyModifiers.Control;
 
     private static bool HasSelection(Control control) => !string.IsNullOrEmpty(GatherText(control, selectionOnly: true));
 

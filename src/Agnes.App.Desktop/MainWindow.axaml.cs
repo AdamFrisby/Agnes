@@ -2,6 +2,8 @@ using System;
 using System.ComponentModel;
 using System.Linq;
 using Agnes.App.Desktop.ViewModels;
+using Agnes.App.Desktop.Keymaps;
+using Avalonia.Input;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
@@ -14,6 +16,7 @@ public partial class MainWindow : Window
 {
     private bool _toolbarWired;
     private int _relocateAttempts;
+    private KeymapService? _keymap;
 
     // The smallest content size (in unscaled DIPs) we keep the UI at before letting it scroll. Matches the
     // window's MinWidth/MinHeight so at scale 1 the content fills exactly and never scrolls.
@@ -23,6 +26,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // No installer registers an icon for Agnes, so a window that sets none shows the window
+        // manager's generic client icon — the X logo, on X11.
+        BrandIcon.Apply(this);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainWindowViewModel vm)
@@ -42,6 +48,47 @@ public partial class MainWindow : Window
         // exists after the first document renders, so we retry on deferred dispatcher passes (never inside
         // a layout pass — reparenting there loops). The standalone top bar stays as a fallback until then.
         Loaded += (_, _) => ScheduleRelocateToolbar();
+    }
+
+    public void InstallKeymap(KeymapService keymap)
+    {
+        if (_keymap is not null) _keymap.Changed -= OnKeymapChanged;
+        _keymap = keymap;
+        KeymapBinder.SetService(this, keymap);
+        _keymap.Changed += OnKeymapChanged;
+        UpdateNativeMenuGestures();
+    }
+
+    private void OnKeymapChanged(object? sender, EventArgs e)
+    {
+        if (Dispatcher.UIThread.CheckAccess()) UpdateNativeMenuGestures();
+        else Dispatcher.UIThread.Post(UpdateNativeMenuGestures);
+    }
+
+    private void UpdateNativeMenuGestures()
+    {
+        if (_keymap is null || NativeMenu.GetMenu(this) is not { } root) return;
+        foreach (var item in Descendants(root))
+        {
+            item.Gesture = item.Header switch
+            {
+                "New Tab" => _keymap.Effective.PrimaryGesture(AgnesCommand.TabNew, KeymapContext.Window),
+                "Close Tab" => _keymap.Effective.PrimaryGesture(AgnesCommand.TabClose, KeymapContext.Window),
+                _ => item.Gesture,
+            };
+        }
+    }
+
+    private static IEnumerable<NativeMenuItem> Descendants(NativeMenu menu)
+    {
+        foreach (var entry in menu.Items.OfType<NativeMenuItem>())
+        {
+            yield return entry;
+            if (entry.Menu is { } child)
+            {
+                foreach (var nested in Descendants(child)) yield return nested;
+            }
+        }
     }
 
     private void ScheduleRelocateToolbar()

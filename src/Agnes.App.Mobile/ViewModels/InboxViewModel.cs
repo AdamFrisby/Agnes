@@ -16,6 +16,13 @@ public sealed record PendingDeviceRow(HostLink Host, PendingPairApproval Pending
 
     /// <summary>The digits that must match the ones on the asking device's screen.</summary>
     public string VerificationCode => Pending.VerificationCode;
+
+    /// <summary>
+    /// Whether this phone may hand over the run of the host as well as admit a guest. Only an owner is
+    /// offered the second button: a member's attempt would be refused by the host anyway, and a button
+    /// whose only outcome is a refusal teaches nothing.
+    /// </summary>
+    public bool CanGrantOwner => Host.Role == DeviceRole.Owner;
 }
 
 /// <summary>One thing blocking an agent, wherever it came from.</summary>
@@ -76,14 +83,29 @@ public sealed partial class InboxViewModel : ObservableObject
                 _sessions.Open(row.Entry);
             }
         });
+        OpenSharedFileCommand = new RelayCommand<SharedFileRow>(row =>
+        {
+            if (row is not null)
+            {
+                // Land on the card, not the top of the transcript: the row exists because you were told
+                // about one file, and "here it is" is the whole point of the tap.
+                _sessions.OpenAt(row.Entry, row.Sequence);
+            }
+        });
         AllowCommand = new RelayCommand<BlockerRow>(row => Answer(row, allow: true));
         DenyCommand = new RelayCommand<BlockerRow>(row => Answer(row, allow: false));
         ApproveDeviceCommand = new AsyncRelayCommand<PendingDeviceRow>(row => DecideAsync(row, approve: true));
+        ApproveDeviceAsOwnerCommand = new AsyncRelayCommand<PendingDeviceRow>(
+            row => DecideAsync(row, approve: true, DeviceRole.Owner));
         DenyDeviceCommand = new AsyncRelayCommand<PendingDeviceRow>(row => DecideAsync(row, approve: false));
 
         // The blocked list is a live projection of the sessions list, so it re-derives whenever any
         // session's attention state moves rather than being polled.
         _sessions.AttentionChanged += () => _shell.Dispatcher.Post(Rebuild);
+
+        // Files ride the same live-projection idea: an arrival changes no attention state, so it gets its
+        // own signal rather than being noticed by accident on the next approval.
+        _sessions.SharedFilesChanged += () => _shell.Dispatcher.Post(RebuildSharedFiles);
 
         // The join-requests section tracks its own collection, so anything that touches it — a refresh,
         // an answered request — updates the header and the empty state without a second call.
@@ -104,9 +126,18 @@ public sealed partial class InboxViewModel : ObservableObject
     /// the inbox for the same reason approvals do: it is a thing waiting on a human.</summary>
     public ObservableCollection<PendingDeviceRow> PendingDevices { get; } = [];
 
+    /// <summary>Files agents sent, newest first, across every session and host.</summary>
+    public ObservableCollection<SharedFileRow> SharedFiles { get; } = [];
+
     public bool HasPendingDevices => PendingDevices.Count > 0;
 
+    public bool HasSharedFiles => SharedFiles.Count > 0;
+
     public IAsyncRelayCommand<PendingDeviceRow> ApproveDeviceCommand { get; }
+
+    /// <summary>Lets a device in with the run of the host. Shown only on a row whose host says this
+    /// phone is an owner.</summary>
+    public IAsyncRelayCommand<PendingDeviceRow> ApproveDeviceAsOwnerCommand { get; }
 
     public IAsyncRelayCommand<PendingDeviceRow> DenyDeviceCommand { get; }
 
@@ -114,6 +145,9 @@ public sealed partial class InboxViewModel : ObservableObject
     public IRelayCommand<BlockerRow> OpenCommand { get; }
     public IRelayCommand<BlockerRow> AllowCommand { get; }
     public IRelayCommand<BlockerRow> DenyCommand { get; }
+
+    /// <summary>Opens the session a received file came from, scrolled to its card.</summary>
+    public IRelayCommand<SharedFileRow> OpenSharedFileCommand { get; }
 
     [ObservableProperty]
     private bool _isRefreshing;
@@ -124,7 +158,11 @@ public sealed partial class InboxViewModel : ObservableObject
 
     public bool HasFinished => Finished.Count > 0;
 
-    public bool IsEmpty => !HasBlocked && !HasFinished && !HasPendingDevices && !IsRefreshing;
+    public bool IsEmpty => !HasBlocked && !HasFinished && !HasPendingDevices && !HasSharedFiles && !IsRefreshing;
+
+    /// <summary>How many rows the "Sent to you" section keeps. It's a recent-things list, not an archive —
+    /// the session itself is where a file from last Tuesday lives.</summary>
+    private const int SharedFileLimit = 20;
 
     /// <summary>Rebuilds the blocked list from what the live sessions currently report.</summary>
     private void Rebuild()
@@ -153,6 +191,28 @@ public sealed partial class InboxViewModel : ObservableObject
 
         OnPropertyChanged(nameof(BlockedCount));
         OnPropertyChanged(nameof(HasBlocked));
+        OnPropertyChanged(nameof(IsEmpty));
+
+        RebuildSharedFiles();
+    }
+
+    /// <summary>Re-derives the received-files list from what the live sessions currently hold.</summary>
+    private void RebuildSharedFiles()
+    {
+        var rows = _sessions.All
+            .Where(e => e.Session is not null)
+            .SelectMany(e => SharedFileAccess.Of(e.Session!).Select(f => new SharedFileRow(e, f)))
+            .OrderByDescending(r => r.When)
+            .Take(SharedFileLimit)
+            .ToList();
+
+        SharedFiles.Clear();
+        foreach (var row in rows)
+        {
+            SharedFiles.Add(row);
+        }
+
+        OnPropertyChanged(nameof(HasSharedFiles));
         OnPropertyChanged(nameof(IsEmpty));
     }
 
@@ -186,8 +246,10 @@ public sealed partial class InboxViewModel : ObservableObject
         {
             try
             {
+                // link.Http, not a default client: a self-signed host is authenticated by its pin, and a
+                // default client fails that handshake — which reads here as "no requests waiting".
                 var pending = await PairingManagement
-                    .PendingAsync(link.Url, link.Saved.Token).ConfigureAwait(false);
+                    .PendingAsync(link.Url, link.Saved.Token, link.Http).ConfigureAwait(false);
                 waiting.AddRange(pending.Select(p => new PendingDeviceRow(link, p)));
             }
             catch
@@ -221,7 +283,11 @@ public sealed partial class InboxViewModel : ObservableObject
     /// Approves or declines a device. Approving mints its token host-side; declining is deliberately
     /// just as easy to reach, because "I didn't expect this" should be the cheap answer.
     /// </summary>
-    private async Task DecideAsync(PendingDeviceRow? row, bool approve)
+    /// <param name="role">
+    /// What the device is admitted as. Member is the ordinary answer and the default button; owner hands
+    /// over the host, so it is a second, separately-labelled tap that only an owner is shown.
+    /// </param>
+    private async Task DecideAsync(PendingDeviceRow? row, bool approve, DeviceRole role = DeviceRole.Member)
     {
         if (row is null)
         {
@@ -232,7 +298,8 @@ public sealed partial class InboxViewModel : ObservableObject
         {
             if (approve)
             {
-                await PairingManagement.ApproveAsync(row.Host.Url, row.Host.Saved.Token, row.Pending.RequestId, row.Host.Http)
+                await PairingManagement
+                    .ApproveAsync(row.Host.Url, row.Host.Saved.Token, row.Pending.RequestId, role, row.Host.Http)
                     .ConfigureAwait(false);
             }
             else
@@ -242,7 +309,12 @@ public sealed partial class InboxViewModel : ObservableObject
             }
 
             _shell.Haptics.Tick();
-            _shell.Toast(approve ? $"{row.DeviceName} can now use {row.Host.Name}" : "Declined",
+            _shell.Toast(
+                approve
+                    ? role == DeviceRole.Owner
+                        ? $"{row.DeviceName} is now an owner of {row.Host.Name}"
+                        : $"{row.DeviceName} can now use {row.Host.Name}"
+                    : "Declined",
                 approve ? ToastKind.Success : ToastKind.Warning);
         }
         catch (Exception ex)

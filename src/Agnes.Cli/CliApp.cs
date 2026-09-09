@@ -7,6 +7,10 @@ namespace Agnes.Cli;
 
 /// <summary>Pairs a machine with a host and returns the durable device token. Injected so tests don't hit
 /// the network; the default binding is <see cref="DevicePairing.PairAsync"/>.</summary>
+/// <summary>Observes the certificate a host presents, so first contact can be verified rather than assumed.
+/// Injected so the trust-on-first-use flow is testable without a live TLS endpoint.</summary>
+public delegate Task<string> ProbeFingerprintFunc(string hostUrl, CancellationToken cancellationToken);
+
 public delegate Task<PairResponse> PairFunc(
     string hostUrl, string code, string deviceName, string? pinnedFingerprint, CancellationToken cancellationToken);
 
@@ -27,6 +31,7 @@ internal sealed class CliApp
     private readonly ISessionRegistry _sessions;
     private readonly TimeProvider _time;
     private readonly PairFunc _pair;
+    private readonly ProbeFingerprintFunc _probe;
 
     public CliApp(
         IAgnesConnector connector,
@@ -34,7 +39,8 @@ internal sealed class CliApp
         IHostRegistry hosts,
         ISessionRegistry sessions,
         TimeProvider time,
-        PairFunc? pair = null)
+        PairFunc? pair = null,
+        ProbeFingerprintFunc? probe = null)
     {
         _connector = connector;
         _console = console;
@@ -43,6 +49,7 @@ internal sealed class CliApp
         _time = time;
         _pair = pair ?? ((url, code, name, pin, ct) =>
             DevicePairing.PairAsync(url, code, name, AgnesHttp.For(pin), ct));
+        _probe = probe ?? HostFingerprint.ProbeAsync;
     }
 
     public async Task<int> RunAsync(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
@@ -105,6 +112,72 @@ internal sealed class CliApp
 
     // ---- auth ----
 
+    /// <summary>
+    /// Trust-on-first-use, deliberately shaped like SSH's: observe the certificate, refuse outright if it
+    /// disagrees with one we already recorded for this host, otherwise show it and require a human to say yes.
+    /// Returns the fingerprint to pin, or null if the operator declined (or a changed key was rejected).
+    /// </summary>
+    private async Task<string?> ConfirmFingerprintAsync(
+        string url, string? preAccepted, CancellationToken cancellationToken)
+    {
+        string observed;
+        try
+        {
+            observed = await _probe(url, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _console.Error($"auth login: could not read the certificate {url} presents — {ex.Message}");
+            return null;
+        }
+
+        // A pin we already hold for this host that no longer matches is the one case that must never be a
+        // prompt: it is indistinguishable from an interception, so it fails and says exactly why.
+        var known = _hosts.Hosts.FirstOrDefault(h =>
+            string.Equals(h.Url?.TrimEnd('/'), url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(h.Fingerprint));
+
+        if (known is not null && !string.Equals(known.Fingerprint, observed, StringComparison.OrdinalIgnoreCase))
+        {
+            _console.Error("WARNING: the host's certificate has CHANGED.");
+            _console.Error($"  previously: {HostFingerprint.ForDisplay(known.Fingerprint!)}");
+            _console.Error($"  now:        {HostFingerprint.ForDisplay(observed)}");
+            _console.Error("This is what an intercepted connection looks like. It is also what a reinstalled or");
+            _console.Error($"re-keyed host looks like. If you know the host was rebuilt, remove '{known.Name}' from");
+            _console.Error("the host list and pair again; otherwise stop and find out why.");
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(preAccepted))
+        {
+            // Scripted setup: the caller states the fingerprint it expects, and we check rather than trust.
+            if (!string.Equals(preAccepted.Trim(), observed, StringComparison.OrdinalIgnoreCase))
+            {
+                _console.Error("auth login: the host presented a different certificate than --accept-fingerprint expects.");
+                _console.Error($"  expected: {HostFingerprint.ForDisplay(preAccepted)}");
+                _console.Error($"  actual:   {HostFingerprint.ForDisplay(observed)}");
+                return null;
+            }
+
+            return observed;
+        }
+
+        _console.Error($"The host at {url} is not yet known. It presents this certificate:");
+        _console.Error($"  SHA-256: {HostFingerprint.ForDisplay(observed)}");
+        _console.Error("Check it matches the fingerprint the host itself prints at startup, then type yes.");
+        _console.Error("Continue? [yes/no]");
+
+        var answer = _console.ReadLine()?.Trim();
+        if (!string.Equals(answer, "yes", StringComparison.OrdinalIgnoreCase))
+        {
+            _console.Error("auth login: not confirmed, so nothing was paired and no certificate was trusted.");
+            return null;
+        }
+
+        return observed;
+    }
+
+
     private async Task<int> AuthLoginAsync(CommandLine cmd, CancellationToken cancellationToken)
     {
         var entry = cmd.Option("host");
@@ -135,6 +208,19 @@ internal sealed class CliApp
         }
 
         var deviceName = cmd.Option("name") ?? $"agnes-agent@{Environment.MachineName}";
+
+        // No pin to hand: fall back to trust-on-first-use rather than failing the handshake with a message
+        // that reads like the host is down. Look at what it presents, show it, and make a person agree.
+        if (string.IsNullOrWhiteSpace(fingerprint))
+        {
+            fingerprint = await ConfirmFingerprintAsync(url, cmd.Option("accept-fingerprint"), cancellationToken)
+                .ConfigureAwait(false);
+            if (fingerprint is null)
+            {
+                return ExitCodes.Failure;
+            }
+        }
+
         var response = await _pair(url, code, deviceName, fingerprint, cancellationToken).ConfigureAwait(false);
 
         // The device token is sealed at rest by the registry — never written in the clear (see SecureTokenProtector).

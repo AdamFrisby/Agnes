@@ -16,6 +16,10 @@ public enum NotificationTrigger
 
     /// <summary>The agent asked a structured question needing a user answer.</summary>
     UserActionRequest,
+
+    /// <summary>The agent sent the user a file (see <see cref="FileSharedEvent"/>). Informational, but the
+    /// whole point of sending a file from an unattended session is that the person sees it arrive.</summary>
+    FileShared,
 }
 
 /// <summary>

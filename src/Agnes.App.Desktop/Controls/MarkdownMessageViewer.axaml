@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             x:Class="Agnes.App.Desktop.Controls.MarkdownMessageViewer"
+             x:Name="Root">
+    <UserControl.Styles>
+        <!-- Markdown.Avalonia renderer overrides; Agnes-owned container chrome is app-level. -->
+        <StyleInclude Source="avares://Agnes.App.Desktop/Themes/MarkdownStyles.axaml" />
+    </UserControl.Styles>
+
+    <Border Classes="markdownMessage">
+        <Grid RowDefinitions="Auto,*">
+            <Grid x:Name="ModeToolbar" Classes="markdownMessageToolbar" ColumnDefinitions="*,Auto">
+                <Button x:Name="ModeToggle" Grid.Column="1" Classes="ghost markdownMessageToggle"
+                        Content="Code" Click="OnToggleMode" Cursor="Hand"
+                        AutomationProperties.Name="Show Markdown source"
+                        ToolTip.Tip="Show the Markdown source as code" />
+            </Grid>
+
+            <Grid Grid.Row="1" Classes="markdownMessageBody">
+                <ctl:MarkdownViewer x:Name="RenderedMarkdown"
+                                    Markdown="{Binding Markdown, ElementName=Root}"
+                                    SelectionEnabled="True"
+                                    ctl:SelectionContextMenu.Enable="True">
+                    <ctl:MarkdownViewer.Styles>
+                        <!-- Markdown.Avalonia attaches its stock theme locally, so these overrides must
+                             also be local to the actual renderer. -->
+                        <StyleInclude Source="avares://Agnes.App.Desktop/Themes/MarkdownStyles.axaml" />
+                    </ctl:MarkdownViewer.Styles>
+                </ctl:MarkdownViewer>
+
+                <ScrollViewer x:Name="SourceScroller" IsVisible="False"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <SelectableTextBlock Text="{Binding Markdown, ElementName=Root}"
+                                         Classes="markdownMessageSource"
+                                         TextWrapping="NoWrap"
+                                         ctl:SelectionContextMenu.Enable="True" />
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

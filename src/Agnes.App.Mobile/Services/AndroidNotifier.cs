@@ -10,16 +10,21 @@ namespace Agnes.App.Mobile.Services;
 /// when the user isn't already looking at it: notifications are suppressed while the app is foreground
 /// (the in-app banner and haptic cover that case).
 ///
-/// Two channels, because they deserve different urgency: a blocked agent interrupts, a finished turn
-/// does not.
+/// Three channels, because they deserve different urgency: a blocked agent interrupts, a finished turn
+/// does not, and a file the agent sent is news you can silence on its own without losing the other two.
 /// </summary>
 public sealed class AndroidNotifier : INotifier
 {
     private const string BlockedChannel = "agnes.blocked";
     private const string ActivityChannel = "agnes.activity";
+    private const string FilesChannel = "agnes.files";
 
     /// <summary>Extra key carrying the session a notification came from, so tapping it deep-links.</summary>
     public const string SessionExtra = "agnes.sessionId";
+
+    /// <summary>Extra key carrying the transcript item the notification was about, so tapping it lands on
+    /// that moment rather than at the top of the session.</summary>
+    public const string AnchorExtra = "agnes.anchorId";
 
     private readonly Context _context;
     private readonly Func<MobileSettings> _settings;
@@ -54,8 +59,17 @@ public sealed class AndroidNotifier : INotifier
                 Description = "A turn finished, or a session reported an error.",
             };
 
+            // Default importance, deliberately: a file is worth telling you about, but it is not a person
+            // waiting. Its own channel so it can be silenced in Android's settings without also silencing
+            // the one that says an agent is stuck.
+            var files = new NotificationChannel(FilesChannel, "Files sent to you", NotificationImportance.Default)
+            {
+                Description = "An agent produced a file for you — a screenshot, a report, a build.",
+            };
+
             manager.CreateNotificationChannel(blocked);
             manager.CreateNotificationChannel(activity);
+            manager.CreateNotificationChannel(files);
         }
         catch
         {
@@ -70,6 +84,7 @@ public sealed class AndroidNotifier : INotifier
         {
             NotificationKind.Blocker => settings.NotifyOnBlocked,
             NotificationKind.Completion => settings.NotifyOnComplete,
+            NotificationKind.File => settings.NotifyOnFile,
             _ => settings.NotifyOnBlocked || settings.NotifyOnComplete,
         };
 
@@ -99,14 +114,26 @@ public sealed class AndroidNotifier : INotifier
         var intent = new Intent(_context, typeof(MainActivity));
         intent.SetFlags(ActivityFlags.SingleTop | ActivityFlags.ClearTop);
         intent.PutExtra(SessionExtra, notification.SessionId);
+        if (notification.AnchorId is { Length: > 0 } anchor)
+        {
+            intent.PutExtra(AnchorExtra, anchor);
+        }
 
         var pending = PendingIntent.GetActivity(
             _context,
-            notification.SessionId.GetHashCode(StringComparison.Ordinal),
+            // Distinct per notification, not per session: two PendingIntents that compare equal are the
+            // same object, so a file tap would otherwise reuse the blocked one's extras and open the
+            // wrong moment.
+            IdFor(KeyFor(notification)),
             intent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
-        var channel = notification.Kind == NotificationKind.Blocker ? BlockedChannel : ActivityChannel;
+        var channel = notification.Kind switch
+        {
+            NotificationKind.Blocker => BlockedChannel,
+            NotificationKind.File => FilesChannel,
+            _ => ActivityChannel,
+        };
         var builder = new Notification.Builder(_context, channel)
             .SetContentTitle(notification.Title)
             .SetContentText(notification.Body)
@@ -121,33 +148,47 @@ public sealed class AndroidNotifier : INotifier
             builder.SetCategory(Notification.CategoryCall); // treated as needing a person, not just news
         }
 
-        // One notification per session, replaced in place: a chatty agent must not bury the shade.
-        manager.Notify(IdFor(notification.SessionId), builder.Build());
+        // One notification per session *per kind*, replaced in place: a chatty agent must not bury the
+        // shade, but a file arriving must not silently overwrite "this agent is blocked on you" either.
+        manager.Notify(IdFor(KeyFor(notification)), builder.Build());
     }
+
+    /// <summary>The shade slot a notification occupies: its session, and whether it's a file.</summary>
+    private static string KeyFor(AppNotification notification)
+        => notification.Kind == NotificationKind.File
+            ? notification.SessionId + "#file"
+            : notification.SessionId;
 
     private readonly Dictionary<string, int> _ids = [];
 
-    private int IdFor(string sessionId)
+    private int IdFor(string key)
     {
-        if (_ids.TryGetValue(sessionId, out var id))
+        if (_ids.TryGetValue(key, out var id))
         {
             return id;
         }
 
         id = _nextId++;
-        _ids[sessionId] = id;
+        _ids[key] = id;
         return id;
     }
 
-    /// <summary>Clears a session's notification — called when the user opens that session.</summary>
+    /// <summary>Clears a session's notifications — called when the user opens that session.</summary>
     public void Clear(string sessionId)
     {
         try
         {
-            if (_ids.TryGetValue(sessionId, out var id)
-                && _context.GetSystemService(Context.NotificationService) is NotificationManager manager)
+            if (_context.GetSystemService(Context.NotificationService) is not NotificationManager manager)
             {
-                manager.Cancel(id);
+                return;
+            }
+
+            foreach (var key in new[] { sessionId, sessionId + "#file" })
+            {
+                if (_ids.TryGetValue(key, out var id))
+                {
+                    manager.Cancel(id);
+                }
             }
         }
         catch

@@ -46,6 +46,23 @@ public partial class App : Application
                 new FilePromptStore(),
                 new FilePermissionPolicy(),
                 Notifier);
+
+#if __WASM__
+            // The browser UI is served by Agnes itself. Default to that same protected origin so the
+            // Cloudflare Access exchange stays same-origin and cloudflared can inject its signed assertion.
+            try
+            {
+                var origin = Uno.Foundation.WebAssemblyRuntime.InvokeJS("window.location.origin");
+                if (Uri.TryCreate(origin, UriKind.Absolute, out var browserOrigin))
+                {
+                    Workspace.HostUrl = browserOrigin.GetLeftPart(UriPartial.Authority);
+                }
+            }
+            catch
+            {
+                // Leave the normal manual host field available if a non-browser embedding has no origin.
+            }
+#endif
         }
 
 

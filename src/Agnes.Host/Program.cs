@@ -1,5 +1,6 @@
 using Agnes.Abstractions;
 using Agnes.Acp;
+using Agnes.Host.Display;
 using Agnes.Host.Attention;
 using Agnes.Host.Channels;
 using Agnes.Agents.ClaudeCode;
@@ -37,7 +38,7 @@ builder.Services.AddSingleton<ITransportProvider>(sp =>
 // Agnes relay: dial out to a self-hosted blind relay so a host behind NAT is reachable with no inbound port
 // (Agnes:Transport:Provider=agnes-relay). TLS terminates at Kestrel with a pinned self-signed host cert; the
 // relay and the host's loopback pump only move already-encrypted bytes. See .ideas/connectivity/01-relay-and-tunneling.md.
-var agnesHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+var agnesHome = AgnesHome.Resolve(builder.Configuration);
 var relayTransportOptions = new RelayTransportOptions
 {
     Url = builder.Configuration["Agnes:Transport:Relay:Url"] ?? "",
@@ -123,7 +124,7 @@ builder.Services.AddSingleton(new HostIdentity(
 // apply and the registry would try to persist to an empty path. Treat blank as unset.
 var devicesFile = builder.Configuration["Agnes:DevicesFile"] is { Length: > 0 } configuredDevicesFile
     ? configuredDevicesFile
-    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "devices.json");
+    : Path.Combine(agnesHome, "devices.json");
 builder.Services.AddSingleton(sp => new DeviceRegistry(
     builder.Configuration["Agnes:PairingToken"], devicesFile,
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<DeviceRegistry>(),
@@ -131,6 +132,7 @@ builder.Services.AddSingleton(sp => new DeviceRegistry(
     // The typed code closes once a device is paired; an operator who genuinely needs it back (a lab
     // host that is re-paired constantly, say) can opt out of the lockout.
     allowCodeAfterFirstDevice: builder.Configuration.GetValue("Agnes:Auth:Pairing:AllowCodeAfterFirstDevice", false)));
+builder.Services.AddSingleton(DeviceRoleOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<PairingGrants>();
 builder.Services.AddSingleton<PairingApprovals>();
 
@@ -153,7 +155,7 @@ var keypairAuthOptions = new KeypairAuthOptions
 {
     Enabled = builder.Configuration.GetValue("Agnes:Auth:Keypair:Enabled", false),
     AuthorizedKeysFile = builder.Configuration["Agnes:Auth:Keypair:AuthorizedKeysFile"]
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "authorized_keys"),
+        ?? Path.Combine(agnesHome, "authorized_keys"),
 };
 builder.Services.AddSingleton(sp => new KeypairAuth(
     keypairAuthOptions, sp.GetRequiredService<ILoggerFactory>().CreateLogger<KeypairAuth>()));
@@ -190,7 +192,25 @@ builder.Services.AddSingleton(sp => new OidcRedirectFlow(
     new HttpClient(),
     sp.GetRequiredService<IOidcStateStore>(),
     TimeProvider.System,
-    sp.GetRequiredService<ILoggerFactory>().CreateLogger<OidcRedirectFlow>()));
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger<OidcRedirectFlow>(),
+    sp.GetRequiredService<DeviceRoleOptions>()));
+
+// ---- Cloudflare Access browser assertion — optional and separate from native OIDC ----
+var cloudflareAccessOptions = new CloudflareAccessOptions
+{
+    Enabled = builder.Configuration.GetValue("Agnes:Auth:CloudflareAccess:Enabled", false),
+    TeamDomain = builder.Configuration["Agnes:Auth:CloudflareAccess:TeamDomain"],
+    Audience = builder.Configuration["Agnes:Auth:CloudflareAccess:Audience"],
+    JwksJson = builder.Configuration["Agnes:Auth:CloudflareAccess:JwksJson"],
+    JwksUri = builder.Configuration["Agnes:Auth:CloudflareAccess:JwksUri"],
+    AllowedEmailDomains = builder.Configuration.GetSection("Agnes:Auth:CloudflareAccess:AllowedEmailDomains").Get<string[]>() ?? [],
+};
+if (cloudflareAccessOptions.Enabled && !cloudflareAccessOptions.IsUsable)
+{
+    throw new InvalidOperationException(
+        "Enabled Cloudflare Access requires TeamDomain, Audience, and at least one allowed email domain.");
+}
+builder.Services.AddSingleton(new CloudflareAccessIdentity(cloudflareAccessOptions, new HttpClient()));
 
 // ---- mTLS client-certificate auth (enterprise) — optional; a certificate that chains to the configured
 // CA or matches a pin is the sole credential. Fail-closed the same way as OIDC above. ----
@@ -228,9 +248,15 @@ builder.Services.AddRateLimiter(o => AuthRateLimit.Configure(o, authRateLimit));
 
 // ---- MCP server registry (configured from the UI, persisted to ~/.agnes/mcp.json) ----
 var mcpFile = builder.Configuration["Agnes:McpFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "mcp.json");
+    ?? Path.Combine(agnesHome, "mcp.json");
 builder.Services.AddSingleton(sp => new McpRegistry(
     mcpFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<McpRegistry>()));
+
+// ---- Local model provider (Copilot BYOK), configured from the UI ----
+var localProviderFile = builder.Configuration["Agnes:LocalProviderFile"]
+    ?? Path.Combine(agnesHome, "local-provider.json");
+builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.LocalProviderRegistry(
+    localProviderFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.LocalProviderRegistry>()));
 
 // Strict vs lenient MCP startup resolution (default lenient): an unresolvable enabled server is either
 // skipped-with-a-warning (lenient) or fails the session start naming the server (strict).
@@ -251,7 +277,7 @@ builder.Services.AddPluginPoint<IMcpCatalogProvider>(p => p.Id);
 
 // ---- projects: per-repo bundles (sandbox + MCP + GitHub account + defaults) a session inherits ----
 var projectsFile = builder.Configuration["Agnes:ProjectsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "projects.json");
+    ?? Path.Combine(agnesHome, "projects.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ProjectStore(
     projectsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ProjectStore>()));
 
@@ -259,7 +285,7 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ProjectStore(
 //      connectivity/05). A separate store from projects (working copies vs. per-repo session config); the
 //      manager reuses GitService's clone/worktree/branch/status primitives rather than reinventing git. ----
 var checkoutsFile = builder.Configuration["Agnes:CheckoutsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "checkouts.json");
+    ?? Path.Combine(agnesHome, "checkouts.json");
 builder.Services.AddSingleton<Agnes.Host.Git.GitService>();
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.CheckoutStore(
     checkoutsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.CheckoutStore>()));
@@ -270,13 +296,13 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Git.CheckoutManager(
 
 // ---- review comments: file+line feedback anchored to a project, durable across sessions ----
 var reviewCommentsFile = builder.Configuration["Agnes:ReviewCommentsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "review-comments.json");
+    ?? Path.Combine(agnesHome, "review-comments.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Projects.ReviewCommentStore(
     reviewCommentsFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Projects.ReviewCommentStore>()));
 
 // ---- prompt library: host-persisted saved prompts + slash-token templates ("stop retyping prompts") ----
 var promptLibraryDir = builder.Configuration["Agnes:PromptLibraryDir"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+    ?? agnesHome;
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.PromptLibrary(
     promptLibraryDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.PromptLibrary>()));
 
@@ -334,7 +360,7 @@ builder.Services.AddPluginPoint<IPromptRegistryProvider>(p => p.Id);
 // plugin point end-to-end; a real provider (GitHub/Linear/…) is added as another IConnectedServiceProvider
 // with NO change to the broker. The profile store holds identity/routing only — never a secret.
 var connectedServicesDir = builder.Configuration["Agnes:ConnectedServicesDir"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+    ?? agnesHome;
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.ConnectedServiceProfileStore(
     connectedServicesDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Hosting.ConnectedServiceProfileStore>()));
 var templateServiceSecret = builder.Configuration["Agnes:ConnectedServices:Template:Token"];
@@ -388,7 +414,7 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.QuotaService(
 // clock is a seam under test.
 builder.Services.AddSingleton(TimeProvider.System);
 var attentionFile = builder.Configuration["Agnes:AttentionRequestsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "attention-requests.json");
+    ?? Path.Combine(agnesHome, "attention-requests.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Attention.AttentionRequestStore(
     attentionFile, sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Attention.AttentionRequestStore>()));
@@ -412,7 +438,7 @@ builder.Services.AddHostedService(sp => new Agnes.Host.Attention.AttentionTimeou
 // existing commit/credential behaviour is unchanged until a gate is explicitly configured. Config shape:
 //   "Agnes:Approvals:Gated": [ { "ActionId": "git.commit", "Surface": "SessionAgent" }, ... ]
 var approvalsFile = builder.Configuration["Agnes:ApprovalRequestsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "approval-requests.json");
+    ?? Path.Combine(agnesHome, "approval-requests.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Approvals.ApprovalRequestStore(
     approvalsFile, sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Approvals.ApprovalRequestStore>()));
@@ -434,7 +460,7 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Approvals.ApprovalGateService
 // Reuses the security/02 GitHub identity/membership lookup for all live checks. The grant + authorizer pair
 // is the seam collaboration/02 session-sharing consumes. See .ideas/collaboration/01-collaborators-and-social.md.
 var socialDir = builder.Configuration["Agnes:SocialDir"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes");
+    ?? agnesHome;
 builder.Services.AddSingleton(sp => new Agnes.Host.Social.CollaboratorStore(
     socialDir, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Social.CollaboratorStore>()));
 builder.Services.AddSingleton(sp => new Agnes.Host.Social.GrantStore(
@@ -478,7 +504,7 @@ builder.Services.AddSingleton<Agnes.Host.Sharing.PublicViewerTracker>();
 
 // ---- managed-sandbox registry: persisted so stopped/closed VMs stay visible (resume/delete) across restarts ----
 var sandboxesFile = builder.Configuration["Agnes:SandboxesFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandboxes.json");
+    ?? Path.Combine(agnesHome, "sandboxes.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Sessions.SandboxRegistry(
     sandboxesFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxRegistry>()));
 
@@ -559,34 +585,79 @@ builder.Services.AddSingleton<ICliFallback, Agnes.Host.Sessions.PortaPtyCliFallb
 // of allowed roots, and/or refuse to run any session outside a sandbox. Both default off (today's behaviour).
 // Enforced centrally in SessionManager's open path, so every entry (new / fork / cross-host handoff) is covered
 // regardless of what a client sends.
-builder.Services.AddSingleton(new Agnes.Host.Sessions.SessionSecurityOptions
+builder.Services.AddSingleton(Agnes.Host.Sessions.SessionSecurityOptions.FromConfiguration(
+    builder.Configuration, builder.Environment.IsDevelopment()));
+// ---- stalled-turn auto-continue (Agnes:AutoContinue:*) ----
+// Some agents end a turn reporting a normal completion while having produced nothing actionable — no
+// assistant message, no tool call, just reasoning (observed with OpenCode against a weak model: its agent
+// loop exits without error, and ACP has no way to say "I gave up"). The stall is ALWAYS surfaced as a
+// notice; this only controls whether the host also re-prompts, and how many times before it gives up.
+builder.Services.AddSingleton(new Agnes.Host.Sessions.AutoContinueOptions
 {
-    EnforceIsolationPolicy = !builder.Environment.IsDevelopment(),
-    WorkloadTrust = Enum.TryParse<Agnes.Host.Sessions.WorkloadTrust>(
-        builder.Configuration["Agnes:Security:WorkloadTrust"], ignoreCase: true, out var workloadTrust)
-            ? workloadTrust
-            : builder.Environment.IsDevelopment()
-                ? Agnes.Host.Sessions.WorkloadTrust.Trusted
-                : Agnes.Host.Sessions.WorkloadTrust.Untrusted,
-    AcknowledgeSharedKernelRisk = builder.Configuration.GetValue("Agnes:Security:AcknowledgeSharedKernelRisk", false),
-    AllowedSessionRoots = builder.Configuration.GetSection("Agnes:Security:AllowedSessionRoots").Get<string[]>() ?? [],
-    RequireSandbox = builder.Configuration.GetValue("Agnes:Security:RequireSandbox", false),
-    RequirePermissionPrompts = builder.Configuration.GetValue("Agnes:Security:RequirePermissionPrompts", false),
-    AllowUnsandboxedSkipPermissions = builder.Configuration.GetValue("Agnes:Security:AllowUnsandboxedSkipPermissions", false),
-    AllowedHostMcpServers = builder.Configuration.GetSection("Agnes:Security:AllowedHostMcpServers").Get<string[]>() ?? [],
-    HostMcpPolicy = Enum.TryParse<Agnes.Host.Sessions.HostMcpPolicy>(
-        builder.Configuration["Agnes:Security:HostMcpPolicy"], ignoreCase: true, out var hostMcpPolicy)
-            ? hostMcpPolicy
-            : Agnes.Host.Sessions.HostMcpPolicy.Legacy,
-    SessionIsolation = Enum.TryParse<Agnes.Host.Sessions.SessionIsolation>(
-        builder.Configuration["Agnes:Security:SessionIsolation"], ignoreCase: true, out var iso) ? iso : Agnes.Host.Sessions.SessionIsolation.Shared,
-    RestrictConfigToOwner = builder.Configuration.GetValue("Agnes:Security:RestrictConfigToOwner", false),
-    MaxConcurrentSandboxes = builder.Configuration.GetValue("Agnes:Security:MaxConcurrentSandboxes", 0),
-    TranscriptRetentionDays = builder.Configuration.GetValue("Agnes:Security:TranscriptRetentionDays", 0),
+    Enabled = builder.Configuration.GetValue("Agnes:AutoContinue:Enabled", true),
+    MaxAttempts = builder.Configuration.GetValue("Agnes:AutoContinue:MaxAttempts", 2),
+    Prompt = builder.Configuration["Agnes:AutoContinue:Prompt"] is { Length: > 0 } p
+        ? p
+        : new Agnes.Host.Sessions.AutoContinueOptions().Prompt,
+});
+
+// ---- an agent sending the user a file (Agnes:Sharing:*) ----
+// Sending copies: the file is duplicated into the workspace and then pulled down by every connected client,
+// phones included. The cap is what stops "send the user the build" from meaning a multi-gigabyte download
+// somebody pays for on mobile data — a clear refusal the agent can act on beats a silent, very slow success.
+builder.Services.AddSingleton(new Agnes.Host.Sessions.SharingOptions
+{
+    MaxBytes = builder.Configuration.GetValue("Agnes:Sharing:MaxBytes", Agnes.Host.Sessions.SharingOptions.DefaultMaxBytes),
+});
+// ---- the agent's one-line status (Agnes:Status:*) ----
+// The clip keeps a status renderable where a status is rendered (a row, a tab, a phone list); the interval
+// keeps a chatty agent from burying its own transcript. Neither drops a report: a long one is cut with the
+// agent told, and a fast one replaces whatever was waiting for the window to close. See docs/agent-status.md.
+builder.Services.AddSingleton(new Agnes.Host.Sessions.StatusOptions
+{
+    MaxChars = builder.Configuration.GetValue("Agnes:Status:MaxChars", Agnes.Host.Sessions.StatusOptions.DefaultMaxChars),
+    MinIntervalSeconds = builder.Configuration.GetValue(
+        "Agnes:Status:MinIntervalSeconds", Agnes.Host.Sessions.StatusOptions.DefaultMinIntervalSeconds),
 });
 builder.Services.AddHostedService<Agnes.Host.Sessions.UsageReporter>();
 builder.Services.AddHostedService<Agnes.Host.Events.TranscriptRetentionService>();
 builder.Services.AddSingleton<SessionManager>();
+
+// The one access decision both front doors ask: the SignalR hub, and the display channel's WebSocket.
+builder.Services.AddSingleton<Agnes.Host.Sharing.SessionAccessDecider>();
+
+// ---- the graphical sandbox's display channel (Agnes:Display:*, docs/display-channel.md) ----
+// One broker per graphical session owns the single capture connection; watching clients arrive over a
+// dedicated WebSocket and the agent's computer_* tools read and drive the same surface. Registered
+// unconditionally and cheap when unused: no broker exists until a consumer asks for one, and a host with no
+// graphical sessions runs one dictionary scan every fifteen seconds and nothing else.
+builder.Services.AddSingleton(new Agnes.Host.Display.DisplayOptions
+{
+    ControlIdleSeconds = builder.Configuration.GetValue("Agnes:Display:ControlIdleSeconds", 60),
+    MaxFps = builder.Configuration.GetValue("Agnes:Display:MaxFps", 15),
+    JpegQuality = builder.Configuration.GetValue("Agnes:Display:JpegQuality", 75),
+    FullFrameThresholdPercent = builder.Configuration.GetValue("Agnes:Display:FullFrameThresholdPercent", 40),
+    InputEventsPerMinute = builder.Configuration.GetValue("Agnes:Display:InputEventsPerMinute", 240),
+    InputEventsPerToolCall = builder.Configuration.GetValue("Agnes:Display:InputEventsPerToolCall", 32),
+    MaxTypeBytes = builder.Configuration.GetValue("Agnes:Display:MaxTypeBytes", 4096),
+    MaxWaitMs = builder.Configuration.GetValue("Agnes:Display:MaxWaitMs", 10_000),
+    BlockedChords = builder.Configuration.GetSection("Agnes:Display:BlockedChords").Get<string[]>()
+        ?? Agnes.Host.Display.DisplayOptions.DefaultBlockedChords,
+});
+builder.Services.AddSingleton<Agnes.Host.Display.SessionManagerDisplayBridge>();
+builder.Services.AddSingleton<Agnes.Host.Display.IDisplaySessionSource>(sp =>
+    sp.GetRequiredService<Agnes.Host.Display.SessionManagerDisplayBridge>());
+builder.Services.AddSingleton<Agnes.Host.Display.IDisplayControlSink>(sp =>
+    sp.GetRequiredService<Agnes.Host.Display.SessionManagerDisplayBridge>());
+builder.Services.AddSingleton(sp => new Agnes.Host.Display.DisplayBrokerRegistry(
+    sp.GetRequiredService<Agnes.Host.Display.IDisplaySessionSource>(),
+    sp.GetRequiredService<Agnes.Host.Display.DisplayOptions>(),
+    sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
+    sp.GetRequiredService<Agnes.Host.Display.IDisplayControlSink>(),
+    sp.GetRequiredService<ILoggerFactory>(),
+    TimeProvider.System));
+builder.Services.AddSingleton<Agnes.Host.Mcp.IAgnesDisplayBackend, Agnes.Host.Mcp.BrokerDisplayBackend>();
+builder.Services.AddHostedService<Agnes.Host.Display.DisplayIdleSweeper>();
 
 // ---- Agnes AS an MCP server (see .ideas/voice/01-voice-assistant.md) ----
 // The reverse of Agnes's MCP *management* feature (where Agnes consumes other MCP servers): here Agnes exposes
@@ -598,12 +669,114 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<Agnes.Host.Mcp.TranscriptPrivacyFilter>();
 builder.Services.AddSingleton<Agnes.Host.Mcp.IAgnesMcpBackend>(sp => new Agnes.Host.Mcp.SessionManagerMcpBackend(
     sp.GetRequiredService<SessionManager>(),
-    sp.GetRequiredService<Agnes.Host.Mcp.TranscriptPrivacyFilter>()));
+    sp.GetRequiredService<Agnes.Host.Mcp.TranscriptPrivacyFilter>(),
+    sp.GetRequiredService<SessionGoalManager>()));
+// ---- Agnes's own MCP endpoint, offered to sandboxed agents over the sandbox bridge ----
+// Plain HTTP on purpose: the address is the bridge gateway, unreachable from anywhere but the sandboxes,
+// which is the same containment the credential broker and MCP forward already rely on. Terminating TLS here
+// would mean trusting a self-signed host certificate inside every guest. Opt-in: with no bind address there
+// is no extra listener and no agnes server is offered to any agent.
+var guestMcpBind = builder.Configuration["Agnes:Sandbox:GuestMcpBindUrl"];
+var guestMcpUrl = builder.Configuration["Agnes:Sandbox:GuestMcpUrl"];
+
+// ---- and the same endpoint on loopback, for agents that run ON the host (unsandboxed sessions) ----
+// On by default: without it the agnes tools reach only sandboxed sessions, which is not a security posture,
+// just a gap. Loopback plaintext is acceptable for the same three reasons the bridge listener is — the port
+// serves nothing but the MCP path (the gate below), the traffic never leaves this machine, and the only
+// credential crossing it is a per-session token that carries no device authority. See docs/security.md.
+var localMcpBind = builder.Configuration.GetValue("Agnes:Mcp:LocalEnabled", true)
+    ? builder.Configuration["Agnes:Mcp:LocalUrl"] is { Length: > 0 } configured
+        ? configured
+        : Agnes.Host.Mcp.LocalMcpOptions.DefaultBindUrl
+    : null;
+
+// A port already in use must not take the whole host down with it — a second Agnes on the same machine is
+// an ordinary thing to do. Degrade to "no local endpoint" and say so.
+if (localMcpBind is not null
+    && Agnes.Host.Mcp.GuestMcpEndpoint.TryGetPort(localMcpBind) is { } wantedPort
+    && !Agnes.Host.Mcp.GuestMcpEndpoint.IsPortFree(wantedPort))
+{
+    Console.Error.WriteLine(
+        $"[agnes] Local MCP port {wantedPort} is already in use; the loopback MCP endpoint is disabled for this "
+        + "host. Unsandboxed sessions will not be offered the agnes tools. Set Agnes:Mcp:LocalUrl to a free port.");
+    localMcpBind = null;
+}
+
+// Seizing a fixed, well-known port is the daemon's job. When Agnes.Host is loaded INSIDE another process —
+// the integration tests' WebApplicationFactory, tooling embedding the host — it must not: two such hosts in
+// one process would collide on the port, and an embedded host is not what an agent's on-disk MCP config is
+// written against anyway.
+var isDaemon = System.Reflection.Assembly.GetEntryAssembly() == typeof(Agnes.Host.Mcp.AgnesMcpEndpoints).Assembly;
+if (!isDaemon)
+{
+    guestMcpBind = null;
+    localMcpBind = null;
+}
+
+// Add these listeners through whichever channel ADDS to the host's main listener rather than replacing it.
+// Kestrel's two endpoint channels don't merge symmetrically and the wrong one silently unbinds the listener
+// every client uses — see GuestMcpEndpoint.ChooseChannel for the three cases and what each does.
+var extraBinds = new[] { guestMcpBind, localMcpBind }.Where(u => !string.IsNullOrWhiteSpace(u)).ToArray();
+if (extraBinds.Length > 0)
+{
+    var hostingUrls = builder.Configuration["urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+    var kestrelEndpoints = builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Any();
+
+    switch (Agnes.Host.Mcp.GuestMcpEndpoint.ChooseChannel(hostingUrls, kestrelEndpoints))
+    {
+        case Agnes.Host.Mcp.GuestMcpEndpoint.ListenerChannel.HostingUrls:
+            var urls = hostingUrls;
+            foreach (var extra in extraBinds)
+            {
+                urls = Agnes.Host.Mcp.GuestMcpEndpoint.CombineUrls(urls, extra!);
+            }
+
+            builder.WebHost.UseUrls(urls!);
+            break;
+
+        case Agnes.Host.Mcp.GuestMcpEndpoint.ListenerChannel.KestrelEndpoint:
+            builder.WebHost.ConfigureKestrel(kestrel =>
+            {
+                foreach (var extra in extraBinds)
+                {
+                    if (Agnes.Host.Mcp.GuestMcpEndpoint.TryGetEndpoint(extra) is { } endpoint)
+                    {
+                        kestrel.Listen(endpoint.Address, endpoint.Port);
+                    }
+                }
+            });
+            break;
+
+        default:
+            // Neither channel is in use, so Kestrel is on its own default endpoint — which applies only
+            // while both channels are empty. Binding here would take the main listener away with it.
+            Console.Error.WriteLine(
+                "[agnes] No listener is configured (ASPNETCORE_URLS or Kestrel:Endpoints), so the plaintext MCP "
+                + "endpoints were not bound — adding one would have replaced the host's default listener. "
+                + "Configure a listener and they will come up alongside it.");
+            guestMcpBind = null;
+            localMcpBind = null;
+            break;
+    }
+}
+
+builder.Services.AddSingleton(new Agnes.Host.Sessions.GuestMcpOptions
+{
+    Url = string.IsNullOrWhiteSpace(guestMcpBind) ? null : guestMcpUrl,
+    BindUrl = guestMcpBind,
+});
+builder.Services.AddSingleton(new Agnes.Host.Mcp.LocalMcpOptions
+{
+    Url = Agnes.Host.Mcp.LocalMcpOptions.UrlFor(localMcpBind),
+    BindUrl = localMcpBind,
+});
+builder.Services.AddSingleton<Agnes.Host.Mcp.SessionMcpTokens>();
+
 builder.Services.AddSingleton<Agnes.Host.Mcp.IMcpDeviceAuthenticator>(sp =>
     new Agnes.Host.Mcp.DeviceRegistryMcpAuthenticator(sp.GetRequiredService<DeviceRegistry>()));
 builder.Services.AddSingleton<Agnes.Host.Mcp.IMcpCallerTokenSource, Agnes.Host.Mcp.HttpContextMcpTokenSource>();
 builder.Services
-    .AddMcpServer()
+    .AddMcpServer(Agnes.Host.Mcp.AgnesMcpEndpoints.ConfigureServer)
     // Stateless: each tool call is its own HTTP POST, so the device token is re-authenticated on EVERY call
     // (matching the SignalR hub's per-connection check but at per-request granularity).
     .WithHttpTransport(o => o.Stateless = true)
@@ -650,7 +823,7 @@ if (Agnes.Host.Channels.WhatsAppBridgeOptions.FromConfiguration(builder.Configur
 
 builder.Services.AddPluginPoint<IChannelBridge>(b => b.Id);
 var channelLinksFile = builder.Configuration["Agnes:ChannelLinksFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "channel-links.json");
+    ?? Path.Combine(agnesHome, "channel-links.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Channels.ChannelLinkStore(
     channelLinksFile, sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Channels.ChannelLinkStore>()));
@@ -712,7 +885,7 @@ else
 
 builder.Services.AddPluginPoint<INotificationChannel>(c => c.Id);
 var pushRegistrationsFile = builder.Configuration["Agnes:PushRegistrationsFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "push-registrations.json");
+    ?? Path.Combine(agnesHome, "push-registrations.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Notifications.PushRegistrationStore(
     pushRegistrationsFile,
     sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
@@ -736,12 +909,33 @@ builder.Services.AddSingleton<IAutomationTrigger, IntervalAutomationTrigger>();
 builder.Services.AddSingleton<IAutomationTrigger, CronAutomationTrigger>();
 builder.Services.AddPluginPoint<IAutomationTrigger>(t => t.Kind);
 var scheduledTasksFile = builder.Configuration["Agnes:ScheduledTasksFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "scheduled-tasks.json");
+    ?? Path.Combine(agnesHome, "scheduled-tasks.json");
 builder.Services.AddSingleton(sp => new ScheduledTaskManager(
     sp.GetRequiredService<IPluginRegistry<IAutomationTrigger>>(),
     sp.GetRequiredService<Agnes.Abstractions.Events.IEventBus>(),
     scheduledTasksFile));
 builder.Services.AddHostedService<ScheduledRunner>();
+
+// ---- standing goals: nudge a session that goes quiet with work still owed ----
+// Idle-triggered rather than scheduled, so a working agent is never talked over and a stopped one is picked
+// up quickly. Bounded by a nudge budget plus an optional expiry, because an agent able to arm unbounded
+// self-prompting is a runaway. Persisted, so an armed goal survives a host restart.
+builder.Services.AddSingleton(sp => new SessionGoalManager(
+    builder.Configuration["Agnes:GoalsFile"]
+    ?? Path.Combine(agnesHome, "session-goals.json")));
+builder.Services.AddHostedService<GoalWatcher>();
+
+// ---- liveness watchdog: say when a turn stops getting anywhere ----
+// Agnes could previously only tell a live agent from a dead one. A process that stays up with its stream
+// open but stops producing looks exactly like one hard at work — forever. This reports (never restarts):
+// a wedged turn may still recover, and throwing away visible work is worse than saying so.
+builder.Services.AddSingleton(new LivenessOptions
+{
+    Enabled = builder.Configuration.GetValue("Agnes:Liveness:Enabled", true),
+    QuietLimit = TimeSpan.FromMinutes(
+        builder.Configuration.GetValue("Agnes:Liveness:QuietMinutes", (int)SessionLiveness.DefaultQuietLimit.TotalMinutes)),
+});
+builder.Services.AddHostedService<LivenessWatchdog>();
 
 // ---- agent adapters (plugins) ----
 builder.Services.AddSingleton<IAgentAdapter>(sp =>
@@ -768,6 +962,16 @@ builder.Services.AddSingleton<IAgentAdapter>(sp =>
     return OpenCodeAgent.Create(loggerFactory, options);
 });
 
+// OpenCode via its NATIVE HTTP server, offered alongside the ACP adapter — the same both-paths shape
+// Claude Code has. The native surface reports failures and retries the ACP one cannot express, but it is
+// OpenCode's internal API rather than a versioned spec, so ACP stays the default.
+builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.OpenCode.Native.OpenCodeNativeAgent.Create(
+    sp.GetRequiredService<ILoggerFactory>(),
+    new Agnes.Agents.OpenCode.Native.OpenCodeNativeOptions
+    {
+        Command = builder.Configuration["Agnes:OpenCodeNative:Command"] ?? "opencode",
+    }));
+
 // Claude Code via its NATIVE SDK (stream-json), offered alongside the ACP adapter.
 builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Native.ClaudeCodeNative.Create(
     sp.GetRequiredService<ILoggerFactory>(),
@@ -780,6 +984,92 @@ builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Codex.CodexAppSe
     builder.Configuration["Agnes:Codex:Command"],
     builder.Configuration.GetSection("Agnes:Codex:Args").Get<string[]>(),
     builder.Configuration.GetValue("Agnes:Codex:EnableUserInput", false)));
+
+// GitHub Copilot CLI, which ships native ACP (`copilot --acp`) — a launch descriptor, no bridge.
+// BYOK is environment-only on Copilot's side, so the provider block is read here and rendered to the
+// COPILOT_PROVIDER_* variables by the adapter; without a base URL it stays inert and Copilot uses
+// GitHub's own model routing.
+builder.Services.AddSingleton<IAgentAdapter>(sp =>
+{
+    var provider = builder.Configuration.GetSection("Agnes:Copilot:Provider");
+    var options = new Agnes.Agents.Copilot.CopilotOptions
+    {
+        Command = builder.Configuration["Agnes:Copilot:Command"] ?? "copilot",
+        Arguments = builder.Configuration.GetSection("Agnes:Copilot:Args").Get<string[]>() ?? ["--acp"],
+        FleetMode = builder.Configuration.GetValue("Agnes:Copilot:FleetMode", false),
+        SubagentNames = builder.Configuration.GetSection("Agnes:Copilot:SubagentNames").Get<string[]>()
+            ?? Agnes.Agents.Copilot.CopilotSubagentSettings.ModelPinningAgents,
+        // Withheld tools. When a custom provider is configured this defaults to the recommended set
+        // rather than empty: apply_patch is offered as an OpenAI *custom* tool with a Lark grammar, and a
+        // server that implements only function tools rejects the entire request, so the default that
+        // "works" against GitHub's own models is the default that cannot start against a local one.
+        // "Agnes:Copilot:ExcludedTools": [] switches it off explicitly.
+        ExcludedTools = sp.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>().ExcludedTools() is { Count: > 0 } fromUi
+            ? fromUi
+            : builder.Configuration.GetSection("Agnes:Copilot:ExcludedTools").Get<string[]>()
+                ?? (provider["BaseUrl"] is { Length: > 0 }
+                    ? Agnes.Agents.Copilot.CopilotLocalCompatibility.RecommendedExcludedTools
+                    : []),
+        // No GitHub at all: no authentication, telemetry, web tools, GitHub MCP or auto-update. Ignored
+        // unless a provider is configured, since Copilot needs something to infer against.
+        Effort = sp.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>().Effort
+            ?? (Enum.TryParse<Agnes.Agents.Copilot.CopilotEffort>(
+                    builder.Configuration["Agnes:Copilot:Effort"], ignoreCase: true, out var cfgEffort)
+                ? cfgEffort
+                : null),
+        Offline = sp.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>().Offline
+            || builder.Configuration.GetValue("Agnes:Copilot:Offline", false),
+        // The UI-configured provider wins over appsettings, and is read on each launch rather than at
+        // host start, so changing it in settings takes effect on the next session without a restart.
+        Provider = sp.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>().ProviderOptions()
+            ?? (provider["BaseUrl"] is { Length: > 0 } baseUrl
+            ? new Agnes.Agents.Copilot.CopilotProviderOptions
+            {
+                BaseUrl = baseUrl,
+                Type = provider.GetValue("Type", Agnes.Agents.Copilot.CopilotProviderType.OpenAi),
+                ApiKey = provider["ApiKey"],
+                BearerToken = provider["BearerToken"],
+                WireApi = provider.GetValue("WireApi", Agnes.Agents.Copilot.CopilotWireApi.Completions),
+                Transport = provider.GetValue("Transport", Agnes.Agents.Copilot.CopilotTransport.Http),
+                AzureApiVersion = provider["AzureApiVersion"],
+                Headers = provider.GetSection("Headers").Get<string[]>() ?? [],
+                Model = provider["Model"],
+                ModelId = provider["ModelId"],
+                WireModel = provider["WireModel"],
+                MaxPromptTokens = provider.GetValue<int?>("MaxPromptTokens"),
+                MaxOutputTokens = provider.GetValue<int?>("MaxOutputTokens"),
+            }
+            : null),
+    };
+    return Agnes.Agents.Copilot.CopilotAgent.Create(sp.GetRequiredService<ILoggerFactory>(), options);
+});
+
+// Pi via its RPC mode (`pi --mode rpc`), a bidirectional JSONL protocol — Pi ships no ACP. Chosen for
+// unattended work: Pi retries a failed provider call at the agent-turn level rather than dropping the
+// turn. It has no permission protocol at all, so the adapter refuses an attended session outright.
+builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Pi.PiAgent.Create(
+    sp.GetRequiredService<ILoggerFactory>(),
+    new Agnes.Agents.Pi.PiOptions
+    {
+        Command = builder.Configuration["Agnes:Pi:Command"] ?? "pi",
+        Arguments = builder.Configuration.GetSection("Agnes:Pi:Args").Get<string[]>() ?? ["--mode", "rpc"],
+    }));
+
+// Antigravity (`agy`) via its stream-json print mode — Google ships no ACP for it. Unlike CodeyBox's
+// one-shot `agy --print` per prompt, this holds ONE process open and feeds it a JSON line per turn, so
+// the conversation stays in the CLI's memory between turns rather than being reconstructed by --continue.
+// Autonomous only, and the adapter enforces that: without --dangerously-skip-permissions the CLI does not
+// ask, it silently writes to a scratch directory and claims success.
+builder.Services.AddSingleton<IAgentAdapter>(sp => Agnes.Agents.Antigravity.AntigravityAgent.Create(
+    sp.GetRequiredService<ILoggerFactory>(),
+    new Agnes.Agents.Antigravity.AntigravityOptions
+    {
+        Command = builder.Configuration["Agnes:Antigravity:Command"] ?? "agy",
+        Arguments = builder.Configuration.GetSection("Agnes:Antigravity:Args").Get<string[]>()
+            ?? ["--input-format", "stream-json", "--output-format", "stream-json"],
+        PrintTimeout = TimeSpan.FromSeconds(
+            builder.Configuration.GetValue<int?>("Agnes:Antigravity:PrintTimeoutSeconds") ?? 1800),
+    }));
 
 // User-configured extra ACP backends (Agnes:CustomBackends): a "bring your own ACP CLI" path so a
 // host operator can point Agnes at any ACP-speaking binary from config alone — no new package. Each
@@ -814,6 +1104,17 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
             StoragePoolName = builder.Configuration["Agnes:Sandbox:Incus:StoragePool"] ?? "default",
             DefaultImage = builder.Configuration["Agnes:Sandbox:Incus:Image"] ?? "images:ubuntu/24.04/cloud",
             Bridge = builder.Configuration["Agnes:Sandbox:Incus:Bridge"] ?? "incusbr0",
+            // Two knobs a *second* daemon sharing one Incus needs, and nothing else does. Without the
+            // prefix its VMs are named `agnes-<id>` exactly like the operator's, so "the instance this
+            // daemon made" and "the instance somebody is working in" cannot be told apart from the
+            // outside and cleanup becomes a guess. The ready timeout is raised for the same situation:
+            // a machine already running other VMs boots one slower than a dedicated sandbox host.
+            InstancePrefix = builder.Configuration["Agnes:Sandbox:Incus:InstancePrefix"] is { Length: > 0 } prefix
+                ? prefix
+                : "agnes-",
+            GuestReadyTimeout = builder.Configuration.GetValue<int?>("Agnes:Sandbox:Incus:GuestReadySeconds") is { } readySeconds and > 0
+                ? TimeSpan.FromSeconds(readySeconds)
+                : TimeSpan.FromMinutes(3),
             // Default VM resource caps, overridable per project. Config is in friendly units (CPU cores,
             // RAM in GiB, disk in GiB); unset keeps the 2 / 12 / 16 defaults.
             DefaultLimits = SandboxLimitsFromConfig(builder.Configuration),
@@ -828,6 +1129,12 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
     builder.Services.AddSingleton<Agnes.Sandbox.Credentials.ClaudeCredentialProvider>();
     builder.Services.AddSingleton<Agnes.Sandbox.Credentials.IAgentCredentialProvider>(
         sp => sp.GetRequiredService<Agnes.Sandbox.Credentials.ClaudeCredentialProvider>());
+
+    // OpenCode's provider key. Without it a sandboxed OpenCode can only reach the credential-free
+    // providers and, rather than saying so, silently streams from a model the user did not choose.
+    builder.Services.AddSingleton<Agnes.Sandbox.Credentials.IAgentCredentialProvider>(
+        sp => new Agnes.Sandbox.Credentials.OpenCodeCredentialProvider(
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Sandbox.Credentials.OpenCodeCredentialProvider>()));
 
     builder.Services.AddSingleton<Agnes.Sandbox.Credentials.ClaudeTokenRotationPusher>();
 
@@ -874,7 +1181,7 @@ if (string.Equals(builder.Configuration["Agnes:Sandbox:Provider"], "incus", Stri
     builder.Services.AddSingleton<Agnes.Sandbox.ISandboxImageBuilder>(
         sp => sp.GetRequiredService<Agnes.Sandbox.Incus.IncusSandboxProvider>());
     var imageManifestFile = builder.Configuration["Agnes:Sandbox:ImageManifest"]
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "sandbox-image.json");
+        ?? Path.Combine(agnesHome, "sandbox-image.json");
     builder.Services.AddSingleton(sp => new Agnes.Host.Sessions.SandboxImageManager(
         sp.GetRequiredService<Agnes.Sandbox.ISandboxImageBuilder>(), imageManifestFile,
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Sessions.SandboxImageManager>()));
@@ -888,7 +1195,8 @@ builder.Services.AddPluginPoint<Agnes.Sandbox.ISandboxProvider>(p => p.Name);
 // Credential sources + the Connect-GitHub flow are always available (a user can link GitHub before
 // they ever open a sandbox); the broker above only consumes what's registered here.
 builder.Services.AddSingleton<Agnes.Host.Hosting.CredentialSourceRegistry>();
-builder.Services.AddSingleton(_ => new Agnes.Host.Hosting.GitHubAppStore());
+builder.Services.AddSingleton(_ => new Agnes.Host.Hosting.GitHubAppStore(
+    builder.Configuration["Agnes:GitHubAppFile"] ?? Path.Combine(agnesHome, "github-app.json")));
 builder.Services.AddSingleton(sp => new Agnes.Host.Hosting.GitHubConnectFlow(
     sp.GetRequiredService<Agnes.Host.Hosting.GitHubAppStore>(),
     sp.GetRequiredService<Agnes.Host.Hosting.CredentialSourceRegistry>(),
@@ -1060,9 +1368,9 @@ builder.Services.AddSingleton<Agnes.Host.Plugins.IPluginPackageVerifier>(sp =>
         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.NuGetSignatureVerifier>()));
 
 var pluginsRoot = builder.Configuration["Agnes:Plugins:Directory"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "plugins");
+    ?? Path.Combine(agnesHome, "plugins");
 var pluginStateFile = builder.Configuration["Agnes:Plugins:StateFile"]
-    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agnes", "plugins.json");
+    ?? Path.Combine(agnesHome, "plugins.json");
 builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginStateStore(
     pluginStateFile, sp.GetRequiredService<ILoggerFactory>().CreateLogger<Agnes.Host.Plugins.PluginStateStore>()));
 
@@ -1085,6 +1393,27 @@ builder.Services.AddSingleton(sp => new Agnes.Host.Plugins.PluginManagementServi
 
 
 var app = builder.Build();
+
+// FIRST in the pipeline on purpose. These ports are plaintext — one reachable from every sandbox, one from
+// anything running on this machine — so the path restriction has to run before anything else can respond on
+// them: registered later, authentication answers /agnes with a 401 instead, which both leaks that the hub is
+// there and would serve it outright to anyone holding a device token. Everything but the MCP endpoint is
+// refused here, on every plaintext port at once.
+var plaintextMcpPorts = Agnes.Host.Mcp.GuestMcpEndpoint.RestrictedPorts(guestMcpBind, localMcpBind);
+if (plaintextMcpPorts.Count > 0)
+{
+    app.Use(async (ctx, next) =>
+    {
+        if (plaintextMcpPorts.Contains(ctx.Connection.LocalPort)
+            && !Agnes.Host.Mcp.GuestMcpEndpoint.IsAllowedPath(ctx.Request.Path.Value))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await next();
+    });
+}
 
 // Eagerly instantiate the rotation pusher (its FileSystemWatcher starts in the ctor) so live
 // sandboxes get refreshed credentials when the host claude CLI rotates its OAuth token.
@@ -1115,6 +1444,8 @@ _ = app.Services.GetRequiredService<Agnes.Host.Notifications.PushNotificationDis
 await app.Services.GetRequiredService<Agnes.Host.Plugins.PluginInstaller>().RestoreEnabledPluginsAsync();
 
 var tokens = app.Services.GetRequiredService<DeviceRegistry>();
+// Per-session MCP bearers — the other credential the /mcp-agnes wall accepts (see there).
+var sessionMcpTokens = app.Services.GetRequiredService<Agnes.Host.Mcp.SessionMcpTokens>();
 // The host event spine — auth endpoints emit observe-only audit events (device paired/revoked) on it so a
 // plugin can react (notify, log) without the security-critical DeviceRegistry taking an async dependency.
 var authEvents = app.Services.GetRequiredService<Agnes.Abstractions.Events.IEventBus>();
@@ -1155,6 +1486,20 @@ if (webFiles is not null)
         ContentTypeProvider = contentTypes,
         ServeUnknownFileTypes = true,
         DefaultContentType = "application/octet-stream",
+        // Always revalidate the HTML shell and the two bootstrap modules. If an Access session expires,
+        // a cached shell would keep trying to load protected framework assets and surface misleading
+        // CORS/service-worker errors instead of taking the user through the gateway again. The bootstrap
+        // modules are deliberately not immutable: Uno keeps their package directory stable, so a browser
+        // must not reuse an older PWA-enabled config after the server changes it for an Access-gated UI.
+        OnPrepareResponse = context =>
+        {
+            if (string.Equals(context.File.Name, "index.html", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(context.File.Name, "uno-bootstrap.js", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(context.File.Name, "uno-config.js", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Context.Response.Headers.CacheControl = "no-store";
+            }
+        },
     };
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = webFiles });
     app.UseStaticFiles(staticOptions);
@@ -1162,6 +1507,13 @@ if (webFiles is not null)
 
 // Throttle the auth bootstrap endpoints (per-IP + global); every other request is unlimited.
 app.UseRateLimiter();
+
+// WebSockets, for the display channel only. It goes AFTER the plaintext MCP listeners' path gate (installed
+// above) and after the rate limiter, so a request on a guest/loopback port is already 404'd before it can be
+// upgraded — an unauthenticated plaintext socket into a session's screen is exactly what that gate exists to
+// prevent. It goes BEFORE the auth middleware below, because the gate has to see a normal HTTP request; the
+// upgrade itself happens later still, inside the endpoint, after both auth and authorization have passed.
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 
 // Reject unauthorized clients at the negotiate level so the connection never establishes.
 app.Use(async (context, next) =>
@@ -1176,13 +1528,29 @@ app.Use(async (context, next) =>
         }
     }
 
+    // The display channel authenticates exactly as the hub does — the device token in the access_token
+    // query — and is rejected here, before the WebSocket upgrade, so an unauthenticated client gets an HTTP
+    // 401 it can read rather than a socket that closes for no stated reason. A public link is deliberately
+    // NOT accepted: it grants a read-only transcript, never a live screen of a machine somebody is working on.
+    if (context.Request.Path.StartsWithSegments(Agnes.Protocol.DisplayWire.Path))
+    {
+        var token = context.Request.Query[WireProtocol.TokenParameter].ToString();
+        if (!tokens.IsValid(token))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+    }
+
     // Agnes-as-MCP-server endpoint: gate every request (each tool call is its own POST in stateless mode) on a
-    // valid device token, read from an Authorization: Bearer header (the OpenAI Realtime MCP connector) or the
-    // access_token query. The tools re-resolve the caller identity from the same token; this is the outer wall.
+    // credential we recognize, read from an Authorization: Bearer header (how both an agent's generated config
+    // and the OpenAI Realtime MCP connector authenticate) or the access_token query. This is the outer wall;
+    // the tools re-resolve the caller from the same token and decide what it may do. See McpEndpointGate for
+    // which bearers pass and why a session token has to be one of them.
     if (context.Request.Path.StartsWithSegments(Agnes.Host.Mcp.AgnesMcpEndpoints.Path))
     {
         var mcpToken = Agnes.Host.Mcp.HttpContextMcpTokenSource.ExtractToken(context);
-        if (!tokens.IsValid(mcpToken))
+        if (!Agnes.Host.Mcp.McpEndpointGate.IsAccepted(mcpToken, tokens, sessionMcpTokens))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return;
@@ -1193,6 +1561,11 @@ app.Use(async (context, next) =>
 });
 
 app.MapHub<AgnesHub>(WireProtocol.HubPath);
+
+// The graphical sandbox's display channel: /display/{sessionId}, one binary WebSocket per watching client.
+// Not routed over the hub on purpose — see DisplayChannelEndpoint. The relay transport does not carry it yet;
+// docs/display-channel.md says so.
+app.MapDisplayChannel();
 
 // Map the Agnes MCP server (Streamable HTTP). Authenticated by the middleware above; tools authorize per call.
 app.MapMcp(Agnes.Host.Mcp.AgnesMcpEndpoints.Path);
@@ -1233,7 +1606,7 @@ static string? PinnedFingerprint(IHostCertificateProvider provider)
     => provider.CaValidatedHostName is { Length: > 0 } ? null : provider.Fingerprint;
 
 // Pair a new device with the current code; returns a durable per-device token (shown once).
-app.MapPost("/pair", async (PairRequest request, PairingGrants grants) =>
+app.MapPost("/pair", async (PairRequest request, PairingGrants grants, DeviceRoleOptions roles) =>
 {
     if (!tokens.PairingEnabled)
     {
@@ -1243,12 +1616,16 @@ app.MapPost("/pair", async (PairRequest request, PairingGrants grants) =>
     // The same field carries either a QR grant (256-bit, minted by an already-paired device) or the
     // typed bootstrap code. Try the strong one first: a grant is unguessable, so accepting it costs
     // nothing, while the code is closed as soon as the host has a device that could have vouched.
-    if (grants.TryRedeem(request.Code, out _))
+    if (grants.TryRedeem(request.Code, out _, out var grantedRole))
     {
-        var granted = tokens.IssueDeviceToken(request.DeviceName, subject: "pairing", kind: "pairing-grant");
+        // A grant hands over the standing of the device that minted it: an Owner's QR admits an Owner (the
+        // operator vouching with their own authority, exactly as the typed code does), a Member's admits a
+        // Member. Anything else would make "show a QR" a way for a Member to promote itself.
+        var granted = tokens.IssueDeviceToken(
+            request.DeviceName, subject: "pairing", kind: "pairing-grant", role: grantedRole);
         await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(
             granted.DeviceId, granted.DeviceName, "pairing-grant", "pairing-grant"));
-        return Results.Ok(new PairResponse(granted.DeviceId, granted.DeviceName, granted.Token));
+        return Results.Ok(new PairResponse(granted.DeviceId, granted.DeviceName, granted.Token, granted.Role));
     }
 
     var result = tokens.TryPair(request.Code, request.DeviceName);
@@ -1266,12 +1643,12 @@ app.MapPost("/pair", async (PairRequest request, PairingGrants grants) =>
     }
 
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "pairing", "pairing"));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // Exchange a GitHub user access token (obtained by the client via the device flow) for an Agnes device
 // token, if the identity is on the host's allowlist. The GitHub token is verified then discarded.
-app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHubIdentity github, CancellationToken ct) =>
+app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHubIdentity github, DeviceRoleOptions roles, CancellationToken ct) =>
 {
     if (!github.Options.IsUsable)
     {
@@ -1293,14 +1670,19 @@ app.MapPost("/auth/github/exchange", async (GitHubExchangeRequest request, GitHu
     }
 
     var login = verified.Login;
-    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "github:" + login, kind: "github");
+    // A GitHub login proves who somebody is, not that they administer this host: Owner only when the
+    // operator named them in Agnes:Auth:GitHub:Owners. Signing in again from the same named device rotates
+    // that device's token rather than minting a second identity for the same person.
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "github:" + login, kind: "github",
+        role: roles.ForGitHub(login), identity: DeviceIdentity.For("github:" + login, request.DeviceName));
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "github", "github:" + login));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // Exchange an OIDC-issued token (validated against the configured issuer's JWKS + audience) for an Agnes
 // device token. Token-validation core only — the interactive authorization-code redirect is out of scope.
-app.MapPost("/auth/oidc/exchange", async (OidcExchangeRequest request, OidcIdentity oidc, CancellationToken ct) =>
+app.MapPost("/auth/oidc/exchange", async (OidcExchangeRequest request, OidcIdentity oidc, DeviceRoleOptions roles, CancellationToken ct) =>
 {
     if (!oidc.Options.IsUsable)
     {
@@ -1313,9 +1695,44 @@ app.MapPost("/auth/oidc/exchange", async (OidcExchangeRequest request, OidcIdent
         return Results.Json(new { error = validated.Reason ?? "The OIDC token is invalid." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
-    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "oidc:" + validated.Subject, kind: "oidc");
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "oidc:" + validated.Subject, kind: "oidc",
+        role: roles.ForOidc(validated.Subject),
+        identity: DeviceIdentity.For("oidc:" + validated.Subject, request.DeviceName));
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "oidc", "oidc:" + validated.Subject));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
+});
+
+// Browser clients that have already passed Cloudflare Access can exchange the signed assertion which
+// cloudflared forwards for a normal, individually revocable Agnes device token. The edge email header is
+// intentionally ignored; only the issuer/audience/signature-validated JWT is accepted.
+app.MapPost("/auth/cloudflare-access/exchange", async (
+    CloudflareAccessExchangeRequest request,
+    HttpContext context,
+    CloudflareAccessIdentity cloudflareAccess,
+    DeviceRegistry tokens,
+    DeviceRoleOptions roles,
+    CancellationToken ct) =>
+{
+    if (!cloudflareAccess.Options.IsUsable)
+    {
+        return Results.Json(new { error = "Cloudflare Access sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    var assertion = context.Request.Headers[CloudflareAccessIdentity.AssertionHeaderName].FirstOrDefault();
+    var validated = await cloudflareAccess.ValidateAsync(assertion, ct);
+    if (!validated.Ok || validated.Email is null || validated.Subject is null)
+    {
+        return Results.Json(new { error = "Cloudflare Access authentication failed." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "cloudflare:" + validated.Subject, kind: "cloudflare-access",
+        role: roles.ForCloudflare(validated.Subject, validated.Email),
+        identity: DeviceIdentity.For("cloudflare:" + validated.Subject, request.DeviceName));
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(
+        result.DeviceId, result.DeviceName, "cloudflare-access", "cloudflare:" + validated.Email));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // Begin the interactive OIDC authorization-code + PKCE redirect flow: the host generates the PKCE verifier,
@@ -1360,7 +1777,7 @@ app.MapGet("/auth/oidc/callback", async (string? code, string? state, OidcRedire
 // mTLS: the client certificate presented on the TLS connection is the credential. Validate it against the
 // configured trust anchor / pin allowlist and mint a device token. (Requires the listener to request a
 // client certificate; when TLS is terminated upstream this endpoint isn't reachable with a cert.)
-app.MapPost("/auth/mtls", async (MtlsPairRequest request, HttpContext ctx, MtlsIdentity mtls, CancellationToken ct) =>
+app.MapPost("/auth/mtls", async (MtlsPairRequest request, HttpContext ctx, MtlsIdentity mtls, DeviceRoleOptions roles, CancellationToken ct) =>
 {
     if (!mtls.Options.IsUsable)
     {
@@ -1374,9 +1791,12 @@ app.MapPost("/auth/mtls", async (MtlsPairRequest request, HttpContext ctx, MtlsI
         return Results.Json(new { error = validated.Reason ?? "The client certificate is not trusted." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
-    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "mtls:" + validated.Subject, kind: "mtls");
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "mtls:" + validated.Subject, kind: "mtls",
+        role: roles.ForMtls(validated.Subject),
+        identity: DeviceIdentity.For("mtls:" + validated.Subject, request.DeviceName));
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "mtls", "mtls:" + validated.Subject));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // Keypair auth: a single-use challenge nonce the client signs with its private key.
@@ -1386,7 +1806,7 @@ app.MapGet("/auth/keypair/challenge", (KeypairAuth keypair) =>
         : Results.Json(new { error = "Keypair sign-in is not enabled on this host." }, statusCode: StatusCodes.Status400BadRequest));
 
 // Verify a signed challenge against the authorized keys and issue a device token.
-app.MapPost("/auth/keypair", async (KeypairAuthRequest request, KeypairAuth keypair) =>
+app.MapPost("/auth/keypair", async (KeypairAuthRequest request, KeypairAuth keypair, DeviceRoleOptions roles) =>
 {
     if (!keypair.IsUsable)
     {
@@ -1399,9 +1819,13 @@ app.MapPost("/auth/keypair", async (KeypairAuthRequest request, KeypairAuth keyp
         return Results.Json(new { error = "Key not authorized, or the signed challenge was invalid/expired." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
-    var result = tokens.IssueDeviceToken(request.DeviceName, subject: "key:" + label, kind: "keypair");
+    // An operator put this key in authorized_keys, so by default it carries their authority. The key
+    // itself is the identity: signing in again from the same key rotates one device rather than adding a row.
+    var result = tokens.IssueDeviceToken(
+        request.DeviceName, subject: "key:" + label, kind: "keypair",
+        role: roles.KeypairRole, identity: "keypair:" + Fingerprint(request.PublicKey));
     await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DevicePairedEvent(result.DeviceId, result.DeviceName, "keypair", "key:" + label));
-    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token));
+    return Results.Ok(new PairResponse(result.DeviceId, result.DeviceName, result.Token, result.Role));
 });
 
 // The host's IPv4 address on the sandbox bridge — where the MCP forward listener binds and what the
@@ -1520,7 +1944,9 @@ app.MapPost("/pair/grant", (HttpContext ctx, PairingGrants grants, HostReachabil
         ? Results.Json(
             new { error = "This host has no externally-reachable address to advertise yet. Set Agnes:PublicUrl if it sits behind a reverse proxy." },
             statusCode: StatusCodes.Status503ServiceUnavailable)
-        : Results.Ok(grants.Mint(reachable, session, candidates, PinnedFingerprint(hostCert)));
+        : Results.Ok(grants.Mint(
+            reachable, session, candidates, PinnedFingerprint(hostCert),
+            minterRole: tokens.IsOwner(tokens.ResolveCallerId(RequestToken(ctx))) ? DeviceRole.Owner : DeviceRole.Member));
 });
 
 // Drop a displayed grant early — what "hide the QR" calls, so a code that was on screen stops working
@@ -1563,10 +1989,20 @@ app.MapPost("/pair/approve/{requestId}", async (HttpContext ctx, PairingApproval
         return Results.Unauthorized();
     }
 
+    // An approval is one device vouching for another, so the vouching device cannot hand over more than it
+    // holds: only an Owner may admit an Owner. A Member's approval admits a Member however the body is
+    // crafted — otherwise "approve this phone" would be a promotion path for anyone already inside.
+    var approverId = tokens.ResolveCallerId(RequestToken(ctx));
+    var requested = (await ReadApprovalDecisionAsync(ctx)).Role;
+    var admitAs = requested == DeviceRole.Owner && tokens.IsOwner(approverId) ? DeviceRole.Owner : DeviceRole.Member;
+
     PairingResult? issued = null;
     var ok = approvals.Approve(requestId, (name, publicKey) =>
     {
-        issued = tokens.IssueDeviceToken(name, subject: "approved:" + Fingerprint(publicKey), kind: "approval");
+        var fingerprint = Fingerprint(publicKey);
+        issued = tokens.IssueDeviceToken(
+            name, subject: "approved:" + fingerprint, kind: "approval",
+            role: admitAs, identity: "approved:" + fingerprint);
         return issued;
     });
 
@@ -1595,14 +2031,97 @@ app.MapPost("/pair/deny/{requestId}", (HttpContext ctx, PairingApprovals approva
 app.MapGet("/pair/request/{requestId}", (PairingApprovals approvals, string requestId)
     => Results.Ok(approvals.Poll(requestId)));
 
+// The approve endpoint's body. Read by hand rather than model-bound because a client that predates roles
+// sends no body at all (and no content type), and "approve with the default role" must keep working rather
+// than 400 — an approval flow that breaks on an older phone is a support call at the worst moment.
+static async Task<PairApprovalDecision> ReadApprovalDecisionAsync(HttpContext ctx)
+{
+    if (ctx.Request.ContentLength is null or 0 || !ctx.Request.HasJsonContentType())
+    {
+        return new PairApprovalDecision();
+    }
+
+    try
+    {
+        return await ctx.Request.ReadFromJsonAsync<PairApprovalDecision>() ?? new PairApprovalDecision();
+    }
+    catch (System.Text.Json.JsonException)
+    {
+        return new PairApprovalDecision();
+    }
+}
+
 // A short, stable label for a device's key in the audit trail — never the key itself.
 static string Fingerprint(string publicKey)
     => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
         System.Text.Encoding.UTF8.GetBytes(publicKey.Trim())))[..16].ToLowerInvariant();
 
-// The caller's own token is passed through so the list can mark which row is the calling device.
+// The caller's own token is passed through so the list can mark which row is the calling device. Each row
+// now carries its Role and the Kind that admitted it, so "why can't this device see anything" is answerable
+// on the page rather than by reading devices.json.
 app.MapGet("/devices", (HttpContext ctx) =>
     Authorized(ctx, tokens) ? Results.Ok(tokens.ListDevices(RequestToken(ctx))) : Results.Unauthorized());
+
+// This device's own row. Any paired device may ask — it is the difference between "there is nothing here"
+// and "you are a Member, so you only see what you started", which a Member cannot learn from GET /devices
+// (that lists everybody, and a Member has no business enumerating the household).
+app.MapGet("/devices/me", (HttpContext ctx) =>
+{
+    if (!Authorized(ctx, tokens))
+    {
+        return Results.Unauthorized();
+    }
+
+    return tokens.DescribeSelf(RequestToken(ctx)) is { } me
+        ? Results.Ok(me)
+        // The configured bootstrap token is an operator but not a device record; say so rather than 404.
+        : Results.Json(
+            new { error = "This token is the host's configured bootstrap token, not a paired device." },
+            statusCode: StatusCodes.Status404NotFound);
+});
+
+// Promote or demote a device. Owner-only, and the registry refuses to leave the host with no Owner at all.
+app.MapPut("/devices/{id}/role", async (HttpContext ctx, string id, DeviceRoleRequest request) =>
+{
+    var callerId = tokens.ResolveCallerId(RequestToken(ctx));
+    if (callerId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!tokens.IsOwner(callerId))
+    {
+        return Results.Json(new { error = "Only an Owner can change device roles." }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var updated = tokens.SetRole(id, request.Role, callerId);
+    if (updated.NotFound)
+    {
+        return Results.NotFound(new { error = updated.Error });
+    }
+
+    if (!updated.Ok)
+    {
+        return Results.Json(new { error = updated.Error }, statusCode: StatusCodes.Status409Conflict);
+    }
+
+    await authEvents.DispatchAsync(new Agnes.Abstractions.Events.DeviceRoleChangedEvent(id, request.Role.ToString()));
+    return Results.Ok(updated.Device);
+});
+
+// Tidy up devices nobody has used in a while. Owner-only, never the caller's own device, never the last Owner.
+app.MapPost("/devices/prune", (HttpContext ctx, DevicePruneRequest request) =>
+{
+    var callerId = tokens.ResolveCallerId(RequestToken(ctx));
+    if (callerId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    return tokens.IsOwner(callerId)
+        ? Results.Ok(tokens.Prune(request.UnusedForDays, callerId))
+        : Results.Json(new { error = "Only an Owner can prune devices." }, statusCode: StatusCodes.Status403Forbidden);
+});
 
 app.MapDelete("/devices/{id}", async (HttpContext ctx, string id) =>
 {
@@ -1681,6 +2200,36 @@ app.MapGet("/mcp/effective", async (HttpContext ctx, string? workspaceId, string
     Authorized(ctx, tokens)
         ? Results.Ok(await McpEffectiveConfig.PreviewAsync(mcp, agents.All, workspaceId, agentId, ct))
         : Results.Unauthorized());
+
+// ---- Local model provider: read, save, and ask an endpoint what it serves ----
+var localProvider = app.Services.GetRequiredService<Agnes.Host.Hosting.LocalProviderRegistry>();
+
+app.MapGet("/local-provider", (HttpContext ctx) =>
+    Authorized(ctx, tokens) ? Results.Ok(localProvider.Info()) : Results.Unauthorized());
+
+app.MapPut("/local-provider", (HttpContext ctx, LocalProviderRequest request) =>
+    Authorized(ctx, tokens) ? Results.Ok(localProvider.Save(request)) : Results.Unauthorized());
+
+// Discovery is proxied through the host on purpose: the model endpoint is usually on the host's network
+// rather than the client's, and this way a device never needs the provider key to populate a picker.
+app.MapPost("/local-provider/models", async (HttpContext ctx, LocalProviderRequest request, CancellationToken ct) =>
+{
+    if (!Authorized(ctx, tokens))
+    {
+        return Results.Unauthorized();
+    }
+
+    // A blank key in the probe means "use the one already stored", so a settings screen can test a saved
+    // provider without the client ever holding its credential.
+    var stored = localProvider.ProviderOptions();
+    var key = string.IsNullOrEmpty(request.ApiKey) ? stored?.ApiKey : request.ApiKey;
+    var url = string.IsNullOrWhiteSpace(request.BaseUrl) ? stored?.BaseUrl : request.BaseUrl;
+
+    var models = await Agnes.Agents.Copilot.CopilotLocalModels.ListAsync(url, key, cancellationToken: ct);
+    return Results.Ok(models is null
+        ? new LocalProviderModels(false, [], "Couldn't reach that endpoint, or it didn't answer with a model list.")
+        : new LocalProviderModels(true, [.. models.Select(m => new LocalProviderModel(m.Id, m.DisplayName))], null));
+});
 
 app.MapPost("/mcp", (HttpContext ctx, McpServerRequest request) =>
     AuthorizedForConfig(ctx, tokens) ? Results.Ok(mcp.Add(request)) : Results.Unauthorized());
@@ -1849,7 +2398,7 @@ app.MapPut("/projects/{id}", (HttpContext ctx, string id, ProjectDto dto) =>
 {
     if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
     if (projects is null) return Results.NotFound();
-    var saved = projects.Save(Agnes.Host.Projects.ProjectMapping.ToProject(dto with { Id = id }));
+    var saved = projects.Save(Agnes.Host.Projects.ProjectMapping.ToProject(dto with { Id = id }, projects.Get(id)));
     _ = images?.RebuildForProjectAsync(saved); // re-bake the project's sandbox image in the background
     return Results.Ok(Agnes.Host.Projects.ProjectMapping.ToDto(saved));
 });
@@ -1861,7 +2410,11 @@ app.MapDelete("/projects/{id}", (HttpContext ctx, string id) =>
 
 if (webFiles is not null)
 {
-    app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = webFiles });
+    app.MapFallbackToFile("index.html", new StaticFileOptions
+    {
+        FileProvider = webFiles,
+        OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-store",
+    });
 }
 else
 {
@@ -1874,6 +2427,27 @@ if (tokens.PairingEnabled)
 {
     app.Logger.LogInformation("Agnes pairing code: {Code}  — enter this on a new client to pair it.", tokens.PairingCode);
 }
+
+// The fingerprint of the certificate this host serves, printed the way sshd's host key can be inspected.
+// A client meeting a self-signed host for the first time has no pin and therefore cannot complete a
+// handshake at all — so without something to compare against, trust-on-first-use is just trust. Printing it
+// here gives the operator the out-of-band channel: read it off the host's own console, check it against what
+// the client shows, then accept. Not a secret — it is a hash of a certificate handed to anyone who connects.
+{
+    var hostCert = app.Services.GetService<IHostCertificateProvider>();
+    if (PinnedFingerprint2(hostCert) is { Length: > 0 } hostFingerprint)
+    {
+        app.Logger.LogInformation(
+            "Agnes host certificate SHA-256: {Fingerprint}  — a client pairing for the first time must be shown "
+            + "this, and should refuse if what it sees differs.", hostFingerprint);
+    }
+}
+
+// Local mirror of PinnedFingerprint so the startup banner does not depend on declaration order.
+static string? PinnedFingerprint2(IHostCertificateProvider? provider)
+    => provider is null ? null
+        : provider.CaValidatedHostName is { Length: > 0 } ? null
+        : provider.Fingerprint;
 
 if (gitHubAuth.IsUsable)
 {
@@ -1907,7 +2481,13 @@ var transport = transports.Find(transportName)
         $"No transport provider named '{transportName}' is registered (have: {string.Join(", ", transports.All.Select(t => t.Id))}).");
 app.Lifetime.ApplicationStarted.Register(() =>
 {
-    var bound = app.Urls.Count > 0 ? app.Urls.ToArray() : ["(host default binding)"];
+    // The plaintext MCP listeners are NOT client addresses. They serve one path, speak no Agnes protocol,
+    // and take no device token — advertising one would put a broken address in the pairing QR, and handing
+    // one to a tunnel transport would publish a plaintext port to the internet.
+    var clientAddresses = app.Urls
+        .Where(u => Agnes.Host.Mcp.GuestMcpEndpoint.TryGetPort(u) is not { } port || !plaintextMcpPorts.Contains(port))
+        .ToArray();
+    var bound = clientAddresses.Length > 0 ? clientAddresses : ["(host default binding)"];
     try
     {
         // ExposeAsync actively brings a tunnel transport up (e.g. runs `tailscale serve`); Direct just
@@ -1929,6 +2509,9 @@ app.Lifetime.ApplicationStarted.Register(() =>
     }
 });
 app.Lifetime.ApplicationStopping.Register(() => transport.StopAsync().GetAwaiter().GetResult());
+// Last-seen is written through at most once a minute (it changes on every request); flush whatever the
+// debounce is still holding, so "unused for 30 days" isn't measured from a stale timestamp after a restart.
+app.Lifetime.ApplicationStopping.Register(tokens.Flush);
 
 app.Run();
 

@@ -11,3 +11,7 @@ regexes = [
   '''token = "9f3a1c7e-b204-4d55-a1e8-6c0f2b9d7e31"''',
   '''KeyBinding Gesture="Ctrl\+Shift\+Tab"''',
 ]
+paths = [
+  '''src/Agnes\.App\.Desktop/Assets/Keymaps/[^/]+\.json''',
+  '''tests/Agnes\.Desktop\.Tests/KeymapTests\.cs''',
+]

@@ -57,7 +57,7 @@ public static class DevicePairing
                 });
             }
 
-            return await response.Content.ReadFromJsonAsync<PairResponse>(cancellationToken).ConfigureAwait(false)
+            return await response.Content.ReadFromJsonAsync<PairResponse>(DeviceRoleJson.Read, cancellationToken).ConfigureAwait(false)
                    ?? throw new PairingRefusedException(response.StatusCode, "Pairing returned no token.");
         }
         finally

@@ -38,6 +38,18 @@
                               IsChecked="{Binding NotifyOnComplete, Mode=OneWay}" VerticalAlignment="Center" />
               </Grid>
             </Button>
+            <Border Classes="divider" />
+            <Button Theme="{StaticResource RowButton}" Command="{Binding ToggleFileCommand}">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                  <TextBlock Text="Files sent to you" />
+                  <TextBlock Classes="caption"
+                             Text="The agent produced something to look at — a screenshot, a report, a build." />
+                </StackPanel>
+                <ToggleButton Grid.Column="1" Theme="{StaticResource MobileSwitch}" IsHitTestVisible="False"
+                              IsChecked="{Binding NotifyOnFile, Mode=OneWay}" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
           </StackPanel>
         </Border>
 

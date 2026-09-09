@@ -107,8 +107,8 @@ public class AgentRecoveryTests
         Assert.Equal(ResumableId, adapter.Starts[1].ResumeSessionId);
 
         // The user sees what happened.
-        await WaitForAsync(() => broadcaster.Published.Any(p => p.Event is NoticeEvent n && n.Message.Contains("restarting", StringComparison.OrdinalIgnoreCase)));
-        Assert.Contains(broadcaster.Published, p => p.Event is NoticeEvent n && n.Message == "Agent restarted.");
+        await WaitForAsync(() => broadcaster.Published.Any(p =>
+            p.Event is NoticeEvent { Message: "Agent restarted." }));
     }
 
     [Fact]

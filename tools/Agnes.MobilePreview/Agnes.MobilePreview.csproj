@@ -55,6 +55,9 @@
     <Compile Include="..\..\src\Agnes.App.Mobile\Services\IHaptics.cs" LinkBase="Mobile\Services" />
     <Compile Include="..\..\src\Agnes.App.Mobile\Services\MobileConnector.cs" LinkBase="Mobile\Services" />
     <Compile Include="..\..\src\Agnes.App.Mobile\Services\MobileDispatcher.cs" LinkBase="Mobile\Services" />
+    <!-- The naming/MIME rules a received file goes through. Pure, and deliberately not inside the
+         Android-only handler beside them, so both this harness and the tests can exercise them. -->
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\ReceivedFileNaming.cs" LinkBase="Mobile\Services" />
     <Compile Include="..\..\src\Agnes.App.Mobile\Services\ThemeApplier.cs" LinkBase="Mobile\Services" />
     <Compile Include="*.cs" />
   </ItemGroup>

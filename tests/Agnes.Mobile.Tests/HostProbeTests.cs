@@ -9,6 +9,7 @@ namespace Agnes.Mobile.Tests;
 /// fixes. Collapsing them is what made the connect screen blame a correct pairing code for an address
 /// that had nothing behind it.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class HostProbeTests
 {
     [Fact]
