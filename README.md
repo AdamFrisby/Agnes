@@ -1,6 +1,6 @@
 # Agnes
 
-**A remote interface to coding CLIs.** Run one **host** where your coding agents live (Claude Code, OpenCode, and Codex today); connect from **many clients** — a full-featured desktop app, an Android app built for one thumb, and a web head. Think `claude` in `tmux` + `ssh`, but without tmux's limits: no fixed character grid, unlimited server-side scrollback, and each client renders at its own size.
+**A remote interface to coding CLIs.** Run one **host** where your coding agents live (Claude Code, OpenCode, Codex, GitHub Copilot CLI and Pi today); connect from **many clients** — a full-featured desktop app, an Android app built for one thumb, and a web head. Think `claude` in `tmux` + `ssh`, but without tmux's limits: no fixed character grid, unlimited server-side scrollback, and each client renders at its own size.
 
 > Status: **alpha**. Working today: event-sourced sessions with restart-resume, per-device pairing auth over TLS, an Avalonia desktop client, a browser (WASM) client served by the host, and optional per-session Incus VM sandboxing. See [`docs/architecture.md`](docs/architecture.md) and [`docs/deployment.md`](docs/deployment.md).
 
@@ -66,7 +66,8 @@ Full design: [`docs/architecture.md`](docs/architecture.md).
 | `src/Agnes.Acp` | Generic ACP-over-stdio client (on StreamJsonRpc) — reused by every agent |
 | `src/Agnes.Agents.ClaudeCode` | Reference agent plugin (launch descriptor for Claude Code's ACP endpoint) |
 | `src/Agnes.Protocol` | Transport-agnostic host↔client wire contract |
-| `src/Agnes.Agents.OpenCode` / `Agnes.Agents.Native` | OpenCode ACP adapter; native stream-json adapter (Claude Code) |
+| `src/Agnes.Agents.OpenCode` / `Agnes.Agents.Copilot` | OpenCode and GitHub Copilot CLI ACP adapters |
+| `src/Agnes.Agents.Native` / `Agnes.Agents.Pi` | Native JSONL-over-stdio adapters: Claude Code stream-json, Pi RPC |
 | `src/Agnes.Host` | ASP.NET Core daemon: plugins, session manager, event store, device auth, SignalR hub |
 | `src/Agnes.Client` | Reusable client library: multi-host connection pool, snapshot+tail, device pairing |
 | `src/Agnes.Sandbox` / `Agnes.Sandbox.Incus` | Optional per-session VM sandboxing (see [`docs/sandbox-live-testing.md`](docs/sandbox-live-testing.md)) |
@@ -140,6 +141,10 @@ The transcript renders reflowable ACP events (messages, tool calls, plans, permi
 - **Claude Code** — via its ACP bridge, and via a native stream-json adapter (`claude`).
 - **OpenCode** — via native ACP (`opencode acp`).
 - **Codex** — via its native app-server (persistent JSON-RPC over stdio).
+- **GitHub Copilot CLI** — via native ACP (`copilot --acp`), including bring-your-own-key providers.
+- **Pi** — via its RPC mode (`pi --mode rpc`). Retries failed provider calls mid-turn, so it survives a
+  transient outage that would end another agent's turn; it has no permission protocol, so Agnes only
+  offers it for autonomous (ideally sandboxed) sessions.
 
 Adapters are thin plugins over the shared ACP client (or a native adapter), so more agents slot in the same way.
 

@@ -42,11 +42,15 @@ public static class ClaudeCodeNative
         {
             Command = command ?? "claude",
             Arguments = arguments ?? DefaultArguments,
+            // Bare `claude` is the interactive console: the stream-json flags above are what make it a
+            // machine peer. Explicitly empty, not null — null would mean "no console".
+            ConsoleArguments = [],
             Descriptor = Descriptor,
             Mapper = new ClaudeCodeStreamMapper(),
             McpConfigFlag = "--mcp-config",
             Models = Models,
             ModelArguments = static id => ["--model", id],
+            SystemPromptArguments = static prompt => ["--append-system-prompt", prompt],
             CredentialFaultClassifier = IsRecoverableCredentialFault,
             AuthStatusProbe = _ => Task.FromResult<ProviderAuthStatus?>(ProbeAuthStatus(DefaultCredentialsPath)),
         }, loggerFactory, claudeHome ?? DefaultClaudeHome);

@@ -79,6 +79,31 @@ public sealed class SandboxImageManager
         return alias;
     }
 
+    /// <summary>
+    /// Ensures the <em>graphical</em> tier of the baseline manifest is baked, and returns the alias a session
+    /// with a display launches from.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="EnsureAsync"/> and deliberately not per project. The graphical tier is the
+    /// baseline plus an X server, a window manager and a terminal (<see cref="SandboxImageManifest.AsGraphical"/>),
+    /// which is a slow bake and about a gigabyte and a half of image; a host that never opens a graphical
+    /// session must never pay for it, and nothing in the desktop is project-specific, so one image per host
+    /// is the whole of it. The alias is the manifest's own (<c>agnes-graphical</c>), which is also the Incus
+    /// backend's configured default — one name for one image, whichever side names it.
+    /// </remarks>
+    public async Task<string> EnsureGraphicalAsync(CancellationToken cancellationToken = default)
+    {
+        var manifest = Load().AsGraphical();
+        if (await _builder.ImageExistsAsync(manifest.Alias, cancellationToken).ConfigureAwait(false))
+        {
+            SetStatus(manifest.Alias, new SandboxImageStatus(SandboxImageState.Ready, $"{manifest.Alias} ready.", DateTimeOffset.UtcNow));
+            return manifest.Alias;
+        }
+
+        await BakeAsync(manifest, cancellationToken).ConfigureAwait(false);
+        return manifest.Alias;
+    }
+
     /// <summary>Rebuilds a project's image from its manifest (used when the project's sandbox is saved).</summary>
     public Task RebuildForProjectAsync(Project project, CancellationToken cancellationToken = default)
         => BakeAsync(project.Sandbox with { Alias = ProjectAlias(project) }, cancellationToken);

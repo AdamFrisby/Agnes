@@ -50,11 +50,26 @@ public interface IAppShell
     /// rather than shipping a button that does nothing.</summary>
     bool CanDictate { get; }
 
+    /// <summary>
+    /// Whether the network in use right now bills by the byte. Only the graphical-session screen asks:
+    /// it is the one surface that streams continuously, and the cheap tier is a real difference on a
+    /// train. False everywhere the platform can't say, including the headless harness.
+    /// </summary>
+    bool IsMeteredNetwork { get; }
+
     /// <summary>How this device names itself in a host's paired-device list, so a later revocation is
     /// an obvious choice rather than a guess.</summary>
     string DeviceName { get; }
 
     IHaptics Haptics { get; }
+
+    /// <summary>
+    /// What this device can do with a file an agent sent it. Android's answer (Downloads, the share
+    /// sheet, an app that opens the type) is a platform type, so it arrives here rather than being
+    /// constructed by a screen — and the headless preview and the tests get the null one, which reports
+    /// that it can do nothing and so renders the sheet's buttons disabled rather than lying.
+    /// </summary>
+    IReceivedFileHandler ReceivedFiles { get; }
 
     IUiDispatcher Dispatcher { get; }
 

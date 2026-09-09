@@ -74,7 +74,7 @@ public static class PairingApproval
             return await client
                        .GetFromJsonAsync<PairApprovalStatus>(
                            hostUrl.TrimEnd('/') + "/pair/request/" + Uri.EscapeDataString(requestId),
-                           cancellationToken)
+                           DeviceRoleJson.Read, cancellationToken)
                        .ConfigureAwait(false)
                    ?? new PairApprovalStatus(PairApprovalState.Unknown);
         }

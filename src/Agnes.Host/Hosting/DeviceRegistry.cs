@@ -2,13 +2,17 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Agnes.Protocol;
 using Microsoft.Extensions.Logging;
 
 namespace Agnes.Host.Hosting;
 
 /// <summary>The result of a successful pairing — the raw token is shown to the client exactly once.</summary>
-public sealed record PairingResult(string DeviceId, string DeviceName, string Token);
+public sealed record PairingResult(string DeviceId, string DeviceName, string Token, DeviceRole Role = DeviceRole.Member);
+
+/// <summary>The outcome of an attempted role change: <see cref="Error"/> is a message fit to show a human.</summary>
+public sealed record DeviceRoleUpdate(bool Ok, DeviceInfo? Device = null, string? Error = null, bool NotFound = false);
 
 /// <summary>
 /// Per-device bearer-token auth with a short pairing code. A client pairs once (presenting the code
@@ -16,10 +20,27 @@ public sealed record PairingResult(string DeviceId, string DeviceName, string To
 /// persisted, so the store never holds a usable token at rest. Devices can be listed and revoked.
 /// A configured bootstrap token (<c>Agnes:PairingToken</c>), if set, is always accepted — for
 /// headless setups and back-compat with the earlier single-token scheme.
+/// <para>
+/// Each record carries a <see cref="DeviceRole"/> decided by HOW the device was admitted, never by when it
+/// arrived. The previous rule — "the earliest-paired record is the owner" — was a booby trap: anything that
+/// wrote a record into the store before the operator's own device did (a stray test run, a demo, a device
+/// paired and later revoked) silently became the host's owner, and under the default shared isolation that
+/// left every real device unable to see any session at all.
+/// </para>
 /// </summary>
 public sealed class DeviceRegistry
 {
     private const int MaxPairingFailures = 5;
+
+    /// <summary>How often a last-seen touch may hit the disk. Last-seen is a housekeeping fact used to
+    /// answer "is this device still in use", so it must survive a restart — but it changes on every single
+    /// request, and a fsync per request would be absurd. Debounced, plus a flush at shutdown.</summary>
+    private static readonly TimeSpan LastSeenSaveInterval = TimeSpan.FromMinutes(1);
+
+    private static readonly JsonSerializerOptions StoreJson = new()
+    {
+        Converters = { new JsonStringEnumConverter() },
+    };
 
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, DeviceRecord> _devices = new(); // by token hash
@@ -28,20 +49,25 @@ public sealed class DeviceRegistry
     private readonly ILogger<DeviceRegistry>? _logger;
     private readonly bool _pairingEnabled;
     private readonly bool _allowCodeAfterFirstDevice;
+    private readonly TimeProvider _time;
     private int _pairingFailures;
+    private DateTimeOffset _lastSeenSavedAt = DateTimeOffset.MinValue;
+    private bool _lastSeenDirty;
 
     public DeviceRegistry(
         string? bootstrapToken,
         string dataFilePath,
         ILogger<DeviceRegistry>? logger = null,
         bool pairingEnabled = true,
-        bool allowCodeAfterFirstDevice = false)
+        bool allowCodeAfterFirstDevice = false,
+        TimeProvider? timeProvider = null)
     {
         _bootstrapToken = string.IsNullOrWhiteSpace(bootstrapToken) ? null : bootstrapToken;
         _path = dataFilePath;
         _logger = logger;
         _pairingEnabled = pairingEnabled;
         _allowCodeAfterFirstDevice = allowCodeAfterFirstDevice;
+        _time = timeProvider ?? TimeProvider.System;
         // Don't mint (or expose) a pairing code at all when the method is disabled for an internet-facing host.
         PairingCode = pairingEnabled ? GeneratePairingCode() : string.Empty;
         Load();
@@ -55,36 +81,67 @@ public sealed class DeviceRegistry
     public bool PairingEnabled => _pairingEnabled;
 
     /// <summary>
-    /// Mints a durable per-device token for a caller that authenticated by some other means (GitHub SSO,
-    /// keypair, …). <paramref name="subject"/> records who/what it belongs to for the device list/audit
-    /// (e.g. <c>github:alice</c>, <c>key:laptop</c>); <paramref name="kind"/> is the method.
+    /// Mints (or re-issues) a durable per-device token for a caller that authenticated by some other means
+    /// (GitHub SSO, keypair, an approval, …). <paramref name="subject"/> records who/what it belongs to for the
+    /// device list/audit (e.g. <c>github:alice</c>, <c>key:laptop</c>); <paramref name="kind"/> is the method;
+    /// <paramref name="role"/> is what that method entitles the device to on this host.
+    /// <para>
+    /// <paramref name="identity"/> is the stable thing behind the credential — a key fingerprint, or a login
+    /// plus device name. When one is supplied and a live record already carries it, this is a <b>rotation</b>:
+    /// the record keeps its id, pairing date and role, gets a fresh token (the old one stops working), and the
+    /// device list keeps one row per device instead of growing one per sign-in. A pairing code has no such
+    /// thing behind it — it is single-use — so those always mint fresh.
+    /// </para>
     /// </summary>
-    public PairingResult IssueDeviceToken(string? deviceName, string subject, string kind)
+    public PairingResult IssueDeviceToken(
+        string? deviceName, string subject, string kind, DeviceRole role = DeviceRole.Member, string? identity = null)
     {
         lock (_gate)
         {
-            var result = IssueDeviceTokenLocked(deviceName, subject, kind);
+            var result = IssueDeviceTokenLocked(deviceName, subject, kind, role, identity);
             Save();
-            _logger?.LogInformation("Issued device token for {Subject} via {Kind} ({Id})", subject, kind, result.DeviceId);
+            _logger?.LogInformation(
+                "Issued device token for {Subject} via {Kind} as {Role} ({Id})", subject, kind, result.Role, result.DeviceId);
             return result;
         }
     }
 
     // Assumes _gate is held; callers persist + log.
-    private PairingResult IssueDeviceTokenLocked(string? deviceName, string subject, string kind)
+    private PairingResult IssueDeviceTokenLocked(
+        string? deviceName, string subject, string kind, DeviceRole role, string? identity)
     {
         var token = GenerateToken();
+        var now = _time.GetUtcNow();
+        var name = string.IsNullOrWhiteSpace(deviceName) ? "device" : deviceName.Trim();
+
+        if (identity is { Length: > 0 }
+            && _devices.FirstOrDefault(kv => string.Equals(kv.Value.Identity, identity, StringComparison.Ordinal)) is { Key: not null } existing)
+        {
+            // Same credential, same device: rotate the token in place rather than minting a second identity.
+            _devices.TryRemove(existing.Key, out _);
+            var rotated = existing.Value;
+            rotated.TokenHash = Hash(token);
+            rotated.Name = name;
+            rotated.Subject = subject;
+            rotated.Kind = kind;
+            rotated.LastSeenAt = now;
+            _devices[rotated.TokenHash] = rotated;
+            return new PairingResult(rotated.Id, rotated.Name, token, rotated.EffectiveRole);
+        }
+
         var record = new DeviceRecord
         {
             Id = Guid.NewGuid().ToString("n"),
-            Name = string.IsNullOrWhiteSpace(deviceName) ? "device" : deviceName.Trim(),
+            Name = name,
             TokenHash = Hash(token),
             Subject = subject,
             Kind = kind,
-            PairedAt = DateTimeOffset.UtcNow,
+            Identity = identity,
+            Role = role,
+            PairedAt = now,
         };
         _devices[record.TokenHash] = record;
-        return new PairingResult(record.Id, record.Name, token);
+        return new PairingResult(record.Id, record.Name, token, record.EffectiveRole);
     }
 
     /// <summary>Validates a bearer token (bootstrap or a paired device); records last-seen.</summary>
@@ -102,7 +159,7 @@ public sealed class DeviceRegistry
 
         if (_devices.TryGetValue(Hash(token), out var device))
         {
-            device.LastSeenAt = DateTimeOffset.UtcNow;
+            TouchLastSeen(device);
             return true;
         }
 
@@ -129,7 +186,7 @@ public sealed class DeviceRegistry
 
         if (_devices.TryGetValue(Hash(token), out var device))
         {
-            device.LastSeenAt = DateTimeOffset.UtcNow;
+            TouchLastSeen(device);
             return device.Id;
         }
 
@@ -176,6 +233,9 @@ public sealed class DeviceRegistry
     /// vouch instead, the stronger paths take over: a 256-bit QR grant minted by that device, or an
     /// explicit approval of a request. An operator who genuinely needs the code back can re-enable it
     /// with <c>Agnes:Auth:Pairing:AllowCodeAfterFirstDevice</c>.
+    ///
+    /// The code IS the operator's own secret, read off the host's console, so a device that presents it is
+    /// admitted as an <see cref="DeviceRole.Owner"/>.
     /// </summary>
     public PairingResult? TryPair(string? code, string? deviceName)
     {
@@ -207,7 +267,7 @@ public sealed class DeviceRegistry
             }
 
             _pairingFailures = 0;
-            var result = IssueDeviceTokenLocked(deviceName, subject: "pairing", kind: "pairing");
+            var result = IssueDeviceTokenLocked(deviceName, subject: "pairing", kind: "pairing", DeviceRole.Owner, identity: null);
             // A pairing code is single-use: rotate it so the same code can't pair a second device.
             PairingCode = GeneratePairingCode();
             Save();
@@ -230,17 +290,31 @@ public sealed class DeviceRegistry
 
         return _devices.Values
             .OrderByDescending(d => d.PairedAt)
-            .Select(d => new DeviceInfo(
-                d.Id, d.Name, d.PairedAt, d.LastSeenAt, d.Subject,
-                IsCurrentDevice: currentId is not null && string.Equals(d.Id, currentId, StringComparison.Ordinal)))
+            .Select(d => Describe(d, currentId))
             .ToArray();
     }
 
     /// <summary>
-    /// Whether a resolved caller id is the host owner/operator. The configured bootstrap token (mapped to the
-    /// fixed id <c>"bootstrap"</c>) is the operator by definition; otherwise the earliest-paired device is
-    /// treated as the owner (the first device paired to a fresh host is whoever set it up). Used to gate the
-    /// sensitive owner-only host-log diagnostic attachment. Returns false for an unknown/anonymous caller.
+    /// The caller's OWN device row, or null when the token isn't a device (unknown, or the bootstrap token,
+    /// which has no record). Backs <c>GET /devices/me</c>: a Member can be told what it is on this host
+    /// without being handed the whole device list, which is the answer to "why can't I see any sessions?".
+    /// </summary>
+    public DeviceInfo? DescribeSelf(string? token)
+        => token is { Length: > 0 } && _devices.TryGetValue(Hash(token), out var device)
+            ? Describe(device, device.Id)
+            : null;
+
+    private static DeviceInfo Describe(DeviceRecord d, string? currentId)
+        => new(
+            d.Id, d.Name, d.PairedAt, d.LastSeenAt, d.Subject,
+            IsCurrentDevice: currentId is not null && string.Equals(d.Id, currentId, StringComparison.Ordinal),
+            Role: d.EffectiveRole,
+            Kind: d.Kind);
+
+    /// <summary>
+    /// Whether a resolved caller id is a host owner/operator. The configured bootstrap token (mapped to the
+    /// fixed id <c>"bootstrap"</c>) is an operator by definition; otherwise the device's recorded
+    /// <see cref="DeviceRole"/> decides. Returns false for an unknown/anonymous caller.
     /// </summary>
     public bool IsOwner(string? callerId)
     {
@@ -254,11 +328,96 @@ public sealed class DeviceRegistry
             return true;
         }
 
-        var owner = _devices.Values
-            .OrderBy(d => d.PairedAt)
-            .ThenBy(d => d.Id, StringComparer.Ordinal)
-            .FirstOrDefault();
-        return owner is not null && string.Equals(owner.Id, callerId, StringComparison.Ordinal);
+        return _devices.Values.Any(d =>
+            d.EffectiveRole == DeviceRole.Owner && string.Equals(d.Id, callerId, StringComparison.Ordinal));
+    }
+
+    /// <summary>How many devices currently hold <see cref="DeviceRole.Owner"/>.</summary>
+    public int OwnerCount => _devices.Values.Count(d => d.EffectiveRole == DeviceRole.Owner);
+
+    /// <summary>
+    /// Promotes or demotes a device. Refuses to remove the host's last Owner — a host with no owner cannot
+    /// promote anybody back, so the only recovery would be editing the store by hand.
+    /// </summary>
+    public DeviceRoleUpdate SetRole(string deviceId, DeviceRole role, string? callerId)
+    {
+        lock (_gate)
+        {
+            var device = _devices.Values.FirstOrDefault(d => string.Equals(d.Id, deviceId, StringComparison.Ordinal));
+            if (device is null)
+            {
+                return new DeviceRoleUpdate(false, NotFound: true, Error: "No such device.");
+            }
+
+            if (device.EffectiveRole == role)
+            {
+                return new DeviceRoleUpdate(true, Describe(device, callerId));
+            }
+
+            if (role != DeviceRole.Owner && device.EffectiveRole == DeviceRole.Owner && OwnerCount <= 1)
+            {
+                return new DeviceRoleUpdate(
+                    false,
+                    Error: string.Equals(device.Id, callerId, StringComparison.Ordinal)
+                        ? "You are this host's last Owner; promote another device before demoting yourself."
+                        : "This is the host's last Owner; promote another device first.");
+            }
+
+            device.Role = role;
+            Save();
+            _logger?.LogInformation("Device {Id} is now {Role} (changed by {Caller})", device.Id, role, callerId ?? "unknown");
+            return new DeviceRoleUpdate(true, Describe(device, callerId));
+        }
+    }
+
+    /// <summary>
+    /// Removes devices that have not been seen for <paramref name="unusedForDays"/> days — measured from
+    /// last-seen, or from pairing when a device has never connected at all. Never the caller's own device
+    /// (locking yourself out while tidying up is not a tidy-up), and never the last Owner.
+    /// </summary>
+    /// <returns>The devices that were removed.</returns>
+    public IReadOnlyList<DeviceInfo> Prune(int unusedForDays, string? callerId)
+    {
+        lock (_gate)
+        {
+            var cutoff = _time.GetUtcNow() - TimeSpan.FromDays(Math.Max(0, unusedForDays));
+            var candidates = _devices
+                .Where(kv => (kv.Value.LastSeenAt ?? kv.Value.PairedAt) < cutoff)
+                .Where(kv => !string.Equals(kv.Value.Id, callerId, StringComparison.Ordinal))
+                .ToList();
+
+            // Keep at least one Owner standing. If every Owner is stale, the freshest of them survives.
+            var survivingOwners = OwnerCount - candidates.Count(kv => kv.Value.EffectiveRole == DeviceRole.Owner);
+            if (survivingOwners <= 0)
+            {
+                var keep = candidates
+                    .Where(kv => kv.Value.EffectiveRole == DeviceRole.Owner)
+                    .OrderByDescending(kv => kv.Value.LastSeenAt ?? kv.Value.PairedAt)
+                    .Select(kv => kv.Key)
+                    .FirstOrDefault();
+                if (keep is not null)
+                {
+                    candidates.RemoveAll(kv => string.Equals(kv.Key, keep, StringComparison.Ordinal));
+                }
+            }
+
+            var removed = new List<DeviceInfo>(candidates.Count);
+            foreach (var kv in candidates)
+            {
+                if (_devices.TryRemove(kv.Key, out var gone))
+                {
+                    removed.Add(Describe(gone, callerId));
+                }
+            }
+
+            if (removed.Count > 0)
+            {
+                Save();
+                _logger?.LogInformation("Pruned {Count} device(s) unused for {Days} day(s)", removed.Count, unusedForDays);
+            }
+
+            return removed;
+        }
     }
 
     public bool Revoke(string deviceId)
@@ -274,6 +433,49 @@ public sealed class DeviceRegistry
             Save();
             _logger?.LogInformation("Revoked device {Id}", deviceId);
             return true;
+        }
+    }
+
+    /// <summary>Persists any last-seen timestamps the debounce is still holding. Called at shutdown.</summary>
+    public void Flush()
+    {
+        lock (_gate)
+        {
+            if (!_lastSeenDirty)
+            {
+                return;
+            }
+
+            _lastSeenDirty = false;
+            _lastSeenSavedAt = _time.GetUtcNow();
+            Save();
+        }
+    }
+
+    // Last-seen is written through to disk, but at most once a minute: it changes on every request, and it is
+    // only useful across restarts (it is what "unused for 30 days" is measured from), so neither "never save"
+    // nor "save every time" is right.
+    private void TouchLastSeen(DeviceRecord device)
+    {
+        var now = _time.GetUtcNow();
+        device.LastSeenAt = now;
+        _lastSeenDirty = true;
+
+        if (now - _lastSeenSavedAt < LastSeenSaveInterval)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (now - _lastSeenSavedAt < LastSeenSaveInterval)
+            {
+                return;
+            }
+
+            _lastSeenSavedAt = now;
+            _lastSeenDirty = false;
+            Save();
         }
     }
 
@@ -314,7 +516,7 @@ public sealed class DeviceRegistry
                 return;
             }
 
-            var records = JsonSerializer.Deserialize<List<DeviceRecord>>(File.ReadAllText(_path));
+            var records = JsonSerializer.Deserialize<List<DeviceRecord>>(File.ReadAllText(_path), StoreJson);
             foreach (var r in records ?? [])
             {
                 if (!string.IsNullOrEmpty(r.TokenHash))
@@ -322,11 +524,55 @@ public sealed class DeviceRegistry
                     _devices[r.TokenHash] = r;
                 }
             }
+
+            MigrateRoles();
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Could not load device registry from {Path}", _path);
         }
+    }
+
+    /// <summary>
+    /// A store written before roles existed has none, and every record reads back as a Member — which would
+    /// leave a live host with no owner at all. So: if nothing claims Owner, the earliest-paired device becomes
+    /// one. That is exactly the rule the old <c>IsOwner</c> applied on every call, frozen once and written
+    /// down, so upgrading a host changes nothing about who its owner is.
+    /// </summary>
+    private void MigrateRoles()
+    {
+        // A record written before roles existed has none at all. That is the only thing that gets migrated —
+        // an explicit Member is somebody's decision, not a gap.
+        var unroled = _devices.Values.Where(d => d.Role is null).ToList();
+        if (unroled.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var device in unroled)
+        {
+            device.Role = DeviceRole.Member;
+        }
+
+        if (_devices.Values.All(d => d.EffectiveRole != DeviceRole.Owner))
+        {
+            var earliest = _devices.Values
+                .OrderBy(d => d.PairedAt)
+                .ThenBy(d => d.Id, StringComparer.Ordinal)
+                .First();
+            earliest.Role = DeviceRole.Owner;
+            _logger?.LogInformation(
+                "Device roles migrated: nothing claimed Owner, so the earliest-paired device {Name} ({Id}) keeps "
+                + "the ownership it had under the old first-device-wins rule. Promote or demote from the "
+                + "Devices page.",
+                earliest.Name, earliest.Id);
+        }
+        else
+        {
+            _logger?.LogInformation("Device roles migrated: {Count} device(s) recorded as Member.", unroled.Count);
+        }
+
+        Save();
     }
 
     private void Save()
@@ -340,7 +586,7 @@ public sealed class DeviceRegistry
             }
 
             var tmp = _path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(_devices.Values.ToList()));
+            File.WriteAllText(tmp, JsonSerializer.Serialize(_devices.Values.ToList(), StoreJson));
             File.Move(tmp, _path, overwrite: true);
         }
         catch (Exception ex)
@@ -356,6 +602,13 @@ public sealed class DeviceRegistry
         public string TokenHash { get; set; } = "";
         public string? Subject { get; set; }   // who/what the token belongs to (github:login, key:label, pairing)
         public string? Kind { get; set; }       // the bootstrap method that minted it
+        public string? Identity { get; set; }   // the stable credential behind it — a key fingerprint, a login+name
+
+        /// <summary>Null in a store written before roles existed — the signal <see cref="MigrateRoles"/>
+        /// looks for. An explicit Member is a decision somebody made and is never migrated over.</summary>
+        public DeviceRole? Role { get; set; }
+
+        public DeviceRole EffectiveRole => Role ?? DeviceRole.Member;
         public DateTimeOffset PairedAt { get; set; }
         public DateTimeOffset? LastSeenAt { get; set; }
     }

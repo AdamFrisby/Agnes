@@ -22,6 +22,11 @@
   </Styles.Resources>
 
   <Style Selector="dc|DocumentTabStripItem">
+    <!-- Hovering a tab says where the session runs and, once the agent has reported one, what it says it is
+         doing. A tab strip trims a title to a few characters, so this is the cheapest way to tell a dozen
+         running agents apart without switching between them. Utility tabs (Settings, Dashboard, Search)
+         define no TabTooltip, so the binding resolves to null and they simply have no tooltip. -->
+    <Setter Property="ToolTip.Tip" Value="{Binding TabTooltip}" />
     <!-- DocumentContextMenu, not ContextFlyout: Dock reads its own styled property here and ignores
          the standard one, so setting ContextFlyout leaves the default menu in place and looks like the
          style never applied. And a Template, not a bare value — a ContextMenu is a Control, so each tab

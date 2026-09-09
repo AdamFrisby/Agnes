@@ -6,6 +6,9 @@
     <Project Path="src/Agnes.Agents.OpenCode/Agnes.Agents.OpenCode.csproj" />
     <Project Path="src/Agnes.Agents.Native/Agnes.Agents.Native.csproj" />
     <Project Path="src/Agnes.Agents.Codex/Agnes.Agents.Codex.csproj" />
+    <Project Path="src/Agnes.Agents.Copilot/Agnes.Agents.Copilot.csproj" />
+    <Project Path="src/Agnes.Agents.Antigravity/Agnes.Agents.Antigravity.csproj" />
+    <Project Path="src/Agnes.Agents.Pi/Agnes.Agents.Pi.csproj" />
     <Project Path="src/Agnes.App.Desktop/Agnes.App.Desktop.csproj" />
     <Project Path="src/Agnes.App.Mobile/Agnes.App.Mobile.csproj" />
     <Project Path="src/Agnes.Client.Simulation/Agnes.Client.Simulation.csproj" />
@@ -21,6 +24,7 @@
     <Project Path="src/Agnes.Relay.Protocol/Agnes.Relay.Protocol.csproj" />
     <Project Path="src/Agnes.Sandbox/Agnes.Sandbox.csproj" />
     <Project Path="src/Agnes.Sandbox.Incus/Agnes.Sandbox.Incus.csproj" />
+    <Project Path="src/Agnes.Plugins.CodeyBox/Agnes.Plugins.CodeyBox.csproj" />
     <Project Path="src/Agnes.Ui.Core/Agnes.Ui.Core.csproj" />
     <Project Path="src/Agnes.Wrap/Agnes.Wrap.csproj" />
   </Folder>
@@ -29,7 +33,10 @@
     <Project Path="tests/Agnes.Cli.Tests/Agnes.Cli.Tests.csproj" />
     <Project Path="tests/Agnes.Agents.Native.Tests/Agnes.Agents.Native.Tests.csproj" />
     <Project Path="tests/Agnes.Agents.Codex.Tests/Agnes.Agents.Codex.Tests.csproj" />
+    <Project Path="tests/Agnes.Agents.Antigravity.Tests/Agnes.Agents.Antigravity.Tests.csproj" />
+    <Project Path="tests/Agnes.Agents.Pi.Tests/Agnes.Agents.Pi.Tests.csproj" />
     <Project Path="tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj" />
+    <Project Path="tests/Agnes.Plugins.CodeyBox.Tests/Agnes.Plugins.CodeyBox.Tests.csproj" />
     <Project Path="tests/Agnes.Mobile.Tests/Agnes.Mobile.Tests.csproj" />
     <Project Path="tests/Agnes.Host.Tests/Agnes.Host.Tests.csproj" />
     <Project Path="tests/Agnes.Integration.Tests/Agnes.Integration.Tests.csproj" />

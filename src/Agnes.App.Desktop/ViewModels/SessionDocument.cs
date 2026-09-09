@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Threading;
+using Agnes.Abstractions;
 using Agnes.App.Desktop.Persistence;
 using Agnes.Client;
 using Agnes.Protocol;
@@ -20,6 +21,31 @@ public sealed partial class SessionDocument : Document, ITraySession
     private readonly ITabController _controller;
     private readonly Agnes.Ui.Core.IUiDispatcher _dispatcher;
 
+    /// <summary>
+    /// This tab's standing goals. Lives on the tab, not the window: a goal is armed against one session,
+    /// so the control that arms it belongs beside that session rather than in chrome that has to infer
+    /// its target from focus. See <see cref="SessionGoalsViewModel"/>.
+    /// </summary>
+    public SessionGoalsViewModel Goals { get; }
+
+    /// <summary>Keeps <see cref="Goals"/> pointed at whatever session this tab currently holds — including
+    /// none, when the tab is back at the host picker.</summary>
+    partial void OnSessionChanged(SessionViewModel? value) => Goals.Attach(value);
+
+    /// <summary>
+    /// The empty-state guidance shown when no host is connected yet. It lives here rather than in the view
+    /// because it names the built-in simulated host, which only exists in a development build — and XAML
+    /// has no conditional compilation, so a hardcoded string would invite a released client to point the
+    /// user at a host that isn't there. See <see cref="RoutingConnector"/>.
+    /// </summary>
+    public string FirstRunHint =>
+        "First time? Start a host (docker compose up, or dotnet run in src/Agnes.Host), "
+        + "then Add host with the pairing code it prints."
+#if DEBUG
+        + " Or try the Simulated host above."
+#endif
+        ;
+
     /// <param name="dispatcher">
     /// Required, not defaulted: everything here that completes off the UI thread posts through it, and a
     /// silent fallback to an inline dispatcher means those updates run on a worker thread, where Avalonia
@@ -30,6 +56,7 @@ public sealed partial class SessionDocument : Document, ITraySession
     {
         _controller = controller;
         _dispatcher = dispatcher;
+        Goals = new SessionGoalsViewModel(dispatcher);
         _workingDirectory = controller.DefaultWorkingDirectory;
         // Disabled until the URL field is more than the "https://" prefill, so Connect can't fire on junk.
         AddHostCommand = new AsyncRelayCommand(() => _controller.AddHostAsync(this),
@@ -38,6 +65,7 @@ public sealed partial class SessionDocument : Document, ITraySession
         SignInWithKeyCommand = new AsyncRelayCommand(() => _controller.SignInWithKeyAsync(this));
         ToggleAddHostCommand = new RelayCommand(() => ShowAddHost = !ShowAddHost);
         BackCommand = new RelayCommand(() => _controller.BackToHosts(this));
+        OpenDevicesSettingsCommand = new RelayCommand(() => _controller.OpenDevicesSettings());
         CloseLoginTerminalCommand = new RelayCommand(() => LoginTerminal = null);
         SetGitCredentialModeCommand = new RelayCommand<string>(v => { if (v is not null) { GitCredentialMode = v; } });
         SetPermissionModeCommand = new RelayCommand<string>(v => { if (!PermissionPromptsRequired) { SkipPermissions = v == "Autonomous"; } });
@@ -74,6 +102,8 @@ public sealed partial class SessionDocument : Document, ITraySession
         SameSetupCommand = new AsyncRelayCommand(() => _controller.NewSessionSameSetupAsync(this));
         ForkCommand = new AsyncRelayCommand(() => _controller.ForkAsync(this));
         MoveToWindowCommand = new RelayCommand(() => _controller.FloatTab(this));
+        IncreaseChatFontSizeCommand = new RelayCommand(() => _controller.AdjustChatFontSize(1));
+        DecreaseChatFontSizeCommand = new RelayCommand(() => _controller.AdjustChatFontSize(-1));
         // Stop waiting on a slow/opaque session open and drop back to the agent picker (defect #8/#10).
         CancelStartCommand = new RelayCommand(() =>
         {
@@ -82,6 +112,9 @@ public sealed partial class SessionDocument : Document, ITraySession
             StatusText = "Cancelled — choose an agent to try again.";
         });
     }
+
+    public IRelayCommand IncreaseChatFontSizeCommand { get; }
+    public IRelayCommand DecreaseChatFontSizeCommand { get; }
 
     /// <summary>The sessions already running on this tab's host, offered on the new-session screen so a
     /// freshly connected client can rejoin work instead of only starting more of it.</summary>
@@ -179,13 +212,19 @@ public sealed partial class SessionDocument : Document, ITraySession
     }
 
     /// <summary>Replaces the model picker's contents (called by the controller once the catalog is resolved),
-    /// preselecting the first available model.</summary>
+    /// preselecting a favourite when one is offered and otherwise nothing.</summary>
+    /// <remarks>
+    /// Nothing selected means the open request carries no model and the CLI runs its own default — which is
+    /// the one choice guaranteed to work. Preselecting "the first available model" was how a session on a
+    /// live host opened with a BYOK gateway id the CLI rejected on the first token: the catalogue's order is
+    /// the provider's, not a recommendation, and a person who never touched the picker had not chosen it.
+    /// </remarks>
     public void SetModels(IEnumerable<ModelChoice> models)
     {
         Models = new ObservableCollection<ModelChoice>(models);
         CustomModelId = string.Empty;
         SelectedModel = null;
-        SelectModelChoice(Models.FirstOrDefault(m => m.IsAvailable));
+        SelectModelChoice(Models.FirstOrDefault(m => m.IsFavorite && m.IsAvailable));
         OnPropertyChanged(nameof(HasModels));
     }
 
@@ -314,6 +353,20 @@ public sealed partial class SessionDocument : Document, ITraySession
 
     [ObservableProperty]
     private string _hostName = string.Empty;
+
+    /// <summary>
+    /// Why this tab's session list is short, when the reason is this device's role rather than the host's
+    /// state. Empty for an owner, for a host too old to say, and whenever there is something in the list —
+    /// an explanation for an absence has no business appearing next to a presence.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowHostRoleNotice))]
+    private string _hostRoleNotice = string.Empty;
+
+    public bool ShowHostRoleNotice => HostRoleNotice.Length > 0;
+
+    /// <summary>Takes the reader to the page the notice names.</summary>
+    public IRelayCommand OpenDevicesSettingsCommand { get; }
 
     [ObservableProperty]
     private string _agentName = string.Empty;
@@ -452,6 +505,28 @@ public sealed partial class SessionDocument : Document, ITraySession
     }
 
     public IRelayCommand<string> SetSandboxModeCommand { get; }
+
+    /// <summary>
+    /// New-session choice: give the sandbox a 1280×800 display the agent can see and drive. Offered only where
+    /// a sandbox is (a graphical sandbox is a sandbox with a screen in it), and turning it on turns the sandbox
+    /// on, because the host would refuse the combination anyway.
+    /// </summary>
+    /// <remarks>
+    /// There is no separate host capability flag for this yet, so the checkbox is shown wherever sandboxing is
+    /// available and a host that doesn't allow graphical sandboxes refuses the request — its message lands in
+    /// <see cref="StatusText"/> like every other start failure. Better a visible option that can be refused
+    /// with a reason than a hidden one nobody can find.
+    /// </remarks>
+    [ObservableProperty]
+    private bool _graphicalSandbox;
+
+    partial void OnGraphicalSandboxChanged(bool value)
+    {
+        if (value)
+        {
+            UseSandbox = true;
+        }
+    }
 
     [ObservableProperty]
     private bool _isRenaming;
@@ -600,6 +675,53 @@ public sealed partial class SessionDocument : Document, ITraySession
     /// <see cref="TerminalPanelVisible"/>.</summary>
     public bool FileBrowserPanelVisible => IsLive && Session?.IsFileBrowserVisible == true;
 
+    /// <summary>Whether the agent-console overlay should show — same live-and-toggled gate as
+    /// <see cref="TerminalPanelVisible"/>.</summary>
+    public bool AgentConsolePanelVisible => IsLive && Session?.IsAgentConsoleVisible == true;
+
+    /// <summary>Whether the screen overlay should show — same live-and-toggled gate as
+    /// <see cref="TerminalPanelVisible"/>, plus the session actually having a display to show.</summary>
+    public bool ScreenPanelVisible => IsLive && Session?.HasDisplay == true && Session?.IsDisplayVisible == true;
+
+    /// <summary>Whether to offer the screen at all: only a graphical sandbox has one, so on every other
+    /// session the affordance is absent rather than present-and-broken. The fact comes from the host — the
+    /// snapshot's <c>SessionInfo.HasDisplay</c>, then the catalogue — never from what this client asked for.</summary>
+    public bool ScreenAvailable => IsLive && Session?.HasDisplay == true;
+
+    /// <summary>
+    /// This session asked for a screen and the host opened it without one. Worth saying out loud: the request
+    /// succeeded, the session is running, and the only sign anything differed from what was asked would
+    /// otherwise be a Screen button that never appeared — which reads as a client bug, not as a host that
+    /// has graphical sandboxes switched off.
+    /// </summary>
+    [ObservableProperty]
+    private bool _screenDeclined;
+
+    /// <summary>
+    /// The driver chip shown in the tab's status bar while the panel is CLOSED: someone is at the keyboard of
+    /// a screen you can't currently see, which is exactly when you want telling. Empty when the panel is open
+    /// (its own header says it) or when nobody is driving.
+    /// </summary>
+    public string ScreenDriverChip => ScreenAvailable && !ScreenPanelVisible && Session?.Display is { } display
+        ? display.Holder switch
+        {
+            DisplayControlHolder.Agent => "Agent is driving the screen",
+            DisplayControlHolder.User => "You have the screen",
+            _ => string.Empty,
+        }
+        : string.Empty;
+
+    public bool ShowScreenDriverChip => ScreenDriverChip.Length > 0;
+
+    /// <summary>Sky when the agent is driving (something is in motion), amber when you are (it is on you).</summary>
+    public bool ScreenDriverIsAgent => Session?.Display?.IsAgentDriving == true;
+
+    public bool ScreenDriverIsUser => Session?.Display?.IsUserDriving == true;
+
+    /// <summary>Whether to offer the agent console at all: hidden once the host has said this agent has
+    /// none, rather than leaving a button that quietly does nothing.</summary>
+    public bool AgentConsoleAvailable => IsLive && Session?.AgentConsoleUnavailable != true;
+
     /// <summary>Status bar shows once a host is connected (agent-pick and live stages).</summary>
     public bool ShowStatusBar => Stage != TabStage.PickHost;
 
@@ -612,6 +734,19 @@ public sealed partial class SessionDocument : Document, ITraySession
         OnPropertyChanged(nameof(ShowStatusBar));
         OnPropertyChanged(nameof(TerminalPanelVisible));
         OnPropertyChanged(nameof(FileBrowserPanelVisible));
+        OnPropertyChanged(nameof(AgentConsolePanelVisible));
+        OnPropertyChanged(nameof(AgentConsoleAvailable));
+        RaiseScreenFlags();
+    }
+
+    private void RaiseScreenFlags()
+    {
+        OnPropertyChanged(nameof(ScreenPanelVisible));
+        OnPropertyChanged(nameof(ScreenAvailable));
+        OnPropertyChanged(nameof(ScreenDriverChip));
+        OnPropertyChanged(nameof(ShowScreenDriverChip));
+        OnPropertyChanged(nameof(ScreenDriverIsAgent));
+        OnPropertyChanged(nameof(ScreenDriverIsUser));
     }
 
     // ---- agent picking: select (highlight) then Start (open) ----
@@ -649,7 +784,7 @@ public sealed partial class SessionDocument : Document, ITraySession
             return Task.CompletedTask;
         }
 
-        return _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode, SandboxAvailable && UseSandbox, EffectiveModelId);
+        return _controller.SelectAgentAsync(this, a.AdapterId, a.DisplayName, SkipPermissions, GitCredentialMode, SandboxAvailable && UseSandbox, EffectiveModelId, SandboxAvailable && GraphicalSandbox);
     }
 
     private async Task SaveProfileAsync()
@@ -738,11 +873,36 @@ public sealed partial class SessionDocument : Document, ITraySession
         }
     }
 
+    // The display view model is created lazily and only once the host's catalogue says the session has a
+    // screen, which can be after the tab is already live — so this is idempotent and called from both places.
+    private DisplayViewModel? _watchedDisplay;
+
+    private void AttachDisplay()
+    {
+        if (Session?.Display is not { } display || ReferenceEquals(display, _watchedDisplay))
+        {
+            return;
+        }
+
+        _watchedDisplay = display;
+        display.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(DisplayViewModel.Holder)
+                or nameof(DisplayViewModel.IsUserDriving)
+                or nameof(DisplayViewModel.IsAgentDriving))
+            {
+                RaiseScreenFlags();
+            }
+        };
+        RaiseScreenFlags();
+    }
+
     public void AttachSession(SessionViewModel session)
     {
         Session = session;
         Stage = TabStage.Live;
         StatusText = "Connected";
+        AttachDisplay();
 
         session.PropertyChanged += (_, e) =>
         {
@@ -759,6 +919,13 @@ public sealed partial class SessionDocument : Document, ITraySession
             {
                 OnPropertyChanged(nameof(IsUnread));
             }
+            else if (e.PropertyName is nameof(SessionViewModel.LatestStatus)
+                or nameof(SessionViewModel.StatusAge)
+                or nameof(SessionViewModel.StatusIsStale)
+                or nameof(SessionViewModel.ShowStatusLine))
+            {
+                RaiseStatusFlags();
+            }
             else if (e.PropertyName is nameof(SessionViewModel.IsTerminalVisible))
             {
                 OnPropertyChanged(nameof(TerminalPanelVisible));
@@ -766,6 +933,21 @@ public sealed partial class SessionDocument : Document, ITraySession
             else if (e.PropertyName is nameof(SessionViewModel.IsFileBrowserVisible))
             {
                 OnPropertyChanged(nameof(FileBrowserPanelVisible));
+            }
+            else if (e.PropertyName is nameof(SessionViewModel.IsAgentConsoleVisible))
+            {
+                OnPropertyChanged(nameof(AgentConsolePanelVisible));
+            }
+            else if (e.PropertyName is nameof(SessionViewModel.AgentConsoleUnavailable))
+            {
+                OnPropertyChanged(nameof(AgentConsoleAvailable));
+            }
+            else if (e.PropertyName is nameof(SessionViewModel.IsDisplayVisible) or nameof(SessionViewModel.HasDisplay))
+            {
+                RaiseScreenFlags();
+                // HasDisplay arriving late (it comes from the host's catalogue, after the session is already
+                // on screen) is what first attaches the driver-chip listener, so re-run the attach.
+                AttachDisplay();
             }
             else if (e.PropertyName is nameof(SessionViewModel.Usage)
                 or nameof(SessionViewModel.UsageSummary))
@@ -784,6 +966,7 @@ public sealed partial class SessionDocument : Document, ITraySession
         OnPropertyChanged(nameof(ActivityText));
         OnPropertyChanged(nameof(NeedsAttention));
         RaiseActivityFlags();
+        RaiseStatusFlags();
         Usage = session.Usage;
         UsageSummary = session.UsageSummary;
         if (session.HasAgentTitle)
@@ -814,6 +997,51 @@ public sealed partial class SessionDocument : Document, ITraySession
         OnPropertyChanged(nameof(IsAwaitingInput));
         OnPropertyChanged(nameof(IsReadyForReview));
         OnPropertyChanged(nameof(IsFaulted));
+    }
+
+    // ---- the agent's one-line status (mirrors the live session, like the activity flags above) ----
+
+    /// <summary>The agent's latest one-line status, or null. Mirrored here so the tab strip, the sessions
+    /// switcher and the dashboard can read it off the tab without reaching through a possibly-null
+    /// session.</summary>
+    public string? LatestStatus => Session?.LatestStatus;
+
+    public bool HasStatus => Session?.HasStatus ?? false;
+
+    public string StatusAge => Session?.StatusAge ?? string.Empty;
+
+    public bool StatusIsStale => Session?.StatusIsStale ?? false;
+
+    /// <summary>Whether the header's status line has anything to show at all.</summary>
+    public bool ShowStatusLine => Session?.ShowStatusLine ?? false;
+
+    public string StaleText => Session?.StaleText ?? string.Empty;
+
+    /// <summary>
+    /// What the tab's own tooltip says: where it runs, and — when the agent has said anything — the latest
+    /// status under it. A tab strip trims a title to a few characters, so hovering is the cheapest way to
+    /// find out what a given agent is up to without switching to it.
+    /// </summary>
+    public string TabTooltip
+    {
+        get
+        {
+            var head = WorkingDirectory is { Length: > 0 } dir ? dir : Title ?? string.Empty;
+            return LatestStatus is { Length: > 0 } status
+                ? StatusAge is { Length: > 0 } age ? $"{head}\n{status} · {age}" : $"{head}\n{status}"
+                : head;
+        }
+    }
+
+    private void RaiseStatusFlags()
+    {
+        OnPropertyChanged(nameof(LatestStatus));
+        OnPropertyChanged(nameof(HasStatus));
+        OnPropertyChanged(nameof(StatusAge));
+        OnPropertyChanged(nameof(StatusIsStale));
+        OnPropertyChanged(nameof(StaleText));
+        OnPropertyChanged(nameof(ShowStatusLine));
+        OnPropertyChanged(nameof(TabTooltip));
     }
 
     /// <summary>The live session's id, or empty until one is attached (ITraySession — feeds the tray's

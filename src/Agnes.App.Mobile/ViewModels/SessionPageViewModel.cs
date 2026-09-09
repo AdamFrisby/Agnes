@@ -6,6 +6,33 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Agnes.App.Mobile.ViewModels;
 
+/// <summary>What the middle of the session page is showing.</summary>
+public enum SessionSegment
+{
+    /// <summary>The conversation.</summary>
+    Transcript,
+
+    /// <summary>The graphical sandbox's screen. Only reachable when the session has one.</summary>
+    Screen,
+}
+
+/// <summary>
+/// What this phone asks the host to send for a graphical session.
+///
+/// Two tiers, because there are two situations and no useful middle. On Wi-Fi the limit is the screen:
+/// asking for more pixels than the panel has is bytes nobody can see, so the width is the display's own
+/// and 15 fps is enough to watch someone work. On a metered connection the limit is the bill, and 640 at
+/// 8 fps is roughly a third of the data for a picture that still answers "what is it doing".
+/// </summary>
+public sealed record ScreenQuality(int MaxWidth, int MaxFps, int JpegQuality)
+{
+    /// <summary>Cellular, or a metered hotspot.</summary>
+    public static readonly ScreenQuality Metered = new(640, 8, 55);
+
+    /// <summary>Unmetered: as wide as the panel, capped so a tablet doesn't ask for a full desktop.</summary>
+    public static ScreenQuality For(int screenPixelWidth) => new(Math.Clamp(screenPixelWidth, 320, 960), 15, 65);
+}
+
 /// <summary>
 /// A live session, full-screen.
 ///
@@ -48,6 +75,18 @@ public sealed partial class SessionPageViewModel : PageViewModel
         ShowPlanCommand = new RelayCommand(() => Sheet(s => new PlanSheetViewModel(s)));
         ShowActionsCommand = new RelayCommand(() => _shell.ShowSheet(new SessionActionsSheetViewModel(_shell, _sessions, Entry)));
         ShowQueueCommand = new RelayCommand(() => Sheet(s => new QueueSheetViewModel(_shell, s)));
+        ShowTranscriptCommand = new RelayCommand(() => Segment = SessionSegment.Transcript);
+        DismissAwayCommand = new RelayCommand(NoteUserInteraction);
+        ShowScreenCommand = new AsyncRelayCommand(ShowScreenAsync);
+        SendScreenKeyCommand = new RelayCommand<string>(key =>
+        {
+            if (!string.IsNullOrEmpty(key))
+            {
+                ScreenKeyRequested?.Invoke(key);
+                _shell.Haptics.Tick();
+            }
+        });
+        ShowScreenKeyboardCommand = new RelayCommand(() => ScreenKeyboardRequested?.Invoke());
         ToggleSearchCommand = new RelayCommand(() =>
         {
             IsSearchOpen = !IsSearchOpen;
@@ -84,6 +123,13 @@ public sealed partial class SessionPageViewModel : PageViewModel
             if (item is not null)
             {
                 _shell.ShowSheet(new DetailSheetViewModel(_shell, item.Speaker, item.Text, markdown: true));
+            }
+        });
+        OpenSharedFileCommand = new RelayCommand<SharedFileItem>(item =>
+        {
+            if (item is not null && Session is { } live)
+            {
+                _shell.ShowSheet(new ReceivedFileSheetViewModel(_shell, live, item));
             }
         });
         AnswerQuestionCommand = new RelayCommand<QuestionItem>(item =>
@@ -135,12 +181,29 @@ public sealed partial class SessionPageViewModel : PageViewModel
     public IRelayCommand ShowPlanCommand { get; }
     public IRelayCommand ShowActionsCommand { get; }
     public IRelayCommand ShowQueueCommand { get; }
+
+    /// <summary>Back to the conversation. The screen stays connected — the thumbnail above the transcript
+    /// is the whole point of not tearing it down.</summary>
+    public IRelayCommand ShowTranscriptCommand { get; }
+
+    /// <summary>Opens the Screen segment: connects the display channel if it isn't already, and tells the
+    /// host what this phone can use.</summary>
+    public IAsyncRelayCommand ShowScreenCommand { get; }
+
+    /// <summary>Sends one named key (Escape, Tab, an arrow) the soft keyboard has no room for.</summary>
+    public IRelayCommand<string> SendScreenKeyCommand { get; }
+
+    /// <summary>Raises the IME over the screen.</summary>
+    public IRelayCommand ShowScreenKeyboardCommand { get; }
     public IRelayCommand ToggleSearchCommand { get; }
     public IRelayCommand<SlashCommand> ApplySlashCommand { get; }
     public IRelayCommand<PromptAttachment> RemoveAttachmentCommand { get; }
     public IRelayCommand<ToolCallItem> OpenToolCommand { get; }
     public IRelayCommand<MessageBubbleItem> OpenMessageCommand { get; }
     public IRelayCommand<QuestionItem> AnswerQuestionCommand { get; }
+
+    /// <summary>Opens the sheet for a file the agent sent: the preview, then share / save / open.</summary>
+    public IRelayCommand<SharedFileItem> OpenSharedFileCommand { get; }
 
     public bool CanDictate => _shell.CanDictate;
 
@@ -157,6 +220,184 @@ public sealed partial class SessionPageViewModel : PageViewModel
         ? permission.Options.Where(o => o.Kind is not (PermissionOptionKind.AllowOnce or PermissionOptionKind.RejectOnce)).ToList()
         : [];
 
+    // ---- the agent's own status ----
+
+    /// <summary>
+    /// Where the status facts come from. The live session normally; settable so a test (or the preview
+    /// harness) can put the page into the state that matters — "you weren't here and this happened" —
+    /// which a live session will not enter on request.
+    /// </summary>
+    public IAgentStatusSource StatusSource
+    {
+        get => _statusSource ?? new LiveAgentStatus(Session);
+        set
+        {
+            _statusSource = value;
+            RaiseStatus();
+        }
+    }
+
+    private IAgentStatusSource? _statusSource;
+
+    /// <summary>What the agent last said it was doing, under the title.</summary>
+    public string? LatestStatus => StatusSource.Status.Line;
+
+    public bool HasStatus => StatusSource.Status.HasLine;
+
+    /// <summary>"4m", or "no update for 12 min" once a working agent has gone quiet.</summary>
+    public string StatusAge => StatusLine.Age(StatusSource.Status, IsTurnActive);
+
+    public bool StatusIsStale => StatusLine.IsStale(StatusSource.Status, IsTurnActive);
+
+    // ---- while you were away ----
+
+    /// <summary>
+    /// What the agent reported while nobody was looking, captured the moment the page opened.
+    ///
+    /// Captured rather than bound live, because opening the page is itself the end of being away: the
+    /// band has to survive the interaction that dismisses the state it describes.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowAwayBand))]
+    private string? _awayStatus;
+
+    /// <summary>How long ago that was.</summary>
+    [ObservableProperty]
+    private string _awayAge = string.Empty;
+
+    public bool ShowAwayBand => !string.IsNullOrWhiteSpace(AwayStatus);
+
+    /// <summary>Dismisses the band. Bound to the band itself — tapping the thing you have just read is
+    /// the most obvious way to be done with it.</summary>
+    public IRelayCommand DismissAwayCommand { get; }
+
+    /// <summary>
+    /// A human just did something here: scrolled, typed, tapped the transcript. Ends the unattended
+    /// stretch on the session and takes the band down.
+    /// </summary>
+    public void NoteUserInteraction()
+    {
+        StatusSource.NoteUserInteraction();
+        AwayStatus = null;
+    }
+
+    /// <summary>
+    /// Reads the away state once, on arrival, and then immediately marks the session attended. Order
+    /// matters: the snapshot is taken before the interaction that invalidates it, which is why this is
+    /// one method rather than a binding.
+    /// </summary>
+    private void CaptureAway()
+    {
+        var source = StatusSource;
+        AwayStatus = source.IsUnattended ? source.AwayStatus : null;
+        AwayAge = StatusLine.Age(source.Status, working: false);
+        source.NoteUserInteraction();
+        RaiseStatus();
+    }
+
+    private void RaiseStatus()
+    {
+        OnPropertyChanged(nameof(LatestStatus));
+        OnPropertyChanged(nameof(HasStatus));
+        OnPropertyChanged(nameof(StatusAge));
+        OnPropertyChanged(nameof(StatusIsStale));
+    }
+
+    // ---- the screen ----
+
+    /// <summary>
+    /// Whether this session has a graphical sandbox. Read from the saved pointer (the host's catalogue
+    /// says so, or we asked for one at launch) so the segment exists before the subscription lands.
+    /// </summary>
+    public bool HasDisplay => Entry.HasDisplay;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsTranscriptSegment), nameof(IsScreenSegment), nameof(ShowThumbnail))]
+    private SessionSegment _segment = SessionSegment.Transcript;
+
+    public bool IsTranscriptSegment => Segment == SessionSegment.Transcript;
+
+    public bool IsScreenSegment => Segment == SessionSegment.Screen;
+
+    /// <summary>The live strip above the conversation — only for a session that has a screen, and only
+    /// while you're looking at the conversation.</summary>
+    public bool ShowThumbnail => HasDisplay && IsTranscriptSegment;
+
+    /// <summary>
+    /// The panel's width in real pixels, set by the view once it is attached — the quality request is a
+    /// promise about what this device can actually show, and the view is the only thing that knows.
+    /// </summary>
+    public int ScreenPixelWidth { get; set; } = 960;
+
+    /// <summary>What we ask the host for. Metered wins only if the person left the setting on.</summary>
+    public ScreenQuality Quality =>
+        _shell.IsMeteredNetwork && _shell.Settings.LowerScreenQualityOnMobileData
+            ? ScreenQuality.Metered
+            : ScreenQuality.For(ScreenPixelWidth);
+
+    /// <summary>
+    /// The display channel for this session, built the first time the screen is asked for.
+    ///
+    /// Built here rather than taken from the session because it is this page's resource: it opens a
+    /// second connection to the host and holds it until the page is left, and a view model shared with
+    /// the sessions list has no business owning that.
+    /// </summary>
+    public DisplayViewModel? Display
+    {
+        get
+        {
+            // Not built for a session without a screen: the thumbnail binds this on every session page,
+            // and a DisplayViewModel per conversation is a connection waiting to be opened by accident.
+            if (_display is null && HasDisplay && Session is { } session)
+            {
+                // The session's own display when it has one — one channel per session, however many
+                // surfaces show it — else this page opens its own.
+                _display = session.Display ?? new DisplayViewModel(session.Host, session.SessionId, _shell.Dispatcher);
+            }
+
+            return _display;
+        }
+
+        // Settable so a head that already holds one can hand it over rather than opening a second
+        // channel to the same session — which is what this becomes the day SessionViewModel.Display
+        // lands, and what the headless harness uses to feed the screen synthetic frames.
+        set
+        {
+            if (!ReferenceEquals(_display, value))
+            {
+                _display = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private DisplayViewModel? _display;
+
+    /// <summary>Raised when the soft keyboard should come up over the screen.</summary>
+    public event Action? ScreenKeyboardRequested;
+
+    /// <summary>Raised with an X keysym name for a key the soft keyboard doesn't offer.</summary>
+    public event Action<string>? ScreenKeyRequested;
+
+    private async Task ShowScreenAsync()
+    {
+        Segment = SessionSegment.Screen;
+        if (Display is not { } display)
+        {
+            return;
+        }
+
+        // Connect first and *then* state the quality: input and preferences are dropped while the
+        // channel is closed, so asking in the other order silently leaves a phone on desktop frames.
+        if (!display.IsConnected)
+        {
+            await display.ConnectCommand.ExecuteAsync(null).ConfigureAwait(true);
+        }
+
+        var quality = Quality;
+        await display.SetQualityAsync(quality.MaxWidth, quality.MaxFps, quality.JpegQuality).ConfigureAwait(true);
+    }
+
     // ---- in-transcript search ----
 
     [ObservableProperty]
@@ -164,6 +405,12 @@ public sealed partial class SessionPageViewModel : PageViewModel
 
     public override bool OnBackRequested()
     {
+        if (IsScreenSegment)
+        {
+            Segment = SessionSegment.Transcript;
+            return true;
+        }
+
         if (IsSearchOpen)
         {
             IsSearchOpen = false;
@@ -181,10 +428,17 @@ public sealed partial class SessionPageViewModel : PageViewModel
     public override void OnAppearing()
     {
         Session?.SetActive(true);
+        CaptureAway();
         ScrollToBottomRequested?.Invoke();
     }
 
-    public override void OnDisappearing() => Session?.SetActive(false);
+    public override void OnDisappearing()
+    {
+        Session?.SetActive(false);
+        // Leaving the page, not the segment: switching back to the transcript keeps the stream so the
+        // thumbnail stays live, but walking away from the session must not leave a video call running.
+        _display?.DisconnectCommand.Execute(null);
+    }
 
     /// <summary>Raised when the transcript should jump to the newest item.</summary>
     public event Action? ScrollToBottomRequested;
@@ -197,6 +451,9 @@ public sealed partial class SessionPageViewModel : PageViewModel
     {
         Session = session;
         Bind(session);
+        // The page was pushed before the subscription landed, so this is the first moment there is an
+        // away state to read at all — OnAppearing found an empty source.
+        CaptureAway();
         RaiseDerived();
     }
 
@@ -391,5 +648,9 @@ public sealed partial class SessionPageViewModel : PageViewModel
         OnPropertyChanged(nameof(QueueCount));
         OnPropertyChanged(nameof(FilesChip));
         OnPropertyChanged(nameof(ToolsChip));
+        OnPropertyChanged(nameof(HasDisplay));
+        OnPropertyChanged(nameof(ShowThumbnail));
+        OnPropertyChanged(nameof(Display));
+        RaiseStatus();
     }
 }

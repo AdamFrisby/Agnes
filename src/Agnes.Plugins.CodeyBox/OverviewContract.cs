@@ -1,0 +1,273 @@
+namespace Agnes.Plugins.CodeyBox;
+
+// ---------------------------------------------------------------------------------------------------
+// THE OVERVIEW CONTRACT
+//
+// The CodeyBox tab opens on an overview built to answer three questions about a fleet of autonomous
+// agents, in this order, in about five seconds:
+//
+//   1. Is it moving?       (motion — per item, rolled up to the fleet)
+//   2. Is it converging?   (direction — the shape of an item's audit loop, not its iteration count)
+//   3. Did it land whole?  (output — landed changes, with a complete final audit)
+//
+// It is deliberately NOT organised around iteration counts, first-pass yield or cost. The fleet this was
+// designed against landed 325 of 406 items at a median of 9–12 audit iterations with 88% of iterations
+// blocking along the way: repetition is the mechanism, not the defect. Cost is fenced by budgets and is
+// a guardrail here, never a headline.
+//
+// The composition is three bands:
+//
+//   Band 1  a generated sentence naming the current constraint, plus five vitals with sparklines and a
+//           control band (normal = within the fleet's own trailing norm, not an absolute)
+//   Band 2  one trace per live item, worst first; healthy items collapse to a count
+//   Band 3  the trend: a cumulative flow chart over 30 days, and quota burn-down per agent to its reset
+//
+// This file is the contract between the three parts that build it: the pure model (OverviewModel), the
+// data layer that feeds it (CodeyBoxClient + CodeyBoxSectionsViewModel), and the view. Everything here
+// is an immutable record or enum. No I/O, no Avalonia, no MVVM.
+// ---------------------------------------------------------------------------------------------------
+
+/// <summary>Whether a live item is doing anything. The first question asked of every row.</summary>
+public enum Motion
+{
+    /// <summary>State or audit progress advanced recently. Leave it alone.</summary>
+    Moving,
+
+    /// <summary>Stopped on purpose with a known resume: quota window, transient back-off, paused agent.
+    /// Not a problem; the resume time is the information.</summary>
+    Parked,
+
+    /// <summary>Stopped waiting on something outside the pipeline: an unsatisfied dependency, or a person
+    /// (an open question, a decision on a failed item).</summary>
+    Blocked,
+
+    /// <summary>Stopped with no reason the orchestrator can give: a live state whose item and stream have
+    /// both gone quiet past the phase's threshold. The one motion state that is a defect.</summary>
+    Wedged,
+}
+
+/// <summary>The shape of an item's audit loop. Read from the trace, so it is a picture before it is a
+/// word.</summary>
+public enum Convergence
+{
+    /// <summary>Not enough iterations to have a shape.</summary>
+    New,
+
+    /// <summary>Blocking findings trending down. The loop is doing its job.</summary>
+    Converging,
+
+    /// <summary>Findings going down and back up, typically the same gate repeating. Iteration without
+    /// progress: the one kind of repetition that is waste.</summary>
+    Oscillating,
+
+    /// <summary>Flat and non-zero: the same finding count for several iterations running.</summary>
+    Stuck,
+
+    /// <summary>Passed its last iteration; waiting on merge or push.</summary>
+    Passed,
+}
+
+/// <summary>One audit iteration on the trace.</summary>
+/// <param name="Complete">False while auditors are still reporting (the trailing, in-progress bar).</param>
+/// <param name="SameGateAsPrevious">True when the blocking auditors are the same set as the previous
+/// iteration — the signal that distinguishes oscillation from ordinary rework.</param>
+public sealed record TracePoint(int Iteration, int BlockingFindings, bool Complete, bool SameGateAsPrevious);
+
+/// <summary>
+/// One live item as the overview shows it: what it is, whether it moves, which way it is heading.
+/// </summary>
+/// <param name="Points">The audit loop, oldest first. Empty for an item that has not reached audit.</param>
+/// <param name="Ceiling">The project's iteration cap for this item; 0 when unknown.</param>
+/// <param name="Why">One short line the row shows under the title: the resume time for a parked item,
+/// the dependency for a blocked one, the quiet duration for a wedged one, the gate for an oscillating
+/// one. Never empty for anything that is not Moving+Converging.</param>
+/// <param name="NearCeiling">Within a few iterations of <paramref name="Ceiling"/> while still
+/// converging — the case where extending the ceiling preserves work that would otherwise be discarded.</param>
+/// <param name="NeedsPerson">An open question or a failed item awaiting a decision: blocked on you.</param>
+/// <param name="SinceMoved">Time since the item's state or audit progress last advanced.</param>
+/// <param name="Rank">Sort key, ascending: wedged, oscillating, near ceiling, stuck, blocked on a
+/// person, parked, blocked on a dependency, then moving. Lower is more urgent.</param>
+public sealed record ItemTrace(
+    WorkItemRow Item,
+    IReadOnlyList<TracePoint> Points,
+    int Ceiling,
+    Motion Motion,
+    Convergence Shape,
+    string Why,
+    bool NearCeiling,
+    bool NeedsPerson,
+    TimeSpan SinceMoved,
+    int Rank)
+{
+    /// <summary>Whether this row belongs in the attention band or collapses into the healthy count.</summary>
+    public bool NeedsAttention => Motion != Motion.Moving || Shape is Convergence.Oscillating or Convergence.Stuck || NearCeiling || NeedsPerson;
+
+    public int LastIteration => Points.Count == 0 ? 0 : Points[^1].Iteration;
+
+    public bool HasTrace => Points.Count > 0;
+
+    public bool IsMoving => Motion == Motion.Moving;
+    public bool IsParked => Motion == Motion.Parked;
+    public bool IsBlocked => Motion == Motion.Blocked;
+    public bool IsWedged => Motion == Motion.Wedged;
+    public bool IsOscillating => Shape == Convergence.Oscillating;
+}
+
+/// <summary>Which way a vital is heading against its own norm.</summary>
+public enum Trend
+{
+    /// <summary>Too little history to say. Shown as no arrow, never as flat.</summary>
+    Unknown,
+    Up,
+    Flat,
+    Down,
+}
+
+/// <summary>
+/// One headline number with its trend. The tone is set only by leaving the control band, so a quiet
+/// day reads as quiet rather than as a collapse.
+/// </summary>
+/// <param name="Spark">Recent samples, oldest first, for the sparkline. Empty when there is no history yet.</param>
+/// <param name="Median">Trailing median the band is centred on; null when history is too short.</param>
+/// <param name="BandLow">Lower edge of normal; null with <paramref name="Median"/>.</param>
+/// <param name="BandHigh">Upper edge of normal; null with <paramref name="Median"/>.</param>
+/// <param name="Current">The value as a number, for the sparkline's last point.</param>
+public sealed record Vital(
+    string Label,
+    string Value,
+    string Caption,
+    TileTone Tone,
+    IReadOnlyList<double> Spark,
+    double? Median,
+    double? BandLow,
+    double? BandHigh,
+    double Current,
+    Trend Trend)
+{
+    public bool HasBand => Median is not null;
+    public bool HasSpark => Spark.Count >= 2;
+    public bool IsNeutral => Tone == TileTone.Neutral;
+    public bool IsActive => Tone == TileTone.Active;
+    public bool IsAttention => Tone == TileTone.Attention;
+    public bool IsBad => Tone == TileTone.Bad;
+}
+
+/// <summary>One day of the cumulative flow chart. All three are cumulative counts as of end of day.</summary>
+public sealed record FlowPoint(DateOnly Day, int Created, int Landed, int Cancelled)
+{
+    /// <summary>What is in the pipeline that day: created but neither landed nor cancelled.</summary>
+    public int InFlight => Math.Max(0, Created - Landed - Cancelled);
+}
+
+/// <summary>
+/// The cumulative flow chart's data: the Done band's slope is throughput, the gap above it is WIP, and a
+/// flat Done line under a widening gap is the picture of a stuck fleet. Built from the work-item list
+/// alone (created/updated timestamps), so it is exact for what it shows and shows nothing it cannot
+/// derive.
+/// </summary>
+public sealed record FlowSeries(IReadOnlyList<FlowPoint> Days)
+{
+    public bool HasData => Days.Count >= 2 && Days[^1].Created > 0;
+}
+
+/// <summary>One quota sample.</summary>
+public sealed record BurnSample(DateTimeOffset At, double Pct);
+
+/// <summary>
+/// One agent's quota window drawn as a burn-down to its reset. Under subscriptions the marginal token is
+/// free and unspent quota at the reset is the only waste, so the number that matters is
+/// <paramref name="ProjectedUnspentPct"/>, not spend.
+/// </summary>
+/// <param name="Window">The provider's window name (five_hour, seven_day); null for the overall reading.</param>
+/// <param name="Samples">Oldest first. Empty when the statistics plugin is not available on this host.</param>
+/// <param name="NowPct">The latest reading; null when unknown.</param>
+/// <param name="ProjectedUnspentPct">Straight-line projection of what will be left at <paramref name="ResetAt"/>
+/// from the recent burn rate; null when there is no reset or too little history.</param>
+/// <param name="Eligible">Whether the router would dispatch to this agent right now.</param>
+public sealed record QuotaBurn(
+    string Agent,
+    string? Window,
+    IReadOnlyList<BurnSample> Samples,
+    DateTimeOffset? ResetAt,
+    double? NowPct,
+    double? ProjectedUnspentPct,
+    bool Eligible)
+{
+    public bool HasSamples => Samples.Count >= 2;
+    public string Label => Window is { Length: > 0 } w ? $"{Agent} · {w.Replace('_', ' ')}" : Agent;
+}
+
+/// <summary>
+/// A point in time the overview records about itself, so the vitals can carry a sparkline and a control
+/// band. Persisted locally by the plugin (the orchestrator keeps no such series); one sample per refresh,
+/// thinned to hourly beyond a day and daily beyond a week.
+/// </summary>
+public sealed record OverviewSample(
+    DateTimeOffset At,
+    int Landed7d,
+    int InMotion,
+    int Parked,
+    int Blocked,
+    int Wedged,
+    int EligibleAgents,
+    int SlotsBusy,
+    int SlotsTotal,
+    double InfraFailureRate,
+    int BlockedOnYou);
+
+/// <summary>Per-item audit progress, as the data layer hands it to the model.</summary>
+public sealed record ItemAuditProgress(string WorkItemId, IReadOnlyList<AuditProgressRow> Rows);
+
+/// <summary>
+/// Everything the model needs, gathered by the data layer in one pass. Nullable members are surfaces the
+/// orchestrator may not offer on a given host; the model degrades honestly rather than inventing a value.
+/// </summary>
+/// <param name="Items">The full work-item list.</param>
+/// <param name="AuditProgress">Audit progress for the live (non-terminal) items only. Missing items simply
+/// have no trace.</param>
+/// <param name="Questions">Open question counts by work-item id, for the live items.</param>
+/// <param name="QuotaHistory">Recent quota samples by agent and window; empty when the statistics plugin
+/// is off.</param>
+/// <param name="History">This plugin's own recent samples, oldest first, for sparklines and bands.</param>
+/// <param name="Ceilings">Audit iteration cap by project id, from <c>/projects</c>.</param>
+public sealed record OverviewInputs(
+    DateTimeOffset Now,
+    IReadOnlyList<WorkItemRow> Items,
+    IReadOnlyList<ItemAuditProgress> AuditProgress,
+    IReadOnlyDictionary<string, int> Questions,
+    QueueStatus? Queue,
+    Concurrency? Concurrency,
+    IReadOnlyList<QuotaProbe> Probes,
+    IReadOnlyList<QuotaBurn> QuotaHistory,
+    TransitionHealth? Health,
+    IReadOnlyList<OverviewSample> History,
+    IReadOnlyDictionary<string, int> Ceilings);
+
+/// <summary>
+/// The overview, ready to draw.
+/// </summary>
+/// <param name="Sentence">The state of the world in one line, the way you would say it to a colleague:
+/// "Quota-bound. Codex gated until 06:00, Claude carrying 3 of 3 slots. 2 items wedged." Names the
+/// constraint first. Never empty: an idle fleet says so.</param>
+/// <param name="Verdict">The one-word rating the sentence expands: the tone the tab's header wears.</param>
+/// <param name="Vitals">Exactly five, in reading order: landed this week; in motion / stopped; eligible
+/// capacity; infra failure rate; blocked on you.</param>
+/// <param name="Attention">Live items needing a look, most urgent first (by <see cref="ItemTrace.Rank"/>).</param>
+/// <param name="Healthy">Live items that are moving and converging, collapsed behind a count.</param>
+/// <param name="Sample">The sample this build contributes to the history.</param>
+public sealed record Overview(
+    string Sentence,
+    TileTone Verdict,
+    IReadOnlyList<Vital> Vitals,
+    IReadOnlyList<ItemTrace> Attention,
+    IReadOnlyList<ItemTrace> Healthy,
+    FlowSeries Flow,
+    IReadOnlyList<QuotaBurn> Quota,
+    OverviewSample Sample)
+{
+    public int HealthyCount => Healthy.Count;
+    public bool HasAttention => Attention.Count > 0;
+    public bool HasHealthy => Healthy.Count > 0;
+    public bool HasQuota => Quota.Count > 0;
+    public string HealthyLabel => Healthy.Count == 1 ? "1 item converging normally" : $"{Healthy.Count} items converging normally";
+}
