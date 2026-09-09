@@ -1,0 +1,80 @@
+<UserControl
+    x:Class="Agnes.App.Controls.DisplayPane"
+    x:Name="PaneRoot"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="using:Agnes.App.Controls"
+    xmlns:ic="using:FluentIcons.WinUI"
+    IsTabStop="True">
+
+    <!--
+      The guest's screen, beside the transcript.
+
+      A browser is the one client where the mouse is a real mouse and the keyboard is a real keyboard,
+      so this maps them straight through: pointer positions become guest pixels, key presses become X
+      keysyms, and nothing is a gesture. The one thing it cannot do is reach a host it doesn't trust —
+      see the empty state.
+    -->
+    <UserControl.Resources>
+        <c:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+    </UserControl.Resources>
+
+    <Grid RowSpacing="6">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Who is driving, and the button that changes it. -->
+        <Grid Grid.Row="0" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" x:Name="DriverChip" Padding="8,2" CornerRadius="9"
+                    BorderThickness="1" VerticalAlignment="Center"
+                    BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ic:SymbolIcon Symbol="Desktop" FontSize="14" VerticalAlignment="Center" />
+                    <TextBlock x:Name="DriverLabel" FontSize="12" Text="Not connected" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Grid.Column="1" x:Name="StatusLabel" FontSize="12" Opacity="0.7"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                <Button x:Name="TakeButton" Content="Take control" Click="OnTake" />
+                <Button x:Name="ReleaseButton" Content="Hand back" Click="OnRelease"
+                        Visibility="Collapsed" />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="1" CornerRadius="8" Background="Black" BorderThickness="1"
+                BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}">
+            <Grid>
+                <!--
+                  The picture lives on a Canvas laid out in GUEST pixels and scaled by a Viewbox, which
+                  gets the letterbox for free and — the reason it is worth doing this way — means a
+                  pointer position read relative to the Canvas already *is* a guest pixel. No fit maths
+                  to get wrong, and tiles are just children positioned at their own rects.
+                -->
+                <Viewbox x:Name="Frame" Stretch="Uniform" Visibility="Collapsed">
+                    <Canvas x:Name="Screen" Background="Black"
+                            PointerMoved="OnPointerMoved"
+                            PointerPressed="OnPointerPressed"
+                            PointerReleased="OnPointerReleased"
+                            PointerWheelChanged="OnPointerWheel">
+                        <Image x:Name="FullFrame" Canvas.Left="0" Canvas.Top="0" Stretch="Fill" />
+                    </Canvas>
+                </Viewbox>
+
+                <TextBlock x:Name="EmptyState" Margin="24" TextWrapping="Wrap" TextAlignment="Center"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.75"
+                           Text="Connecting to the screen…" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

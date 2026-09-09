@@ -1,0 +1,78 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             x:Class="Agnes.App.Desktop.Views.ScreenPanelView"
+             Background="{DynamicResource Bg}">
+
+  <!--
+    The graphical sandbox's screen. The picture itself is a RenderTargetBitmap the code-behind draws decoded
+    JPEG frames into; everything here is chrome around it.
+
+    Hues follow the app's one-meaning-per-hue rule and here they line up exactly: the agent driving IS
+    something in motion (sky), and you driving IS the thing that is on you (amber) — the panel is only
+    yours while you are actually holding it.
+  -->
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <!-- ================= header ================= -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="10,6" ColumnSpacing="8">
+      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <ic:SymbolIcon Symbol="Desktop" FontSize="14" Foreground="{DynamicResource FgDim}" />
+        <TextBlock Text="Screen" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Fg}" />
+      </StackPanel>
+
+      <!-- Who is driving: the one thing you must be able to read without looking for it. -->
+      <Border Grid.Column="1" Classes="status" Padding="8,2" VerticalAlignment="Center"
+              Classes.working="{Binding IsAgentDriving}"
+              Classes.attention="{Binding IsUserDriving}">
+        <TextBlock Text="{Binding DriverLabel}" FontSize="11" />
+      </Border>
+
+      <!-- Throughput, faint: it answers "are frames still arriving?", nothing more. -->
+      <TextBlock Grid.Column="2" Text="{Binding RateLabel}" VerticalAlignment="Center"
+                 Foreground="{DynamicResource FgFaint}" FontSize="10" Margin="4,0,0,0" />
+
+      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Classes="chip" Content="Take control" Command="{Binding TakeControlCommand}"
+                Padding="8,2" FontSize="11"
+                ToolTip.Tip="Drive the guest yourself — the agent's input tools refuse while you hold it" />
+        <Button Classes="chip" Content="Hand back" Command="{Binding ReleaseControlCommand}"
+                Padding="8,2" FontSize="11"
+                ToolTip.Tip="Give control back to the agent" />
+      </StackPanel>
+
+      <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+        <Button Classes="chip" Content="Connect" Command="{Binding ConnectCommand}"
+                Padding="8,2" FontSize="11" ToolTip.Tip="Reopen the display stream" />
+        <Button Classes="chip" Content="Disconnect" Command="{Binding DisconnectCommand}"
+                Padding="8,2" FontSize="11" ToolTip.Tip="Stop receiving frames" />
+      </StackPanel>
+    </Grid>
+
+    <!-- ================= the picture ================= -->
+    <Border Grid.Row="1" Background="{DynamicResource PanelAlt}" ClipToBounds="True">
+      <Panel x:Name="Surface" Focusable="True" Background="Transparent">
+        <Image x:Name="Screen" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="MediumQuality" />
+
+        <!-- Empty states, one at a time, over the (still blank) surface. -->
+        <TextBlock x:Name="Placeholder" Text="Connecting…" IsVisible="False"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="{DynamicResource FgFaint}" FontSize="12" TextWrapping="Wrap"
+                   TextAlignment="Center" MaxWidth="360" />
+
+        <!-- Keyboard capture is explicit and says so, because a panel that silently eats every keystroke is
+             indistinguishable from a broken composer. -->
+        <Border x:Name="CaptureBadge" IsVisible="False" Classes="status attention"
+                HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,10,0,0" Padding="10,3">
+          <TextBlock Text="Keys go to the screen — press Escape twice to leave" FontSize="11" />
+        </Border>
+      </Panel>
+    </Border>
+
+    <!-- ================= status line ================= -->
+    <TextBlock Grid.Row="2" Text="{Binding Status}" Margin="10,4"
+               Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap"
+               IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+               AutomationProperties.LiveSetting="Polite" />
+  </Grid>
+</UserControl>

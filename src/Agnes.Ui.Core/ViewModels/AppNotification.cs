@@ -11,6 +11,9 @@ public enum NotificationKind
 
     /// <summary>An error occurred.</summary>
     Error,
+
+    /// <summary>The agent sent a file to look at.</summary>
+    File,
 }
 
 /// <summary>

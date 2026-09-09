@@ -11,7 +11,9 @@ public sealed record AppSettings(
     int WindowY = int.MinValue,
     bool WindowMaximized = false,
     string Theme = "System",
+    string FontFamily = "Default",
     double FontScale = 1.0,
+    double ChatFontScale = 1.0,
     string WorkingDirectory = "",
     string McpApproval = "Ask",
     bool GitHubPromptShown = false);
@@ -23,6 +25,8 @@ public sealed class SettingsStore
     private readonly string _path;
 
     public SettingsStore(string? path = null) => _path = path ?? DefaultPath();
+
+    public string FilePath => _path;
 
     public static string DefaultPath()
     {

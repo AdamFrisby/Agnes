@@ -13,6 +13,22 @@ internal sealed record CodexClientInfo(string Name, string Version);
 /// <summary>Result of <c>initialize</c> — we only need it to succeed, so nothing is read from it.</summary>
 internal sealed record CodexInitializeResult;
 
+internal sealed record CodexModelListParams(string? Cursor, bool IncludeHidden);
+
+internal sealed record CodexModelListResult
+{
+    public IReadOnlyList<CodexModel> Data { get; init; } = [];
+    public string? NextCursor { get; init; }
+}
+
+internal sealed record CodexModel
+{
+    public string? Id { get; init; }
+    public string? Model { get; init; }
+    public string? DisplayName { get; init; }
+    public bool Hidden { get; init; }
+}
+
 internal sealed record CodexThreadStartParams
 {
     public string? Cwd { get; init; }

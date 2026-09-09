@@ -65,13 +65,51 @@ public interface IConversationItemRenderer
 }
 
 /// <summary>A custom top-level screen a plugin contributes, opened as a tab/document like the built-in
-/// Settings screen. The head hosts <see cref="CreateViewModel"/> as a document and resolves its view.</summary>
+/// Settings screen. The head hosts <see cref="CreateViewModel"/> as a document and resolves its view
+/// through the registered <see cref="IViewFactory"/> for that view-model's type.</summary>
 public interface ICustomScreenProvider
 {
     string ScreenId { get; }
     string Title { get; }
     string? Icon { get; }
     object CreateViewModel();
+}
+
+/// <summary>
+/// How a plugin supplies the <i>view</i> for one of its view-models. The declared counterpart to
+/// <see cref="ICustomScreenProvider"/>, which only says what the screen <i>is</i>.
+/// </summary>
+/// <remarks>
+/// <para>Deliberately untyped on both sides: <see cref="CreateView"/> takes and returns <c>object</c> so
+/// this contract — and <c>Agnes.Ui.Core</c> with it — stays free of any UI framework. What a "view" is, is
+/// the head's business: an Avalonia <c>Control</c> on the desktop, something else on a head that renders
+/// differently. A head that cannot render a plugin view simply registers no factories and ignores these.</para>
+///
+/// <para>Without this a plugin could still get a view onto the screen — an Avalonia <c>ContentControl</c>
+/// hosts a <c>Control</c> handed to it directly, so returning one from <c>CreateViewModel</c> would work —
+/// but only by accident: it depends on the plugin's build not copying Avalonia next to its own DLL, since
+/// a second copy loaded into the plugin's <c>AssemblyLoadContext</c> yields a <c>Control</c> type the host
+/// does not recognise. Declaring the seam is what turns that from a coincidence into a contract, and it
+/// keeps the view out of a method named for a view-model.</para>
+/// </remarks>
+public interface IViewFactory
+{
+    /// <summary>The view-model type this factory renders. Matching is exact, not by assignability, so a
+    /// plugin cannot accidentally claim a base type another plugin (or the head) also renders.</summary>
+    Type ViewModelType { get; }
+
+    /// <summary>Builds the view for <paramref name="viewModel"/>, or null to fall back to the head's own
+    /// rendering.</summary>
+    object? CreateView(object viewModel);
+}
+
+/// <summary>A <see cref="IViewFactory"/> over a typed delegate, so a plugin registers one in a line without
+/// declaring a class per view.</summary>
+public sealed class ViewFactory<TViewModel>(Func<TViewModel, object?> create) : IViewFactory
+{
+    public Type ViewModelType => typeof(TViewModel);
+
+    public object? CreateView(object viewModel) => viewModel is TViewModel typed ? create(typed) : null;
 }
 
 /// <summary>A client plugin-point: shows a notification on this device (the client half of the two-sided
@@ -103,6 +141,7 @@ public sealed class ClientPluginCollector
     private readonly List<IUiContribution> _contributions = [];
     private readonly List<IConversationItemRenderer> _renderers = [];
     private readonly List<ICustomScreenProvider> _screens = [];
+    private readonly List<IViewFactory> _viewFactories = [];
 
     /// <summary>The client event bus, exposed during registration so a plugin can dispatch and handle its
     /// OWN event types (defined in the plugin's own assembly over <c>IAgnesEvent</c>), not only bind to
@@ -126,6 +165,13 @@ public sealed class ClientPluginCollector
     /// <summary>Registers a custom screen a head can open as a tab/document.</summary>
     public void AddCustomScreen(ICustomScreenProvider screen) => _screens.Add(screen);
 
+    /// <summary>Registers how to build the view for one of this plugin's view-model types.</summary>
+    public void AddViewFactory(IViewFactory factory) => _viewFactories.Add(factory);
+
+    /// <summary>Registers a view for <typeparamref name="TViewModel"/> from a delegate.</summary>
+    public void AddViewFactory<TViewModel>(Func<TViewModel, object?> create)
+        => _viewFactories.Add(new ViewFactory<TViewModel>(create));
+
     public ClientPluginSet Build()
     {
         var registrations = new List<IDisposable>(); // the client bus lives for the app's lifetime
@@ -140,7 +186,8 @@ public sealed class ClientPluginCollector
             Bus,
             [.. _contributions],
             [.. _renderers],
-            [.. _screens]);
+            [.. _screens],
+            [.. _viewFactories]);
     }
 }
 
@@ -151,7 +198,8 @@ public sealed class ClientPluginSet(
     IEventBus eventBus,
     IReadOnlyList<IUiContribution> contributions,
     IReadOnlyList<IConversationItemRenderer> conversationRenderers,
-    IReadOnlyList<ICustomScreenProvider> customScreens)
+    IReadOnlyList<ICustomScreenProvider> customScreens,
+    IReadOnlyList<IViewFactory>? viewFactories = null)
 {
     public IPluginRegistry<IClientNotificationChannel> NotificationChannels { get; } = notificationChannels;
 
@@ -167,6 +215,24 @@ public sealed class ClientPluginSet(
 
     /// <summary>Custom screens a head can open as tabs.</summary>
     public IReadOnlyList<ICustomScreenProvider> CustomScreens { get; } = customScreens;
+
+    /// <summary>Every plugin-supplied view factory, for the head to resolve plugin view-models with.</summary>
+    public IReadOnlyList<IViewFactory> ViewFactories { get; } = viewFactories ?? [];
+
+    /// <summary>Builds the view for <paramref name="viewModel"/> from the first factory registered for its
+    /// exact type, or null when no plugin claims it — which is the head's cue to render it its own way.</summary>
+    public object? CreateView(object viewModel)
+    {
+        foreach (var factory in ViewFactories)
+        {
+            if (factory.ViewModelType == viewModel.GetType() && factory.CreateView(viewModel) is { } view)
+            {
+                return view;
+            }
+        }
+
+        return null;
+    }
 
     private readonly IReadOnlyList<IConversationItemRenderer> _conversationRenderers = conversationRenderers;
 

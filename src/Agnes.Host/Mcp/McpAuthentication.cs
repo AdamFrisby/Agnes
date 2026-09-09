@@ -12,6 +12,14 @@ public sealed class McpUnauthenticatedException : Exception
     public McpUnauthenticatedException(string message) : base(message) { }
 }
 
+/// <summary>Raised by a tool when the caller is authenticated but has no access to the session it named.
+/// Distinct from <see cref="McpUnauthenticatedException"/> so the caller can tell "who are you" from "not
+/// yours" — and so a Member is told why rather than silently getting an empty answer.</summary>
+public sealed class McpForbiddenException : Exception
+{
+    public McpForbiddenException(string message) : base(message) { }
+}
+
 /// <summary>Validates a bearer token and resolves it to a stable caller identity — the SAME authority path a
 /// paired client uses (<see cref="DeviceRegistry.ResolveCallerId"/>). Abstracted so the tool layer is
 /// unit-testable without a real registry.</summary>
@@ -29,6 +37,25 @@ public sealed class DeviceRegistryMcpAuthenticator : IMcpDeviceAuthenticator
     public DeviceRegistryMcpAuthenticator(DeviceRegistry devices) => _devices = devices;
 
     public string? ResolveCaller(string? token) => _devices.ResolveCallerId(token);
+}
+
+/// <summary>
+/// The outer wall in front of <c>/mcp-agnes</c>: which bearers are recognized at all.
+/// </summary>
+/// <remarks>
+/// Two kinds pass, and the difference between them is the security model. A <b>device</b> token is a paired
+/// human and may drive every session on the host. A <b>session</b> token is one agent: it is not a device
+/// token, carries none of that authority, and <see cref="AgnesMcpTools"/> refuses it for anything but its own
+/// session's goals and file-sharing.
+///
+/// Accepting only device tokens here rejects every agent before it reaches the tools — which is precisely
+/// what made the <c>agnes</c> server unreachable from the sessions its config was being written into. Pulled
+/// out of <c>Program</c> so that decision is testable rather than reachable only by starting a host.
+/// </remarks>
+public static class McpEndpointGate
+{
+    public static bool IsAccepted(string? token, DeviceRegistry devices, SessionMcpTokens sessions)
+        => devices.IsValid(token) || sessions.SessionFor(token) is not null;
 }
 
 /// <summary>Supplies the bearer token accompanying the current MCP request. Abstracted so tools can be

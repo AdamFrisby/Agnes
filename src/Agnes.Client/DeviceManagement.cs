@@ -15,7 +15,7 @@ public static class DeviceManagement
         try
         {
             return await client.GetFromJsonAsync<IReadOnlyList<DeviceInfo>>(
-                       hostUrl.TrimEnd('/') + "/devices", cancellationToken).ConfigureAwait(false)
+                       hostUrl.TrimEnd('/') + "/devices", DeviceRoleJson.Read, cancellationToken).ConfigureAwait(false)
                    ?? [];
         }
         finally

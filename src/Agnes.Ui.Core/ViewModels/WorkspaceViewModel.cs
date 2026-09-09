@@ -36,12 +36,22 @@ public sealed class WorkspaceViewModel : ObservableObject
         _policy = policy ?? NullPermissionPolicy.Instance;
         _notifier = notifier ?? NullNotifier.Instance;
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !string.IsNullOrWhiteSpace(HostUrl));
+        ConnectWithCloudflareAccessCommand = new AsyncRelayCommand(
+            ConnectWithCloudflareAccessAsync,
+            () => !string.IsNullOrWhiteSpace(HostUrl));
     }
 
     public string HostUrl
     {
         get => _hostUrl;
-        set { if (SetProperty(ref _hostUrl, value)) { ConnectCommand.NotifyCanExecuteChanged(); } }
+        set
+        {
+            if (SetProperty(ref _hostUrl, value))
+            {
+                ConnectCommand.NotifyCanExecuteChanged();
+                ConnectWithCloudflareAccessCommand.NotifyCanExecuteChanged();
+            }
+        }
     }
 
     public string Token
@@ -73,6 +83,13 @@ public sealed class WorkspaceViewModel : ObservableObject
 
     public AsyncRelayCommand ConnectCommand { get; }
 
+    /// <summary>
+    /// Connect using the Cloudflare Access assertion already attached by a trusted proxy. This is useful
+    /// for a same-origin browser operator UI: no assertion reaches application code and no pairing code is
+    /// needed. The resulting Agnes token remains an individually revocable device credential.
+    /// </summary>
+    public AsyncRelayCommand ConnectWithCloudflareAccessCommand { get; }
+
     /// <summary>Whether a session is currently open (drives mobile back-navigation).</summary>
     public bool HasActiveSession => ActiveSession is not null;
 
@@ -97,6 +114,21 @@ public sealed class WorkspaceViewModel : ObservableObject
 
                 Status = $"Connected to {info.DisplayName} — {agents.Count} agent(s)";
             });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => Status = "Error: " + ex.Message);
+        }
+    }
+
+    private async Task ConnectWithCloudflareAccessAsync()
+    {
+        try
+        {
+            Status = "Using Cloudflare Access…";
+            var exchanged = await CloudflareAccessSignIn.ExchangeAsync(HostUrl, "Agnes browser");
+            Token = exchanged.Token;
+            await ConnectAsync();
         }
         catch (Exception ex)
         {

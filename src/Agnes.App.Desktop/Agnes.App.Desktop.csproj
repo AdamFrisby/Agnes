@@ -11,6 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Agnes.Desktop.Tests" />
+
     <PackageReference Include="Avalonia" Version="12.1.0" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
@@ -37,6 +39,7 @@
     <!-- Brand fonts (Space Grotesk / Manrope / JetBrains Mono), embedded so typography is identical on
          a bare Linux box and a Mac rather than falling back to whatever the OS happens to ship. -->
     <AvaloniaResource Include="Assets\**" Exclude="Assets\**\*.md" />
+    <EmbeddedResource Include="Assets\Keymaps\*.json" />
     <None Include="Assets\**\*.md" />
   </ItemGroup>
 

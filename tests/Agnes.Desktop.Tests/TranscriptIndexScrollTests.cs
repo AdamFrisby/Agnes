@@ -86,4 +86,78 @@ public sealed class TranscriptIndexScrollTests
         Assert.Equal(before.Value, after.Value);
         Assert.Equal(before.Maximum + 50, after.Maximum);
     }
+
+    [Fact]
+    public void New_input_cancels_an_older_deferred_seek()
+    {
+        var policy = new TranscriptScrollPolicy();
+        policy.RequestIndexTarget(400, 790);
+        Assert.True(policy.TryTakeLatestIndexTarget(out var oldSeek));
+
+        var gesture = policy.BeginGesture();
+
+        Assert.False(policy.IsCurrent(oldSeek.Generation));
+        Assert.Equal(TranscriptScrollState.GestureScrolling, policy.State);
+        Assert.True(policy.FinishGesture(gesture, isGenuinelyAtBottom: false));
+        Assert.Equal(TranscriptScrollState.ReadingHistory, policy.State);
+    }
+
+    [Fact]
+    public void Rapid_direction_changes_settle_from_only_the_latest_gesture()
+    {
+        var policy = new TranscriptScrollPolicy();
+        var up = policy.BeginGesture();
+        var down = policy.BeginGesture();
+
+        Assert.False(policy.FinishGesture(up, isGenuinelyAtBottom: false));
+        Assert.True(policy.FinishGesture(down, isGenuinelyAtBottom: true));
+        Assert.Equal(TranscriptScrollState.FollowingTail, policy.State);
+    }
+
+    [Fact]
+    public void Repeated_thumb_targets_coalesce_to_the_latest_row()
+    {
+        var policy = new TranscriptScrollPolicy();
+        policy.BeginIndexDrag(790);
+        var first = policy.RequestIndexTarget(100, 790);
+        policy.RequestIndexTarget(650, 790);
+        var latest = policy.RequestIndexTarget(240, 790);
+
+        Assert.True(policy.TryTakeLatestIndexTarget(out var request));
+        Assert.Equal(240, request.Row);
+        Assert.Equal(latest, request.Generation);
+        Assert.False(policy.IsCurrent(first));
+        Assert.False(policy.TryTakeLatestIndexTarget(out _));
+    }
+
+    [Fact]
+    public void Appends_follow_only_at_the_live_tail()
+    {
+        var policy = new TranscriptScrollPolicy();
+        Assert.True(policy.ShouldFollowAppend);
+
+        var gesture = policy.BeginGesture();
+        policy.FinishGesture(gesture, isGenuinelyAtBottom: false);
+        Assert.False(policy.ShouldFollowAppend);
+
+        policy.FollowTail();
+        Assert.True(policy.ShouldFollowAppend);
+    }
+
+    [Fact]
+    public void Drag_range_is_frozen_and_its_end_tracks_the_streaming_tail()
+    {
+        var policy = new TranscriptScrollPolicy();
+        policy.BeginIndexDrag(maximum: 790);
+        policy.RequestIndexTarget(value: 790, currentMaximum: 840);
+
+        Assert.Equal(790, policy.FrozenIndexMaximum);
+        Assert.True(policy.ShouldFollowAppend);
+        Assert.True(policy.TryTakeLatestIndexTarget(out var request));
+        Assert.True(request.FollowTail);
+
+        policy.EndIndexDrag();
+        Assert.Equal(TranscriptScrollState.FollowingTail, policy.State);
+        Assert.True(policy.ShouldFollowAppend);
+    }
 }

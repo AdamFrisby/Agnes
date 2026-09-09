@@ -34,6 +34,7 @@ public sealed class PluginInstallerTests : IDisposable
 
     private sealed class FakeFeed : INuGetPluginFeed
     {
+        public const string Source = "https://packages.example.test/v3/index.json";
         public Dictionary<string, byte[]> PackagesByVersion { get; } = [];
         public string LatestVersion { get; set; } = "1.0.0";
 
@@ -44,10 +45,11 @@ public sealed class PluginInstallerTests : IDisposable
         public Task<IReadOnlyList<string>> ListVersionsAsync(string packageId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<string>>(PackagesByVersion.Keys.OrderDescending().ToArray());
 
-        public Task<NuGetPluginPackage> DownloadAsync(string packageId, string? version, CancellationToken cancellationToken = default)
+        public Task<NuGetPluginPackage> DownloadAsync(string packageId, string? version, string? source = null, CancellationToken cancellationToken = default)
         {
+            Assert.True(source is null || source == Source);
             var resolvedVersion = version ?? LatestVersion;
-            return Task.FromResult(new NuGetPluginPackage(packageId, resolvedVersion, PackagesByVersion[resolvedVersion]));
+            return Task.FromResult(new NuGetPluginPackage(Source, packageId, resolvedVersion, PackagesByVersion[resolvedVersion]));
         }
     }
 
@@ -63,7 +65,9 @@ public sealed class PluginInstallerTests : IDisposable
                 (pluginServices, hostServices) => pluginServices.AddSingleton(hostServices.GetRequiredService<ICredentialBroker>())),
         ];
 
-    private (PluginInstaller Installer, PluginRegistry<IAgentAdapter> Registry, FakeFeed Feed, string StateFile) CreateInstaller(bool allowUnsigned = true)
+    private (PluginInstaller Installer, PluginRegistry<IAgentAdapter> Registry, FakeFeed Feed, string StateFile) CreateInstaller(
+        bool allowUnsigned = true,
+        PluginTrustPolicy? trustPolicy = null)
     {
         Directory.CreateDirectory(_pluginsRoot);
         var stateFile = Path.Combine(_pluginsRoot, "plugins.json");
@@ -78,7 +82,7 @@ public sealed class PluginInstallerTests : IDisposable
         var verifier = new NuGetSignatureVerifier(allowUnsigned);
         var installer = new PluginInstaller(
             feed, verifier, state, _pluginsRoot, hostServices,
-            [merger], CredentialCapabilityServices(), NullLogger<PluginInstaller>.Instance);
+            [merger], CredentialCapabilityServices(), NullLogger<PluginInstaller>.Instance, trustPolicy);
 
         return (installer, registry, feed, stateFile);
     }
@@ -209,7 +213,7 @@ public sealed class PluginInstallerTests : IDisposable
     }
 
     [Fact]
-    public async Task Restoring_from_state_reloads_a_previously_enabled_plugin_on_construction()
+    public async Task Restoring_from_state_reloads_a_previously_enabled_plugin()
     {
         var (installer1, _, feed, stateFile) = CreateInstaller();
         feed.PackagesByVersion["1.0.0"] = PluginPackageFixture.Build("1.0.0");
@@ -222,8 +226,50 @@ public sealed class PluginInstallerTests : IDisposable
         var hostServices = new ServiceCollection().AddSingleton<ICredentialBroker, FakeCredentialBroker>().BuildServiceProvider();
         _disposables.Add(hostServices);
         var state2 = new PluginStateStore(stateFile);
-        _ = new PluginInstaller(feed, new NuGetSignatureVerifier(allowUnsigned: true), state2, _pluginsRoot, hostServices,
+        var installer2 = new PluginInstaller(feed, new NuGetSignatureVerifier(allowUnsigned: true), state2, _pluginsRoot, hostServices,
             [freshMerger], CredentialCapabilityServices(), NullLogger<PluginInstaller>.Instance);
+        await installer2.RestoreEnabledPluginsAsync();
+
+        Assert.NotNull(freshRegistry.Find("test-plugin-adapter:no-credentials"));
+    }
+
+    [Fact]
+    public async Task Production_requires_an_exact_approved_package_and_restores_it_from_the_cached_archive()
+    {
+        var package = PluginPackageFixture.Build("1.0.0");
+        var digest = Convert.ToBase64String(System.Security.Cryptography.SHA512.HashData(package));
+        var policy = PluginTrustPolicy.CreateProduction(new PluginTrustOptions
+        {
+            Sources = [FakeFeed.Source],
+            ApprovedPackages =
+            [
+                new PluginPackageApprovalOptions
+                {
+                    Source = FakeFeed.Source,
+                    PackageId = PluginPackageFixture.PackageId,
+                    Version = "1.0.0",
+                    Sha512 = digest,
+                },
+            ],
+        });
+        var (installer, registry, feed, stateFile) = CreateInstaller(trustPolicy: policy);
+        feed.PackagesByVersion["1.0.0"] = package;
+
+        await Assert.ThrowsAsync<PluginInstallException>(
+            () => installer.InstallAsync(PluginPackageFixture.PackageId, version: null, grantedCapabilities: []));
+
+        await installer.InstallAsync(PluginPackageFixture.PackageId, "1.0.0", grantedCapabilities: []);
+        var extractedDir = Path.Combine(_pluginsRoot, PluginPackageFixture.PackageId, "1.0.0");
+        Directory.Delete(extractedDir, recursive: true);
+
+        var freshRegistry = new PluginRegistry<IAgentAdapter>([], a => a.Descriptor.Id);
+        var freshMerger = new PluginPointMerger<IAgentAdapter>(freshRegistry, a => a.Descriptor.Id);
+        var hostServices = new ServiceCollection().AddSingleton<ICredentialBroker, FakeCredentialBroker>().BuildServiceProvider();
+        _disposables.Add(hostServices);
+        var installer2 = new PluginInstaller(feed, new NuGetSignatureVerifier(allowUnsigned: true), new PluginStateStore(stateFile), _pluginsRoot,
+            hostServices, [freshMerger], CredentialCapabilityServices(), NullLogger<PluginInstaller>.Instance, policy);
+
+        await installer2.RestoreEnabledPluginsAsync();
 
         Assert.NotNull(freshRegistry.Find("test-plugin-adapter:no-credentials"));
     }

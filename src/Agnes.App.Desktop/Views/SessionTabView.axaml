@@ -8,20 +8,19 @@
              xmlns:ctb="using:ColorTextBlock.Avalonia"
              xmlns:appconv="using:Agnes.App.Desktop.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              xmlns:views="using:Agnes.App.Desktop.Views"
-             xmlns:mdxaml="https://github.com/whistyun/Markdown.Avalonia"
              x:Class="Agnes.App.Desktop.Views.SessionTabView"
              Background="{DynamicResource Bg}"
-             FontFamily="{StaticResource UiFont}"
-             DragDrop.AllowDrop="True">
+             FontFamily="{DynamicResource UiFont}"
+             DragDrop.AllowDrop="True"
+             km:KeymapBinder.Context="Session">
 
     <UserControl.Resources>
         <appconv:IndentConverter x:Key="AgentIndent" Step="16" />
         <appconv:SendPolicyLabelConverter x:Key="SendPolicyLabel" />
         <appconv:BoolToOpacityConverter x:Key="ActiveOpacity" TrueOpacity="1.0" FalseOpacity="0.5" />
         <!-- Plan entries arrive from ACP as free-form status strings, so the tone match is by name. -->
-        <appconv:StringEqualsConverter x:Key="PlanDone" Match="completed" />
-        <appconv:StringEqualsConverter x:Key="PlanRunning" Match="in_progress" />
         <!-- Where the context meter changes tone: comfortable → getting tight → nearly out. -->
         <appconv:AtLeastConverter x:Key="CtxTight" Threshold="70" />
         <appconv:AtLeastConverter x:Key="CtxCritical" Threshold="90" />
@@ -32,24 +31,61 @@
         <appconv:StringEqualsConverter x:Key="EventBroken" Match="AgentError" />
     </UserControl.Resources>
 
-    <UserControl.KeyBindings>
-        <KeyBinding Gesture="Ctrl+F" Command="{Binding Session.OpenSearchCommand}" />
-        <KeyBinding Gesture="Escape" Command="{Binding Session.CloseSearchCommand}" />
-        <KeyBinding Gesture="F3" Command="{Binding Session.NextMatchCommand}" />
-        <KeyBinding Gesture="Shift+F3" Command="{Binding Session.PrevMatchCommand}" />
-        <KeyBinding Gesture="F7" Command="{Binding Session.PrevPromptCommand}" />
-        <KeyBinding Gesture="F8" Command="{Binding Session.NextPromptCommand}" />
-        <KeyBinding Gesture="Ctrl+F8" Command="{Binding Session.NextChangeCommand}" />
-        <KeyBinding Gesture="Ctrl+F7" Command="{Binding Session.PrevChangeCommand}" />
-    </UserControl.KeyBindings>
-
     <UserControl.Styles>
         <Style Selector="Border.user">
             <Setter Property="Background" Value="{DynamicResource UserBubble}" />
         </Style>
-        <Style Selector="TextBlock.thought">
+        <!--
+          Reasoning is an aside, not a statement, and it should read as one. It gets the quiet treatment:
+          faint italic a size down, and a bubble stripped back to a left rule instead of a filled card, so
+          a long think never competes with what the agent actually said.
+
+          `:is(TextBlock)` matters. An Avalonia type selector is an EXACT type match, and the element here
+          is a SelectableTextBlock (a TextBlock subclass) — so the plain `TextBlock.thought` this replaces
+          matched nothing at all, and every thought had been rendering in full agent styling.
+        -->
+        <Style Selector=":is(TextBlock).thought">
             <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
             <Setter Property="FontStyle" Value="Italic" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <!-- Bubble geometry lives here, not on the element: a local value in the template would outrank
+             any style, and the thought variant has to be able to override it. -->
+        <Style Selector="Border.msg">
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="Margin" Value="0,6" />
+        </Style>
+        <Style Selector="Border.msg.thought">
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+            <Setter Property="BorderThickness" Value="2,0,0,0" />
+            <Setter Property="Padding" Value="12,3,14,3" />
+            <Setter Property="Margin" Value="3,2,0,2" />
+        </Style>
+        <Style Selector="Border.msg.thought TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+        </Style>
+        <!-- A permission card wears the "blocked on you" hue only while it actually blocks you. -->
+        <Style Selector="Border.permission">
+            <Setter Property="Background" Value="{DynamicResource StatusAttentionSoft}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource StatusAttention}" />
+        </Style>
+        <Style Selector="Border.permission.lapsed">
+            <Setter Property="Background" Value="{DynamicResource Panel}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        </Style>
+        <!-- The status band's two emphases. Quiet is the resting state and looks like chrome; raised is
+             the same band with more weight when nobody has been looking. Neither takes a status hue —
+             the sentence reports, it does not alarm. -->
+        <Style Selector="Border.statusband">
+            <Setter Property="Background" Value="{DynamicResource Panel}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style Selector="Border.statusband.raised">
+            <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+            <Setter Property="BorderThickness" Value="1" />
         </Style>
         <!-- Pulsing dot for the "Thinking…" indicator. -->
         <Style Selector="Border.pulse">
@@ -195,7 +231,144 @@
                                 ToolTip.Tip="Browse the session's working directory" AutomationProperties.Name="Toggle file browser" />
                         <Button Classes="chip" Command="{Binding Session.ToggleTerminalCommand}" IsVisible="{Binding IsLive}"
                                 Content="Terminal" Padding="9,3" FontSize="11"
-                                ToolTip.Tip="Open a terminal in the session's working directory" AutomationProperties.Name="Toggle terminal" />
+                                ToolTip.Tip="Open a shell in the session's working directory" AutomationProperties.Name="Toggle terminal" />
+
+                        <!-- Screen: only ever offered on a session that has one (ScreenAvailable, which is the
+                             host's own answer), because a button that opens an empty panel is worse than no
+                             button. Its presence IS "screen available"; its absence after asking for one is
+                             said in words by the chip below, because absence explains nothing on its own. -->
+                        <Button Classes="chip" Command="{Binding Session.ToggleDisplayCommand}"
+                                IsVisible="{Binding ScreenAvailable}"
+                                Padding="9,3" FontSize="11"
+                                ToolTip.Tip="Screen available — watch the graphical sandbox's screen, and take the mouse when you want it"
+                                AutomationProperties.Name="Toggle screen">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <ic:SymbolIcon Symbol="Desktop" FontSize="14" />
+                                <TextBlock Text="Screen" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Asked for a screen, opened without one. Neutral, not a status hue: nothing is
+                             wrong, in motion, or waiting on you — the host simply didn't give this session a
+                             display, and saying so beats a missing button. -->
+                        <Border Classes="status" Padding="8,2" VerticalAlignment="Center"
+                                IsVisible="{Binding ScreenDeclined}"
+                                ToolTip.Tip="The host opened this session without a screen — graphical sandboxes may be switched off there. The session itself is running normally.">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <ic:SymbolIcon Symbol="DesktopOff" FontSize="14" />
+                                <TextBlock Text="No screen" FontSize="11" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Who is driving, while the panel is CLOSED. Someone at the keyboard of a screen you
+                             cannot see is exactly the state worth surfacing; with the panel open its own header
+                             says it and this disappears. Sky = the agent is in motion, amber = it is on you. -->
+                        <Border Classes="status" Padding="8,2" VerticalAlignment="Center"
+                                IsVisible="{Binding ShowScreenDriverChip}"
+                                Classes.working="{Binding ScreenDriverIsAgent}"
+                                Classes.attention="{Binding ScreenDriverIsUser}">
+                            <TextBlock Text="{Binding ScreenDriverChip}" FontSize="11" />
+                        </Border>
+
+                        <!-- Agent console: the same CLI the session runs, in its interactive mode, for the
+                             slash commands and one-off actions ACP does not carry. Beside Terminal because
+                             they are siblings — that one gives you a shell where the agent lives, this one
+                             gives you the agent itself. -->
+                        <Button Classes="chip" Command="{Binding Session.ToggleAgentConsoleCommand}"
+                                IsVisible="{Binding AgentConsoleAvailable}"
+                                Padding="9,3" FontSize="11"
+                                ToolTip.Tip="Open the agent's own CLI interactively — slash commands and anything else the protocol doesn't expose"
+                                AutomationProperties.Name="Toggle agent console">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <ic:SymbolIcon Symbol="Bot" FontSize="14" />
+                                <TextBlock Text="Console" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Goals: this session's standing "keep going" goals, armed by an agent or here.
+                             It sits on the tab rather than in the window's top bar because a goal is armed
+                             against one session: from here the target is the tab it is drawn on, where the
+                             window-level version had to infer one from whichever tab held focus. -->
+                        <Button Classes="chip" Padding="9,3" FontSize="11"
+                                IsVisible="{Binding Goals.IsAvailable}" AutomationProperties.Name="Goals"
+                                ToolTip.Tip="Standing goals that nudge this session if it goes idle">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <ic:SymbolIcon Symbol="TargetArrow" FontSize="14" />
+                                <TextBlock Text="Goals" VerticalAlignment="Center" />
+                                <Border Classes="status working" Padding="6,1" MinWidth="18" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Goals.ArmedGoalCount}" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                </Border>
+                            </StackPanel>
+                            <Button.Flyout>
+                                <Flyout Placement="Bottom">
+                                    <!-- Width is pinned, not just a minimum: a MinWidth lets a long line in the
+                                         goal box widen the panel past the flyout, which then grows a horizontal
+                                         scrollbar instead of wrapping. -->
+                                    <ScrollViewer Width="400" MaxHeight="520"
+                                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                      <StackPanel Spacing="8" MaxWidth="380" HorizontalAlignment="Stretch">
+                                        <!-- Arm a new goal on this tab's session. No target line: the tab is the target. -->
+                                        <Border Padding="8,6" CornerRadius="6" Background="{DynamicResource PanelAlt}">
+                                            <StackPanel Spacing="6">
+                                                <TextBlock Text="New goal" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" />
+                                                <!-- HorizontalAlignment=Stretch keeps the box at the panel's width
+                                                     however long the text is; wrapping does the rest. -->
+                                                <TextBox Text="{Binding Goals.NewGoalText, Mode=TwoWay}" AcceptsReturn="True" MinHeight="62"
+                                                         TextWrapping="Wrap" FontSize="12" HorizontalAlignment="Stretch"
+                                                         MaxHeight="140" VerticalContentAlignment="Top"
+                                                         PlaceholderText="What must be achieved before this session may stop?"
+                                                         AutomationProperties.Name="Goal text" />
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="Nudge if idle (min)" Foreground="{DynamicResource FgDim}" FontSize="10" />
+                                                        <!-- Wide enough for four digits plus the spinner buttons. -->
+                                                        <NumericUpDown Value="{Binding Goals.NewGoalIdleMinutes, Mode=TwoWay}" Minimum="1" Maximum="1440"
+                                                                       Increment="5" FormatString="0" Width="150" FontSize="12"
+                                                                       AutomationProperties.Name="Idle minutes" />
+                                                    </StackPanel>
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="Max nudges" Foreground="{DynamicResource FgDim}" FontSize="10" />
+                                                        <NumericUpDown Value="{Binding Goals.NewGoalMaxProds, Mode=TwoWay}" Minimum="1" Maximum="50"
+                                                                       Increment="1" FormatString="0" Width="150" FontSize="12"
+                                                                       IsEnabled="{Binding Goals.NewGoalHasLimit}"
+                                                                       AutomationProperties.Name="Maximum nudges" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <CheckBox IsChecked="{Binding Goals.NewGoalUnlimited, Mode=TwoWay}" FontSize="11"
+                                                          Content="Keep nudging until I disarm it (no limit)"
+                                                          AutomationProperties.Name="Unlimited nudges" />
+                                                <Button Content="Arm goal" Classes="primary" FontSize="12" Padding="10,4"
+                                                        HorizontalAlignment="Left" Command="{Binding Goals.ArmGoalCommand}"
+                                                        AutomationProperties.Name="Arm goal" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <ItemsControl ItemsSource="{Binding Goals.Goals}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Padding="8,6" Margin="0,2" CornerRadius="6" Background="{DynamicResource PanelAlt}">
+                                                        <StackPanel Spacing="4">
+                                                            <TextBlock Text="{Binding Text}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold"
+                                                                       TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                <Button Content="Disarm" FontSize="11" Padding="8,3" IsVisible="{Binding Armed}"
+                                                                        Command="{Binding $parent[ItemsControl].DataContext.Goals.DisarmGoalCommand}"
+                                                                        CommandParameter="{Binding}" AutomationProperties.Name="Disarm goal" />
+                                                                <Button Content="Delete" FontSize="11" Padding="8,3"
+                                                                        Command="{Binding $parent[ItemsControl].DataContext.Goals.RemoveGoalCommand}"
+                                                                        CommandParameter="{Binding}" AutomationProperties.Name="Delete goal" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                      </StackPanel>
+                                    </ScrollViewer>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
                         <!-- real context-window usage the agent reported (bar only when the window is known) -->
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                     IsVisible="{Binding Usage.HasAnyContext, FallbackValue=false}"
@@ -453,26 +626,25 @@
                     </StackPanel>
                 </Grid>
 
+                <!-- The agent's own one-line status used to be repeated here, directly under the header
+                     row, as a second faint line saying exactly what the band above the transcript says.
+                     Two copies of one sentence, stacked. There is now one home for it: the status band
+                     (x:Name="StatusBand", further down this file), which is always present and merely
+                     changes emphasis when nobody has been looking. -->
+
                 <!-- inline rename / tag editor -->
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding IsRenaming}">
                     <TextBox Text="{Binding RenameText, Mode=TwoWay}" Width="240" Watermark="Tab name"
                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                              BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                             AutomationProperties.Name="Rename tab">
-                        <TextBox.KeyBindings>
-                            <KeyBinding Gesture="Enter" Command="{Binding CommitRenameCommand}" />
-                            <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />
-                        </TextBox.KeyBindings>
-                    </TextBox>
+                             AutomationProperties.Name="Rename tab"
+                             km:KeymapBinder.Context="SessionRenameFocus" />
                     <Button Classes="accent" Content="Save" Command="{Binding CommitRenameCommand}" Padding="12,4" FontSize="12" />
                     <TextBox Text="{Binding TagInput, Mode=TwoWay}" Width="160" Watermark="Add tag + Enter"
                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                              BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                             AutomationProperties.Name="Add tag">
-                        <TextBox.KeyBindings>
-                            <KeyBinding Gesture="Enter" Command="{Binding AddTagCommand}" />
-                        </TextBox.KeyBindings>
-                    </TextBox>
+                             AutomationProperties.Name="Add tag"
+                             km:KeymapBinder.Context="SessionTagFocus" />
                     <Button Classes="chip" Content="Done" Command="{Binding CancelRenameCommand}" Padding="12,4" FontSize="12" />
                 </StackPanel>
             </StackPanel>
@@ -583,7 +755,7 @@
                     <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource FgFaint}"
                                HorizontalAlignment="Center" TextWrapping="Wrap" />
                     <!-- First-run guidance -->
-                    <TextBlock Text="First time? Start a host (docker compose up, or dotnet run in src/Agnes.Host), then Add host with the pairing code it prints. Or try the Simulated host above."
+                    <TextBlock Text="{Binding FirstRunHint}"
                                Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
                                TextAlignment="Center" MaxWidth="380" Margin="0,8,0,0" />
                 </StackPanel>
@@ -606,6 +778,20 @@
                         <TextBlock Text="Set the project and options, choose an agent, then start."
                                    Foreground="{DynamicResource FgDim}" FontSize="12" HorizontalAlignment="Center" />
                     </StackPanel>
+
+                    <!-- Why the list above is empty, when the reason is this device's role rather than an idle
+                         host. A newly-paired member's first screen is this one, and "nothing here" with no
+                         explanation is exactly the dead end roles exist to remove. -->
+                    <Border Name="MemberRoleNotice" IsVisible="{Binding ShowHostRoleNotice}" CornerRadius="10" Padding="14,12"
+                            Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{Binding HostRoleNotice}" Foreground="{DynamicResource FgDim}" FontSize="12"
+                                       TextWrapping="Wrap" />
+                            <Button Classes="chip" HorizontalAlignment="Left" Padding="9,3" FontSize="11"
+                                    Content="Open Settings › Devices"
+                                    Command="{Binding OpenDevicesSettingsCommand}" />
+                        </StackPanel>
+                    </Border>
 
                     <!-- Already running on this host: the sessions this device may reach, listed as soon as the
                          host connects. Rejoining work in progress is the first question after pairing, so it sits
@@ -702,6 +888,31 @@
                                         Classes.on="{Binding SandboxOn}" Classes="seg" />
                                 <Button Content="Off" Command="{Binding SetSandboxModeCommand}" CommandParameter="Off"
                                         Classes.on="{Binding SandboxOff}" Classes="seg" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Graphical sandbox: a screen inside the sandbox the agent can see and drive. Offered
+                         wherever a sandbox is, since there is no separate host capability flag for it yet — a
+                         host that doesn't allow one refuses the request and its reason lands in StatusText
+                         with every other start failure. -->
+                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                            CornerRadius="10" Padding="14,10" IsVisible="{Binding SandboxAvailable}">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <ic:SymbolIcon Grid.Column="0" Classes="lead" Symbol="Desktop" Margin="0,0,10,0" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Foreground="{DynamicResource Fg}" FontSize="13" FontWeight="SemiBold"
+                                               Text="Graphical sandbox (1280×800 display)" />
+                                    <ctl:InfoHint Description="Give the sandbox a desktop the agent can see and drive — for work that needs a browser or a GUI. You can watch it from the Screen panel and take the mouse whenever you want."
+                                                  Security="A display widens what the agent can do inside its sandbox to anything it can click, so it is off by default. The sandbox still contains it: only the mounted project is reachable." />
+                                </StackPanel>
+                                <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                           Text="Adds a screen to the sandbox. Watch it live, and take the mouse when you want it." />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <CheckBox IsChecked="{Binding GraphicalSandbox, Mode=TwoWay}"
+                                          AutomationProperties.Name="Graphical sandbox" />
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -1022,11 +1233,17 @@
                                         <ItemsControl ItemsSource="{Binding Plan.VisibleEntries}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid ColumnDefinitions="70,*" ColumnSpacing="8" Margin="0,3">
-                                                        <TextBlock Grid.Column="0" Text="{Binding Status}" Classes="tone" FontSize="10"
-                                                                   VerticalAlignment="Top" TextWrapping="Wrap"
-                                                                   Classes.done="{Binding Status, Converter={StaticResource PlanDone}}"
-                                                                   Classes.working="{Binding Status, Converter={StaticResource PlanRunning}}" />
+                                                    <!-- The state is the icon, not a word: the adapter's status is a
+                                                         wire value ("in_progress"), and printing it spent 70px of a
+                                                         narrow sidebar on protocol vocabulary. The tooltip says it
+                                                         in words for anyone who needs more than the glyph. -->
+                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,3">
+                                                        <ic:SymbolIcon Grid.Column="0" Symbol="{Binding Symbol}" IconVariant="{Binding Variant}"
+                                                                   Classes="tone" FontSize="13" VerticalAlignment="Top" Margin="0,1,0,0"
+                                                                   ToolTip.Tip="{Binding StatusLabel}"
+                                                                   Classes.done="{Binding IsDone}"
+                                                                   Classes.working="{Binding IsRunning}"
+                                                                   Classes.error="{Binding IsCancelled}" />
                                                         <TextBlock Grid.Column="1" Text="{Binding Content}" Foreground="{DynamicResource Fg}"
                                                                    FontSize="12" TextWrapping="Wrap" />
                                                     </Grid>
@@ -1116,8 +1333,17 @@
 
                                 <!-- REVIEW COMMENTS: project-scoped file+line feedback, grouped by file -->
                                 <StackPanel Spacing="6" IsVisible="{Binding HasReviewComments}">
-                                    <TextBlock Text="REVIEW COMMENTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <ItemsControl ItemsSource="{Binding ReviewComments.Files}">
+                                    <Button Command="{Binding ToggleReviewCommentsCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
+                                                       IsVisible="{Binding ReviewCommentsExpanded}" />
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
+                                                       IsVisible="{Binding !ReviewCommentsExpanded}" />
+                                            <TextBlock Text="REVIEW COMMENTS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <ItemsControl ItemsSource="{Binding ReviewComments.Files}" IsVisible="{Binding ReviewCommentsExpanded}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <StackPanel Spacing="3" Margin="0,0,0,6">
@@ -1162,7 +1388,14 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                     <TextBlock Text="{Binding ReviewComments.Status}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                               TextWrapping="Wrap" IsVisible="{Binding ReviewComments.Status, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                                               TextWrapping="Wrap">
+                                        <TextBlock.IsVisible>
+                                            <MultiBinding Converter="{x:Static conv:BoolConverters.And}">
+                                                <Binding Path="ReviewCommentsExpanded" />
+                                                <Binding Path="ReviewComments.Status" Converter="{x:Static conv:StringConverters.IsNotNullOrEmpty}" />
+                                            </MultiBinding>
+                                        </TextBlock.IsVisible>
+                                    </TextBlock>
                                 </StackPanel>
 
                                 <StackPanel Spacing="4" IsVisible="{Binding HasTools}">
@@ -1204,10 +1437,64 @@
                                     </StackPanel>
                                 </StackPanel>
 
+                                <!-- TOKENS: what the session has consumed, as against the context meter in
+                                     the header, which says only how full the window is right now. Three
+                                     windows because the question is usually "is this accelerating", which
+                                     a single lifetime figure can't answer. Absent entirely for an agent
+                                     that reports no breakdown — a table of zeroes would read as a claim. -->
+                                <StackPanel Spacing="4" IsVisible="{Binding HasUsageStats}">
+                                    <Button Command="{Binding ToggleUsageCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
+                                                       IsVisible="{Binding UsageExpanded}" />
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
+                                                       IsVisible="{Binding !UsageExpanded}" />
+                                            <TextBlock Text="TOKENS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding UsageStats.TotalText}" Foreground="{DynamicResource FgFaint}" FontSize="11"
+                                                       FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <StackPanel Spacing="2" IsVisible="{Binding UsageExpanded}">
+                                        <Grid ColumnDefinitions="*,42,42,46" ColumnSpacing="6" Margin="0,2">
+                                            <TextBlock Grid.Column="1" Text="24h" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                       HorizontalAlignment="Right" />
+                                            <TextBlock Grid.Column="2" Text="7d" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                       HorizontalAlignment="Right" />
+                                            <TextBlock Grid.Column="3" Text="all" Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                       HorizontalAlignment="Right" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding UsageStats.Rows}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid ColumnDefinitions="*,42,42,46" ColumnSpacing="6" Margin="0,2">
+                                                        <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{DynamicResource FgDim}" FontSize="11" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding DayText}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                                                   FontFamily="{StaticResource MonoFont}" HorizontalAlignment="Right" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding WeekText}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                                                   FontFamily="{StaticResource MonoFont}" HorizontalAlignment="Right" />
+                                                        <TextBlock Grid.Column="3" Text="{Binding LifetimeText}" Foreground="{DynamicResource Fg}" FontSize="11"
+                                                                   FontFamily="{StaticResource MonoFont}" HorizontalAlignment="Right" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </StackPanel>
+
                                 <!-- Audit trail: capabilities granted / denied -->
                                 <StackPanel Spacing="4" IsVisible="{Binding HasApprovals}">
-                                    <TextBlock Text="APPROVALS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <ItemsControl ItemsSource="{Binding Approvals}">
+                                    <Button Command="{Binding ToggleApprovalsCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
+                                                       IsVisible="{Binding ApprovalsExpanded}" />
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
+                                                       IsVisible="{Binding !ApprovalsExpanded}" />
+                                            <TextBlock Text="APPROVALS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <ItemsControl ItemsSource="{Binding Approvals}" IsVisible="{Binding ApprovalsExpanded}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,3">
@@ -1227,8 +1514,17 @@
 
                                 <!-- MCP CALLS: forwarded host MCP tools a sandboxed agent invoked -->
                                 <StackPanel Spacing="4" IsVisible="{Binding HasMcpCalls}">
-                                    <TextBlock Text="MCP CALLS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
-                                    <ItemsControl ItemsSource="{Binding McpCalls}">
+                                    <Button Command="{Binding ToggleMcpCallsCommand}" Background="Transparent" BorderThickness="0"
+                                            Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronDown"
+                                                       IsVisible="{Binding McpCallsExpanded}" />
+                                            <ic:SymbolIcon Classes="hint" Symbol="ChevronRight"
+                                                       IsVisible="{Binding !McpCallsExpanded}" />
+                                            <TextBlock Text="MCP CALLS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <ItemsControl ItemsSource="{Binding McpCalls}" IsVisible="{Binding McpCallsExpanded}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,3">
@@ -1285,24 +1581,74 @@
                     <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns"
                                   Background="{DynamicResource Line}" IsVisible="{Binding ShowLeftPanel}" />
 
-                    <!-- MIDDLE: chat -->
-                    <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding ShowChat}">
+                    <!-- MIDDLE: chat. Chat font-size shortcuts are bound here. Conversation content and
+                         its preview consume ChatContentFontSize*; composer and chrome stay at UI scale. -->
+                    <Grid Grid.Column="2" x:Name="ChatViewport" RowDefinitions="Auto,*,Auto,Auto"
+                          IsVisible="{Binding ShowChat}" km:KeymapBinder.Context="Chat">
+
+                        <!-- Row 0 is everything that pins above the transcript: the status band, and the
+                             find bar. A real grid row, never an overlay — it costs the transcript one
+                             line and gives back a place the eye can rely on. -->
+                        <StackPanel Grid.Row="0">
+
+                        <!-- The status band: the single home for the agent's own one-line report of what
+                             it found, what it is doing, and how that fits the plan. It has two emphases
+                             and only two, because the same sentence used to be printed twice — once faint
+                             under the tab header, once here — and one of those was always redundant.
+
+                             Quiet (default): Panel, a Comment glyph, the sentence in Fg, the age in
+                             FgFaint. It sits there whenever the agent has said anything at all.
+
+                             Raised (IsUnattended): the agent has done something since the person last
+                             touched this session AND that was minutes ago — you have come back to a tab
+                             and want one sentence, not a scroll. PanelAlt with a hairline Line border, a
+                             ClockAlarm glyph, "While you were away" ahead of the sentence, and a dismiss.
+                             Any sign of life (a scroll, a keystroke, a click, activating the tab) settles
+                             it back to quiet; the band itself does not go away.
+
+                             No status hue in either state. The agent is in motion, not blocking you — sky
+                             belongs to the working indicators that already exist, and amber here would
+                             claim the session is waiting on a human when it is precisely not. Likewise
+                             the stale replacement for the age ("no update for 12 min") stays FgFaint:
+                             silence is not a failure. -->
+                        <Border x:Name="StatusBand" Classes="statusband" Classes.raised="{Binding IsUnattended}"
+                                IsVisible="{Binding ShowStatusLine}" Height="30" Padding="16,0"
+                                AutomationProperties.Name="What the agent says it is doing">
+                            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+                                <ic:SymbolIcon Grid.Column="0" Symbol="Comment" FontSize="15"
+                                               Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center"
+                                               IsVisible="{Binding !IsUnattended}" />
+                                <ic:SymbolIcon Grid.Column="0" Symbol="ClockAlarm" FontSize="15"
+                                               Foreground="{DynamicResource FgDim}" VerticalAlignment="Center"
+                                               IsVisible="{Binding IsUnattended}" />
+                                <TextBlock Grid.Column="1" Text="While you were away" Foreground="{DynamicResource FgDim}"
+                                           FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           IsVisible="{Binding IsUnattended}" />
+                                <TextBlock Grid.Column="2" Text="{Binding LatestStatus}" Foreground="{DynamicResource Fg}"
+                                           FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding LatestStatus}" />
+                                <TextBlock Grid.Column="3" Text="{Binding StatusAge}" Foreground="{DynamicResource FgFaint}"
+                                           FontSize="12" VerticalAlignment="Center" IsVisible="{Binding !StatusIsStale}" />
+                                <TextBlock Grid.Column="3" Text="{Binding StaleText}" Foreground="{DynamicResource FgFaint}"
+                                           FontSize="12" VerticalAlignment="Center" IsVisible="{Binding StatusIsStale}" />
+                                <Button Grid.Column="4" Command="{Binding DismissAwayCommand}"
+                                        Content="{icx:SymbolIcon Symbol=Dismiss}" Background="Transparent"
+                                        Foreground="{DynamicResource FgFaint}" BorderThickness="0" Padding="6,0"
+                                        Cursor="Hand" IsVisible="{Binding IsUnattended}"
+                                        AutomationProperties.Name="Dismiss the away summary" />
+                            </Grid>
+                        </Border>
 
                         <!-- within-session search (Ctrl+F) -->
-                        <Border Grid.Row="0" IsVisible="{Binding IsSearchOpen}" Background="{DynamicResource Panel}"
+                        <Border IsVisible="{Binding IsSearchOpen}" Background="{DynamicResource Panel}"
                                 BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="24,8">
                             <StackPanel MaxWidth="768" HorizontalAlignment="Center" Spacing="6">
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                                     <TextBox Grid.Column="0" Text="{Binding SearchQuery, Mode=TwoWay}" Watermark="Search this session…"
                                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                                              BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                                             AutomationProperties.Name="Search this session">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Enter" Command="{Binding NextMatchCommand}" />
-                                            <KeyBinding Gesture="Shift+Enter" Command="{Binding PrevMatchCommand}" />
-                                            <KeyBinding Gesture="Escape" Command="{Binding CloseSearchCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
+                                             AutomationProperties.Name="Search this session"
+                                             km:KeymapBinder.Context="SessionFindFocus" />
                                     <TextBlock Grid.Column="1" Text="{Binding MatchSummary}" Foreground="{DynamicResource FgFaint}"
                                                FontSize="11" VerticalAlignment="Center" MinWidth="52" />
                                     <Button Classes="chip" Grid.Column="2" Content="{icx:SymbolIcon Symbol=ChevronUp}" Command="{Binding PrevMatchCommand}" Padding="9,2"
@@ -1334,6 +1680,7 @@
                                 </ScrollViewer>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
                         <!-- Transcript: a virtualizing ListBox so a long conversation only realizes the
                              rows on screen. Full-width (scrollbar at the window edge) with each row
@@ -1384,7 +1731,7 @@
                             <ListBox.DataTemplates>
 
                                     <DataTemplate DataType="tr:MessageBubbleItem">
-                                        <Border Classes="msg" Classes.user="{Binding IsUser}" CornerRadius="12" Padding="14,10" Margin="0,6">
+                                        <Border Classes="msg" Classes.user="{Binding IsUser}" Classes.thought="{Binding IsThought}">
                                             <!-- Right-click / long-press anywhere on the bubble → the same per-message
                                                  actions, so touch and mouse reach them without the hover-only ⋯. -->
                                             <Border.ContextFlyout>
@@ -1398,7 +1745,7 @@
                                             </Border.ContextFlyout>
                                             <StackPanel>
                                                 <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,3">
-                                                    <TextBlock Grid.Column="0" Text="{Binding Speaker}" FontSize="11"
+                                                    <TextBlock Grid.Column="0" Text="{Binding Speaker}" FontSize="{DynamicResource ChatContentFontSize11}"
                                                                Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
                                                     <!-- Per-message actions; only visible on hover (see Border.msg styles). -->
                                                     <Button Grid.Column="1" Classes="rowmenu" Content="{icx:SymbolIcon Symbol=MoreHorizontal}" Background="Transparent"
@@ -1415,16 +1762,20 @@
                                                         </Button.Flyout>
                                                     </Button>
                                                 </Grid>
-                                                <!-- Full message rendered as selectable Markdown; thoughts stay plain italic. -->
-                                                <mdxaml:MarkdownScrollViewer Markdown="{Binding Text}" IsVisible="{Binding !IsThought}"
-                                                                             SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True">
-                                                    <mdxaml:MarkdownScrollViewer.Styles>
+                                                <!-- Assistant responses are one code surface with a rendered/source toggle. -->
+                                                <ctl:MarkdownMessageViewer Markdown="{Binding AssistantMarkdown}"
+                                                                           IsVisible="{Binding IsAssistant}" />
+                                                <!-- Prompts keep their compact user-bubble treatment. -->
+                                                <ctl:MarkdownViewer Markdown="{Binding UserMarkdown}" IsVisible="{Binding IsUser}"
+                                                                    SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True">
+                                                    <ctl:MarkdownViewer.Styles>
                                                         <!-- The built-in Markdown theme is attached as this control's own styles, so
                                                              it can only be overridden from here — not app-wide. -->
                                                         <StyleInclude Source="avares://Agnes.App.Desktop/Themes/MarkdownStyles.axaml" />
-                                                    </mdxaml:MarkdownScrollViewer.Styles>
-                                                </mdxaml:MarkdownScrollViewer>
+                                                    </ctl:MarkdownViewer.Styles>
+                                                </ctl:MarkdownViewer>
                                                 <SelectableTextBlock Text="{Binding Text}" Classes="thought" IsVisible="{Binding IsThought}"
+                                                                     FontSize="{DynamicResource ChatContentFontSize13}"
                                                                      TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                             </StackPanel>
                                         </Border>
@@ -1447,17 +1798,17 @@
                                                     <ic:SymbolIcon Grid.Column="0" Symbol="ChevronRight" Classes="tone"
                                                                Classes.working="{Binding IsRunning}" Classes.done="{Binding IsDone}"
                                                                Classes.error="{Binding IsFailed}"
-                                                               FontSize="12" VerticalAlignment="Top" />
+                                                               FontSize="{DynamicResource ChatContentFontSize12}" VerticalAlignment="Top" />
                                                     <TextBlock Grid.Column="1" Text="{Binding KindLabel}" Foreground="{DynamicResource FgDim}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" VerticalAlignment="Top" />
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" VerticalAlignment="Top" />
                                                     <SelectableTextBlock Grid.Column="2" Text="{Binding Title}" Foreground="{DynamicResource Fg}"
-                                                                         FontFamily="{StaticResource MonoFont}" FontSize="12"
+                                                                         FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}"
                                                                          TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                                     <TextBlock Grid.Column="3" Text="{Binding StatusText}" Classes="tone"
                                                                Classes.working="{Binding IsRunning}" Classes.error="{Binding IsFailed}"
-                                                               FontSize="11" VerticalAlignment="Top" IsVisible="{Binding ShowStatus}" />
+                                                               FontSize="{DynamicResource ChatContentFontSize11}" VerticalAlignment="Top" IsVisible="{Binding ShowStatus}" />
                                                     <TextBlock Grid.Column="4" Text="{Binding DurationText}" Foreground="{DynamicResource FgFaint}"
-                                                               FontSize="11" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Top"
+                                                               FontSize="{DynamicResource ChatContentFontSize11}" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Top"
                                                                IsVisible="{Binding HasDuration}" />
                                                 </Grid>
 
@@ -1472,9 +1823,9 @@
                                                                 <Border Classes.add="{Binding IsAdded}" Classes.del="{Binding IsRemoved}">
                                                                     <Grid ColumnDefinitions="14,*">
                                                                         <TextBlock Grid.Column="0" Text="{Binding Marker}" Foreground="{DynamicResource FgDim}"
-                                                                                   FontFamily="{StaticResource MonoFont}" FontSize="11" Padding="4,1,0,1" />
+                                                                                   FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize11}" Padding="4,1,0,1" />
                                                                         <SelectableTextBlock Grid.Column="1" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
-                                                                                             FontFamily="{StaticResource MonoFont}" FontSize="11" Padding="2,1,8,1"
+                                                                                             FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize11}" Padding="2,1,8,1"
                                                                                              TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
                                                                     </Grid>
                                                                 </Border>
@@ -1485,13 +1836,13 @@
 
                                                 <!-- A larger edit states its size and stays one click away. -->
                                                 <TextBlock Text="{Binding DiffSummary}" Foreground="{DynamicResource FgFaint}"
-                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" Margin="20,0,0,0"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize11}" Margin="20,0,0,0"
                                                            IsVisible="{Binding HasCollapsedDiff}" />
 
                                                 <!-- Shown when "Tool output" is on — but not under an inline
                                                      diff, where it would only repeat the diff's first line. -->
                                                 <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource FgFaint}"
-                                                           FontFamily="{StaticResource MonoFont}" FontSize="11" Margin="20,0,0,0"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize11}" Margin="20,0,0,0"
                                                            TextTrimming="CharacterEllipsis" MaxLines="1">
                                                     <TextBlock.IsVisible>
                                                         <MultiBinding Converter="{x:Static conv:BoolConverters.And}">
@@ -1507,16 +1858,35 @@
                                     <DataTemplate DataType="tr:PlanItemView">
                                         <Border Margin="0,6" Padding="12,9" CornerRadius="8"
                                                 Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                            <Border.ContextFlyout>
+                                                <MenuFlyout>
+                                                    <MenuItem Header="Copy message" Click="OnCopyPlan" />
+                                                </MenuFlyout>
+                                            </Border.ContextFlyout>
                                             <StackPanel>
-                                                <TextBlock Text="Plan" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" Margin="0,0,0,4" />
-                                                <ItemsControl ItemsSource="{Binding Entries}">
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,0,0,4">
+                                                    <TextBlock Grid.Column="0" Text="Plan" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" />
+                                                    <Button Grid.Column="1" Classes="rowmenu" Content="{icx:SymbolIcon Symbol=MoreHorizontal}"
+                                                            Background="Transparent" Foreground="{DynamicResource FgDim}"
+                                                            BorderThickness="0" Padding="6,0" FontSize="15" Cursor="Hand"
+                                                            VerticalAlignment="Center" AutomationProperties.Name="Plan actions">
+                                                        <Button.Flyout>
+                                                            <MenuFlyout>
+                                                                <MenuItem Header="Copy message" Click="OnCopyPlan" />
+                                                            </MenuFlyout>
+                                                        </Button.Flyout>
+                                                    </Button>
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding EntryViews}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
-                                                            <Grid ColumnDefinitions="90,*" ColumnSpacing="8" Margin="0,2">
-                                                                <TextBlock Grid.Column="0" Text="{Binding Status}" Classes="tone" FontSize="11"
-                                                                           VerticalAlignment="Top"
-                                                                           Classes.done="{Binding Status, Converter={StaticResource PlanDone}}"
-                                                                           Classes.working="{Binding Status, Converter={StaticResource PlanRunning}}" />
+                                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,2">
+                                                                <ic:SymbolIcon Grid.Column="0" Symbol="{Binding Symbol}" IconVariant="{Binding Variant}"
+                                                                           Classes="tone" FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0"
+                                                                           ToolTip.Tip="{Binding StatusLabel}"
+                                                                           Classes.done="{Binding IsDone}"
+                                                                           Classes.working="{Binding IsRunning}"
+                                                                           Classes.error="{Binding IsCancelled}" />
                                                                 <TextBlock Grid.Column="1" Text="{Binding Content}" Foreground="{DynamicResource Fg}"
                                                                            TextWrapping="Wrap" />
                                                             </Grid>
@@ -1589,11 +1959,19 @@
                                     </DataTemplate>
 
                                     <DataTemplate DataType="tr:PermissionItem">
-                                        <Border Margin="0,6" Padding="12,9" CornerRadius="8"
-                                                Background="{DynamicResource StatusAttentionSoft}" BorderBrush="{DynamicResource StatusAttention}" BorderThickness="1">
+                                        <!-- Amber means "blocked on you". An expired request is not blocked on
+                                             anyone — nothing is waiting for an answer — so the card drops out of
+                                             the status hue rather than going on claiming attention it can't use. -->
+                                        <Border Classes="permission" Classes.lapsed="{Binding Expired}"
+                                                Margin="0,6" Padding="12,9" CornerRadius="8" BorderThickness="1">
                                             <StackPanel Spacing="5">
                                                 <TextBlock Text="Permission requested" Foreground="{DynamicResource StatusAttention}"
-                                                           FontWeight="SemiBold" FontSize="12" />
+                                                           FontWeight="SemiBold" FontSize="12" IsVisible="{Binding !Expired}" />
+                                                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding Expired}">
+                                                    <ic:SymbolIcon Symbol="Clock" Foreground="{DynamicResource FgFaint}" FontSize="13" />
+                                                    <TextBlock Text="Permission expired" Foreground="{DynamicResource FgDim}"
+                                                               FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                                </StackPanel>
                                                 <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" FontWeight="SemiBold" />
 
                                                 <!-- Exactly what is being approved, verbatim and wrapped. This is
@@ -1626,6 +2004,103 @@
                                                            IsVisible="{Binding HasNarrowestHint}" TextWrapping="Wrap" />
                                                 <TextBlock Text="{Binding ResolutionText}" Foreground="{DynamicResource FgDim}" FontSize="11"
                                                            IsVisible="{Binding ResolutionText, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+
+                                                <!-- The only thing still worth doing with a lapsed request: decide
+                                                     the next one like it now, so stepping away doesn't cost a turn
+                                                     again. It cannot grant this request — that one is gone. -->
+                                                <StackPanel Spacing="5" IsVisible="{Binding CanSetStandingRule}" Margin="0,4,0,0">
+                                                    <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
+                                                               Text="Nobody answered in time, so the agent moved on. Decide the next request like this one in advance:" />
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Button Classes="chip" Content="Always allow these"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.AlwaysAllowLikeCommand}"
+                                                                CommandParameter="{Binding}" Cursor="Hand"
+                                                                ToolTip.Tip="Auto-allow future requests of this kind on this host" />
+                                                        <Button Classes="chip" Content="Always deny these"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.AlwaysDenyLikeCommand}"
+                                                                CommandParameter="{Binding}" Cursor="Hand"
+                                                                ToolTip.Tip="Auto-deny future requests of this kind on this host" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+
+                                    <!-- A file the agent sent. Not a tool row and not a message: a card you
+                                         can act on, with the image itself when there is one to show. The
+                                         buttons appear only for verbs this head actually has (the desktop
+                                         has no share sheet), so no button here is decorative. -->
+                                    <DataTemplate DataType="tr:SharedFileItem">
+                                        <Border Margin="0,6" Padding="12,10" CornerRadius="10"
+                                                Background="{DynamicResource PanelAlt}"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                            <StackPanel Spacing="9">
+                                                <Grid ColumnDefinitions="Auto,*">
+                                                    <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9" Margin="0,0,11,0"
+                                                            Background="{DynamicResource AccentSoft}" VerticalAlignment="Top">
+                                                        <ic:SymbolIcon Symbol="{Binding Symbol}" FontSize="18"
+                                                                       Foreground="{DynamicResource Accent}"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding FileName}" Foreground="{DynamicResource Fg}"
+                                                                   FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock Text="{Binding Extension}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                                            <TextBlock Text="·" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                                            <TextBlock Text="{Binding SizeText}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <TextBlock Text="{Binding Caption}" Foreground="{DynamicResource FgDim}"
+                                                           FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasCaption}" />
+
+                                                <!-- Images show themselves. The bytes are fetched lazily on
+                                                     attach (OnSharedImageAttached) and cached per file, so
+                                                     scrolling a long transcript doesn't re-download them. -->
+                                                <Border IsVisible="{Binding IsImage}" CornerRadius="8" ClipToBounds="True"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                        Background="{DynamicResource Panel}" HorizontalAlignment="Left">
+                                                    <Panel MinHeight="48" MinWidth="120">
+                                                        <TextBlock Text="Loading preview…" Margin="14,14" FontSize="11"
+                                                                   Foreground="{DynamicResource FgFaint}"
+                                                                   IsVisible="{Binding #SharedImage.Source, Converter={x:Static conv:ObjectConverters.IsNull}}" />
+                                                        <Image x:Name="SharedImage" MaxHeight="320" Stretch="Uniform"
+                                                               StretchDirection="DownOnly" HorizontalAlignment="Left"
+                                                               AttachedToVisualTree="OnSharedImageAttached" />
+                                                    </Panel>
+                                                </Border>
+
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <Button Classes="chip" Padding="12,5"
+                                                            IsVisible="{Binding $parent[ItemsControl].DataContext.ReceivedFiles.CanOpen}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.OpenSharedFileCommand}"
+                                                            CommandParameter="{Binding}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <ic:SymbolIcon Symbol="Open" FontSize="14" />
+                                                            <TextBlock Text="Open" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Classes="chip" Padding="12,5"
+                                                            IsVisible="{Binding $parent[ItemsControl].DataContext.ReceivedFiles.CanSave}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.SaveSharedFileCommand}"
+                                                            CommandParameter="{Binding}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <ic:SymbolIcon Symbol="ArrowDownload" FontSize="14" />
+                                                            <TextBlock Text="Save…" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Classes="chip" Padding="12,5"
+                                                            IsVisible="{Binding $parent[ItemsControl].DataContext.ReceivedFiles.CanShare}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.ShareSharedFileCommand}"
+                                                            CommandParameter="{Binding}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <ic:SymbolIcon Symbol="ShareAndroid" FontSize="14" />
+                                                            <TextBlock Text="Share" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </StackPanel>
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
@@ -1664,13 +2139,21 @@
                         <!-- Scroll-position hint: the timestamp of what you're looking at, shown only while
                              scrolled up from the live tail (toggled in code-behind), so long conversations
                              aren't disorienting. In index mode it also carries the row you're on, which is
-                             the feedback a message-indexed drag needs. -->
+                             the feedback a message-indexed drag needs. Under it, the agent's current status
+                             line: scrolled back into history is exactly when "what is it doing NOW" is out
+                             of view, and the answer is one line, so it travels with the hint. -->
                         <Border Grid.Row="1" x:Name="ScrollHint" IsVisible="False" VerticalAlignment="Top"
                                 HorizontalAlignment="Center" Margin="0,10,0,0" ZIndex="5" IsHitTestVisible="False"
                                 Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                CornerRadius="10" Padding="10,3" BoxShadow="0 4 12 -4 #4D120C2E">
-                            <TextBlock x:Name="ScrollHintText" Foreground="{DynamicResource FgDim}" FontSize="11"
-                                       FontFamily="{StaticResource MonoFont}" />
+                                CornerRadius="10" Padding="10,3" BoxShadow="0 4 12 -4 #4D120C2E" MaxWidth="560">
+                            <StackPanel Spacing="2">
+                                <TextBlock x:Name="ScrollHintText" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                           FontFamily="{StaticResource MonoFont}" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="ScrollHintStatus" Foreground="{DynamicResource Fg}" FontSize="11"
+                                           TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"
+                                           Text="{Binding LatestStatus}" ToolTip.Tip="{Binding LatestStatus}"
+                                           IsVisible="{Binding HasStatus}" />
+                            </StackPanel>
                         </Border>
 
                         <!-- Thinking indicator: the agent is working even when it hasn't emitted output yet,
@@ -1962,11 +2445,8 @@
                                              Margin="0,0,6,6"
                                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                                              BorderBrush="{DynamicResource Line}" CornerRadius="7" Padding="9,4" FontSize="12"
-                                             AutomationProperties.Name="Add a context reference">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Enter" Command="{Binding AddReferenceCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
+                                             AutomationProperties.Name="Add a context reference"
+                                             km:KeymapBinder.Context="SessionReferenceFocus" />
                                     <Button Classes="chip" Content="Add" Command="{Binding AddReferenceCommand}" Margin="0,0,6,6" Padding="10,4" FontSize="12" />
                                     <Button Classes="chip" Content="Attach file…" Click="OnAttachFile" Margin="0,0,6,6" Padding="10,4" FontSize="12"
                                             AutomationProperties.Name="Attach a file or image" />
@@ -2042,18 +2522,11 @@
                                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                                              Background="{DynamicResource PanelAlt}" Foreground="{DynamicResource Fg}"
                                              BorderBrush="{DynamicResource Line}" CornerRadius="10" Padding="12,10"
-                                             AutomationProperties.Name="Message the agent">
-                                        <TextBox.KeyBindings>
-                                            <KeyBinding Gesture="Ctrl+Enter" Command="{Binding SendCommand}" />
-                                            <KeyBinding Gesture="Meta+Enter" Command="{Binding SendCommand}" />
-                                            <KeyBinding Gesture="Ctrl+Shift+Enter" Command="{Binding SendNowCommand}" />
-                                            <KeyBinding Gesture="Alt+Up" Command="{Binding RecallPreviousCommand}" />
-                                            <KeyBinding Gesture="Alt+Down" Command="{Binding RecallNextCommand}" />
-                                        </TextBox.KeyBindings>
-                                    </TextBox>
-                                    <!-- Live hint: Ctrl+Enter sends when idle but QUEUES while a turn runs, so
-                                         the gesture's current meaning is always spelled out (defect #5). -->
-                                    <TextBlock Text="{Binding SendGestureHint}" Foreground="{DynamicResource FgFaint}"
+                                             AutomationProperties.Name="Message the agent"
+                                             km:KeymapBinder.Context="ComposerFocus" />
+                                    <!-- The code-behind derives this live hint from the effective keymap and
+                                         whether sending would send or queue, so display and execution stay aligned. -->
+                                    <TextBlock x:Name="ComposerSendHint" Foreground="{DynamicResource FgFaint}"
                                                FontSize="10" Margin="2,0,0,0" />
                                     </StackPanel>
 
@@ -2093,8 +2566,9 @@
                                   Background="{DynamicResource Line}" IsVisible="{Binding ShowRightPanel}" />
 
                     <!-- RIGHT: full preview (diff viewer or text) -->
-                    <Border Grid.Column="4" IsVisible="{Binding ShowRightPanel}"
-                            Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0">
+                    <Border Grid.Column="4" x:Name="PreviewPanel" IsVisible="{Binding ShowRightPanel}"
+                            Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0"
+                            km:KeymapBinder.Context="Chat">
                         <Grid RowDefinitions="Auto,*">
                             <Border Grid.Row="0" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="14,10">
                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
@@ -2102,6 +2576,7 @@
                                          it keep their own width, so it grows downward rather than cutting off. -->
                                     <TextBlock Grid.Column="0" Text="{Binding SelectedPreview.Title}" Foreground="{DynamicResource Fg}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
+                                               FontSize="{DynamicResource ChatContentFontSize13}"
                                                TextWrapping="Wrap" Margin="0,0,10,0" MaxHeight="72" />
                                     <Button Classes="chip" Grid.Column="1" Command="{Binding SelectedPreview.ToggleSplitCommand}"
                                             IsVisible="{Binding SelectedPreview.IsDiff}"
@@ -2133,7 +2608,7 @@
                                     BorderThickness="0,0,0,1" Padding="14,8" MaxHeight="180">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <SelectableTextBlock Text="{Binding SelectedPreview.Command}" Foreground="{DynamicResource FgDim}"
-                                                         FontFamily="{StaticResource MonoFont}" FontSize="12" TextWrapping="Wrap"
+                                                         FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" TextWrapping="Wrap"
                                                          ctl:SelectionContextMenu.Enable="True" />
                                 </ScrollViewer>
                             </Border>
@@ -2149,14 +2624,14 @@
                                                 <Grid ColumnDefinitions="40,40,14,*">
                                                     <TextBlock Grid.Column="0" Text="{Binding OldLineText}" TextAlignment="Right"
                                                                Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
-                                                               FontSize="11" Padding="0,1,6,1" />
+                                                               FontSize="{DynamicResource ChatContentFontSize11}" Padding="0,1,6,1" />
                                                     <TextBlock Grid.Column="1" Text="{Binding NewLineText}" TextAlignment="Right"
                                                                Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
-                                                               FontSize="11" Padding="0,1,6,1" />
+                                                               FontSize="{DynamicResource ChatContentFontSize11}" Padding="0,1,6,1" />
                                                     <TextBlock Grid.Column="2" Text="{Binding Marker}" Foreground="{DynamicResource FgDim}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="0,1" />
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="0,1" />
                                                     <TextBlock Grid.Column="3" Text="{Binding Text}" Foreground="{DynamicResource Fg}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="2,1,8,1"
                                                                TextWrapping="Wrap" />
                                                 </Grid>
                                             </Border>
@@ -2177,12 +2652,12 @@
                                                     <Grid ColumnDefinitions="40,*">
                                                         <TextBlock Grid.Column="0" Text="{Binding LeftNo}" TextAlignment="Right"
                                                                    Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
-                                                                   FontSize="11" Padding="0,1,6,1" />
+                                                                   FontSize="{DynamicResource ChatContentFontSize11}" Padding="0,1,6,1" />
                                                         <TextBlock Grid.Column="1" Text="{Binding LeftText}" Foreground="{DynamicResource Fg}"
-                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="2,1,8,1"
                                                                    IsVisible="{Binding !IsHunk}" />
                                                         <TextBlock Grid.Column="1" Text="{Binding HeaderText}" Foreground="{DynamicResource HunkFg}"
-                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1"
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="2,1,8,1"
                                                                    IsVisible="{Binding IsHunk}" />
                                                     </Grid>
                                                 </Border>
@@ -2191,9 +2666,9 @@
                                                     <Grid ColumnDefinitions="40,*">
                                                         <TextBlock Grid.Column="0" Text="{Binding RightNo}" TextAlignment="Right"
                                                                    Foreground="{DynamicResource Gutter}" FontFamily="{StaticResource MonoFont}"
-                                                                   FontSize="11" Padding="0,1,6,1" />
+                                                                   FontSize="{DynamicResource ChatContentFontSize11}" Padding="0,1,6,1" />
                                                         <TextBlock Grid.Column="1" Text="{Binding RightText}" Foreground="{DynamicResource Fg}"
-                                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" Padding="2,1,8,1" />
+                                                                   FontFamily="{StaticResource MonoFont}" FontSize="{DynamicResource ChatContentFontSize12}" Padding="2,1,8,1" />
                                                     </Grid>
                                                 </Border>
                                             </Grid>
@@ -2203,20 +2678,16 @@
                             </ScrollViewer>
 
                             <!-- Markdown preview (chat messages: tables, code, lists, …) -->
-                            <mdxaml:MarkdownScrollViewer Grid.Row="1" Padding="16" Markdown="{Binding SelectedPreview.Body}"
-                                                         IsVisible="{Binding SelectedPreview.IsMarkdown}"
-                                                         SelectionEnabled="True" ctl:SelectionContextMenu.Enable="True">
-                                <mdxaml:MarkdownScrollViewer.Styles>
-                                    <!-- Same override as the transcript's renderer; see MarkdownStyles.axaml. -->
-                                    <StyleInclude Source="avares://Agnes.App.Desktop/Themes/MarkdownStyles.axaml" />
-                                </mdxaml:MarkdownScrollViewer.Styles>
-                            </mdxaml:MarkdownScrollViewer>
+                            <ctl:MarkdownMessageViewer Grid.Row="1" Padding="16"
+                                                       Markdown="{Binding SelectedPreview.Body}"
+                                                       IsVisible="{Binding SelectedPreview.IsMarkdown}" />
 
                             <!-- Plain, verbatim text preview (tool output, logs) -->
                             <ScrollViewer Grid.Row="1" Padding="16" VerticalScrollBarVisibility="Auto"
                                           IsVisible="{Binding SelectedPreview.IsPlainText}">
                                 <SelectableTextBlock Text="{Binding SelectedPreview.Body}" Foreground="{DynamicResource Fg}"
-                                           FontSize="13" TextWrapping="Wrap" ctl:SelectionContextMenu.Enable="True" />
+                                           FontSize="{DynamicResource ChatContentFontSize13}" TextWrapping="Wrap"
+                                           ctl:SelectionContextMenu.Enable="True" />
                             </ScrollViewer>
                             </Grid>
                         </Grid>
@@ -2236,6 +2707,30 @@
             <views:TerminalPanelView DataContext="{Binding Session.Terminal}" />
         </Border>
 
+        <!-- Agent console: same overlay treatment as the terminal above, and the same TerminalPanelView, since
+             it is the same thing underneath — a PTY whose output rides the session event stream. Titled, because
+             two bottom-docked terminals that look identical would be indistinguishable once open. -->
+        <Border Grid.Row="1" VerticalAlignment="Bottom" Height="300"
+                IsVisible="{Binding AgentConsolePanelVisible}"
+                Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                BoxShadow="0 -8 24 -12 #66120C2E">
+            <Grid RowDefinitions="Auto,*">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,6">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <ic:SymbolIcon Symbol="Bot" FontSize="14" Foreground="{DynamicResource FgDim}" />
+                        <TextBlock Text="Agent console" FontWeight="SemiBold" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Fg}" />
+                        <TextBlock Text="a second, interactive run of the same CLI — not the live session"
+                                   Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Button Classes="chip" Grid.Column="1" Content="Hide" Command="{Binding Session.ToggleAgentConsoleCommand}"
+                            Padding="8,2" FontSize="11"
+                            ToolTip.Tip="Hide the console (it keeps running)" />
+                </Grid>
+                <views:TerminalPanelView Grid.Row="1" DataContext="{Binding Session.AgentConsole}" />
+            </Grid>
+        </Border>
+
         <!-- Workspace file browser (git-and-files/03): a right-docked, on-demand overlay panel over the LIVE
              session. Same computed gate as the terminal (FileBrowserPanelVisible) so it never covers the
              configure screen. -->
@@ -2244,6 +2739,18 @@
                 Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0"
                 BoxShadow="-8 0 24 -12 #66120C2E">
             <views:FileBrowserView DataContext="{Binding Session.FileBrowser}" />
+        </Border>
+
+        <!-- The graphical sandbox's screen: a right-docked overlay beside the transcript, so you can watch the
+             agent work and the transcript that explains it at the same time. Right rather than bottom (where the
+             terminal goes) because a 1280x800 display letterboxed into a 260px strip is unreadable, and because
+             the two are genuinely useful together. Same computed gate as every other overlay, plus HasDisplay —
+             only a graphical sandbox has a screen at all. -->
+        <Border Grid.Row="1" HorizontalAlignment="Right" Width="620"
+                IsVisible="{Binding ScreenPanelVisible}"
+                Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0"
+                BoxShadow="-8 0 24 -12 #66120C2E">
+            <views:ScreenPanelView DataContext="{Binding Session.Display}" />
         </Border>
 
         <!-- Provider login terminal (platform/03): a bottom-docked, interactive terminal running a CLI's login,

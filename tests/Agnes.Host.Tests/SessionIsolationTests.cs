@@ -71,12 +71,19 @@ public class SessionIsolationTests
     // ---- authorizer isolation grants (A3) ----
 
     [Fact]
-    public async Task Shared_mode_adds_no_owner_grant()
+    public async Task Shared_mode_still_lets_a_caller_reach_the_session_they_started()
     {
         var auth = Authorizer(SessionIsolation.Shared);
         Assert.True(auth.IsolationDisabled);
-        // alice "owns" the session, but Shared mode grants nothing beyond shares / host-owner.
-        Assert.False(await auth.CanSubscribeAsync("s", owner: "alice", group: null, User("alice")));
+
+        // Reaching your own session is not an isolation feature — it is the baseline, and it applies on a
+        // stock host too. Making it conditional on isolation is what left a non-Owner device unable to see
+        // even the session it had just opened.
+        Assert.True(await auth.CanSubscribeAsync("s", owner: "alice", group: null, User("alice")));
+        Assert.True(await auth.CanPromptAsync("s", owner: "alice", group: null, User("alice")));
+
+        // What Shared mode still adds nothing for: somebody else's session, and group membership.
+        Assert.False(await auth.CanSubscribeAsync("s", owner: "alice", group: null, User("bob")));
     }
 
     [Fact]
