@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ae="using:AvaloniaEdit"
         xmlns:ctxt="using:ColorTextBlock.Avalonia">
   <!--
     Markdown.Avalonia's built-in "Standard" theme paints for a white page: Gray table rules, a
@@ -31,17 +32,34 @@
     <Setter Property="Background" Value="{DynamicResource CodeBg}" />
   </Style>
 
-  <!-- Fenced code: the sunken code surface, hairline, brand radius. -->
+  <!-- Fenced code embedded in a Markdown document is a distinct code surface. -->
   <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.CodeBlock">
     <Setter Property="Background" Value="{DynamicResource CodeBg}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Margin" Value="0,4" />
   </Style>
   <Style Selector=".Markdown_Avalonia_MarkdownViewer TextBlock.CodeBlock">
     <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
     <Setter Property="Foreground" Value="{DynamicResource Fg}" />
   </Style>
+  <Style Selector=".Markdown_Avalonia_MarkdownViewer Border.CodeBlock ae|TextEditor">
+    <Setter Property="Background" Value="{DynamicResource CodeBg}" />
+  </Style>
 
+  <!-- When the whole response is just one ordinary code fence, the response box already is its
+       surface. Flatten only that shape so it does not become a card inside an identical card. -->
+  <Style Selector=".standaloneCodeMessage Border.CodeBlock">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="Margin" Value="0" />
+  </Style>
+  <Style Selector=".standaloneCodeMessage Border.CodeBlock ae|TextEditor">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
   <!-- Inline `code`: a mono chip on the panel tint. -->
   <Style Selector=".Markdown_Avalonia_MarkdownViewer ctxt|CCode">
     <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />

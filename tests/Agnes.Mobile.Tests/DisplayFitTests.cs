@@ -10,6 +10,7 @@ namespace Agnes.Mobile.Tests;
 /// obvious the moment someone tries to click a button. So it is tested at the places that can't be
 /// fudged: the four corners, the centre, and the letterbox.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class DisplayFitTests
 {
     private const int GuestWidth = 1280;

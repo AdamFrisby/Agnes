@@ -94,6 +94,9 @@
              chip, ghost, danger), press feedback and the keyboard focus ring. Loaded after Fluent and
              Dock so it wins over both. -->
         <StyleInclude Source="avares://Agnes.App.Desktop/Themes/AppStyles.axaml" />
+        <!-- Agnes-owned Markdown containers are app chrome. Renderer overrides stay local to each
+             MarkdownScrollViewer in MarkdownStyles.axaml because the library's own theme is local. -->
+        <StyleInclude Source="avares://Agnes.App.Desktop/Themes/MarkdownChromeStyles.axaml" />
         <!-- Replaces Dock's tab-strip context menu (which is about docking) with one about the tab.
              After Dock's theme so it wins. -->
         <StyleInclude Source="avares://Agnes.App.Desktop/Themes/TabMenu.axaml" />

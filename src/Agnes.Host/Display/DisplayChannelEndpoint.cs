@@ -310,7 +310,10 @@ public static class DisplayChannelEndpoint
 
     private static Task CloseAsync(WebSocket socket, string reason, CancellationToken cancellationToken)
         => socket.State == WebSocketState.Open
-            ? socket.CloseAsync(WebSocketCloseStatus.PolicyViolation, Truncate(reason), cancellationToken)
+            // This is a server-side rejection: emit the policy close frame, then let the request unwind.
+            // Waiting for the peer handshake here races request teardown and can turn the intended close
+            // status into a transport reset on a loaded host.
+            ? socket.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation, Truncate(reason), cancellationToken)
             : Task.CompletedTask;
 
     // A close reason is capped at 123 UTF-8 bytes by the protocol; exceeding it throws rather than truncates.
