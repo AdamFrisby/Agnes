@@ -83,11 +83,11 @@ public sealed partial class ConnectPanel : UserControl
             await workspace.ConnectWithCloudflareAccessCommand.ExecuteAsync(null);
             ShowCloudflareStatus(workspace.Status);
         }
-        catch (Exception ex)
+        catch
         {
             // AsyncRelayCommand normally captures failures, but do not allow a browser-side failure
             // to be silent if that implementation changes.
-            ShowCloudflareStatus("Error: " + ex.Message);
+            ShowCloudflareStatus("Unable to connect through Cloudflare Access. Check the host address and try again.");
         }
         finally
         {
