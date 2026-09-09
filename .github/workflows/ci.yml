@@ -89,7 +89,11 @@ jobs:
       # cold-start flake is absorbed by the retry.
       - name: Test
         run: |
-          test() { dotnet test Agnes.Core.slnf --configuration Release --no-build --verbosity normal; }
+          # Avalonia's headless renderer is process-global. Its two UI test assemblies
+          # each disable xUnit parallelism, but solution-level MSBuild parallelism still
+          # launched those assemblies in separate processes and let one dispose the
+          # renderer while the other used it. Run test projects serially.
+          test() { dotnet test Agnes.Core.slnf --configuration Release --no-build --verbosity normal -m:1; }
           test || { echo "::warning::First test run failed — retrying once (cold-start flake guard)."; test; }
 
   ui-build:
