@@ -1,0 +1,355 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:cb="using:Agnes.Plugins.CodeyBox"
+             xmlns:v="using:Agnes.Plugins.CodeyBox.Views"
+             x:Class="Agnes.Plugins.CodeyBox.Views.ComposerView">
+  <!-- THE COMPOSER. The old create form asked for twenty fields, of which nineteen had a right answer
+       the app already knew: the project came from the filter, the agent and the branch from the project,
+       the ceiling from its audit budget, the dependency from the item you opened it on. Asking anyway is
+       how a queue ends up with hand-typed values that disagree with their own project.
+
+       So: the PROMPT is the page — it is the only thing the operator actually has to supply — and every
+       inference sits above it as a chip that states what will be used and says "· default" when nothing
+       has overridden it. A chip opens its own editor underneath, which is view state and lives in the
+       code-behind: which box is open is not something the queue should be told about.
+
+       Pasting a multi-step plan turns the whole thing into a chain in one pass, which is why the plan
+       list appears on its own the moment there is more than one section rather than behind a mode
+       switch nobody would find.
+
+       DataContext is the composer view model. -->
+  <UserControl.Styles>
+    <Style Selector="Button.chip">
+      <Setter Property="Padding" Value="9,4" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="Margin" Value="0,0,5,4" />
+    </Style>
+    <Style Selector="Button.chip:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+    <Style Selector="Button.chip.open">
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+    </Style>
+
+    <!-- A chip states a label, a value and — only when nothing has overridden it — that the value came
+         from the project. Inherited reads quieter than chosen; that difference IS the information. -->
+    <Style Selector="TextBlock.chiplabel">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.chipvalue">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.inherited">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="ToggleButton.chip">
+      <Setter Property="Padding" Value="9,3" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="Margin" Value="0,0,5,0" />
+    </Style>
+    <Style Selector="ToggleButton.chip:checked">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="ToggleButton.chip:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+
+    <Style Selector="Button.tiny">
+      <Setter Property="Padding" Value="5,0" />
+      <Setter Property="MinWidth" Value="20" />
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="Margin" Value="0,0,3,0" />
+    </Style>
+    <Style Selector="Button.linky">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.linky /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- Derived, not chosen: the box holds a real value and says so quietly, so an operator who wanted
+         to name the item can see there is already something there to type over. -->
+    <Style Selector="TextBox.derived">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+    <!-- A priority the operator typed is theirs; one the position chips computed is the app's. -->
+    <Style Selector="TextBox.priority">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+    <Style Selector="TextBox.priority.manual">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="TextBlock.fieldlabel">
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+          CornerRadius="6" Margin="8" Padding="12,10">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
+
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,7">
+        <TextBlock Text="New work" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}"
+                   VerticalAlignment="Center" />
+        <!-- Where it was opened from, because a follow-up and a duplicate produce very different items
+             from the same-looking form. -->
+        <Border Background="{DynamicResource PanelAlt}" CornerRadius="9" Padding="7,1"
+                VerticalAlignment="Center">
+          <TextBlock FontSize="9" Foreground="{DynamicResource FgDim}"
+                     Text="{Binding Intent, Converter={x:Static v:BoardConverters.IntentWord}}" />
+        </Border>
+      </StackPanel>
+
+      <!-- Derived from the first line until the operator types over it, and shown in the dim hue while
+           it is derived so that "it already has a title" is visible rather than assumed. -->
+      <TextBox Grid.Row="1" Text="{Binding Title, Mode=TwoWay}" FontSize="13" Margin="0,0,0,7"
+               PlaceholderText="Title — from the first line"
+               Classes.derived="{Binding TitleIsDerived}" />
+
+      <WrapPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,6">
+        <Button Classes="chip" Classes.open="{Binding $parent[UserControl].OpenField, Converter={x:Static v:BoardConverters.EnumEquals}, ConverterParameter=project}"
+                Command="{Binding $parent[UserControl].ShowFieldCommand}" CommandParameter="project">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <TextBlock Classes="chiplabel" Text="Project:" />
+            <TextBlock Classes="chipvalue" Text="{Binding ProjectId}" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="chip" Classes.open="{Binding $parent[UserControl].OpenField, Converter={x:Static v:BoardConverters.EnumEquals}, ConverterParameter=agent}"
+                Command="{Binding $parent[UserControl].ShowFieldCommand}" CommandParameter="agent">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <TextBlock Classes="chiplabel" Text="Agent:" />
+            <TextBlock Classes="chipvalue" Text="{Binding Agent}" />
+            <TextBlock Classes="inherited" Text="· default" IsVisible="{Binding AgentInherited}" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="chip" Classes.open="{Binding $parent[UserControl].OpenField, Converter={x:Static v:BoardConverters.EnumEquals}, ConverterParameter=branch}"
+                Command="{Binding $parent[UserControl].ShowFieldCommand}" CommandParameter="branch">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <TextBlock Classes="chiplabel" Text="Branch:" />
+            <TextBlock Classes="chipvalue" Text="{Binding BaseBranch}" />
+            <TextBlock Classes="inherited" Text="· default" IsVisible="{Binding BaseBranchInherited}" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="chip" Classes.open="{Binding $parent[UserControl].OpenField, Converter={x:Static v:BoardConverters.EnumEquals}, ConverterParameter=ceiling}"
+                Command="{Binding $parent[UserControl].ShowFieldCommand}" CommandParameter="ceiling"
+                ToolTip.Tip="How many audit iterations this work gets before it is given up on">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <TextBlock Classes="chiplabel" Text="Ceiling:" />
+            <TextBlock Classes="chipvalue" Text="{Binding AuditMaxIterations}" />
+            <TextBlock Classes="inherited" Text="· default"
+                       IsVisible="{Binding AuditMaxIterationsInherited}" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="chip" Classes.open="{Binding $parent[UserControl].OpenField, Converter={x:Static v:BoardConverters.EnumEquals}, ConverterParameter=position}"
+                Command="{Binding $parent[UserControl].ShowFieldCommand}" CommandParameter="position">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <TextBlock Classes="chiplabel" Text="Position:" />
+            <TextBlock Classes="chipvalue" Text="{Binding Position}" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="chip" Classes.open="{Binding $parent[UserControl].OpenField, Converter={x:Static v:BoardConverters.EnumEquals}, ConverterParameter=depends}"
+                Command="{Binding $parent[UserControl].ShowFieldCommand}" CommandParameter="depends">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <TextBlock Classes="chiplabel" Text="Depends on:" />
+            <TextBlock Classes="chipvalue" Text="{Binding Picker.TickedCount}" />
+          </StackPanel>
+        </Button>
+      </WrapPanel>
+
+      <!-- One editor at a time, under the chip that opened it. Six always-present boxes would be the old
+           form again, and the point of the chips is that most of them are never opened at all. -->
+      <Border Grid.Row="3" VerticalAlignment="Top" Margin="0,0,0,7" Padding="9,7"
+              CornerRadius="5" Background="{DynamicResource PanelAlt}"
+              BorderBrush="{DynamicResource Line}" BorderThickness="1"
+              IsVisible="{Binding $parent[UserControl].OpenField,
+                      Converter={x:Static v:BoardConverters.NotEmpty}}">
+        <StackPanel Spacing="6">
+          <ComboBox ItemsSource="{Binding Projects}" HorizontalAlignment="Stretch" FontSize="12"
+                    SelectedValue="{Binding ProjectId, Mode=TwoWay}" SelectedValueBinding="{Binding Id}"
+                    DisplayMemberBinding="{Binding DisplayName}" PlaceholderText="Choose a project"
+                    IsVisible="{Binding $parent[UserControl].OpenField,
+                               Converter={x:Static v:BoardConverters.EnumEquals},
+                               ConverterParameter=project}" />
+
+          <ComboBox ItemsSource="{Binding Agents}" SelectedItem="{Binding Agent, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" FontSize="12"
+                    PlaceholderText="Agent — the project's default"
+                    IsVisible="{Binding $parent[UserControl].OpenField,
+                               Converter={x:Static v:BoardConverters.EnumEquals},
+                               ConverterParameter=agent}" />
+
+          <TextBox Text="{Binding BaseBranch, Mode=TwoWay}" FontSize="12"
+                   PlaceholderText="Base branch — the project's default"
+                   IsVisible="{Binding $parent[UserControl].OpenField,
+                               Converter={x:Static v:BoardConverters.EnumEquals},
+                               ConverterParameter=branch}" />
+
+          <TextBox Text="{Binding AuditMaxIterations, Mode=TwoWay}" FontSize="12"
+                   PlaceholderText="Audit iterations — the project's default"
+                   IsVisible="{Binding $parent[UserControl].OpenField,
+                               Converter={x:Static v:BoardConverters.EnumEquals},
+                               ConverterParameter=ceiling}" />
+
+          <!-- Position in words, with the number it maps to beside it and editable. The words are what
+               the operator means; the number is what the dispatcher reads, and hiding it is how a queue
+               grows seventy hand-typed priorities nobody can explain. -->
+          <StackPanel Spacing="6" IsVisible="{Binding $parent[UserControl].OpenField,
+                               Converter={x:Static v:BoardConverters.EnumEquals},
+                               ConverterParameter=position}">
+            <WrapPanel Orientation="Horizontal">
+              <ToggleButton Classes="chip" Content="Next"
+                            IsChecked="{Binding Position, Mode=TwoWay,
+                                        Converter={x:Static v:BoardConverters.EnumEquals},
+                                        ConverterParameter={x:Static cb:Position.Next}}" />
+              <ToggleButton Classes="chip" Content="After…"
+                            IsChecked="{Binding Position, Mode=TwoWay,
+                                        Converter={x:Static v:BoardConverters.EnumEquals},
+                                        ConverterParameter={x:Static cb:Position.After}}" />
+              <ToggleButton Classes="chip" Content="Normal"
+                            IsChecked="{Binding Position, Mode=TwoWay,
+                                        Converter={x:Static v:BoardConverters.EnumEquals},
+                                        ConverterParameter={x:Static cb:Position.Normal}}" />
+              <ToggleButton Classes="chip" Content="Background"
+                            IsChecked="{Binding Position, Mode=TwoWay,
+                                        Converter={x:Static v:BoardConverters.EnumEquals},
+                                        ConverterParameter={x:Static cb:Position.Background}}" />
+            </WrapPanel>
+            <Grid ColumnDefinitions="*,8,Auto">
+              <ComboBox Grid.Column="0" ItemsSource="{Binding NextChains}" FontSize="11"
+                        SelectedItem="{Binding AfterChain, Mode=TwoWay}"
+                        DisplayMemberBinding="{Binding Title}" HorizontalAlignment="Stretch"
+                        PlaceholderText="…after which queued chain?"
+                        IsVisible="{Binding Position,
+                                    Converter={x:Static v:BoardConverters.EnumEquals},
+                                    ConverterParameter={x:Static cb:Position.After}}" />
+              <TextBox Grid.Column="2" Text="{Binding Priority, Mode=TwoWay}" Width="72" FontSize="11"
+                       Classes="priority" Classes.manual="{Binding PriorityIsManual}" ToolTip.Tip="The priority itself" />
+            </Grid>
+          </StackPanel>
+
+          <StackPanel Spacing="6" IsVisible="{Binding $parent[UserControl].OpenField,
+                               Converter={x:Static v:BoardConverters.EnumEquals},
+                               ConverterParameter=depends}">
+            <v:DependencyPickerView DataContext="{Binding Picker}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- The page. Everything above it is a correction; this is the work. -->
+      <TextBox Grid.Row="4" Text="{Binding Text, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap"
+               MinHeight="200" FontSize="12" VerticalContentAlignment="Top"
+               PlaceholderText="Describe the work, or paste a multi-step plan…" />
+
+      <!-- PLAN MODE, which is not a mode: it appears because the text has more than one section in it. -->
+      <StackPanel Grid.Row="5" Spacing="5" Margin="0,8,0,0" IsVisible="{Binding IsChain}">
+        <TextBlock Text="{Binding Plan.Summary}" FontSize="11" Foreground="{DynamicResource Fg}"
+                   FontWeight="SemiBold" />
+        <ScrollViewer MaxHeight="180">
+          <ItemsControl ItemsSource="{Binding Steps}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,2">
+                  <TextBlock Grid.Column="0" Text="{Binding Index}" Width="20" FontSize="10"
+                             Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="11" VerticalAlignment="Center"
+                             Foreground="{DynamicResource Fg}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Text="{Binding Parents}" FontSize="10" Margin="10,0,8,0"
+                             Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" />
+                  <!-- Retickable before anything is created, because the split guessed the edges and a
+                       guess that cannot be corrected is worse than no guess. -->
+                  <ItemsControl Grid.Column="3"
+                                ItemsSource="{Binding $parent[UserControl].DataContext.Steps,
+                                              Converter={x:Static v:BoardConverters.ParentIndices}}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Button Classes="tiny" Content="{Binding}"
+                                Command="{Binding $parent[ItemsControl].DataContext.ToggleParentCommand}"
+                                CommandParameter="{Binding}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <!-- What would be rejected, stated before the request is sent rather than after. -->
+        <ItemsControl ItemsSource="{Binding Plan.Problems}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap"
+                         Foreground="{DynamicResource StatusError}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <StackPanel Grid.Row="6" Spacing="7" Margin="0,9,0,0">
+        <!-- The rare fields. Kept, because a handful of items genuinely need them; disclosed, because
+             taxing every ordinary item to serve them is what the composer exists to undo. -->
+        <Button Classes="linky" Content="Options" HorizontalAlignment="Left"
+                Command="{Binding $parent[UserControl].ToggleOptionsCommand}" />
+        <StackPanel Spacing="6" IsVisible="{Binding $parent[UserControl].OptionsOpen}">
+          <ComboBox ItemsSource="{Binding AuditorProfiles}" HorizontalAlignment="Stretch" FontSize="12"
+                    SelectedItem="{Binding AuditorProfile, Mode=TwoWay}"
+                    PlaceholderText="Auditor profile — the project's default"
+                    IsVisible="{Binding HasAuditorProfiles}" />
+          <TextBox Text="{Binding ExternalId, Mode=TwoWay}" FontSize="12"
+                   PlaceholderText="External tracker id" />
+          <CheckBox IsChecked="{Binding IsRefactor, Mode=TwoWay}" FontSize="11"
+                    Content="Refactor — runs alone, no other item for this project starts while it does" />
+        </StackPanel>
+
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="11" VerticalAlignment="Center"
+                     Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
+          <Button Grid.Column="1" Classes="accent" Padding="14,5" FontSize="12" Margin="0,0,6,0"
+                  IsEnabled="{Binding CanCreate}" Command="{Binding CreateCommand}"
+                  Content="{Binding Plan, Converter={x:Static v:BoardConverters.CreateLabel}}" />
+          <Button Grid.Column="2" Content="Cancel" Padding="12,5" FontSize="12"
+                  Command="{Binding CancelCommand}" />
+        </Grid>
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

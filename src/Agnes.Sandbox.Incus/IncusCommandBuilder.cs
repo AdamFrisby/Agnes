@@ -126,6 +126,16 @@ internal static class IncusCommandBuilder
         return r;
     }
 
+    /// <summary>Sets a config key to a literal value. The value is one argv element, never shell-parsed,
+    /// so a <c>raw.qemu</c> line with spaces in it needs no quoting.</summary>
+    internal static IReadOnlyList<string> BuildConfigSet(IncusOptions o, string instance, string key, string value)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateIdentifier(key, nameof(key), allowDotUnderscore: true);
+        IncusInputValidation.ValidateConfigValue(value, nameof(value), 8192);
+        return Prefix(o, "config", "set", instance, $"{key}={value}");
+    }
+
     /// <summary>Sets a config key with the value read from stdin (used for cloud-init user-data).</summary>
     internal static IReadOnlyList<string> BuildConfigSetStdin(IncusOptions o, string instance, string key)
     {
@@ -207,6 +217,29 @@ internal static class IncusCommandBuilder
     }
 
     /// <summary>Exec a command inside the instance as the given uid/gid.</summary>
+    /// <summary>
+    /// Adds a proxy device forwarding a host-loopback port to the same port on the guest's loopback.
+    /// </summary>
+    /// <remarks>
+    /// Both ends are 127.0.0.1 on purpose: the agent's HTTP server stays unreachable from the bridge (and
+    /// so from every other sandbox on it), and only this host can dial it. The device travels with the
+    /// instance, so deleting the sandbox releases it.
+    /// </remarks>
+    internal static IReadOnlyList<string> BuildAddProxyDevice(
+        IncusOptions o, string instance, string deviceName, int hostPort, int guestPort)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateInstanceName(deviceName);
+        ArgumentOutOfRangeException.ThrowIfLessThan(hostPort, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(hostPort, 65535);
+        ArgumentOutOfRangeException.ThrowIfLessThan(guestPort, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(guestPort, 65535);
+
+        return Prefix(o, "config", "device", "add", instance, deviceName, "proxy",
+            $"listen=tcp:127.0.0.1:{hostPort}",
+            $"connect=tcp:127.0.0.1:{guestPort}");
+    }
+
     internal static IReadOnlyList<string> BuildExec(IncusOptions o, string instance, IReadOnlyList<string> command, string? workingDirectory, bool asUser)
     {
         ArgumentNullException.ThrowIfNull(command);

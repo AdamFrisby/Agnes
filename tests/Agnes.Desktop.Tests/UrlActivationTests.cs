@@ -121,7 +121,9 @@ public class UrlActivationTests
 
         vm.HandleLink(link);
 
-        var tab = Tabs(vm).Single(d => d.ShowAddHost);
+        // Auto-submit can finish quickly enough to hide this form while another blank connect tab is still
+        // visible. Select the document created for the link instead of racing ShowAddHost.
+        var tab = Tabs(vm).Single(d => d.NewHostUrl == "https://box:5099");
         Assert.Equal("https://box:5099", tab.NewHostUrl);
         Assert.Equal("GRANT-1", tab.NewHostToken);
         Assert.Equal(new string('a', 64), tab.HostFingerprint);

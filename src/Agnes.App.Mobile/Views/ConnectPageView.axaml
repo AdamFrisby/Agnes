@@ -17,6 +17,22 @@
     <ScrollViewer Grid.Row="1">
       <StackPanel Margin="16,16,16,28" Spacing="10">
 
+        <!-- ===== what you were let in as =====
+             Said at the one moment a human is certainly reading this screen. A member is also told what
+             that means and taps to move on, rather than being dropped into a short list and left to
+             work out for itself why the host looks empty. -->
+        <StackPanel Name="GrantedRolePanel" Spacing="10" IsVisible="{Binding ShowGrantedRole}">
+          <TextBlock Classes="section" Text="YOU'RE IN" />
+          <Border Classes="card" Padding="16">
+            <StackPanel Spacing="12">
+              <TextBlock Classes="title" Text="{Binding GrantedRoleNotice}" TextWrapping="Wrap" />
+              <TextBlock Classes="muted" Text="{Binding GrantedRoleScope}" TextWrapping="Wrap" />
+              <Button Theme="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
+                      Command="{Binding ContinueCommand}" Content="Continue" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
         <StackPanel Spacing="8" Margin="0,0,0,6">
           <c:AgnesMark Width="56" Height="56" HorizontalAlignment="Left" />
           <TextBlock Classes="headline" Text="One host runs the agents." />

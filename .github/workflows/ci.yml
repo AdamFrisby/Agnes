@@ -72,7 +72,14 @@ jobs:
         run: dotnet list Agnes.Core.slnf package --vulnerable --include-transitive
 
       - name: Build
-        run: dotnet build Agnes.Core.slnf --configuration Release --no-restore
+        run: |
+          # Keep every production project on its Release build.
+          dotnet build Agnes.Core.slnf --configuration Release --no-restore
+          # These view-model harnesses deliberately exercise their debug-only simulated hosts.
+          # Building the projects directly makes their Debug ProjectReference output deterministic;
+          # a solution-level build uses its single Release configuration for every project instead.
+          dotnet build tests/Agnes.Desktop.Tests/Agnes.Desktop.Tests.csproj --configuration Release --no-restore
+          dotnet build tests/Agnes.Mobile.Tests/Agnes.Mobile.Tests.csproj --configuration Release --no-restore
 
       # The desktop simulation tests are timing-sensitive: they drive an in-memory agent that streams a
       # turn on background tasks, then wait for the events. On a cold, CPU-constrained runner the very

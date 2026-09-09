@@ -136,6 +136,19 @@
           </Grid>
         </Border>
 
+        <!-- Only offered with a sandbox, because the display is the sandbox's. -->
+        <Border Classes="card" Padding="14" IsVisible="{Binding GraphicalAvailable}">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" Spacing="3" Margin="0,0,12,0">
+              <TextBlock Text="Graphical sandbox" Classes="strong" />
+              <TextBlock Classes="caption"
+                         Text="Give it a desktop it can see and drive — and you can watch from here." />
+            </StackPanel>
+            <ToggleButton Grid.Column="1" Theme="{StaticResource MobileSwitch}"
+                          IsChecked="{Binding Graphical, Mode=TwoWay}" VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+
         <Border Classes="card" Padding="14">
           <StackPanel Spacing="12">
             <StackPanel Spacing="3">

@@ -40,14 +40,19 @@ public class SessionCatalogueAccessTests : IClassFixture<SessionCatalogueAccessT
     {
         using var http = _factory.CreateClient();
 
-        // Two real devices: the first to pair is the host owner, the second is just another paired device.
-        // The typed code is minted by the host at startup (and closes once a device has paired), so the
-        // second device is vouched for by a QR grant from the first — exactly the real pairing sequence.
+        // Two real devices. The first types the bootstrap code the host printed, which is the operator's own
+        // secret, so it is admitted as an Owner. The typed code then closes, so the second device is vouched
+        // for by a QR grant from the first — the real pairing sequence — and an Owner's grant hands over
+        // Owner. The owner then demotes it to a Member, which is what "somebody else's phone on my host"
+        // actually is; that demotion is the whole subject of this test.
         var code = _factory.Services.GetRequiredService<Agnes.Host.Hosting.DeviceRegistry>().PairingCode;
         var owner = await PairAsync(http, code, "owner-laptop");
+        Assert.Equal(DeviceRole.Owner, owner.Role);
+
         var grant = await MintGrantAsync(http, owner.Token);
         var other = await PairAsync(http, grant.Secret, "someone-elses-phone");
         Assert.NotEqual(owner.DeviceId, other.DeviceId);
+        await DemoteAsync(http, owner.Token, other.DeviceId);
 
         // The owner opens a session; nothing is shared with the other device.
         await using var ownerClient = new AgnesClient();
@@ -66,6 +71,21 @@ public class SessionCatalogueAccessTests : IClassFixture<SessionCatalogueAccessT
 
         // Which is the same answer subscribing gives: the list mirrors the gate rather than second-guessing it.
         await Assert.ThrowsAnyAsync<Exception>(() => otherHost.SubscribeAsync(session.SessionId));
+    }
+
+    /// <summary>Makes a device an ordinary Member — an Owner can, and cannot be left without a peer Owner.</summary>
+    private static async Task DemoteAsync(HttpClient http, string ownerToken, string deviceId)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/devices/{deviceId}/role")
+        {
+            Content = JsonContent.Create(new DeviceRoleRequest(DeviceRole.Member)),
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ownerToken);
+        using var response = await http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        var updated = await response.Content.ReadFromJsonAsync<DeviceInfo>();
+        Assert.Equal(DeviceRole.Member, updated!.Role);
     }
 
     private static async Task<PairResponse> PairAsync(HttpClient http, string code, string deviceName)
@@ -88,6 +108,8 @@ public class SessionCatalogueAccessTests : IClassFixture<SessionCatalogueAccessT
 
         // Throwaway device/mcp state so the test never touches the real ~/.agnes/*, and never inherits a
         // device list from another test run (which would decide who the "owner" is behind our backs).
+        private readonly Agnes.TestKit.IsolatedHostHome _home = new();
+
         public string DeviceFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-devices-cat-{Guid.NewGuid():n}.json");
         public string McpFile { get; } = Path.Combine(Path.GetTempPath(), $"agnes-mcp-cat-{Guid.NewGuid():n}.json");
 
@@ -96,6 +118,7 @@ public class SessionCatalogueAccessTests : IClassFixture<SessionCatalogueAccessT
             builder.ConfigureHostConfiguration(config =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
+                    ["Agnes:Home"] = _home.Path,
                     ["Agnes:PairingToken"] = BootstrapToken,
                     ["Agnes:DevicesFile"] = DeviceFile,
                     ["Agnes:McpFile"] = McpFile,
@@ -112,6 +135,7 @@ public class SessionCatalogueAccessTests : IClassFixture<SessionCatalogueAccessT
             base.Dispose(disposing);
             if (disposing && File.Exists(DeviceFile)) File.Delete(DeviceFile);
             if (disposing && File.Exists(McpFile)) File.Delete(McpFile);
+            if (disposing) _home.Dispose();
         }
     }
 }

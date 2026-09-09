@@ -33,6 +33,19 @@ internal sealed class NativeAgentSession : IAgentSession
         _logger = logger;
         _lifetime = lifetime;
         _ = Task.Run(ReadLoopAsync);
+
+        // Any opening lines the CLI needs before a prompt (e.g. asking Pi for its session id). Fire and
+        // forget: the answers arrive as ordinary lines on the read loop already running above.
+        if (mapper.Handshake() is { Count: > 0 } handshake)
+        {
+            _ = Task.Run(async () =>
+            {
+                foreach (var line in handshake)
+                {
+                    await WriteLineAsync(line, CancellationToken.None).ConfigureAwait(false);
+                }
+            });
+        }
     }
 
     public string AgentSessionId { get; private set; } = Guid.NewGuid().ToString("n");
@@ -55,9 +68,10 @@ internal sealed class NativeAgentSession : IAgentSession
         }
     }
 
-    // Native stream-json has no standard cancel; best-effort (documented). A future control
-    // message can be wired through the mapper.
-    public Task CancelAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    /// <summary>Cancels the current turn when the CLI has a cancel message (Pi's <c>abort</c>). Native
+    /// stream-json itself defines none, so for a CLI without one this stays the documented no-op.</summary>
+    public Task CancelAsync(CancellationToken cancellationToken = default)
+        => _mapper.BuildCancel() is { } line ? WriteLineAsync(line, cancellationToken) : Task.CompletedTask;
 
     public async Task RespondToPermissionAsync(string requestId, string optionId, CancellationToken cancellationToken = default)
     {

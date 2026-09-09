@@ -21,12 +21,11 @@
     <Description>Agnes.App powered by Uno Platform.</Description>
 
     <!--
-      UnoFeatures are used to quickly add and manage features enabled for your app.
-      https://aka.platform.uno/singleproject-features
+      The browser operator UI uses Uno's native WebAssembly renderer rather than the Skia/WebGL
+      canvas renderer. It is more appropriate for a form-based admin surface and avoids requiring
+      WebGL capabilities that privacy-hardened browsers may withhold. The net10.0-desktop target
+      remains Skia-based by design.
     -->
-    <UnoFeatures>
-      SkiaRenderer;
-    </UnoFeatures>
   </PropertyGroup>
 
   <ItemGroup>

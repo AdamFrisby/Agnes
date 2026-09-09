@@ -124,6 +124,21 @@ public interface IAgnesServer
     /// <summary>Resizes an open fallback terminal to <paramref name="columns"/> × <paramref name="rows"/>.</summary>
     Task ResizeTerminal(string sessionId, string terminalId, int columns, int rows);
 
+    /// <summary>
+    /// Opens (or re-attaches to) this session's <b>agent console</b> — the agent's own CLI run interactively
+    /// in a PTY, wherever the agent runs — returning its terminal id, or null when the adapter offers none.
+    /// Its output rides the same <see cref="Abstractions.TerminalOutputEvent"/> stream as any other
+    /// terminal, distinguished by that id, and input goes back through <see cref="WriteTerminal"/>.
+    /// </summary>
+    /// <remarks>
+    /// This is a second process, not a view onto the live agent: an agent in ACP mode is a JSON-RPC peer
+    /// whose stdin is the protocol channel, with no prompt behind it. The console is what reaches the slash
+    /// commands and one-off actions the protocol never exposes. Nothing is spawned until this is called —
+    /// a console is a second agent process — but once running it is kept for the session's lifetime, so a
+    /// later call re-attaches to it with its scrollback intact rather than starting another.
+    /// </remarks>
+    Task<string?> OpenAgentConsole(string sessionId, int columns, int rows);
+
     /// <summary>Starts a provider CLI's interactive login through the same CLI-fallback terminal path as the
     /// in-session terminal (platform/03 reuse discipline), returning the opened terminal id.</summary>
     Task<string> BeginProviderLogin(string adapterId);
@@ -306,6 +321,19 @@ public interface IAgnesServer
     /// <summary>Completed background runs (newest first).</summary>
     Task<IReadOnlyList<InboxRun>> GetInbox();
 
+    /// <summary>Arms a goal on a session: if it falls idle past the goal's threshold without being disarmed,
+    /// the host nudges it. Supersedes any goal already armed on that session.</summary>
+    Task<SessionGoal> ArmGoal(ArmGoalRequest request);
+
+    /// <summary>Stops a goal nudging, recording why (finished, stuck, cancelled…). Keeps it listed.</summary>
+    Task<SessionGoal?> DisarmGoal(string goalId, string reason);
+
+    /// <summary>Deletes a goal outright, armed or not.</summary>
+    Task RemoveGoal(string goalId);
+
+    /// <summary>Every goal on this host, newest first (armed and disarmed).</summary>
+    Task<IReadOnlyList<SessionGoal>> ListGoals();
+
     /// <summary>Open permission requests across every session the caller is authorized to see that still
     /// need a human, newest first — the cross-session approvals list (notifications/02 tier 1).</summary>
     Task<IReadOnlyList<OpenApproval>> GetOpenApprovals();
@@ -486,6 +514,9 @@ public interface IAgnesClient
 
     /// <summary>A background run completed and landed in the inbox.</summary>
     Task OnInboxRun(InboxRun run);
+
+    /// <summary>A goal was armed, nudged, or disarmed — so every client's goal list stays live.</summary>
+    Task OnGoalChanged(SessionGoal goal);
 
     /// <summary>A session's read state changed (last-viewed sequence + a sticky "marked unread" flag), so
     /// unread indicators stay in sync across a user's devices.</summary>

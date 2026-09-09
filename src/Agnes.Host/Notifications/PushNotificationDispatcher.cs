@@ -109,6 +109,13 @@ public sealed class PushNotificationDispatcher : IEventObserver<BeforeAgentEvent
                 trigger = NotificationTrigger.TurnReady;
                 shortHint = "Turn finished — ready for you";
                 return true;
+            case FileSharedEvent file:
+                trigger = NotificationTrigger.FileShared;
+                // The file NAME, never the caption. A caption is free text the model wrote about the contents
+                // and is exactly the kind of thing that ends up on a lock screen in front of the wrong person;
+                // the leaf name is a name the agent chose for something it is deliberately handing over.
+                shortHint = $"Sent you a file: {file.FileName}";
+                return true;
             default:
                 trigger = default;
                 shortHint = string.Empty;

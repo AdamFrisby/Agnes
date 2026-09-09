@@ -158,7 +158,9 @@ public sealed class PushNotificationTests
         // device-A is actively viewing this exact session; device-B is not.
         h.Views.MarkViewing("device-A", info.SessionId);
 
-        await EmitAsync(h, info.SessionId, new TurnEndedEvent(StopReason.EndTurn));
+        await EmitAsync(h, info.SessionId,
+            new MessageChunkEvent(MessageRole.Assistant, new TextContent("done")),
+            new TurnEndedEvent(StopReason.EndTurn));
 
         var payload = Assert.Single(channel.Sent);
         Assert.Equal("device-B", payload.DeviceId);
@@ -176,7 +178,9 @@ public sealed class PushNotificationTests
         h.Registrations.Register("device-1", mobile.Id, "token-1");
         h.Registrations.Register("device-2", other.Id, "token-2");
 
-        await EmitAsync(h, info.SessionId, new TurnEndedEvent(StopReason.EndTurn));
+        await EmitAsync(h, info.SessionId,
+            new MessageChunkEvent(MessageRole.Assistant, new TextContent("done")),
+            new TurnEndedEvent(StopReason.EndTurn));
 
         Assert.Equal("device-1", Assert.Single(mobile.Sent).DeviceId);
         Assert.Equal("device-2", Assert.Single(other.Sent).DeviceId);
@@ -197,6 +201,46 @@ public sealed class PushNotificationTests
         await EmitAsync(h, info.SessionId, Requested("req-1", "After revoke"));
 
         Assert.Empty(channel.Sent);
+    }
+
+    // ---- a file the agent sent (sharing/01) ----
+
+    [Fact]
+    public async Task A_sent_file_pages_the_device_with_the_file_name_and_not_the_caption()
+    {
+        // The point of sending a file from an unattended session is that the person sees it arrive. The
+        // caption is deliberately absent from the hint: it's free text about the contents, and a push commonly
+        // lands on a lock screen.
+        var channel = new FakeNotificationChannel();
+        await using var h = NewHarness(channel);
+        var info = await h.Manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
+        h.Registrations.Register("device-1", channel.Id, "fcm-token-1");
+
+        await EmitAsync(h, info.SessionId,
+            new FileSharedEvent("abcd1234", "q3-chart.png", ".agnes/shared/abcd1234/q3-chart.png", 2048, "image/png", "revenue is down"));
+
+        var payload = Assert.Single(channel.Sent);
+        Assert.Equal(NotificationTrigger.FileShared, payload.Trigger);
+        Assert.Equal("Sent you a file: q3-chart.png", payload.ShortHint);
+        Assert.DoesNotContain("revenue", payload.ShortHint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task The_file_shared_toggle_gates_it_independently_of_the_other_triggers()
+    {
+        var channel = new FakeNotificationChannel();
+        await using var h = NewHarness(channel);
+        var info = await h.Manager.OpenSessionAsync("scripted", "/tmp/work", useSandbox: false);
+        h.Registrations.Register("device-1", channel.Id, "fcm-token-1");
+        h.Registrations.SetPreferences("device-1", enabled: true, new PushTriggerPrefs(FileShared: false));
+
+        await EmitAsync(h, info.SessionId,
+            new FileSharedEvent("abcd1234", "report.md", ".agnes/shared/abcd1234/report.md", 12, "text/markdown", null),
+            new TurnEndedEvent(StopReason.EndTurn));
+
+        // Turn-ready still fires — only the file was suppressed.
+        Assert.DoesNotContain(channel.Sent, p => p.Trigger == NotificationTrigger.FileShared);
+        Assert.Contains(channel.Sent, p => p.Trigger == NotificationTrigger.TurnReady);
     }
 
     // ---- interactive-action safety guard ----

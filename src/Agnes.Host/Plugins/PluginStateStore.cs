@@ -14,7 +14,9 @@ public sealed record PluginRecord(
     string ExtractedPath,
     string MainAssemblyPath,
     DateTimeOffset InstalledAt,
-    IReadOnlyDictionary<string, string> Settings);
+    IReadOnlyDictionary<string, string> Settings,
+    string? Source = null,
+    string? Sha512 = null);
 
 /// <summary>
 /// Persisted installed-plugin state: id, version, source, enabled flag, granted capabilities, install

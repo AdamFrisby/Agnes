@@ -64,11 +64,24 @@ public sealed class ApprovalsViewModel : ObservableObject
     /// <summary>The open approvals, most-recent first.</summary>
     public ObservableCollection<ApprovalRow> Approvals { get; } = [];
 
-    /// <summary>How many requests are waiting — drives the "Approvals (N)" affordance.</summary>
-    public int Count => Approvals.Count;
+    /// <summary>
+    /// How many requests are waiting — drives the "Approvals (N)" affordance. Counts only what someone
+    /// can actually act on: an expired request is still listed, for review, but a badge that counts it is
+    /// telling the user to go and do something impossible, which is how one host advertised sixteen
+    /// approvals that could never be cleared.
+    /// </summary>
+    public int Count => Approvals.Count(a => a.IsActionable);
 
     /// <summary>Whether anything is waiting (drives the affordance's visibility/badge).</summary>
-    public bool HasApprovals => Approvals.Count > 0;
+    public bool HasApprovals => Count > 0;
+
+    /// <summary>Requests the agent stopped waiting for — nothing to answer, but worth coming back to,
+    /// and the place a standing rule gets set so the next one isn't missed the same way.</summary>
+    public IEnumerable<ApprovalRow> Expired => Approvals.Where(a => !a.IsActionable);
+
+    public int ExpiredCount => Approvals.Count(a => !a.IsActionable);
+
+    public bool HasExpired => ExpiredCount > 0;
 
     private string _status = string.Empty;
     public string Status { get => _status; set => SetProperty(ref _status, value); }
@@ -114,7 +127,19 @@ public sealed class ApprovalsViewModel : ObservableObject
 
         OnPropertyChanged(nameof(Count));
         OnPropertyChanged(nameof(HasApprovals));
-        Status = rows.Count == 0 ? "Nothing needs you right now." : $"{rows.Count} request(s) waiting.";
+        OnPropertyChanged(nameof(Expired));
+        OnPropertyChanged(nameof(ExpiredCount));
+        OnPropertyChanged(nameof(HasExpired));
+
+        var waiting = Count;
+        var lapsed = ExpiredCount;
+        Status = (waiting, lapsed) switch
+        {
+            (0, 0) => "Nothing needs you right now.",
+            (0, _) => $"Nothing needs you right now — {lapsed} request(s) expired unanswered.",
+            (_, 0) => $"{waiting} request(s) waiting.",
+            _ => $"{waiting} request(s) waiting · {lapsed} expired unanswered.",
+        };
     }
 
     private void Jump(ApprovalRow? row)
@@ -161,6 +186,12 @@ public sealed class ApprovalRow
 
     /// <summary>The external caller's free-text label, or (for a gated action) the action id.</summary>
     public string? Source => Approval.Source;
+
+    /// <summary>Whether answering this still does anything — false once the agent stopped waiting.</summary>
+    public bool IsActionable => Approval.IsActionable;
+
+    /// <summary>Why this row offers nothing to press, in words.</summary>
+    public string? LapsedText => IsActionable ? null : "Expired — the agent stopped waiting";
 
     /// <summary>The answer choices for an external attention request (empty for a session permission).</summary>
     public IReadOnlyList<string> Options => Approval.Options ?? [];
