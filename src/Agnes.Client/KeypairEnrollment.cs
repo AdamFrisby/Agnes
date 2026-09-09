@@ -72,7 +72,7 @@ public static class KeypairEnrollment
                     $"Keypair sign-in was rejected ({(int)response.StatusCode}). Is this key in the host's authorized_keys?");
             }
 
-            return await response.Content.ReadFromJsonAsync<PairResponse>(cancellationToken).ConfigureAwait(false)
+            return await response.Content.ReadFromJsonAsync<PairResponse>(DeviceRoleJson.Read, cancellationToken).ConfigureAwait(false)
                    ?? throw new InvalidOperationException("The host returned no token.");
         }
         finally

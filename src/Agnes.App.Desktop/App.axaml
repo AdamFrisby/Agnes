@@ -9,7 +9,8 @@
              xmlns:ctb="using:ColorTextBlock.Avalonia"
              xmlns:sty="using:Avalonia.Styling"
              xmlns:themes="using:Agnes.App.Desktop.Themes"
-             x:Class="Agnes.App.Desktop.App">
+             x:Class="Agnes.App.Desktop.App"
+             Name="{x:Static app:DesktopBranding.ApplicationName}">
 
     <Application.Resources>
         <ResourceDictionary>
@@ -20,6 +21,8 @@
                 <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Tokens.axaml" />
                 <!-- The ported Spacegray flavours: colour sets keyed by their own theme variants. -->
                 <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Spacegray.axaml" />
+                <!-- The Agnes squid mark. Theme-independent: it is the brand, not a role. -->
+                <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/BrandMark.axaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- One shared dock content recycler (see the DockControl style below); the factory evicts a
@@ -41,10 +44,11 @@
         <DataTemplate DataType="vm:DashboardDocument">
             <views:DashboardView />
         </DataTemplate>
-        <!-- A plugin custom screen: host its own view-model; a plugin ships a DataTemplate for that VM,
-             else the default presenter renders it. This is the head-specific view-resolution seam. -->
+        <!-- A plugin custom screen. ScreenContent is the plugin's own view when it registered an
+             IViewFactory (a control, which ContentControl hosts directly), else the bare view-model for the
+             templates above to match. The resolution happens in the view model, so this stays one binding. -->
         <DataTemplate DataType="vm:PluginScreenDocument">
-            <ContentControl Content="{Binding ScreenViewModel}" />
+            <ContentControl Content="{Binding ScreenContent}" />
         </DataTemplate>
     </Application.DataTemplates>
 
@@ -91,6 +95,9 @@
              chip, ghost, danger), press feedback and the keyboard focus ring. Loaded after Fluent and
              Dock so it wins over both. -->
         <StyleInclude Source="avares://Agnes.App.Desktop/Themes/AppStyles.axaml" />
+        <!-- Agnes-owned Markdown containers are app chrome. Renderer overrides stay local to each
+             MarkdownScrollViewer in MarkdownStyles.axaml because the library's own theme is local. -->
+        <StyleInclude Source="avares://Agnes.App.Desktop/Themes/MarkdownChromeStyles.axaml" />
         <!-- Replaces Dock's tab-strip context menu (which is about docking) with one about the tab.
              After Dock's theme so it wins. -->
         <StyleInclude Source="avares://Agnes.App.Desktop/Themes/TabMenu.axaml" />
@@ -117,7 +124,7 @@
              render heavy. The uniform-bold chat was really the bundled Inter font (see Program.cs) — this
              just keeps the markdown surface aligned with the UI font. -->
         <Style Selector="ctb|CTextBlock">
-            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+            <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
             <Setter Property="FontWeight" Value="Normal" />
         </Style>
         <Style Selector="ae|TextEditor">

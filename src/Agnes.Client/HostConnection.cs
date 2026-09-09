@@ -16,6 +16,10 @@ public sealed class HostConnection : IAgnesHost
     private readonly HubConnection _hub;
     private readonly ConcurrentDictionary<string, SessionView> _views = new();
 
+    // Kept because the display channel dials its own socket and has to present the same device token the hub
+    // did; SignalR baked it into the hub URL and does not hand it back.
+    private readonly string _token;
+
     /// <param name="pinnedFingerprint">
     /// Lower-case hex SHA-256 of the host's TLS certificate, learned at pairing. When present and the
     /// address is a direct <c>https://</c> one, the host is authenticated against this pin instead of the
@@ -30,6 +34,7 @@ public sealed class HostConnection : IAgnesHost
     {
         HostUrl = hostUrl.TrimEnd('/');
         PinnedFingerprint = string.IsNullOrWhiteSpace(pinnedFingerprint) ? null : pinnedFingerprint;
+        _token = token;
 
         // A relay address (agnes-relay://relay/hostId?fp=...) tunnels the same SignalR wire + bearer token
         // through the blind relay to the host, pinning the host's advertised cert fingerprint (AC2/AC4/AC5).
@@ -96,6 +101,7 @@ public sealed class HostConnection : IAgnesHost
             return Task.CompletedTask;
         });
 
+        _hub.On<SessionGoal>(nameof(IAgnesClient.OnGoalChanged), goal => GoalChanged?.Invoke(goal));
         _hub.On<InboxRun>(nameof(IAgnesClient.OnInboxRun), run =>
         {
             InboxRunReceived?.Invoke(run);
@@ -170,8 +176,8 @@ public sealed class HostConnection : IAgnesHost
     public Task<NegotiatedCapabilities> NegotiateAsync(ClientCapabilities client)
         => _hub.InvokeAsync<NegotiatedCapabilities>(nameof(IAgnesServer.Negotiate), client);
 
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
-        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox, modelId));
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false)
+        => _hub.InvokeAsync<SessionInfo>(nameof(IAgnesServer.OpenSession), new OpenSessionRequest(adapterId, workingDirectory, useWorktree, skipPermissions, mcpApproval, gitCredentialMode, useSandbox || graphical, modelId, graphical));
 
     public Task<IReadOnlyList<SessionSummary>> ListSessionsAsync()
         => _hub.InvokeAsync<IReadOnlyList<SessionSummary>>(nameof(IAgnesServer.ListSessions));
@@ -217,11 +223,36 @@ public sealed class HostConnection : IAgnesHost
     public Task<string> OpenTerminalAsync(string sessionId, string? command = null, IReadOnlyList<string>? arguments = null, string? workingDirectory = null, int columns = 120, int rows = 30)
         => _hub.InvokeAsync<string>(nameof(IAgnesServer.OpenTerminal), sessionId, new OpenTerminalRequest(command, arguments, workingDirectory, columns, rows));
 
+    public Task<string?> OpenAgentConsoleAsync(string sessionId, int columns = 120, int rows = 30)
+        => _hub.InvokeAsync<string?>(nameof(IAgnesServer.OpenAgentConsole), sessionId, columns, rows);
+
     public Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data)
         => _hub.InvokeAsync(nameof(IAgnesServer.WriteTerminal), sessionId, terminalId, data);
 
     public Task ResizeTerminalAsync(string sessionId, string terminalId, int columns, int rows)
         => _hub.InvokeAsync(nameof(IAgnesServer.ResizeTerminal), sessionId, terminalId, columns, rows);
+
+    /// <summary>
+    /// Opens the session's display over its own pinned-TLS WebSocket, beside the hub rather than through it.
+    /// </summary>
+    /// <remarks>
+    /// A relay address tunnels the hub's HTTP+WebSocket through the blind relay by way of
+    /// <see cref="RelayClientTransport"/>'s custom transport, which SignalR lets us substitute and a bare
+    /// <see cref="System.Net.WebSockets.ClientWebSocket"/> does not. Rather than half-supporting it, a relayed
+    /// host says so plainly: the display needs a direct address until the relay carries a second stream.
+    /// </remarks>
+    public async Task<IDisplayChannel> OpenDisplayAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        if (RelayClientTransport.IsRelayAddress(HostUrl))
+        {
+            throw new NotSupportedException(
+                "The display channel needs a direct connection to the host; it is not carried over an Agnes relay yet.");
+        }
+
+        return await DisplayChannelClient
+            .ConnectAsync(HostUrl, sessionId, _token, PinnedFingerprint, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public Task<string> BeginProviderLoginAsync(string adapterId)
         => _hub.InvokeAsync<string>(nameof(IAgnesServer.BeginProviderLogin), adapterId);
@@ -343,6 +374,18 @@ public sealed class HostConnection : IAgnesHost
     public Task<IReadOnlyList<ScheduledTask>> ListScheduledTasksAsync()
         => _hub.InvokeAsync<IReadOnlyList<ScheduledTask>>(nameof(IAgnesServer.ListScheduledTasks));
 
+    public Task<SessionGoal> ArmGoalAsync(ArmGoalRequest request)
+        => _hub.InvokeAsync<SessionGoal>(nameof(IAgnesServer.ArmGoal), request);
+
+    public Task<SessionGoal?> DisarmGoalAsync(string goalId, string reason)
+        => _hub.InvokeAsync<SessionGoal?>(nameof(IAgnesServer.DisarmGoal), goalId, reason);
+
+    public Task RemoveGoalAsync(string goalId)
+        => _hub.InvokeAsync(nameof(IAgnesServer.RemoveGoal), goalId);
+
+    public Task<IReadOnlyList<SessionGoal>> ListGoalsAsync()
+        => _hub.InvokeAsync<IReadOnlyList<SessionGoal>>(nameof(IAgnesServer.ListGoals));
+
     public Task RemoveScheduledTaskAsync(string taskId)
         => _hub.InvokeAsync(nameof(IAgnesServer.RemoveScheduledTask), taskId);
 
@@ -362,6 +405,8 @@ public sealed class HostConnection : IAgnesHost
         => _hub.InvokeAsync<IReadOnlyList<OpenApproval>>(nameof(IAgnesServer.GetOpenApprovals));
 
     public event Action<InboxRun>? InboxRunReceived;
+
+    public event Action<SessionGoal>? GoalChanged;
     public event Action<string, long, bool>? ReadStateChanged;
 
     public Task MarkSessionReadAsync(string sessionId, long sequence)

@@ -72,6 +72,31 @@ public class SandboxImageManagerTests : IDisposable
         Assert.Equal(1, builder.Builds);
     }
 
+    /// <summary>
+    /// A session with a screen must launch from an image that HAS a screen. The headless tiers carry no X
+    /// server, so booting a graphical session from one produces a VM that renders nothing and a capture that
+    /// waits forever for a first scanout — a failure with no error anywhere.
+    /// </summary>
+    [Fact]
+    public async Task Ensure_graphical_bakes_the_desktop_tier_under_its_own_alias()
+    {
+        var builder = new FakeImageBuilder { Exists = false };
+        var mgr = Manager(builder);
+
+        var alias = await mgr.EnsureGraphicalAsync();
+
+        Assert.Equal("agnes-graphical", alias);
+        Assert.NotEqual(mgr.Alias, alias);                                 // never the headless baseline
+        Assert.Equal(1, builder.Builds);
+        Assert.Contains("xserver-xorg-core", builder.LastManifest!.AptPackages);
+        Assert.Contains("openbox", builder.LastManifest.AptPackages);
+        Assert.Contains("git", builder.LastManifest.AptPackages);           // …on top of the baseline's own
+        Assert.Equal(SandboxImageState.Ready, mgr.StatusFor(alias).State);
+
+        await mgr.EnsureGraphicalAsync(); // now exists → no rebuild
+        Assert.Equal(1, builder.Builds);
+    }
+
     [Fact]
     public async Task Ensure_skips_the_bake_when_the_image_is_present()
     {
@@ -102,6 +127,7 @@ public class SandboxImageManagerTests : IDisposable
         var mgr = Manager(new FakeImageBuilder());
         Assert.True(mgr.ImageHasAgent("claude-code-native")); // default manifest
         Assert.True(mgr.ImageHasAgent("codex"));
-        Assert.False(mgr.ImageHasAgent("opencode"));          // not baked by default
+        Assert.True(mgr.ImageHasAgent("opencode"));
+        Assert.False(mgr.ImageHasAgent("claude-code"));       // the node-based ACP bridge isn't baked by default
     }
 }

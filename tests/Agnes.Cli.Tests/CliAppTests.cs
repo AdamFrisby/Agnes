@@ -178,21 +178,26 @@ public sealed class CliAppTests
     }
 
     [Fact]
-    public async Task A_plain_url_pairs_with_no_pin_and_an_explicit_one_can_still_be_given()
+    public async Task A_plain_url_now_pins_what_the_host_presents_and_an_explicit_pin_still_wins()
     {
+        // Behaviour change: a plain URL used to pair with NO pin at all, which only worked against a
+        // CA-issued host and silently produced an unpinned entry against a self-signed one. It now goes
+        // through trust-on-first-use — see TrustOnFirstUseTests for the confirmation and mismatch paths.
         const string pin = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        const string presented = "01f9d48913f5a642cc0b350b182c960adc48348c73828b11f1ad68a43b71bfeb";
         var hosts = new InMemoryHostRegistry();
         string? seenPin = "unset";
-        CliApp Build() => new(
-            new SimulatedConnector(), new TestConsole(), hosts, new InMemorySessionRegistry(), TimeProvider.System,
+        CliApp Build(params string[] input) => new(
+            new SimulatedConnector(), new TestConsole(input), hosts, new InMemorySessionRegistry(), TimeProvider.System,
             pair: (_, _, name, fingerprint, _) =>
             {
                 seenPin = fingerprint;
                 return Task.FromResult(new Agnes.Protocol.PairResponse("device-1", name, "issued-token"));
-            });
+            },
+            probe: (_, _) => Task.FromResult(presented));
 
-        await Build().RunAsync(["auth", "login", "--host", "https://box:5099", "--code", "C", "--name", "a"]);
-        Assert.Null(seenPin);
+        await Build("yes").RunAsync(["auth", "login", "--host", "https://box:5099", "--code", "C", "--name", "a"]);
+        Assert.Equal(presented, seenPin);
 
         await Build().RunAsync(["auth", "login", "--host", "https://box:5099", "--code", "C", "--name", "b", "--fingerprint", pin]);
         Assert.Equal(pin, seenPin);

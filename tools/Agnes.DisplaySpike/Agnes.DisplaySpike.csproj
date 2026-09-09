@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Agnes.DisplaySpike</AssemblyName>
+    <RootNamespace>Agnes.DisplaySpike</RootNamespace>
+    <!-- A spike driver: it needs a live Incus VM, so it is deliberately out of Agnes.Core.slnf and out
+         of CI. The analyzers that police shipped code are noise on a linear measurement script. -->
+    <NoWarn>$(NoWarn);PH2075;PH2088;CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Agnes.Sandbox.Incus\Agnes.Sandbox.Incus.csproj" />
+  </ItemGroup>
+
+</Project>
