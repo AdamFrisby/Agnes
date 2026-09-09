@@ -8,6 +8,7 @@ namespace Agnes.Mobile.Tests;
 /// The mobile shell owns one thing the desktop client never has to think about: a single back gesture
 /// that has to mean the right thing at four different depths. These pin that contract down.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class ShellNavigationTests : IDisposable
 {
     private readonly string _state = Path.Combine(Path.GetTempPath(), "agnes-mobile-tests-" + Guid.NewGuid().ToString("n"));

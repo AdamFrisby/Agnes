@@ -41,6 +41,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     private readonly Action<string>? _copy;
     private readonly Action<string>? _openUrl;
     private readonly Action<string>? _clearNotification;
+    private readonly Func<bool>? _isMetered;
 
     public ShellViewModel(
         IAgnesConnector connector,
@@ -52,7 +53,9 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Func<string, Task<string?>>? dictate = null,
         Action<string>? copyToClipboard = null,
         Action<string>? openUrl = null,
-        Action<string>? clearNotification = null)
+        Action<string>? clearNotification = null,
+        IReceivedFileHandler? receivedFiles = null,
+        Func<bool>? isMeteredNetwork = null)
     {
         _connector = connector;
         Dispatcher = dispatcher;
@@ -60,10 +63,16 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         DeviceName = deviceName;
         Haptics = haptics ?? NullHaptics.Instance;
         Notifier = notifier ?? NullNotifier.Instance;
+        // Null rather than "unsupported": the handler reports what it can do, and the sheet shows only the
+        // buttons that are real. The headless preview and the tests get this one.
+        ReceivedFiles = receivedFiles ?? NullReceivedFileHandler.Instance;
         _dictate = dictate;
         _copy = copyToClipboard;
         _openUrl = openUrl;
         _clearNotification = clearNotification;
+        // Android's ConnectivityManager, injected rather than reached for: the harness and the tests get
+        // no probe and so always report an unmetered connection.
+        _isMetered = isMeteredNetwork;
 
         _prompts = new FilePromptStore(JsonStore.PathFor("prompts.json"));
         _policy = new FilePermissionPolicy(JsonStore.PathFor("permission-policy.json"));
@@ -94,7 +103,13 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
 
     public INotifier Notifier { get; }
 
+    /// <inheritdoc />
+    public IReceivedFileHandler ReceivedFiles { get; }
+
     public HostBook Hosts { get; }
+
+    /// <inheritdoc />
+    public bool IsMeteredNetwork => _isMetered?.Invoke() ?? false;
 
     public MobileSettings Settings { get; private set; }
 
@@ -324,12 +339,15 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     {
         await Sessions.RestoreAsync().ConfigureAwait(false);
 
-        // First launch with nothing paired: seed the offline demo so the app has something true to show.
+#if DEBUG
+        // Debug only: first launch with nothing paired seeds the offline demo so there is something to
+        // look at. A shipped build shows an honestly empty list and the pairing prompt instead.
         if (!Settings.DemoSeeded && Sessions.All.Count == 0 && !Hosts.Real.Any())
         {
             UpdateSettings(s => s with { DemoSeeded = true });
             await Sessions.SeedDemoAsync().ConfigureAwait(false);
         }
+#endif
 
         _ = Inbox.RefreshAsync();
     }
@@ -369,13 +387,33 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Sessions.OpenById(link, sessionId, sequence);
     }
 
-    /// <summary>Opens a session by id if this device knows it (used by notification taps).</summary>
-    public void OpenSessionById(string sessionId)
+    /// <summary>
+    /// Opens a session by id if this device knows it (used by notification taps).
+    /// </summary>
+    /// <param name="anchorId">The transcript item the notification was about, if it named one. Resolved to
+    /// its event sequence here rather than passed around as an anchor, because an anchor is a per-render
+    /// GUID: it only means anything to the client that minted it, and after a cold start (which is exactly
+    /// when a notification is tapped) that client is gone. A sequence survives the restart.</param>
+    public void OpenSessionById(string sessionId, string? anchorId = null)
     {
         var entry = Sessions.All.FirstOrDefault(s => s.SessionId == sessionId);
-        if (entry is not null)
+        if (entry is null)
         {
-            SelectTab(ShellTab.Sessions);
+            return;
+        }
+
+        SelectTab(ShellTab.Sessions);
+
+        var sequence = anchorId is { Length: > 0 }
+            ? entry.Session?.Items.FirstOrDefault(i => i.AnchorId == anchorId)?.Sequence ?? 0
+            : 0;
+
+        if (sequence > 0)
+        {
+            Sessions.OpenAt(entry, sequence);
+        }
+        else
+        {
             Sessions.Open(entry);
         }
     }

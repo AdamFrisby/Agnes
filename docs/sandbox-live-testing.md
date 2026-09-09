@@ -138,3 +138,123 @@ Committed under `recordings/`, usable as `RecordedHost` fixtures:
 
    Also: the native adapter's `DefaultArguments` needed `--print` — without it the
    CLI starts its interactive TUI and emits nothing on a pipe. Added.
+
+
+## The graphical probe: all four layers at once
+
+`tests/Agnes.Integration.Tests/LiveGraphicalDisplayProbe.cs` is the end-to-end test for the
+display feature. It is inert — silently passing — unless Incus answers *and*
+`AGNES_LIVE_GRAPHICAL=1`, so it lives in the normal test project and costs CI nothing:
+
+```bash
+AGNES_LIVE_GRAPHICAL=1 dotnet test tests/Agnes.Integration.Tests \
+  --filter FullyQualifiedName~LiveGraphicalDisplayProbe --logger 'console;verbosity=detailed'
+```
+
+What it does, in order: bakes `agnes-graphical` if it is missing (minutes, progress logged, and it
+is **left behind** — it is the tier every graphical session launches from); provisions **one**
+sandbox with `GraphicalDisplay.Default` through the real `IncusSandboxProvider`; stands up an
+in-process host with the real `DisplayBrokerRegistry` + `/display/{sessionId}` endpoint; connects
+the real `DisplayChannelClient`; then asserts the Info frame's geometry, a decodable 1280×800 JPEG,
+a person taking control, a right-click producing a new frame, and the `computer_*` MCP tools taking
+a screenshot, typing into the guest's xterm (verified by reading the file back through
+`incus exec`), and being locked out while a person holds control.
+
+Two settings are deliberately not the daemon's defaults. It names its instance with
+`IncusOptions.InstancePrefix = "agnes-probe-"`, so its VM can never be confused with a session VM
+somebody is working in, and it deletes exactly that instance in a `finally`. And it allows eight
+minutes for the guest to report ready rather than three: on a developer machine sharing a pool with
+other VMs, a first boot legitimately took longer than the daemon's default, and a probe that gives
+up early reports "the feature is broken" when the truth is "the laptop was busy".
+
+`AGNES_LIVE_GRAPHICAL_OUT` sets where it writes the frames it captured (default
+`$TMPDIR/agnes-live-display`): the first frame, the frame after the injected click, the agent's
+screenshot, and the `computer_frames` contact sheet — worth looking at, since "a JPEG arrived" and
+"the desktop is actually drawn" are different claims.
+
+## The apps against a live screen
+
+The probe stops at the client library. Both screenshot harnesses have a **live mode** that carries the
+same session all the way into the shipping UI — the desktop's Screen panel and the phone's Screen
+segment, painted from a real guest's framebuffer:
+
+```bash
+# 1. A host of your own, with the switch on and its VMs named apart from yours.
+Agnes__Security__AllowGraphicalSandboxes=true \
+Agnes__Sandbox__Provider=incus \
+Agnes__Sandbox__Incus__Project=default \
+Agnes__Sandbox__Incus__StoragePool=codeybox-zfs \
+Agnes__Sandbox__Incus__Bridge=cb-net \
+Agnes__Sandbox__Incus__InstancePrefix=agnes-shot- \
+ASPNETCORE_URLS=https://127.0.0.1:5997 \
+  dotnet run --project src/Agnes.Host       # logs a pairing code and its cert fingerprint
+
+# 2. Pair, as a client would.
+curl -sk -X POST https://127.0.0.1:5997/pair -H 'Content-Type: application/json' \
+  -d '{"code":"ABCD-EF23","deviceName":"screenshots"}'
+
+# 3. Open a graphical session and shoot the desktop app against it. --stop closes it afterwards.
+dotnet run --project tools/Agnes.Screenshots -- --host https://127.0.0.1:5997 \
+  --token <device token> --fingerprint <sha-256> --agent opencode --cwd /tmp/work \
+  --out shots/live --stop
+
+# …or join one that is already open (and shoot the Android head at the same session).
+dotnet run --project tools/Agnes.MobilePreview -- --host https://127.0.0.1:5997 \
+  --token <device token> --fingerprint <sha-256> --session <session id> --out shots/live
+```
+
+Both take `--session <id>` to join instead of opening, so one VM can serve both heads — and pointing
+them at the same session is also how you see the two sharing one capture. The agent only has to
+*start*: `opencode` waits for a prompt with no provider key, which is all a screenshot of a screen
+needs.
+
+Two things this found that nothing offline could. `Agnes:Security:AllowGraphicalSandboxes` was never
+read from configuration — documented, defaulted in `appsettings.json`, enforced by `SessionManager`,
+and bound nowhere, so graphical sandboxes could not be turned on at all (`SessionSecurityOptions.
+FromConfiguration` + `SessionSecurityOptionsBindingTests` now cover the whole section). And the mobile
+harness's `GetAwaiter().GetResult()` on a host call, which the in-memory demo tolerates, deadlocks the
+headless dispatcher against a real one — live mode pumps while it waits.
+
+## Graphical sandboxes: gotchas found live
+
+Full write-up in [`graphical-sandbox.md`](graphical-sandbox.md); these are the
+things that cost time on *this* host and would cost it again.
+
+1. **`raw.qemu` only takes while the VM is stopped.** `incus config set` on a
+   running VM fails with `Key "raw.qemu" cannot be updated when VM is running`.
+   The provider sets it between `init` and `start`, which is the only window.
+
+2. **QEMU connects to the display bus as root, not as `incus`.** Incus launches
+   it with `-run-with user=incus`, but privileges are dropped *after* display
+   setup, so the D-Bus EXTERNAL auth carries uid 0 (the AppArmor denial even says
+   `fsuid=0 ouid=1000`). A bus policy that allows only `incus` refuses it with a
+   flat "The connection is closed". Allow root.
+
+3. **A 0700 `$XDG_RUNTIME_DIR` is not reachable.** `/run/user/1000/...` gives
+   `Could not connect: Permission denied` before AppArmor even gets a say. The
+   socket has to sit somewhere the QEMU uid can traverse; access control belongs
+   in the bus policy instead.
+
+4. **AppArmor denies it twice, in two different subsystems.** A file rule
+   (`/tmp/agnes-display/** rwk,`) gets past the kernel's `connect` check; you then
+   hit `dbus-daemon`'s *own* AppArmor mediation on `Hello`, which needs
+   `dbus (send, receive, bind) bus=session,`. Both go in `raw.apparmor`. Watch
+   `journalctl -k | grep DENIED` — `dmesg` is restricted for non-root here.
+
+5. **The guest's DRM node is `/dev/dri/card1`, not `card0`.** An `xorg.conf`
+   pinning `Option "kmsdev" "/dev/dri/card0"` fails with `(EE) No devices
+   detected` → `no screens found`. Leave `kmsdev` out; `modesetting` finds the
+   virtio-gpu on its own.
+
+6. **`incus config set <inst> <key> -` reads stdin** (with a deprecation warning
+   about the two-argument form) — but the `key=value` form used elsewhere in the
+   provider does *not*. Mixing them silently sets the literal string `-`.
+
+7. **`pkill -f` matches the shell you typed it in.** Killing a bus daemon with
+   `pkill -f 'dbus-daemon --config-file=/tmp/agnes-display/...'` kills the command
+   itself (exit 144). Use `pgrep -f '...disp[l]ay...' | xargs -r kill`.
+
+8. **The scratch instance** used for this was `agnes-display-spike`, created from
+   `images:ubuntu/24.04/cloud` on `codeybox-zfs` / `cb-net` with 4 vCPU, 4 GiB RAM
+   and a 20 GiB root, and deleted afterwards. It was never one of the live
+   `agnes-*` session VMs.

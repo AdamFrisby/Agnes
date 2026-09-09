@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net.Http;
 using Agnes.Abstractions;
 using Agnes.Protocol;
+using Agnes.Ui.Core;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Dock.Model.Mvvm.Controls;
 using FluentIcons.Common;
@@ -223,6 +224,43 @@ public sealed partial class DeviceRowVm : ObservableObject
 
     /// <summary>When it paired and when it was last seen, in one line.</summary>
     public string Detail { get; }
+
+    /// <summary>"Owner" or "Member". Plain neutral text, never a status hue: a role is a fact about a
+    /// device, not something wrong with it, and the hues already mean four other things.</summary>
+    public string RoleChip => DeviceRoleText.Chip(Info.Role);
+
+    public bool IsOwner => Info.Role == DeviceRole.Owner;
+
+    /// <summary>How this device was admitted, in words ("vouched for by a device"). Empty for a kind this
+    /// client doesn't recognise, so a newer host never renders a raw token here.</summary>
+    public string Admission => DeviceRoleText.Admission(Info.Kind) ?? string.Empty;
+
+    public bool HasAdmission => Admission.Length > 0;
+
+    /// <summary>Admission and history as the one line the row draws. Composed here rather than as two
+    /// runs in XAML, so an unrecognised kind doesn't leave a dangling separator on screen.</summary>
+    public string DetailLine => HasAdmission ? $"{Admission} · {Detail}" : Detail;
+
+    /// <summary>The role this row's button would move the device to — the opposite of what it is.</summary>
+    public DeviceRole TargetRole => IsOwner ? DeviceRole.Member : DeviceRole.Owner;
+
+    public string RoleActionLabel => IsOwner ? "Make member" : "Make owner";
+
+    /// <summary>
+    /// Set while building the list: true when this is the only Owner left. Demoting it would leave the host
+    /// with nobody who can manage devices — a lockout no client-side undo could fix — so the button stays
+    /// visible (it explains itself) but disabled.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanChangeRole))]
+    [NotifyPropertyChangedFor(nameof(RoleActionTooltip))]
+    private bool _isLastOwner;
+
+    public bool CanChangeRole => !(IsOwner && IsLastOwner);
+
+    public string RoleActionTooltip => CanChangeRole
+        ? (IsOwner ? "Let this device see only its own sessions" : "Let this device see everything and manage devices")
+        : DeviceRoleText.LastOwnerTooltip;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RevokeLabel))]

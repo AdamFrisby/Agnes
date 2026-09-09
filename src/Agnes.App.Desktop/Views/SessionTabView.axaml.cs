@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Linq;
 using Agnes.Ui.Core.Transcript;
 using Agnes.Ui.Core.ViewModels;
+using Agnes.App.Desktop.Keymaps;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -23,14 +24,18 @@ public partial class SessionTabView : UserControl
     private double _leftWidth = 288;
     private double _rightWidth = 540;
     private ScrollViewer? _transcriptScroll;
-    private bool _stickToBottom = true;
-    private bool _userScrolling; // a pointer drag (scrollbar/content) is in progress — suppress auto-follow
+    private readonly TranscriptScrollPolicy _scrollPolicy = new();
+    private CancellationTokenSource? _wheelIdle;
+    private long? _pointerGestureGeneration;
+    private bool _overlayUpdateScheduled;
     private ScrollBar? _indexBar;
     private bool _indexActive;    // the transcript is past the threshold: the bar's unit is a message index
-    private bool _indexDragging;  // the index thumb is being dragged — freeze the bar's range under it
-    private int _wantedRow = -1;  // latest row a drag asked for; a seek in flight picks it up when it lands
-    private bool _seeking;        // a seek chain is running — new targets coalesce into it
-    private double _lastSeekOffset = double.NaN; // offset at the previous seek pass, to notice a stalled one
+    private bool _indexSeekScheduled;
+    private KeymapService? _keymap;
+    // Ages ("2 min ago", "no update for 12 min") are computed, not pushed: nothing re-raises them when the
+    // clock moves, so the view that shows them ticks them — and only while it is on screen, which is why
+    // this starts and stops with the visual tree rather than with the session.
+    private readonly DispatcherTimer _statusTick = new() { Interval = System.TimeSpan.FromSeconds(30) };
 
     public SessionTabView()
     {
@@ -45,7 +50,27 @@ public partial class SessionTabView : UserControl
         }
 
         // Activating a tab re-attaches its view; land at the latest message rather than wherever it was.
-        AttachedToVisualTree += (_, _) => RequestScrollToBottom();
+        // It is also the person arriving at this session, which is what retires the away band.
+        AttachedToVisualTree += (_, _) =>
+        {
+            RequestScrollToBottom();
+            _session?.NoteUserInteraction();
+            _statusTick.Start();
+            SetKeymap(KeymapBinder.GetService(this));
+        };
+        DetachedFromVisualTree += (_, _) =>
+        {
+            CancelWheelIdle();
+            _scrollPolicy.ReadHistory();
+            _statusTick.Stop();
+            SetKeymap(null);
+        };
+        _statusTick.Tick += (_, _) => _session?.RaiseStatusAge();
+
+        // Any click inside the tab is a person paying attention to it. Tunnelled from the root so it covers
+        // the transcript, the panels and the composer alike, rather than one handler per surface.
+        AddHandler(InputElement.PointerPressedEvent, OnAnyPointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        AddHandler(InputElement.KeyDownEvent, OnAnyKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // Drop files (or an image) anywhere on the session to attach them to the composer.
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
@@ -129,6 +154,8 @@ public partial class SessionTabView : UserControl
 
     private void HookSession()
     {
+        CancelWheelIdle();
+        _scrollPolicy.SwitchSession();
         if (_session is not null)
         {
             _session.PropertyChanged -= OnSessionPropertyChanged;
@@ -148,6 +175,7 @@ public partial class SessionTabView : UserControl
         }
 
         UpdateColumns();
+        UpdateComposerHint();
     }
 
     private void OnScrollToBottomRequested() => RequestScrollToBottom();
@@ -156,8 +184,18 @@ public partial class SessionTabView : UserControl
     // before the ScrollViewer / its extent are realised (session open, tab activation, agent switch).
     private void RequestScrollToBottom()
     {
-        _stickToBottom = true;
-        Dispatcher.UIThread.Post(() => { EnsureScrollHooked(); ScrollToEndNow(); UpdateOverlays(); }, DispatcherPriority.Background);
+        var generation = _scrollPolicy.FollowTail();
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!_scrollPolicy.IsCurrent(generation) || !_scrollPolicy.IsAtLiveTail)
+            {
+                return;
+            }
+
+            EnsureScrollHooked();
+            ScrollToEndNow();
+            ScheduleOverlayUpdate();
+        }, DispatcherPriority.Background);
     }
 
     private void ScrollToEndNow()
@@ -191,40 +229,95 @@ public partial class SessionTabView : UserControl
         }
     }
 
-    /// <summary>Pinned iff the viewport bottom is within a small margin of the true bottom.</summary>
-    private void ReevaluatePin()
+    /// <summary>Input may re-enter live following only when layout says the viewport is truly at its end.</summary>
+    private bool IsGenuinelyAtBottom()
     {
-        if (_transcriptScroll is { } sv)
-        {
-            _stickToBottom = sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height) < 24;
-            UpdateOverlays();
-        }
+        return _transcriptScroll is not { } sv
+            || sv.Extent.Height - (sv.Offset.Y + sv.Viewport.Height) <= 1;
     }
+
+    // ---- "someone is here" ----
+    // The away band exists to catch a person coming back to a tab they left running. Every one of these is
+    // proof they are back, so each one retires it; none of them does anything else.
+    private void OnAnyPointerPressed(object? sender, PointerPressedEventArgs e) => _session?.NoteUserInteraction();
+
+    private void OnAnyKeyDown(object? sender, KeyEventArgs e) => _session?.NoteUserInteraction();
 
     private void OnTranscriptWheel(object? sender, PointerWheelEventArgs e)
     {
-        if (e.Delta.Y > 0)
-        {
-            _stickToBottom = false; // scrolling up (wheel away) — release immediately, even mid-stream
-        }
-
-        // After the wheel scroll applies, re-evaluate (so wheeling back down to the bottom re-arms).
-        Dispatcher.UIThread.Post(ReevaluatePin, DispatcherPriority.Background);
+        _session?.NoteUserInteraction(); // scrolling the conversation is reading it
+        BeginWheelGesture();
     }
 
-    private void OnTranscriptPointerPressed(object? sender, PointerPressedEventArgs e) => _userScrolling = true;
+    private void BeginWheelGesture()
+    {
+        var generation = _scrollPolicy.BeginGesture();
+        CancelWheelIdle();
+        var idle = new CancellationTokenSource();
+        _wheelIdle = idle;
+        _ = SettleWheelAfterIdleAsync(generation, idle.Token);
+        ScheduleOverlayUpdate();
+    }
+
+    private async Task SettleWheelAfterIdleAsync(long generation, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(150), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_scrollPolicy.FinishGesture(generation, IsGenuinelyAtBottom()))
+            {
+                ScheduleOverlayUpdate();
+            }
+        }, DispatcherPriority.Render);
+    }
+
+    private void CancelWheelIdle()
+    {
+        _wheelIdle?.Cancel();
+        _wheelIdle?.Dispose();
+        _wheelIdle = null;
+    }
+
+    private void OnTranscriptPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        CancelWheelIdle();
+        _pointerGestureGeneration = _scrollPolicy.BeginGesture();
+        ScheduleOverlayUpdate();
+    }
 
     private void OnTranscriptPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        _userScrolling = false;
-        // A drag (scrollbar thumb or content) just ended — arm the pin from where it landed.
-        Dispatcher.UIThread.Post(ReevaluatePin, DispatcherPriority.Background);
+        FinishPointerGesture();
     }
 
     private void OnTranscriptPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
-        _userScrolling = false;
-        Dispatcher.UIThread.Post(ReevaluatePin, DispatcherPriority.Background);
+        FinishPointerGesture();
+    }
+
+    private void FinishPointerGesture()
+    {
+        if (_pointerGestureGeneration is not { } generation)
+        {
+            return;
+        }
+
+        _pointerGestureGeneration = null;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_scrollPolicy.FinishGesture(generation, IsGenuinelyAtBottom()))
+            {
+                ScheduleOverlayUpdate();
+            }
+        }, DispatcherPriority.Render);
     }
 
     private void OnTranscriptScrollChanged(object? sender, ScrollChangedEventArgs e)
@@ -234,15 +327,15 @@ public partial class SessionTabView : UserControl
             return;
         }
 
-        // Follow streaming/new content to the true bottom ONLY while pinned and the user isn't actively
-        // scrolling. The pin itself is never changed here (see the input handlers) — that's what lets the
-        // scrollbar be dragged over a virtualized list whose extent keeps being re-estimated.
-        if (_stickToBottom && !_userScrolling && System.Math.Abs(e.ExtentDelta.Y) > 0.5)
+        // Extent corrections follow only in the explicit tail state. Input moves the policy out of that
+        // state before Avalonia applies its scroll delta, so virtualized remeasurement cannot pull an
+        // active gesture back to the bottom.
+        if (_scrollPolicy.IsAtLiveTail && System.Math.Abs(e.ExtentDelta.Y) > 0.5)
         {
             ScrollToEndNow();
         }
 
-        UpdateOverlays();
+        ScheduleOverlayUpdate();
     }
 
     /// <summary>What the viewport is showing right now — one pass over the realized rows, shared by
@@ -290,6 +383,21 @@ public partial class SessionTabView : UserControl
         return new VisibleRows(firstIndex, count, top, hasMessage);
     }
 
+    private void ScheduleOverlayUpdate()
+    {
+        if (_overlayUpdateScheduled)
+        {
+            return;
+        }
+
+        _overlayUpdateScheduled = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _overlayUpdateScheduled = false;
+            UpdateOverlays();
+        }, DispatcherPriority.Render);
+    }
+
     private void UpdateOverlays()
     {
         var rows = ScanVisibleRows();
@@ -299,7 +407,7 @@ public partial class SessionTabView : UserControl
     }
 
     // A floating "you are here" timestamp shown while the user has scrolled up from the bottom, so long
-    // conversations aren't disorienting. Hidden when pinned to the bottom (the live tail).
+    // conversations aren't disorienting. Hidden while following the live tail.
     private void UpdateScrollHint(VisibleRows rows)
     {
         var hint = this.FindControl<Border>("ScrollHint");
@@ -308,7 +416,7 @@ public partial class SessionTabView : UserControl
             return;
         }
 
-        if (_stickToBottom || _transcript is null || _transcriptScroll is null
+        if (_scrollPolicy.IsAtLiveTail || _transcript is null || _transcriptScroll is null
             || rows.Top is not { } top || top.Timestamp == default)
         {
             hint.IsVisible = false;
@@ -333,12 +441,18 @@ public partial class SessionTabView : UserControl
     private void OnTranscriptItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         EnsureScrollHooked();
-        if (e.Action == NotifyCollectionChangedAction.Add && _stickToBottom && !_userScrolling)
+        if (e.Action == NotifyCollectionChangedAction.Add && _scrollPolicy.ShouldFollowAppend)
         {
-            Dispatcher.UIThread.Post(ScrollToEndNow, DispatcherPriority.Background);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_scrollPolicy.ShouldFollowAppend)
+                {
+                    ScrollToEndNow();
+                }
+            }, DispatcherPriority.Background);
         }
 
-        Dispatcher.UIThread.Post(UpdateOverlays, DispatcherPriority.Background);
+        ScheduleOverlayUpdate();
     }
 
     // Pin the last message above the viewport when a run of tool calls has pushed every message off-screen.
@@ -390,7 +504,8 @@ public partial class SessionTabView : UserControl
     /// threshold. A no-op while the thumb is held: the range must not move under a drag.</summary>
     private void SyncIndexScroll(VisibleRows rows)
     {
-        if (_indexBar is null || _transcript is null || _transcriptScroll is null || _indexDragging)
+        if (_indexBar is null || _transcript is null || _transcriptScroll is null
+            || _scrollPolicy.State == TranscriptScrollState.IndexDragging)
         {
             return;
         }
@@ -416,59 +531,102 @@ public partial class SessionTabView : UserControl
         _indexBar.Maximum = range.Maximum;
         _indexBar.ViewportSize = range.ViewportSize;
         _indexBar.LargeChange = System.Math.Max(1, range.ViewportSize - 1);
-        // While pinned the value is the end by definition, even before the last rows have been realized.
-        _indexBar.Value = _stickToBottom ? range.Maximum : range.Value;
+        // While following, the value is the end by definition even before the last rows are realized.
+        _indexBar.Value = _scrollPolicy.IsAtLiveTail ? range.Maximum : range.Value;
     }
 
     private void OnIndexScroll(object? sender, ScrollEventArgs e)
     {
-        // Only a thumb drag freezes the range; a track click or arrow is a single settled move. Holding
-        // _userScrolling for the duration keeps streaming content from yanking the view out of the drag.
-        // Cleared before the mode check, so a drag that outlives index mode still releases both flags.
-        _indexDragging = _indexActive && e.ScrollEventType == ScrollEventType.ThumbTrack;
-        _userScrolling = _indexDragging;
-
         if (_indexBar is null || !_indexActive)
         {
             return;
         }
 
-        var maximum = _indexBar.Maximum;
-        var value = System.Math.Clamp(e.NewValue, 0, maximum);
-        _stickToBottom = TranscriptIndexScroll.IsAtEnd(value, maximum); // dragged to the end → live tail again
+        HandleIndexTarget(e.NewValue, e.ScrollEventType);
+    }
 
-        if (_stickToBottom)
+    private void HandleIndexTarget(double value, ScrollEventType eventType)
+    {
+        if (_indexBar is null || !_indexActive)
         {
-            ScrollToEndNow();
+            return;
+        }
+
+        if (eventType == ScrollEventType.ThumbTrack
+            && _scrollPolicy.State != TranscriptScrollState.IndexDragging)
+        {
+            _scrollPolicy.BeginIndexDrag(_indexBar.Maximum);
+        }
+
+        _scrollPolicy.RequestIndexTarget(value, _indexBar.Maximum);
+        ScheduleLatestIndexSeek();
+
+        if (eventType == ScrollEventType.EndScroll)
+        {
+            _scrollPolicy.EndIndexDrag();
+            ScheduleOverlayUpdate();
+        }
+    }
+
+    // Narrow headless-regression surface: drive the same input paths while retaining real Avalonia layout.
+    internal void SimulateWheelInputForTesting() => BeginWheelGesture();
+    internal void SimulateIndexInputForTesting(double value, bool beginDrag = false, bool endDrag = false)
+    {
+        if (beginDrag)
+        {
+            HandleIndexTarget(value, ScrollEventType.ThumbTrack);
         }
         else
         {
-            ScrollIndexToTop((int)System.Math.Round(value));
+            HandleIndexTarget(value, endDrag ? ScrollEventType.EndScroll : ScrollEventType.ThumbTrack);
+        }
+    }
+
+    internal int FirstVisibleTranscriptIndexForTesting => ScanVisibleRows().FirstIndex;
+    internal TranscriptScrollState ScrollStateForTesting => _scrollPolicy.State;
+    internal void RefreshTranscriptScrollForTesting()
+    {
+        EnsureScrollHooked();
+        ScheduleOverlayUpdate();
+    }
+    internal double TranscriptRowTopForTesting(int index)
+        => _transcript is not null && _transcriptScroll is not null
+            ? _transcript.ContainerFromIndex(index)?.TranslatePoint(default, _transcriptScroll)?.Y ?? double.NaN
+            : double.NaN;
+
+    /// <summary>Coalesce the thumb's event burst to one target read per render pass.</summary>
+    private void ScheduleLatestIndexSeek()
+    {
+        if (_indexSeekScheduled)
+        {
+            return;
         }
 
-        if (!_indexDragging)
+        _indexSeekScheduled = true;
+        Dispatcher.UIThread.Post(() =>
         {
-            Dispatcher.UIThread.Post(UpdateOverlays, DispatcherPriority.Background);
-        }
+            _indexSeekScheduled = false;
+            if (!_scrollPolicy.TryTakeLatestIndexTarget(out var request))
+            {
+                return;
+            }
+
+            if (request.FollowTail)
+            {
+                ScrollToEndNow();
+                _scrollPolicy.CompleteIndexSeek(request.Generation);
+                ScheduleOverlayUpdate();
+                return;
+            }
+
+            SeekPass(request, attempt: 0, previousOffset: double.NaN);
+        }, DispatcherPriority.Render);
     }
 
     /// <summary>
-    /// Scroll so the given row sits at the top of the viewport. Seeking is <i>coalesced</i>: a drag
-    /// emits far more events than the list can seek, and firing one seek per event leaves the panel
-    /// half-way through several at once — realized rows arranged for one offset while the scroll viewer
-    /// holds another, which is the desync that makes a big list feel like it's fighting the cursor. So
-    /// only the newest target is remembered, and it's applied when the seek in flight lands.
+    /// Scroll so the requested row sits at the top. The request's generation makes every pass a no-op
+    /// as soon as a wheel, pointer drag, session switch, or newer thumb target takes control.
     /// </summary>
-    private void ScrollIndexToTop(int index)
-    {
-        _wantedRow = index;
-        if (!_seeking)
-        {
-            _seeking = true;
-            SeekPass(0);
-        }
-    }
-
     // One seek is iterative because the only thing anyone can say about an unrealized row is where the
     // extent *estimates* it — and in a transcript that estimate is poor (a status line and a 2000px diff
     // are both one row). So: jump to the estimate, look at where the row actually landed, correct, repeat.
@@ -476,30 +634,36 @@ public partial class SessionTabView : UserControl
     // the cap stops a pathological list looping.
     private const int MaxSeekPasses = 12;
 
-    private void SeekPass(int attempt)
+    private void SeekPass(IndexSeekRequest request, int attempt, double previousOffset)
     {
+        if (!_scrollPolicy.IsCurrent(request.Generation))
+        {
+            return;
+        }
+
         if (_transcript is null || _transcriptScroll is null || _transcript.ItemCount == 0)
         {
-            _seeking = false;
+            _scrollPolicy.CompleteIndexSeek(request.Generation);
             return;
         }
 
         var sv = _transcriptScroll;
-        var index = System.Math.Clamp(_wantedRow, 0, _transcript.ItemCount - 1);
+        var index = System.Math.Clamp(request.Row, 0, _transcript.ItemCount - 1);
         var maxOffset = System.Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
         var here = sv.Offset.Y;
         var offBy = _transcript.ContainerFromIndex(index)?.TranslatePoint(default, sv)?.Y;
 
-        if (offBy is { } landedAt && System.Math.Abs(landedAt) <= 1 && _wantedRow == index)
+        if (offBy is { } landedAt && System.Math.Abs(landedAt) <= 1)
         {
-            _seeking = false; // the row is at the top of the viewport
+            _scrollPolicy.CompleteIndexSeek(request.Generation);
+            ScheduleOverlayUpdate();
             return;
         }
 
         // Three ways to move: correct by measurement when the row is on screen, let the panel realize its
         // way there when it isn't, and — when neither budged the viewport — jump to the estimate.
         var corrected = offBy is { } d ? System.Math.Clamp(here + d, 0, maxOffset) : double.NaN;
-        if (attempt > 0 && System.Math.Abs(here - _lastSeekOffset) < 1)
+        if (attempt > 0 && System.Math.Abs(here - previousOffset) < 1)
         {
             // The last pass left the viewport exactly where it was. Either the row we measured was a
             // recycled container still parked at an old position, or the extent re-estimated and the
@@ -517,21 +681,21 @@ public partial class SessionTabView : UserControl
             _transcript.ScrollIntoView(index); // unrealized: let the panel realize its way there
         }
 
-        _lastSeekOffset = here;
-
         Dispatcher.UIThread.Post(() =>
         {
-            if (_wantedRow != index)
+            if (!_scrollPolicy.IsCurrent(request.Generation))
             {
-                SeekPass(0); // the drag moved on while this pass ran — chase the new row from scratch
+                return;
             }
-            else if (attempt + 1 < MaxSeekPasses)
+
+            if (attempt + 1 < MaxSeekPasses)
             {
-                SeekPass(attempt + 1);
+                SeekPass(request, attempt + 1, here);
             }
             else
             {
-                _seeking = false;
+                _scrollPolicy.CompleteIndexSeek(request.Generation);
+                ScheduleOverlayUpdate();
             }
         }, DispatcherPriority.Background);
     }
@@ -563,10 +727,17 @@ public partial class SessionTabView : UserControl
                 // The transcript virtualizes, so the target row may not be realized yet — ScrollIntoView
                 // realizes and scrolls to it (BringIntoView alone no-ops on an unrealized container).
                 var index = i;
+                var generation = _scrollPolicy.ReadHistory();
                 Dispatcher.UIThread.Post(() =>
                 {
+                    if (!_scrollPolicy.IsCurrent(generation))
+                    {
+                        return;
+                    }
+
                     _transcript.ScrollIntoView(index);
                     _transcript.ContainerFromIndex(index)?.BringIntoView();
+                    ScheduleOverlayUpdate();
                 });
                 return;
             }
@@ -581,6 +752,42 @@ public partial class SessionTabView : UserControl
         {
             UpdateColumns();
         }
+        else if (e.PropertyName == nameof(SessionViewModel.IsTurnActive))
+        {
+            UpdateComposerHint();
+        }
+    }
+
+    private void SetKeymap(KeymapService? keymap)
+    {
+        if (ReferenceEquals(_keymap, keymap)) return;
+        if (_keymap is not null) _keymap.Changed -= OnKeymapChanged;
+        _keymap = keymap;
+        if (_keymap is not null) _keymap.Changed += OnKeymapChanged;
+        UpdateComposerHint();
+    }
+
+    /// <summary>Injects the same keymap supplied by the containing window. Normally inherited when the view
+    /// attaches; explicit injection also makes the presentation behavior headless-testable without a native
+    /// windowing lifetime.</summary>
+    public void InstallKeymap(KeymapService keymap) => SetKeymap(keymap);
+
+    private void OnKeymapChanged(object? sender, EventArgs e)
+    {
+        if (Dispatcher.UIThread.CheckAccess()) UpdateComposerHint();
+        else Dispatcher.UIThread.Post(UpdateComposerHint);
+    }
+
+    private void UpdateComposerHint()
+    {
+        if (_keymap is null || _session is null || this.FindControl<TextBlock>("ComposerSendHint") is not { } hint) return;
+        var send = _keymap.Effective.PrimaryGesture(AgnesCommand.ComposerSend, KeymapContext.ComposerFocus);
+        var sendNow = _keymap.Effective.PrimaryGesture(AgnesCommand.ComposerSendNow, KeymapContext.ComposerFocus);
+        var sendText = send is null ? "Send" : KeyGestureParser.Display(send);
+        var sendNowText = sendNow is null ? "Send now" : KeyGestureParser.Display(sendNow);
+        hint.Text = _session.IsTurnActive
+            ? $"{sendText} queues after this turn · {sendNowText} sends now"
+            : $"{sendText} to send";
     }
 
     private void UpdateColumns()
@@ -610,6 +817,72 @@ public partial class SessionTabView : UserControl
         columns[4].MaxWidth = 760;
         Apply(columns[0], columns[1], vm.ShowLeftPanel, ref _leftWidth);
         Apply(columns[4], columns[3], vm.ShowRightPanel, ref _rightWidth);
+    }
+
+    // ---- inline previews for files the agent sent ----
+    // Decoded bitmaps, keyed by the shared file's id. Two reasons to keep them: the transcript virtualizes,
+    // so the same card is realized again every time it scrolls back into view, and a fetch costs a round
+    // trip to the host. The set is bounded by how many files one session received, which is small.
+    private readonly Dictionary<string, Avalonia.Media.Imaging.Bitmap> _sharedImages = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _sharedImagesLoading = new(StringComparer.Ordinal);
+
+    private async void OnSharedImageAttached(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        // The template realizes this element for every shared file and hides it for the ones that aren't
+        // images; attachment fires either way, so the kind is checked here or a pdf costs a pointless fetch.
+        if (sender is not Image image || image.DataContext is not SharedFileItem { IsImage: true } item)
+        {
+            return;
+        }
+
+        if (_sharedImages.TryGetValue(item.FileId, out var cached))
+        {
+            image.Source = cached;
+            return;
+        }
+
+        image.Source = null;
+        if (_session is null || !_sharedImagesLoading.Add(item.FileId))
+        {
+            return; // already in flight for this file; whoever started it will paint every card showing it
+        }
+
+        Avalonia.Media.Imaging.Bitmap? bitmap = null;
+        try
+        {
+            var content = await _session.PreviewSharedFileAsync(item);
+            if (content is { Bytes.Length: > 0 })
+            {
+                using var stream = new System.IO.MemoryStream(content.Bytes);
+                bitmap = new Avalonia.Media.Imaging.Bitmap(stream);
+            }
+        }
+        catch (Exception)
+        {
+            // A corrupt or oversized image decodes to nothing: the card keeps its placeholder rather than
+            // taking the transcript down. Same stance as the file browser's preview.
+            bitmap = null;
+        }
+        finally
+        {
+            _sharedImagesLoading.Remove(item.FileId);
+        }
+
+        if (bitmap is null)
+        {
+            return;
+        }
+
+        _sharedImages[item.FileId] = bitmap;
+        // The container may have been recycled onto a different file while the fetch was in flight — so
+        // paint by what each Image is currently showing, not by the one that started the load.
+        foreach (var target in this.GetVisualDescendants().OfType<Image>())
+        {
+            if (target.Name == "SharedImage" && target.DataContext is SharedFileItem shown && shown.FileId == item.FileId)
+            {
+                target.Source = bitmap;
+            }
+        }
     }
 
     private async void OnBrowseWorkingDirectory(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -733,6 +1006,15 @@ public partial class SessionTabView : UserControl
             && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
         {
             await clipboard.SetTextAsync(message.Text);
+        }
+    }
+
+    private async void OnCopyPlan(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: PlanItemView plan }
+            && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(PlanMarkdown.Format(plan.Entries));
         }
     }
 

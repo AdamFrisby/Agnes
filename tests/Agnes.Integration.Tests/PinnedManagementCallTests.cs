@@ -46,14 +46,15 @@ public sealed class PinnedManagementCallTests : IAsyncLifetime
     {
         var pfx = Path.Combine(Path.GetTempPath(), $"agnes-mgmt-pin-{Guid.NewGuid():n}.pfx");
         _certificates = new SelfSignedHostCertificateProvider(pfx);
+        var certificate = _certificates.GetCertificate();
 
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(kestrel =>
         {
-            kestrel.ConfigureHttpsDefaults(https =>
-                https.ServerCertificateSelector = (_, _) => _certificates.GetCertificate());
-            kestrel.Listen(System.Net.IPAddress.Loopback, 0, listen => listen.UseHttps());
+            // This fixture never rotates its certificate. Give Kestrel the fixed instance up front so a
+            // burst of parallel handshakes uses its fixed-certificate path, not a per-connection selector.
+            kestrel.Listen(System.Net.IPAddress.Loopback, 0, listen => listen.UseHttps(certificate));
         });
 
         _app = builder.Build();

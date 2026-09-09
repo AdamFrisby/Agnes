@@ -21,6 +21,17 @@ internal sealed class RecordingTerminalHost : IAgnesHost
         return Task.FromResult($"term-{++_opened}");
     }
 
+    /// <summary>The console id this fake hands out, or null to model an agent that offers no console.</summary>
+    public string? AgentConsoleId { get; set; } = "console-1";
+
+    public List<(string SessionId, int Columns, int Rows)> ConsoleOpens { get; } = [];
+
+    public Task<string?> OpenAgentConsoleAsync(string sessionId, int columns = 120, int rows = 30)
+    {
+        ConsoleOpens.Add((sessionId, columns, rows));
+        return Task.FromResult(AgentConsoleId);
+    }
+
     public Task WriteTerminalAsync(string sessionId, string terminalId, byte[] data)
     {
         Writes.Add((sessionId, terminalId, data));
@@ -41,13 +52,14 @@ internal sealed class RecordingTerminalHost : IAgnesHost
     public event Action<AgnesConnectionState>? StateChanged;
     public event Action<IReadOnlyList<AgentInfo>>? AgentsChanged;
     public event Action<InboxRun>? InboxRunReceived;
+    public event Action<SessionGoal>? GoalChanged;
     public event Action<string, long, bool>? ReadStateChanged;
 #pragma warning restore CS0067
 
     public Task ConnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task<HostInfo> GetHostInfoAsync() => Task.FromResult(new HostInfo("recording", "recording", "1.0"));
     public Task<IReadOnlyList<AgentInfo>> ListAgentsAsync() => Task.FromResult<IReadOnlyList<AgentInfo>>([]);
-    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null)
+    public Task<SessionInfo> OpenSessionAsync(string adapterId, string workingDirectory, bool useWorktree = false, bool skipPermissions = false, string mcpApproval = "Ask", string gitCredentialMode = "Off", bool useSandbox = true, string? modelId = null, bool graphical = false)
         => throw new NotSupportedException();
     public Task<SessionView> SubscribeAsync(string sessionId, long since = 0) => throw new NotSupportedException();
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content) => Task.CompletedTask;

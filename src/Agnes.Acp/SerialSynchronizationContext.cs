@@ -35,6 +35,28 @@ internal sealed class SerialSynchronizationContext : SynchronizationContext, IDi
         done.Wait();
     }
 
+    /// <summary>
+    /// Completes once everything queued ahead of this call has run. The queue is FIFO and single-threaded,
+    /// so awaiting a marker posted to it is a precise "the inbound messages received so far are fully
+    /// handled" barrier — which is not the same as awaiting an outbound request's own response. That
+    /// response's completion is posted here too, but the caller's continuation resumes on the thread pool
+    /// and can overtake the notification handlers still queued in front of it. Callers that must not miss
+    /// (or must not see) anything the agent sent before its reply await this afterwards.
+    /// </summary>
+    public Task FlushAsync()
+    {
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Enqueue(_ => done.TrySetResult(), null);
+        if (_queue.IsAddingCompleted)
+        {
+            // Disposed: the marker was dropped and the pump is finishing, so there is nothing left to wait
+            // for. Completing here rather than hanging keeps shutdown from deadlocking a caller.
+            done.TrySetResult();
+        }
+
+        return done.Task;
+    }
+
     private void Enqueue(SendOrPostCallback d, object? state)
     {
         if (!_queue.IsAddingCompleted)
