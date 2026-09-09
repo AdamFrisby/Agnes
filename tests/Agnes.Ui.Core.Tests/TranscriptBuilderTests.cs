@@ -25,6 +25,21 @@ public class TranscriptBuilderTests
     }
 
     [Fact]
+    public void Message_bubbles_expose_markdown_only_to_the_renderer_for_their_role()
+    {
+        var user = new MessageBubbleItem(MessageRole.User, isThought: false) { Text = "user" };
+        var assistant = new MessageBubbleItem(MessageRole.Assistant, isThought: false) { Text = "assistant" };
+        var thought = new MessageBubbleItem(MessageRole.Assistant, isThought: true) { Text = "thought" };
+
+        Assert.Equal("user", user.UserMarkdown);
+        Assert.Null(user.AssistantMarkdown);
+        Assert.Equal("assistant", assistant.AssistantMarkdown);
+        Assert.Null(assistant.UserMarkdown);
+        Assert.Null(thought.UserMarkdown);
+        Assert.Null(thought.AssistantMarkdown);
+    }
+
+    [Fact]
     public void Tool_call_updates_in_place_and_splits_bubbles()
     {
         var t = new TranscriptBuilder();

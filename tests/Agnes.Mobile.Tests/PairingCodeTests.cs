@@ -7,6 +7,7 @@ namespace Agnes.Mobile.Tests;
 /// byte comparison of the trimmed string — so case and the hyphen both matter. An Android keyboard
 /// gives you lowercase by default, which would otherwise fail as "wrong code".
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class PairingCodeTests
 {
     [Theory]

@@ -24,7 +24,9 @@
     <ProjectReference Include="..\..\src\Agnes.Client\Agnes.Client.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Recording\Agnes.Recording.csproj" />
-    <ProjectReference Include="..\..\src\Agnes.App.Desktop\Agnes.App.Desktop.csproj" />
+    <!-- Desktop view-model tests exercise the debug-only simulated host. Keep the production Release
+         build independent, but link this test harness to its Debug configuration. -->
+    <ProjectReference Include="..\..\src\Agnes.App.Desktop\Agnes.App.Desktop.csproj" SetConfiguration="Configuration=Debug" />
     <!-- Built but not linked: the dynamic-client-plugin loader test loads this DLL at runtime. -->
     <ProjectReference Include="..\Agnes.TestClientPluginFixture\Agnes.TestClientPluginFixture.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
