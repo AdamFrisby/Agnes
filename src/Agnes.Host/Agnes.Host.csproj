@@ -26,7 +26,7 @@
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.14.0" />
     <!-- Real FCM push delivery (Google's OFFICIAL Firebase Admin SDK — high-trust supply chain).
          Bring-your-own service-account credential from host settings; see notifications/01-push-notifications.md. -->
-    <PackageReference Include="FirebaseAdmin" Version="3.4.0" />
+    <PackageReference Include="FirebaseAdmin" Version="3.6.0" />
     <!-- Agnes AS an MCP server: the OFFICIAL Model Context Protocol C# SDK (modelcontextprotocol/csharp-sdk,
          Microsoft/Anthropic-backed, MIT). Exposes Agnes's actions as MCP tools over Streamable HTTP so the
          OpenAI Realtime voice endpoint (and any MCP client) can drive Agnes. Built on the same StreamJsonRpc
