@@ -18,7 +18,7 @@ namespace Agnes.Desktop.Tests;
 /// The Screen panel, rendered for real against the simulated graphical sandbox: does a frame actually reach
 /// the picture, and does the keyboard let go when told.
 /// </summary>
-[Collection("desktop-headless")]
+[Collection("Avalonia headless")]
 public class ScreenPanelTests
 {
     private sealed class TestApp : Application

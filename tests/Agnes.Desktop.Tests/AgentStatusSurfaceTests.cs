@@ -24,7 +24,7 @@ namespace Agnes.Desktop.Tests;
 /// There used to be a third surface: a faint duplicate of the same sentence under the tab header. It is
 /// gone, and <see cref="The_header_no_longer_repeats_the_status_under_the_toolbar"/> keeps it gone.
 /// </summary>
-[Collection("desktop-headless")]
+[Collection("Avalonia headless")]
 public class AgentStatusSurfaceTests
 {
     private sealed class TestApp : Application
@@ -35,7 +35,9 @@ public class AgentStatusSurfaceTests
     public static class TestAppBuilder
     {
         public static AppBuilder BuildAvaloniaApp()
-            => AppBuilder.Configure<TestApp>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+            => AppBuilder.Configure<TestApp>()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .UseSkia();
     }
 
     private const string Reported =
