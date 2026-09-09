@@ -27,6 +27,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Agnes.Plugins.CodeyBox\Agnes.Plugins.CodeyBox.csproj" />
   </ItemGroup>
 

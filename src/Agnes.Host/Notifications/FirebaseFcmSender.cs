@@ -34,7 +34,11 @@ public sealed class FirebaseFcmSender : IFcmSender
         _messaging = new Lazy<FirebaseMessaging>(() =>
         {
             var app = FirebaseApp.Create(
-                new AppOptions { Credential = GoogleCredential.FromJson(serviceAccountJson) },
+                new AppOptions
+                {
+                    Credential = CredentialFactory.FromJson<ServiceAccountCredential>(serviceAccountJson)
+                        .ToGoogleCredential(),
+                },
                 AppName);
             return FirebaseMessaging.GetMessaging(app);
         });
@@ -49,7 +53,13 @@ public sealed class FirebaseFcmSender : IFcmSender
     {
         var message = new Message
         {
+            // FIDs and FCM registration tokens are distinct. Agnes currently receives and persists the
+            // latter from clients, so using FirebaseAdmin 3.6's new Fid property here would silently make
+            // deliveries fail. Keep the compatible target until the client registration protocol migrates
+            // to FIDs; the SDK's migration window explicitly retains Token support for that purpose.
+#pragma warning disable CS0618 // Message.Token is deprecated in favor of FID, which has different semantics.
             Token = registrationToken,
+#pragma warning restore CS0618
             Notification = new Notification { Title = title, Body = body },
             Data = new Dictionary<string, string>(data, StringComparer.Ordinal),
         };
