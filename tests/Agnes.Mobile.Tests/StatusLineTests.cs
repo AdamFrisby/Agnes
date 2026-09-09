@@ -12,6 +12,7 @@ namespace Agnes.Mobile.Tests;
 /// The wording is the feature: "12m" beside a running agent reads as progress, and the whole reason the
 /// line exists is to tell you when there hasn't been any.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class StatusLineTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 8, 12, 0, 0, TimeSpan.Zero);

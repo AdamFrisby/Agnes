@@ -9,6 +9,7 @@ namespace Agnes.Mobile.Tests;
 /// The sessions list is the app's front page, and its whole job is to put what needs a human at the
 /// top. These cover that ordering and the reattach path a phone takes every time it wakes up.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class SessionListTests : IDisposable
 {
     private readonly string _state = Path.Combine(Path.GetTempPath(), "agnes-mobile-tests-" + Guid.NewGuid().ToString("n"));

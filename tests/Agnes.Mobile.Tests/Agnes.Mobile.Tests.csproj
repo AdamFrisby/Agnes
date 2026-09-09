@@ -31,7 +31,9 @@
     <ProjectReference Include="..\..\src\Agnes.Client\Agnes.Client.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
-    <ProjectReference Include="..\..\tools\Agnes.MobilePreview\Agnes.MobilePreview.csproj" />
+    <!-- Mobile UI tests exercise the debug-only offline simulator. Keep the app-facing Release build
+         separate, but link this test harness to its Debug configuration. -->
+    <ProjectReference Include="..\..\tools\Agnes.MobilePreview\Agnes.MobilePreview.csproj" SetConfiguration="Configuration=Debug" />
   </ItemGroup>
 
 </Project>

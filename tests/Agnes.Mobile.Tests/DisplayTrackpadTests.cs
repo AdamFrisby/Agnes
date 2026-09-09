@@ -12,6 +12,7 @@ namespace Agnes.Mobile.Tests;
 /// Time is an argument rather than a clock, so the orderings that matter (did the hold fire before the
 /// finger lifted?) are reachable at all.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class DisplayTrackpadTests
 {
     private const int Width = 1280;
