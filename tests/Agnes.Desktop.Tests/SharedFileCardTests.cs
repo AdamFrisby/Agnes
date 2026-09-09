@@ -21,7 +21,7 @@ namespace Agnes.Desktop.Tests;
 /// time), that an image card actually decodes and shows the bytes it fetched, and that the button row
 /// follows what the head's handler says it can do rather than offering verbs that would do nothing.
 /// </summary>
-[Collection("desktop-headless")]
+[Collection("Avalonia headless")]
 public class SharedFileCardTests
 {
     private sealed class TestApp : Application
@@ -32,7 +32,9 @@ public class SharedFileCardTests
     public static class TestAppBuilder
     {
         public static AppBuilder BuildAvaloniaApp()
-            => AppBuilder.Configure<TestApp>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+            => AppBuilder.Configure<TestApp>()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .UseSkia();
     }
 
     /// <summary>The one file the simulated host's workspace actually serves — a real PNG, so it decodes.</summary>

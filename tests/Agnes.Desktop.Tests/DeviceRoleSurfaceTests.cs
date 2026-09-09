@@ -24,7 +24,7 @@ namespace Agnes.Desktop.Tests;
 /// presence is the property that actually regressed: a member with an owner's buttons gets silent 403s,
 /// and an owner without them can't fix anybody.
 /// </summary>
-[Collection("desktop-headless")]
+[Collection("Avalonia headless")]
 public class DeviceRoleSurfaceTests
 {
     private sealed class TestApp : Application
@@ -35,7 +35,9 @@ public class DeviceRoleSurfaceTests
     public static class TestAppBuilder
     {
         public static AppBuilder BuildAvaloniaApp()
-            => AppBuilder.Configure<TestApp>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+            => AppBuilder.Configure<TestApp>()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .UseSkia();
     }
 
     private static readonly DateTimeOffset Now = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
