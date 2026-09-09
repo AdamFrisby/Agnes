@@ -9,6 +9,7 @@ namespace Agnes.Mobile.Tests;
 /// The session card is what the whole app is read through, so the fields it derives matter more than
 /// their size suggests.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class SessionCardTests
 {
     private static SessionEntry Entry(string title, string workingDirectory)

@@ -9,6 +9,7 @@ using Avalonia.VisualTree;
 
 namespace Agnes.Desktop.Tests;
 
+[Collection("desktop-headless")]
 public sealed class MarkdownViewerTests
 {
     [Fact]

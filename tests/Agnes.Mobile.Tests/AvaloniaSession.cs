@@ -27,8 +27,11 @@ public sealed class AvaloniaSession : IDisposable
     public Task Run(Action action) => Session.Dispatch(action, CancellationToken.None);
 }
 
-/// <summary>The xunit collection every rendering test class joins, so they share one application.</summary>
-[CollectionDefinition(Name)]
+/// <summary>
+/// The xunit collection every mobile test class joins. The headless application and JsonStore directory
+/// are both process-wide, so those tests must not replace either while another class is using it.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class AvaloniaCollection : ICollectionFixture<AvaloniaSession>
 {
     public const string Name = "avalonia";

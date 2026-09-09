@@ -7,6 +7,7 @@ namespace Agnes.Mobile.Tests;
 /// gets sent anyway types <em>something else</em> in the guest, and nobody looking at a phone screen
 /// would know which key it was.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class DisplayKeysymTests
 {
     [Theory]

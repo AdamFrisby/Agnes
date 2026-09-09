@@ -15,6 +15,7 @@ namespace Agnes.Mobile.Tests;
 /// The Android handler itself is a platform type and can't run here, so what's covered is everything up
 /// to the moment it's called — which is where the decisions actually are.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class ReceivedFileTests : IDisposable
 {
     private readonly string _state = Path.Combine(Path.GetTempPath(), "agnes-mobile-tests-" + Guid.NewGuid().ToString("n"));

@@ -11,6 +11,7 @@ namespace Agnes.Mobile.Tests;
 /// while it waits, and that a host which isn't there says so rather than leaving the screen stuck on
 /// six digits nobody will ever approve.
 /// </summary>
+[Collection(AvaloniaCollection.Name)]
 public sealed class ApprovalRequestTests : IDisposable
 {
     private readonly string _state = Path.Combine(Path.GetTempPath(), "agnes-mobile-tests-" + Guid.NewGuid().ToString("n"));
