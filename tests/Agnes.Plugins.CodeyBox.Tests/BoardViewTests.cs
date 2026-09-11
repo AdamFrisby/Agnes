@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
@@ -146,8 +147,10 @@ public class BoardViewTests
                            + board.Landed.Sum(d => d.Chains.Count)
                            + stub.HistoryMatches.Count;
 
-            // Yesterday's landed day is folded away, so its row is not realised.
-            var folded = board.Landed.Where(d => d.Title != "Today").Sum(d => d.Chains.Count);
+            // Yesterday's landed day is folded away, and so is every waiting group except the one that
+            // needs a person, so their rows are not realised.
+            var folded = board.Landed.Where(d => d.Title != "Today").Sum(d => d.Chains.Count)
+                         + board.Waiting.Where(g => !g.OpenByDefault).Sum(g => g.Chains.Count);
             Assert.Equal(expected - folded, Rows(window, "chainbutton").Count);
 
             // Each horizon states its own count in its header rather than leaving it to be inferred.
@@ -287,16 +290,20 @@ public class BoardViewTests
 
         Render(() => Runway(stub), "board-expanded", 1000, 1180, window =>
         {
-            // The progress count is the disclosure. A singleton has neither, which is why the count of
-            // toggles is the count of multi-step chains rather than of rows.
+            // The progress count is the disclosure, and it now says so with a chevron beside the count.
+            // A singleton has neither, which is why the count of toggles is the count of multi-step
+            // chains rather than of rows.
             var toggles = window.GetVisualDescendants().OfType<ToggleButton>()
                 .Where(t => t.Classes.Contains("progress") && t.IsEffectivelyVisible)
                 .ToList();
 
             Assert.NotEmpty(toggles);
-            Assert.Contains(toggles, t => Equals(t.Content, series.Progress));
+            Assert.Contains(series.Progress, Words(window));
+            Assert.All(toggles, t => Assert.NotEmpty(
+                t.GetVisualDescendants().OfType<FluentIcons.Avalonia.SymbolIcon>()));
 
-            var first = toggles.First(t => Equals(t.Content, series.Progress));
+            var first = toggles.First(t => t.GetVisualDescendants().OfType<TextBlock>()
+                                            .Any(b => b.Text == series.Progress));
             first.IsChecked = true;
             Dispatcher.UIThread.RunJobs();
 
@@ -545,6 +552,163 @@ public class BoardViewTests
         });
 
         Assert.Same(chain.Steps[2], Assert.Single(fired.Parameters));
+    }
+
+    [Fact]
+    public void A_long_chain_draws_a_capped_strip_that_still_names_and_selects_every_step()
+    {
+        var chain = BoardSamples.Long("Test selection (RTS)", 32, 27);
+        var fired = new Fired();
+
+        Render(() => new ChainStrip { Steps = chain.Steps, StepCommand = fired }, "chain-strip-capped", 260, 60,
+               window =>
+        {
+            var strip = window.GetVisualDescendants().OfType<ChainStrip>().Single();
+
+            // Eleven pips and one gap, not thirty-two: the strip that squeezed a row's title to nothing
+            // was 349px wide, and this one is a picture that fits beside its caption.
+            Assert.Equal((11 * 8) + 11 + (11 * 3), strip.DesiredSize.Width, 1);
+            Assert.True(strip.DesiredSize.Width < 150);
+
+            // Folding is a drawing decision, so the tooltip still lists every step, including the ones
+            // the gap stands for.
+            var tip = ToolTip.GetTip(strip) as string;
+            Assert.NotNull(tip);
+            Assert.Equal(32, tip!.Split('\n').Length);
+            Assert.Contains(chain.Steps[20].Item.Title, tip, StringComparison.Ordinal);
+
+            // The first pip is the first step; the last pip is the LAST step, not the twelfth.
+            strip.RaiseEvent(Press(strip, new Point(4, 6)));
+            strip.RaiseEvent(Press(strip, new Point(strip.DesiredSize.Width - 4, 6)));
+
+            // …and the gap selects nothing, rather than whichever step the arithmetic lands on.
+            strip.RaiseEvent(Press(strip, new Point((8 * 11) + 5, 6)));
+        });
+
+        Assert.Equal([chain.Steps[0], chain.Steps[^1]], fired.Parameters);
+    }
+
+    [Fact]
+    public void A_long_queue_shows_its_front_and_opens_the_rest_on_request()
+    {
+        var stub = new BoardStub { Board = BoardSamples.Busy() };
+        var board = stub.Board!;
+
+        Render(() => Runway(stub), "board-folded", 1000, 1180, window =>
+        {
+            Assert.Equal(Board.NextPreview, Queued(window).Count);
+
+            var more = window.GetVisualDescendants().OfType<ToggleButton>()
+                .Single(t => t.Classes.Contains("showmore") && t.IsEffectivelyVisible);
+            Assert.Contains(board.NextMoreLabel, Words(window));
+
+            more.IsChecked = true;
+            Dispatcher.UIThread.RunJobs();
+
+            // The whole dispatch order, once asked for — and the front of it still first.
+            Assert.Equal(board.Next.Count, Queued(window).Count);
+            Assert.Equal(board.Next[0].Id, ((Chain)Queued(window)[0].DataContext!).Id);
+        });
+    }
+
+    /// <summary>The queued rows actually realised, in order — the thing the fold changes.</summary>
+    private static List<Control> Queued(Window window)
+        => [.. window.GetVisualDescendants().OfType<Control>()
+                 .Where(c => c.Classes.Contains("nextrow") && c.DataContext is Chain && c.IsEffectivelyVisible)];
+
+    [Fact]
+    public void Only_what_needs_a_person_is_open_when_the_board_arrives()
+    {
+        var stub = new BoardStub { Board = BoardSamples.Busy() };
+        var board = stub.Board!;
+
+        Render(() => Runway(stub), "board-waiting-folded", 1000, 1180, window =>
+        {
+            // Every group states itself in a header…
+            var said = Words(window);
+            Assert.All(board.Waiting, g => Assert.Contains(g.Header, said));
+
+            // …and only the one an operator can act on has drawn its rows.
+            var shown = window.GetVisualDescendants().OfType<Button>()
+                .Where(b => b.Classes.Contains("chainbutton") && b.IsEffectivelyVisible)
+                .Select(b => b.DataContext)
+                .OfType<Chain>()
+                .Where(c => c.IsWaiting)
+                .ToList();
+
+            Assert.Equal(
+                board.Waiting.Where(g => g.OpenByDefault).SelectMany(g => g.Chains).Select(c => c.Id),
+                shown.Select(c => c.Id));
+        });
+    }
+
+    [Fact]
+    public void The_key_names_every_mark_it_draws_and_draws_them_the_way_the_rows_do()
+    {
+        var stub = new BoardStub();
+
+        Render(() => Runway(stub), "board-key", 1000, 1180, window =>
+        {
+            var key = window.GetVisualDescendants().OfType<Button>()
+                .Single(b => b.Classes.Contains("legend"));
+
+            var flyout = Assert.IsType<Flyout>(key.Flyout);
+            var content = Assert.IsType<StackPanel>(flyout.Content);
+            var words = content.GetLogicalDescendants().OfType<TextBlock>()
+                .Select(t => t.Text ?? string.Empty)
+                .ToList();
+
+            // Every state a pip can be drawn in is in the key, said in the same words the chips use.
+            foreach (var state in Enum.GetValues<StepState>())
+            {
+                Assert.Contains(StepMarks.Word(state), words);
+            }
+
+            // …and it is drawn by the real control, so it cannot drift from the board.
+            var marks = content.GetLogicalDescendants().OfType<StepDot>().ToList();
+            Assert.Equal(Enum.GetValues<StepState>().Length, marks.Count);
+            Assert.Equal([.. Enum.GetValues<StepState>().OrderBy(s => s)],
+                         [.. marks.Select(m => m.State).OrderBy(s => s)]);
+
+            Assert.Equal(2, content.GetLogicalDescendants().OfType<ChainStrip>().Count());
+        });
+    }
+
+    [Fact]
+    public void Nothing_in_a_row_is_drawn_outside_the_pane_it_belongs_to()
+    {
+        // The original complaint, as an assertion: at half width the reason text was being cut off by the
+        // pane boundary, which no amount of reading the markup would have shown.
+        var stub = new BoardStub { Board = BoardSamples.Busy() };
+
+        Render(() => Runway(stub), "board-fits", 700, 1180, window =>
+        {
+            // The runway's own scroller, not the search box's: a TextBox carries one of these too.
+            var scroller = window.GetVisualDescendants().OfType<ScrollViewer>()
+                .First(s => s.GetVisualDescendants().OfType<Control>()
+                             .Any(c => c.Classes.Contains("chainrow")));
+            var width = scroller.Bounds.Width;
+            Assert.True(width > 0);
+
+            // Horizontal overflow is disabled, so a row wider than the viewport would be silently clipped
+            // rather than scrollable — which is the failure this is here to catch.
+            Assert.Equal(ScrollBarVisibility.Disabled, scroller.HorizontalScrollBarVisibility);
+            Assert.True(scroller.Extent.Width <= scroller.Viewport.Width + 0.5,
+                        $"the runway wants {scroller.Extent.Width} of {scroller.Viewport.Width}");
+
+            var rows = window.GetVisualDescendants().OfType<Control>()
+                .Where(c => c.Classes.Contains("chainrow") && c.IsEffectivelyVisible)
+                .ToList();
+
+            Assert.NotEmpty(rows);
+            foreach (var row in rows)
+            {
+                var right = row.TranslatePoint(new Point(row.Bounds.Width, 0), scroller);
+                Assert.NotNull(right);
+                Assert.True(right!.Value.X <= width + 0.5,
+                            $"a row reaches {right.Value.X} of {width}, in \"{(row.DataContext as Chain)?.Title}\"");
+            }
+        });
     }
 
     private static PointerPressedEventArgs Press(Control target, Point at)

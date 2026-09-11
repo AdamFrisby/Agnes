@@ -244,7 +244,17 @@
       </StackPanel>
     </ScrollViewer>
 
-    <Grid Grid.Row="2" ColumnDefinitions="*,4,*" RowDefinitions="Auto,*">
+    <!-- THREE FIFTHS TO THE RUNWAY. It was an even split, which is the right answer only if both halves
+         are equally full: in practice the queue is dozens of rows that were clipping their own reason text
+         at the boundary, while the pane's lower half — output for an item nobody has selected — was empty
+         most of the time. Both columns carry a MinWidth so dragging the splitter cannot crush either into
+         a column of ellipses. -->
+    <Grid Grid.Row="2" RowDefinitions="Auto,*">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="3*" MinWidth="360" />
+        <ColumnDefinition Width="4" />
+        <ColumnDefinition Width="2*" MinWidth="260" />
+      </Grid.ColumnDefinitions>
       <Grid.IsVisible>
         <MultiBinding Converter="{x:Static BoolConverters.And}">
           <Binding Path="IsConfigured" />
@@ -371,9 +381,13 @@
              CHANGE the item; on the right, things that change only what you are looking at. Previously
              all seven were the same plain button in one flowing row, so "Abandon" and "Timeline" were
              visually the same kind of thing. -->
-        <Grid Grid.Row="1" Margin="10,0,10,6" ColumnDefinitions="Auto,*,Auto"
-              IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
-          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+        <!-- A WrapPanel rather than a left/right Grid, now that the pane is two fifths of the tab: the
+             Grid gave each cluster its desired width and clipped whatever did not fit, so at this width
+             "Detail" simply fell off the edge. Wrapping keeps both clusters whole and keeps them apart —
+             the separator, not the alignment, is what says these are two kinds of control. -->
+        <WrapPanel Grid.Row="1" Margin="10,0,10,6" Orientation="Horizontal"
+                   IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,10,4">
             <Button Content="Retry" FontSize="11" Padding="8,3" Command="{Binding RetryCommand}"
                     CommandParameter="{Binding Selected}" />
             <Button Content="Promote" FontSize="11" Padding="8,3" Command="{Binding PromoteCommand}"
@@ -384,7 +398,7 @@
 
           <!-- A view switch, so the active view is visible. It wears the same chip treatment as the queue
                filters two panes to the left; the pane was teaching that convention and then breaking it. -->
-          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+          <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,4">
             <Button Classes="chip" Classes.on="{Binding IsOutputView}" Content="Output"
                     Command="{Binding ShowOutputCommand}" />
             <Button Classes="chip" Classes.on="{Binding IsTimelineView}" Content="Timeline"
@@ -396,7 +410,7 @@
             <Button Classes="chip" Classes.on="{Binding IsDetailView}" Content="Detail"
                     Command="{Binding ShowDetailCommand}" />
           </StackPanel>
-        </Grid>
+        </WrapPanel>
 
         <!-- Recovery moves for an item that has gone wrong, and the two that destroy work. Disclosed on
              request so that eight equal buttons never again make abandoning look like retrying. -->

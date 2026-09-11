@@ -3,6 +3,7 @@
              xmlns:cb="using:Agnes.Plugins.CodeyBox"
              xmlns:v="using:Agnes.Plugins.CodeyBox.Views"
              xmlns:c="using:Agnes.Plugins.CodeyBox.Views.Controls"
+             xmlns:ic="using:FluentIcons.Avalonia"
              x:Class="Agnes.Plugins.CodeyBox.Views.BoardView">
   <!-- THE RUNWAY. Four horizons read top to bottom — Now, Next, Waiting, Landed — replacing a flat list
        of 404 rows that could not answer the one question an operator opens this tab with: what happens
@@ -26,13 +27,24 @@
          (IsNext, HasBlocker, IsSingleton), not different kinds of row, and writing them as separate
          templates is how the Waiting rows would quietly stop growing a feature the Now rows got. -->
     <DataTemplate x:Key="ChainRow">
+      <!-- TWO LINES, and the second one only where there is something to put on it.
+
+           Everything used to sit on one: title, agent, project, reason, a pip per step, the progress
+           count and four reorder buttons, in a row of Auto columns with the title on the only star. A
+           32-step chain therefore drew a 349px strip, the Auto columns took what they liked, and the
+           title — the one thing that identifies the row — was measured last and got what was left, which
+           on a half-width pane was nothing. So: line one is the row's IDENTITY (mark, title, and a
+           bounded block of meta that trims), and line two is its MACHINERY (the strip, the disclosure,
+           the reorder actions), indented under the title. The strip reads better there anyway: a
+           twelve-pip shape is a picture, and a picture belongs under its caption rather than jammed
+           beside it competing for the same pixels. -->
       <Grid Classes="chainrow" Classes.nextrow="{Binding IsNext}" Background="Transparent" Margin="0,1"
-            ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+            RowDefinitions="Auto,Auto,Auto,Auto,Auto">
 
         <!-- Selection is violet and nothing else in the app is, so it is drawn as its own wash rather
              than as a state on the button: a class toggled by a MultiBinding cannot be expressed, and a
              row that silently stops highlighting is a bug nobody reports. -->
-        <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" CornerRadius="5" Opacity="0.2"
+        <Border Grid.Row="0" Grid.RowSpan="2" CornerRadius="5" Opacity="0.2"
                 Background="{DynamicResource Accent}">
           <Border.IsVisible>
             <MultiBinding Converter="{x:Static v:BoardConverters.IsSelected}">
@@ -43,69 +55,106 @@
         </Border>
 
         <!-- The row itself selects the chain's head: the step the row already stands for. -->
-        <Button Grid.Row="0" Grid.Column="0" Classes="chainbutton"
+        <Button Grid.Row="0" Classes="chainbutton"
                 Command="{Binding $parent[UserControl].DataContext.SelectChainCommand}"
                 CommandParameter="{Binding}">
-          <Grid ColumnDefinitions="Auto,*,Auto">
-            <c:StepDot Grid.Column="0" Width="9" Height="9" Margin="0,0,9,0" VerticalAlignment="Center"
+          <Grid ColumnSpacing="8">
+            <!-- PROPORTIONS, not Auto. An Auto column is measured against infinity and then clamped, so
+                 its content is CLIPPED rather than trimmed and the row's desired width can exceed the pane
+                 — which is exactly how the reason text used to run under the pane boundary and off the
+                 edge. Two stars always sum to the width available, so the title keeps three fifths of it
+                 and the meta two, both of them trimming, and the row can never be wider than its pane. -->
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <!-- The title never collapses: a row identified by nothing is not a row. -->
+              <ColumnDefinition Width="3*" MinWidth="110" />
+              <!-- …and the meta never grows past what a half-width pane can spare. -->
+              <ColumnDefinition Width="2*" MaxWidth="330" />
+            </Grid.ColumnDefinitions>
+
+            <c:StepDot Grid.Column="0" Width="9" Height="9" VerticalAlignment="Center"
                        State="{Binding Converter={x:Static v:BoardConverters.HeadState}}" />
 
-            <!-- A Grid, not a horizontal StackPanel: a StackPanel measures the title unbounded, so
-                 trimming never fires and a long title runs under the reason text. Here the title takes
-                 what is left after the agent and project, and trims. -->
-            <Grid Grid.Column="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <TextBlock Grid.Column="0" Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
-                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left" />
-              <TextBlock Grid.Column="1" Text="{Binding Agent}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                         VerticalAlignment="Center" />
-              <TextBlock Grid.Column="2" Text="{Binding ProjectId}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                         VerticalAlignment="Center" />
-            </Grid>
+            <TextBlock Grid.Column="1" Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left"
+                       ToolTip.Tip="{Binding Title}" />
 
-            <!-- Why it is where it is. Pink only where something is broken, amber only where it is
-                 waiting on a person; a chain that is merely queued states a fact and stays dim. -->
-            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource StatusError}" MaxWidth="360"
-                       Text="{Binding Why}"
-                       IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyIsError}}" />
-            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource StatusAttention}" MaxWidth="360"
-                       Text="{Binding Why}"
-                       IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyNeedsPerson}}" />
-            <TextBlock Grid.Column="2" Classes="why" Foreground="{DynamicResource FgDim}" MaxWidth="360"
-                       Text="{Binding Why}"
-                       IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyIsPlain}}" />
+            <!-- The meta, as a Grid rather than a StackPanel: a StackPanel measures its children
+                 unbounded, so nothing in it ever trims and the last one simply runs off the edge. Here
+                 the reason is on the star and gives way first. -->
+            <Grid Grid.Column="2" ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8"
+                  VerticalAlignment="Center">
+              <!-- Who is on it — except in Now, where the reason already says "running on codex" and
+                   printing the agent twice on one row is how a vocabulary stops being one. -->
+              <TextBlock Grid.Column="0" Text="{Binding Agent}" Foreground="{DynamicResource FgFaint}"
+                         FontSize="10" VerticalAlignment="Center" MaxWidth="76"
+                         TextTrimming="CharacterEllipsis" IsVisible="{Binding !IsNow}" />
+              <TextBlock Grid.Column="1" Text="{Binding ProjectId}" Foreground="{DynamicResource FgFaint}"
+                         FontSize="10" VerticalAlignment="Center" MaxWidth="96"
+                         TextTrimming="CharacterEllipsis" />
+
+              <!-- Why it is where it is — where the row still has it to say. A section whose rows all
+                   said the same thing has already said it in its header, and those rows are blank here.
+                   Pink only where something is broken, amber only where it waits on a person; a chain
+                   that is merely queued states a fact and stays dim. -->
+              <Panel Grid.Column="2" IsVisible="{Binding HasShownWhy}">
+                <TextBlock Classes="why" Foreground="{DynamicResource StatusError}"
+                           Text="{Binding ShownWhy}" ToolTip.Tip="{Binding Why}"
+                           IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyIsError}}" />
+                <TextBlock Classes="why" Foreground="{DynamicResource StatusAttention}"
+                           Text="{Binding ShownWhy}" ToolTip.Tip="{Binding Why}"
+                           IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyNeedsPerson}}" />
+                <TextBlock Classes="why" Foreground="{DynamicResource FgDim}"
+                           Text="{Binding ShownWhy}" ToolTip.Tip="{Binding Why}"
+                           IsVisible="{Binding Converter={x:Static v:BoardConverters.WhyIsPlain}}" />
+              </Panel>
+            </Grid>
           </Grid>
         </Button>
 
-        <!-- The chain, as a shape. Kept outside the row button so a pip can select its own step without
-             the click also selecting the head. -->
-        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="7" Margin="8,0,0,0"
-                    VerticalAlignment="Center" IsVisible="{Binding !IsSingleton}">
-          <c:ChainStrip Steps="{Binding Steps}" VerticalAlignment="Center"
+        <!-- LINE TWO. Nothing of it is visible on a singleton that is not queued, and a Grid whose
+             children are all invisible measures to nothing, so such a row stays one line tall. -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" Margin="19,0,4,0">
+
+          <!-- The chain, as a shape. Kept outside the row button so a pip can select its own step
+               without the click also selecting the head. -->
+          <c:ChainStrip Grid.Column="0" Steps="{Binding Steps}" VerticalAlignment="Center"
+                        IsVisible="{Binding !IsSingleton}"
                         SelectedId="{Binding $parent[UserControl].DataContext.Selected,
                                      Converter={x:Static v:BoardConverters.IdOf}}"
                         StepCommand="{Binding $parent[UserControl].DataContext.SelectStepCommand}" />
-          <!-- The progress IS the disclosure: a word the operator wanted to read anyway, rather than a
-               separate glyph-shaped affordance next to it. -->
-          <ToggleButton x:Name="Expand" Classes="progress" Content="{Binding Progress}"
-                        ToolTip.Tip="Show the steps" />
-        </StackPanel>
 
-        <!-- Reordering, revealed on hover so four buttons per row do not shout over the queue. -->
-        <StackPanel Grid.Row="0" Grid.Column="2" Classes="rowactions" Orientation="Horizontal" Spacing="4"
-                    VerticalAlignment="Center" Margin="8,0,0,0" IsVisible="{Binding IsNext}">
-          <Button Classes="ghost" Content="Run next" ToolTip.Tip="Put this at the front of the queue"
-                  Command="{Binding $parent[UserControl].RunNextCommand}" CommandParameter="{Binding}" />
-          <Button Classes="ghost" Content="Up"
-                  Command="{Binding $parent[UserControl].DataContext.MoveUpCommand}" CommandParameter="{Binding}" />
-          <Button Classes="ghost" Content="Down"
-                  Command="{Binding $parent[UserControl].DataContext.MoveDownCommand}" CommandParameter="{Binding}" />
-          <Button Classes="ghost" Content="Run after…" ToolTip.Tip="Then pick the chain it should follow"
-                  Command="{Binding $parent[UserControl].BeginRunAfterCommand}" CommandParameter="{Binding}" />
-        </StackPanel>
+          <!-- The disclosure says what it will do (a chevron) as well as what it is about (the count).
+               "3 of 5" alone was a label that happened to be pressable, which is not an affordance. -->
+          <ToggleButton x:Name="Expand" Grid.Column="1" Classes="progress" Margin="7,0,0,0"
+                        IsVisible="{Binding !IsSingleton}" ToolTip.Tip="Show the steps">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <ic:SymbolIcon Symbol="ChevronRight" FontSize="11" VerticalAlignment="Center"
+                             IsVisible="{Binding #Expand.IsChecked, Converter={x:Static BoolConverters.Not},
+                                         FallbackValue=True}" />
+              <ic:SymbolIcon Symbol="ChevronDown" FontSize="11" VerticalAlignment="Center"
+                             IsVisible="{Binding #Expand.IsChecked, FallbackValue=False}" />
+              <TextBlock Text="{Binding Progress}" FontSize="10" VerticalAlignment="Center" />
+            </StackPanel>
+          </ToggleButton>
+
+          <!-- Reordering, revealed on hover so four buttons per row do not shout over the queue. -->
+          <StackPanel Grid.Column="3" Classes="rowactions" Orientation="Horizontal" Spacing="4"
+                      VerticalAlignment="Center" IsVisible="{Binding IsNext}">
+            <Button Classes="ghost" Content="Run next" ToolTip.Tip="Put this at the front of the queue"
+                    Command="{Binding $parent[UserControl].RunNextCommand}" CommandParameter="{Binding}" />
+            <Button Classes="ghost" Content="Up"
+                    Command="{Binding $parent[UserControl].DataContext.MoveUpCommand}" CommandParameter="{Binding}" />
+            <Button Classes="ghost" Content="Down"
+                    Command="{Binding $parent[UserControl].DataContext.MoveDownCommand}" CommandParameter="{Binding}" />
+            <Button Classes="ghost" Content="Run after…" ToolTip.Tip="Then pick the chain it should follow"
+                    Command="{Binding $parent[UserControl].BeginRunAfterCommand}" CommandParameter="{Binding}" />
+          </StackPanel>
+        </Grid>
 
         <!-- The other half of "Run after…": while a move is armed, every other queued row becomes a
              destination. Not hover-revealed — during a move it is the only thing being looked for. -->
-        <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Classes="putafter"
+        <Button Grid.Row="2" Classes="putafter"
                 Content="Put it after this" HorizontalAlignment="Left" Margin="19,2,0,2"
                 Command="{Binding $parent[UserControl].RunAfterCommand}" CommandParameter="{Binding}">
           <Button.IsVisible>
@@ -118,7 +167,7 @@
 
         <!-- What is actually holding a waiting chain, named and selectable. The unblock itself lives in
              the pane's relations band, one click away, because it acts on the parent rather than here. -->
-        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="5"
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="5"
                     Margin="19,0,0,2" IsVisible="{Binding HasBlocker}">
           <TextBlock Text="held by" Foreground="{DynamicResource FgFaint}" FontSize="10"
                      VerticalAlignment="Center" />
@@ -129,7 +178,7 @@
 
         <!-- The steps, in place. Expanding a chain must not cost the operator their position in the
              queue, so it happens under the row rather than by navigating into it. -->
-        <ItemsControl Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" ItemsSource="{Binding Steps}"
+        <ItemsControl Grid.Row="4" ItemsSource="{Binding Steps}"
                       Margin="19,2,0,4"
                       IsVisible="{Binding #Expand.IsChecked, FallbackValue=False, TargetNullValue=False}">
           <ItemsControl.ItemTemplate>
@@ -197,11 +246,12 @@
       <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
     </Style>
 
+    <!-- Right-aligned and trimming: the reason is the meta block's star, so it is the thing that gives
+         way when a row runs out of width, and it gives way by trimming rather than by pushing. -->
     <Style Selector="TextBlock.why">
       <Setter Property="FontSize" Value="10" />
       <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Margin" Value="10,0,0,0" />
-      <Setter Property="MaxWidth" Value="280" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
@@ -278,16 +328,75 @@
       <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
+    <!-- Headers WRAP. They carry the reason their rows no longer print — "Next · 16 in dispatch order ·
+         7 of 16 waiting for an audit slot for 11h 06m" — and a header measured at its natural width makes
+         its whole section demand that width, which pushed every row in it past the pane's edge. Wrapping
+         keeps the sentence and keeps the section inside its pane. -->
     <Style Selector="TextBlock.horizonhead">
       <Setter Property="FontSize" Value="11" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
     <Style Selector="TextBlock.subhead">
       <Setter Property="FontSize" Value="10" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
+    <!-- The tail of a folded section. Wears the ghost treatment the row actions wear, because it is the
+         same kind of thing: a control that reveals something, not a row. -->
+    <Style Selector="ToggleButton.showmore">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="9,2" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="Margin" Value="19,3,0,2" />
+    </Style>
+    <Style Selector="ToggleButton.showmore:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.showmore:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+
+    <!-- The key. Drawn from the same marks the rows are drawn from — see the legend below. -->
+    <Style Selector="Button.legend">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="6,4" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="TextBlock.keyword">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.keymeaning">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- The reason a whole section shares, said once under its heading rather than on every row — and in
+         the BODY rather than in the heading, because an Expander measures its header at that header's
+         natural width and a long one drags its entire section past the edge of the pane. -->
+    <Style Selector="TextBlock.sharedline">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Margin" Value="19,1,4,3" />
+    </Style>
+
     <!-- An empty horizon is a sentence. A blank gap is indistinguishable from a failed request. -->
     <Style Selector="TextBlock.nothing">
       <Setter Property="FontSize" Value="11" />
@@ -301,7 +410,7 @@
     <!-- Search first, then the two slices that matter on a host serving several repositories, then the
          one action the board itself offers. No filter chips: the horizons ARE the filter, and a chip
          that hides a horizon hides the order the operator came here to read. -->
-    <Grid Grid.Row="0" Margin="8,8,8,6" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
+    <Grid Grid.Row="0" Margin="8,8,8,6" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
       <TextBox Grid.Column="0" FontSize="12" Text="{Binding Search, Mode=TwoWay}"
                PlaceholderText="Search title, id, branch, prompt…" />
       <ComboBox Grid.Column="1" ItemsSource="{Binding Projects}" MinWidth="140" FontSize="11"
@@ -313,24 +422,116 @@
               ToolTip.Tip="Describe some work, or paste a plan"
               Command="{Binding OpenComposerCommand}"
               CommandParameter="{x:Static cb:ComposerIntent.Blank}" />
+
+      <!-- THE KEY. The board says nearly everything in marks — hollow against solid, five hues, a dashed
+           pip for something that will never run — and until now said nowhere what any of them meant; a
+           mark you have not been taught is decoration. Every sample here is drawn by the SAME StepDot the
+           rows are drawn by, from the same StepMarks mapping, so the key cannot drift away from the
+           board: change a hue and this changes with it. -->
+      <Button Grid.Column="4" Classes="legend" ToolTip.Tip="What the marks mean">
+        <ic:SymbolIcon Symbol="QuestionCircle" FontSize="15" />
+        <Button.Flyout>
+          <Flyout Placement="BottomEdgeAlignedRight">
+            <StackPanel Spacing="7" MaxWidth="330">
+              <TextBlock Text="What the marks mean" FontWeight="SemiBold" FontSize="12"
+                         Foreground="{DynamicResource Fg}" />
+
+              <Grid ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                    ColumnSpacing="9" RowSpacing="4">
+                <c:StepDot Grid.Row="0" Grid.Column="0" Width="9" Height="9" VerticalAlignment="Center"
+                           State="{x:Static cb:StepState.Done}" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Classes="keyword" Text="done" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Classes="keymeaning" Text="solid mint — it landed" />
+
+                <c:StepDot Grid.Row="1" Grid.Column="0" Width="9" Height="9" VerticalAlignment="Center"
+                           State="{x:Static cb:StepState.Running}" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Classes="keyword" Text="running" />
+                <TextBlock Grid.Row="1" Grid.Column="2" Classes="keymeaning" Text="solid sky — it holds a slot" />
+
+                <c:StepDot Grid.Row="2" Grid.Column="0" Width="9" Height="9" VerticalAlignment="Center"
+                           State="{x:Static cb:StepState.Ready}" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Classes="keyword" Text="ready" />
+                <TextBlock Grid.Row="2" Grid.Column="2" Classes="keymeaning"
+                           Text="hollow sky — runnable, waiting for a slot" />
+
+                <c:StepDot Grid.Row="3" Grid.Column="0" Width="9" Height="9" VerticalAlignment="Center"
+                           State="{x:Static cb:StepState.Blocked}" />
+                <TextBlock Grid.Row="3" Grid.Column="1" Classes="keyword" Text="blocked" />
+                <TextBlock Grid.Row="3" Grid.Column="2" Classes="keymeaning"
+                           Text="hollow grey — a parent has not finished" />
+
+                <c:StepDot Grid.Row="4" Grid.Column="0" Width="9" Height="9" VerticalAlignment="Center"
+                           State="{x:Static cb:StepState.Parked}" />
+                <TextBlock Grid.Row="4" Grid.Column="1" Classes="keyword" Text="parked" />
+                <TextBlock Grid.Row="4" Grid.Column="2" Classes="keymeaning"
+                           Text="solid grey — backing off, it will resume itself" />
+
+                <c:StepDot Grid.Row="5" Grid.Column="0" Width="9" Height="9" VerticalAlignment="Center"
+                           State="{x:Static cb:StepState.NeedsPerson}" />
+                <TextBlock Grid.Row="5" Grid.Column="1" Classes="keyword" Text="needs a person" />
+                <TextBlock Grid.Row="5" Grid.Column="2" Classes="keymeaning"
+                           Text="amber — it is blocked on you" />
+
+                <c:StepDot Grid.Row="6" Grid.Column="0" Width="9" Height="9" VerticalAlignment="Center"
+                           State="{x:Static cb:StepState.Failed}" />
+                <TextBlock Grid.Row="6" Grid.Column="1" Classes="keyword" Text="failed" />
+                <TextBlock Grid.Row="6" Grid.Column="2" Classes="keymeaning"
+                           Text="pink — it stopped and needs a decision" />
+
+                <c:StepDot Grid.Row="7" Grid.Column="0" Width="9" Height="9" VerticalAlignment="Center"
+                           State="{x:Static cb:StepState.Cancelled}" />
+                <TextBlock Grid.Row="7" Grid.Column="1" Classes="keyword" Text="cancelled" />
+                <TextBlock Grid.Row="7" Grid.Column="2" Classes="keymeaning"
+                           Text="dashed — it will not run" />
+              </Grid>
+
+              <Border Height="1" Background="{DynamicResource Line}" />
+
+              <StackPanel Orientation="Horizontal" Spacing="9">
+                <c:ChainStrip x:Name="LegendStrip" VerticalAlignment="Center" />
+                <TextBlock Classes="keymeaning" Text="a chain: one pip per step, in dependency order"
+                           MaxWidth="200" />
+              </StackPanel>
+
+              <StackPanel Orientation="Horizontal" Spacing="9">
+                <c:ChainStrip x:Name="LegendLongStrip" VerticalAlignment="Center" />
+                <TextBlock Classes="keymeaning" MaxWidth="200"
+                           Text="past twelve steps: the first eight, the last three, and a gap for the rest — the tooltip names every one" />
+              </StackPanel>
+
+              <TextBlock Classes="keymeaning"
+                         Text="A violet wash, and a ring round a pip, are the item the pane is showing. Times are local." />
+            </StackPanel>
+          </Flyout>
+        </Button.Flyout>
+      </Button>
     </Grid>
 
-    <ScrollViewer Grid.Row="1" Padding="8,0,8,10">
+    <!-- Horizontal overflow is DISABLED, not scrolled: a runway whose rows can be wider than the pane
+         clips its own text at the pane boundary and gives the operator a scrollbar to read a title with.
+         Rows measure within the width they are given (see the row template), and the right padding is
+         the scrollbar's gutter, so the vertical bar never sits on top of a reason. -->
+    <ScrollViewer Grid.Row="1" Padding="8,0,16,10" HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
       <StackPanel Spacing="10">
 
         <Expander Classes="horizon" IsExpanded="True">
           <Expander.Header>
-            <TextBlock Classes="horizonhead" Text="{Binding Board.NowHeader}" />
+            <TextBlock Classes="horizonhead" Text="{Binding Board.NowHeader}"
+                       ToolTip.Tip="{x:Static cb:Board.NowTip}" />
           </Expander.Header>
           <StackPanel>
             <TextBlock Classes="nothing" Text="{Binding Board.NowEmptyText}" IsVisible="{Binding !Board.HasNow}" />
+            <TextBlock Classes="sharedline" Text="{Binding Board.NowSharedWhy}"
+                       IsVisible="{Binding Board.HasNowSharedWhy, FallbackValue=False}" />
             <ItemsControl ItemsSource="{Binding Board.Now}" ItemTemplate="{StaticResource ChainRow}" />
           </StackPanel>
         </Expander>
 
         <Expander Classes="horizon" IsExpanded="True">
           <Expander.Header>
-            <TextBlock Classes="horizonhead" Text="{Binding Board.NextHeader}" />
+            <TextBlock Classes="horizonhead" Text="{Binding Board.NextHeader}"
+                       ToolTip.Tip="{x:Static cb:Board.NextTip}" />
           </Expander.Header>
           <StackPanel>
             <!-- A move in progress states which chain is being moved, because by the time the operator
@@ -350,29 +551,81 @@
 
             <TextBlock Classes="nothing" Text="Nothing queued — add work with New."
                        IsVisible="{Binding !Board.HasNext}" />
-            <ItemsControl x:Name="NextList" ItemsSource="{Binding Board.Next}"
+
+            <!-- The sentence the rows stopped printing, said once for the section. -->
+            <TextBlock Classes="sharedline" Text="{Binding Board.NextSharedWhy}"
+                       IsVisible="{Binding Board.HasNextSharedWhy, FallbackValue=False}" />
+
+            <!-- The front of the dispatch order, then the rest on request. Sixteen queued rows is not
+                 sixteen decisions: the first few are what an operator can actually reorder, and the tail
+                 is a list of things that are not moving. The toggle lives in the view rather than in the
+                 board, so opening it survives every rebuild for as long as the tab is open. -->
+            <ItemsControl x:Name="NextList" ItemsSource="{Binding Board.NextShown}"
                           ItemTemplate="{StaticResource ChainRow}" />
+
+            <ToggleButton x:Name="MoreNext" Classes="showmore"
+                          IsVisible="{Binding Board.NextIsFolded, FallbackValue=False}"
+                          ToolTip.Tip="The rest of the dispatch order">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <ic:SymbolIcon Symbol="ChevronRight" FontSize="11" VerticalAlignment="Center"
+                               IsVisible="{Binding #MoreNext.IsChecked, Converter={x:Static BoolConverters.Not},
+                                           FallbackValue=True}" />
+                <ic:SymbolIcon Symbol="ChevronDown" FontSize="11" VerticalAlignment="Center"
+                               IsVisible="{Binding #MoreNext.IsChecked, FallbackValue=False}" />
+                <TextBlock Text="{Binding Board.NextMoreLabel}" FontSize="10" VerticalAlignment="Center"
+                           IsVisible="{Binding #MoreNext.IsChecked, Converter={x:Static BoolConverters.Not},
+                                       FallbackValue=True}" />
+                <TextBlock Text="Show fewer" FontSize="10" VerticalAlignment="Center"
+                           IsVisible="{Binding #MoreNext.IsChecked, FallbackValue=False}" />
+              </StackPanel>
+            </ToggleButton>
+
+            <ItemsControl x:Name="NextRestList" ItemsSource="{Binding Board.NextRest}"
+                          ItemTemplate="{StaticResource ChainRow}"
+                          IsVisible="{Binding #MoreNext.IsChecked, FallbackValue=False}" />
           </StackPanel>
         </Expander>
 
         <Expander Classes="horizon" IsExpanded="True">
           <Expander.Header>
-            <TextBlock Classes="horizonhead" Text="{Binding Board.WaitingHeader}" />
+            <TextBlock Classes="horizonhead" Text="{Binding Board.WaitingHeader}"
+                       ToolTip.Tip="{x:Static cb:Board.WaitingTip}" />
           </Expander.Header>
           <StackPanel>
             <TextBlock Classes="nothing" Text="Nothing waiting." IsVisible="{Binding !Board.HasWaiting}" />
             <!-- Grouped by REASON, because a reason is an unblock: everything under one heading is
-                 released by the same move. -->
+                 released by the same move. What needs a person is open; the rest states its count and
+                 stays folded, because it is by definition work the operator cannot move.
+
+                 With only one group there is no grouping to show: the horizon's own header names it
+                 ("Waiting · 4 need you") and the rows follow it directly, rather than a lone subheading
+                 repeating the same sentence one indent in. -->
             <ItemsControl ItemsSource="{Binding Board.Waiting}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Expander Classes="horizon" IsExpanded="True" Margin="0,2,0,0">
-                    <Expander.Header>
-                      <TextBlock Classes="subhead" Text="{Binding Header}" />
-                    </Expander.Header>
-                    <ItemsControl ItemsSource="{Binding Chains}"
-                                  ItemTemplate="{StaticResource ChainRow}" />
-                  </Expander>
+                  <StackPanel>
+                    <Expander Classes="horizon" Margin="0,2,0,0"
+                              IsExpanded="{Binding OpenByDefault}"
+                              IsVisible="{Binding $parent[UserControl].DataContext.Board.WaitingIsGrouped,
+                                          FallbackValue=True}">
+                      <Expander.Header>
+                        <TextBlock Classes="subhead" Text="{Binding Header}" />
+                      </Expander.Header>
+                      <StackPanel>
+                        <TextBlock Classes="sharedline" Text="{Binding SharedWhy}"
+                                   IsVisible="{Binding HasSharedWhy}" />
+                        <ItemsControl ItemsSource="{Binding Chains}"
+                                      ItemTemplate="{StaticResource ChainRow}" />
+                      </StackPanel>
+                    </Expander>
+
+                    <StackPanel IsVisible="{Binding $parent[UserControl].DataContext.Board.WaitingIsOneGroup,
+                                            FallbackValue=False}">
+                      <TextBlock Classes="sharedline" Text="{Binding SharedWhy}"
+                                 IsVisible="{Binding HasSharedWhy}" />
+                      <ItemsControl ItemsSource="{Binding Chains}" ItemTemplate="{StaticResource ChainRow}" />
+                    </StackPanel>
+                  </StackPanel>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -381,7 +634,8 @@
 
         <Expander Classes="horizon" IsExpanded="True">
           <Expander.Header>
-            <TextBlock Classes="horizonhead" Text="{Binding Board.LandedHeader}" />
+            <TextBlock Classes="horizonhead" Text="{Binding Board.LandedHeader}"
+                       ToolTip.Tip="{x:Static cb:Board.LandedTip}" />
           </Expander.Header>
           <StackPanel>
             <TextBlock Classes="nothing" Text="Nothing landed in the last 7 days."
@@ -395,8 +649,12 @@
                     <Expander.Header>
                       <TextBlock Classes="subhead" Text="{Binding Header}" />
                     </Expander.Header>
-                    <ItemsControl ItemsSource="{Binding Chains}"
-                                  ItemTemplate="{StaticResource ChainRow}" />
+                    <StackPanel>
+                      <TextBlock Classes="sharedline" Text="{Binding SharedWhy}"
+                                 IsVisible="{Binding HasSharedWhy}" />
+                      <ItemsControl ItemsSource="{Binding Chains}"
+                                    ItemTemplate="{StaticResource ChainRow}" />
+                    </StackPanel>
                   </Expander>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>

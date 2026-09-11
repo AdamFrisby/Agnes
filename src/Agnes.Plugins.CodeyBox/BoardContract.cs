@@ -127,10 +127,46 @@ public sealed record Chain(
     DateTimeOffset LastActivity,
     DateTimeOffset? Landed)
 {
+    private readonly string? _shownWhy;
+    private readonly string? _whyLede;
+
     public bool IsSingleton => Steps.Count == 1;
     public int Count => Steps.Count;
     public int DoneCount => Steps.Count(s => s.IsDone);
-    public string Progress => IsSingleton ? string.Empty : $"{DoneCount} of {Count}";
+
+    /// <summary>
+    /// The steps, worded as the disclosure says them: "3/7 steps". The pips ARE the position, so this is
+    /// the only number that appears beside them — a row that also said "step 3 of 7" in its Why was
+    /// stating one fact three ways and spending the width of the title to do it.
+    /// </summary>
+    public string Progress => IsSingleton ? string.Empty : $"{DoneCount}/{Count} steps";
+
+    /// <summary>
+    /// The part of <see cref="Why"/> that a whole section can say once: "waiting for an audit slot" out of
+    /// "waiting for an audit slot for 10h 36m". Defaults to the whole line, which is right for every Why
+    /// with no varying tail.
+    /// </summary>
+    public string WhyLede
+    {
+        get => _whyLede ?? Why;
+        init => _whyLede = value;
+    }
+
+    /// <summary>
+    /// What the ROW draws, which is not always the whole of <see cref="Why"/>. Sixteen queued rows each
+    /// repeating "waiting for an audit slot for 10h 36m" is one fact printed sixteen times, in the space
+    /// their titles needed; when a section can say it in its own header, the rows say only what is left
+    /// over (their own duration), or nothing.
+    /// </summary>
+    public string ShownWhy
+    {
+        get => _shownWhy ?? Why;
+        init => _shownWhy = value;
+    }
+
+    /// <summary>Whether this row has anything of its own left to say once its section has spoken.</summary>
+    public bool HasShownWhy => ShownWhy.Length > 0;
+
     public bool HasBlocker => Blocker is not null;
     public bool IsNow => Horizon == Horizon.Now;
     public bool IsNext => Horizon == Horizon.Next;
@@ -140,11 +176,56 @@ public sealed record Chain(
     public string? Cost => Head.Cost;
 }
 
+// ---------------------------------------------------------------------------------------------------
+// WHERE A SHARED REASON IS SAID
+//
+// Under the section's heading, on its own line — not appended to the heading. That is a layout fact with
+// a reason: an Expander measures its header at the header's natural width, so a heading carrying
+// "Next · 16 in dispatch order · 7 of 16 waiting for an audit slot for 11h 06m" made the whole section
+// demand that width, and every row inside it was then drawn past the edge of the pane. The sentence the
+// rows stopped printing has to live somewhere that can wrap, and that is the section's body.
+//
+// So each section exposes the line ("7 of 16 waiting for an audit slot for 11h 06m", already quantified
+// by BoardModel.Lift) and whether it has one; the view draws it once, dim, above the rows.
+// ---------------------------------------------------------------------------------------------------
+
 /// <summary>A group of waiting chains that share a reason and therefore an unblock.</summary>
 public sealed record WaitGroup(WaitReason Reason, string Title, IReadOnlyList<Chain> Chains)
 {
     public int Count => Chains.Sum(c => c.Count);
-    public string Header => Count == Chains.Count ? $"{Title}  ({Count})" : $"{Title}  ({Chains.Count} chains, {Count} items)";
+
+    /// <summary>The line every chain in the group was saying, lifted off the rows; empty when they differ.</summary>
+    public string SharedWhy { get; init; } = string.Empty;
+
+    public bool HasSharedWhy => SharedWhy.Length > 0;
+
+    public string Header => Count == Chains.Count
+        ? $"{Title}  ({Count})"
+        : $"{Title}  ({Chains.Count} chains, {Count} items)";
+
+    /// <summary>
+    /// The group as a phrase rather than as a heading — "4 need you" — for the case where it is the only
+    /// group and nesting "Needs you (4)" inside "Waiting · 4" would say one thing twice.
+    /// </summary>
+    public string Lede => Reason switch
+    {
+        WaitReason.Person => Count == 1 ? "needs you" : "need you",
+        WaitReason.Parent => "waiting on a parent",
+        WaitReason.Quota => "parked by the orchestrator",
+        WaitReason.Slot => "waiting for a slot",
+        WaitReason.Paused => "paused",
+        _ => "waiting",
+    };
+
+    /// <summary>
+    /// Whether the group opens by itself.
+    /// </summary>
+    /// <remarks>
+    /// Only what needs a person does. The rest is, by definition, work that cannot move and that the
+    /// operator cannot move either — "work items waiting for an auditor, why do I care" — so it states its
+    /// count in a header and stays folded until somebody asks for it.
+    /// </remarks>
+    public bool OpenByDefault => Reason == WaitReason.Person;
 }
 
 /// <summary>One day of landed work.</summary>
@@ -152,6 +233,13 @@ public sealed record WaitGroup(WaitReason Reason, string Title, IReadOnlyList<Ch
 public sealed record LandedDay(DateOnly Day, string Title, IReadOnlyList<Chain> Chains)
 {
     public int Count => Chains.Sum(c => c.Count);
+
+    /// <summary>The line every chain of the day was saying; usually empty, because a landing TIME differs
+    /// per row and that is exactly the case which must not be lifted.</summary>
+    public string SharedWhy { get; init; } = string.Empty;
+
+    public bool HasSharedWhy => SharedWhy.Length > 0;
+
     public string Header => $"{Title}  ({Count})";
 }
 
@@ -172,6 +260,25 @@ public sealed record Board(
 {
     public const int LandedWindowDays = 7;
 
+    /// <summary>How much of the dispatch order is worth reading on arrival.</summary>
+    /// <remarks>
+    /// The queue this was designed against had sixteen entries in Next, none of which the operator could
+    /// act on beyond the first few: what is picked next, and what is near enough to the front to be worth
+    /// reordering. The rest is a list of things that are not moving, and it pushed Waiting and Landed off
+    /// the screen. So the first five are the section, and the rest is one line the operator can open.
+    /// </remarks>
+    public const int NextPreview = 5;
+
+    /// <summary>The line every running row was saying, drawn once under <see cref="NowHeader"/>.</summary>
+    public string NowSharedWhy { get; init; } = string.Empty;
+
+    /// <summary>The line every queued row was saying, drawn once under <see cref="NextHeader"/>.</summary>
+    public string NextSharedWhy { get; init; } = string.Empty;
+
+    public bool HasNowSharedWhy => NowSharedWhy.Length > 0;
+
+    public bool HasNextSharedWhy => NextSharedWhy.Length > 0;
+
     public int NowCount => Now.Count;
     /// <summary>Queue entries, not chain members: a 32-step chain is one thing waiting for one slot.</summary>
     public int NextCount => Next.Count;
@@ -183,6 +290,12 @@ public sealed record Board(
     public bool HasLanded => Landed.Count > 0;
     public string NowHeader => Slots.Total > 0 ? $"Now  ·  {Slots.Busy} of {Slots.Total} slots" : "Now";
 
+    /// <summary>What each horizon MEANS, for the header's tooltip. Nothing else on the board says it.</summary>
+    public const string NowTip = "What is occupying a dispatch slot right now — one row per running item.";
+    public const string NextTip = "Eligible to run, in the exact order the orchestrator will pick: priority, then age.";
+    public const string WaitingTip = "Cannot be dispatched until something changes, grouped by what has to change.";
+    public const string LandedTip = "Reached Done, by the day it landed. Times are this machine's local time.";
+
     /// <summary>
     /// What to say under Now when no item reports a running phase. The orchestrator can hold a slot for
     /// an item that is between phases (its audit is being dispatched while the item still reads
@@ -193,8 +306,43 @@ public sealed record Board(
         ? $"{Slots.Busy} {(Slots.Busy == 1 ? "slot is" : "slots are")} busy, but no item reports a running phase — the orchestrator is between phases."
         : "Nothing running.";
     public string NextHeader => $"Next  ·  {NextCount} in dispatch order";
-    public string WaitingHeader => $"Waiting  ·  {WaitingCount}";
-    public string LandedHeader => $"Landed  ·  {LandedCount} in the last {LandedWindowDays} days";
+
+    /// <summary>
+    /// "Waiting · 12", or "Waiting · 4 need you" when there is only one group to name — a lone
+    /// "Needs you (4)" nested under a bare "Waiting · 4" is the same sentence twice, one indent apart.
+    /// </summary>
+    public string WaitingHeader => Waiting.Count == 1
+        ? $"Waiting  ·  {WaitingCount} {Waiting[0].Lede}"
+        : $"Waiting  ·  {WaitingCount}";
+
+    /// <summary>Whether the groups need their own headings at all.</summary>
+    public bool WaitingIsOneGroup => Waiting.Count == 1;
+
+    public bool WaitingIsGrouped => Waiting.Count > 1;
+
+    /// <summary>
+    /// Every time on this board is the reader's local time (<see cref="DateTimeOffset.ToLocalTime"/>),
+    /// and nothing else here says so. It is said once, where the times are.
+    /// </summary>
+    public string LandedHeader => LandedCount == 0
+        ? $"Landed  ·  nothing in the last {LandedWindowDays} days"
+        : $"Landed  ·  {LandedCount} in the last {LandedWindowDays} days  ·  local time";
+
+    // ---------------------------------------------------------------------------------------------
+    // The fold. Next states its whole length in its header and shows the front of it; the tail is one
+    // press away and stays open once opened. Folding a tail of ONE would be a button in place of a row.
+    // ---------------------------------------------------------------------------------------------
+
+    public bool NextIsFolded => Next.Count > NextPreview + 1;
+
+    /// <summary>The part of the dispatch order drawn without asking.</summary>
+    public IReadOnlyList<Chain> NextShown => NextIsFolded ? [.. Next.Take(NextPreview)] : Next;
+
+    /// <summary>The rest, behind <see cref="NextMoreLabel"/>.</summary>
+    public IReadOnlyList<Chain> NextRest => NextIsFolded ? [.. Next.Skip(NextPreview)] : [];
+
+    public string NextMoreLabel => NextIsFolded ? $"Show {Next.Count - NextPreview} more" : string.Empty;
+
     public string HistoryLabel => HistoryCount == 0 ? string.Empty : $"{HistoryCount} older or cancelled items — search to find one";
 }
 

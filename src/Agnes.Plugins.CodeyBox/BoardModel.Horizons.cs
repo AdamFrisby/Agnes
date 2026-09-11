@@ -28,7 +28,7 @@ public static partial class BoardModel
         var running = core.Steps.Where(s => s.IsRunning).ToList();
         if (running.Count > 0)
         {
-            return [.. running.Select(s => Row(core, s, Horizon.Now, WaitReason.None, null, WhyRunning(core, s), lastActivity, null))];
+            return [.. running.Select(s => Row(core, s, Horizon.Now, WaitReason.None, null, WhyRunning(s), lastActivity, null))];
         }
 
         var head = PickHead(core.Steps);
@@ -141,20 +141,20 @@ public static partial class BoardModel
     // has to say what it is waiting for, because the colour cannot name the parent.
     // -----------------------------------------------------------------------------------------------
 
-    private static string WhyRunning(ChainCore core, Step head)
+    /// <summary>
+    /// "running on copilot", and nothing about position.
+    /// </summary>
+    /// <remarks>
+    /// It used to read "step 3 of 9 running on copilot" beside a strip of nine pips with the third one
+    /// solid, and a "3/9 steps" count beside that: one fact in three notations, of which the strip is the
+    /// only one that also says which steps are done, which failed and where it stopped. So the row has a
+    /// single vocabulary for position — the pips — and the Why says the one thing they cannot, which is
+    /// who is on it.
+    /// </remarks>
+    private static string WhyRunning(Step head)
     {
         var on = string.IsNullOrWhiteSpace(head.Item.Agent) ? string.Empty : $" on {head.Item.Agent}";
-        if (core.Steps.Count == 1)
-        {
-            return $"running{on}";
-        }
-
-        // The author's own numbering wins over ours where they gave one — "step 3 of 7" should agree
-        // with the title the operator wrote, even if the board can only see five of the seven.
-        var position = head.Series.Length > 0
-            ? head.Series.Replace("/", " of ", StringComparison.Ordinal)
-            : $"{head.Index + 1} of {core.Steps.Count}";
-        return $"step {position} running{on}";
+        return $"running{on}";
     }
 
     internal static string WhyNext(int rank) => rank == 0 ? "next up" : $"{Ordinal(rank + 1)} in line";
@@ -171,18 +171,23 @@ public static partial class BoardModel
     /// </summary>
     internal static string WhyBoundary(WorkItemRow head, DateTimeOffset now)
     {
-        var what = head.State switch
-        {
-            "WorkComplete" => "waiting for an audit slot",
-            "AuditPassed" => "audit passed, waiting to merge",
-            "Merged" => "merged, waiting to push",
-            "PlanApproved" => "plan approved, waiting for a slot",
-            _ => "waiting for a slot",
-        };
-
+        var what = BoundaryLede(head);
         var quiet = now - head.UpdatedAt;
         return quiet > BoundaryPatience ? $"{what} for {Humanise(quiet)}" : what;
     }
+
+    /// <summary>
+    /// The boundary wait without its duration: the half that is the same for every item stuck at the same
+    /// phase, and therefore the half a section header can say once for all of them.
+    /// </summary>
+    internal static string BoundaryLede(WorkItemRow head) => head.State switch
+    {
+        "WorkComplete" => "waiting for an audit slot",
+        "AuditPassed" => "audit passed, waiting to merge",
+        "Merged" => "merged, waiting to push",
+        "PlanApproved" => "plan approved, waiting for a slot",
+        _ => "waiting for a slot",
+    };
 
     private static string Humanise(TimeSpan span) => span.TotalHours >= 48
         ? $"{(int)span.TotalDays}d {span.Hours}h"
@@ -234,7 +239,10 @@ public static partial class BoardModel
         var local = landed.ToLocalTime();
         return DateOnly.FromDateTime(local.DateTime) == DateOnly.FromDateTime(now.ToLocalTime().DateTime)
             ? $"landed {local.ToString("HH:mm", CultureInfo.InvariantCulture)}"
-            : $"landed {local.ToString("ddd HH:mm", CultureInfo.InvariantCulture)}";
+            // One day format across the whole board — "Tue 8 Sep", the same shape the day headings and the
+            // archive line use. It previously read "landed Tue 14:02" here and "landed Tue 8 Sep" two
+            // sections down, which is two conventions for one kind of fact.
+            : $"landed {local.ToString("ddd d MMM HH:mm", CultureInfo.InvariantCulture)}";
     }
 
     private static string WhyArchived(DateTimeOffset landed)

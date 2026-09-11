@@ -53,36 +53,105 @@ public static partial class BoardModel
             .ThenByDescending(r => r.Head.Priority)
             .ThenBy(r => r.Head.CreatedAt)
             .ThenBy(r => r.Head.Id, StringComparer.Ordinal)
-            .Select((r, i) => r with
-            {
-                DispatchRank = i,
-                Why = IsPhaseBoundary(r.Head) ? WhyBoundary(r.Head, now) : WhyNext(i),
-            })
+            .Select((r, i) => IsPhaseBoundary(r.Head)
+                // The lede is carried separately so a whole section of these can say the wait once and
+                // leave each row its own duration — see Lift.
+                ? r with { DispatchRank = i, Why = WhyBoundary(r.Head, now), WhyLede = BoundaryLede(r.Head) }
+                : r with { DispatchRank = i, Why = WhyNext(i) })
             .ToList();
 
         var waiting = rows.Where(r => r.Horizon == Horizon.Waiting).ToList();
         var groups = WaitOrder
-            .Select(g => new WaitGroup(
-                g.Reason,
-                g.Title,
-                [.. waiting.Where(r => r.Reason == g.Reason).OrderByDescending(r => r.LastActivity).ThenBy(r => r.Id, StringComparer.Ordinal)]))
-            .Where(g => g.Chains.Count > 0)
+            .Select(g => (g.Reason, g.Title, Rows: Lift(
+                [.. waiting.Where(r => r.Reason == g.Reason).OrderByDescending(r => r.LastActivity).ThenBy(r => r.Id, StringComparer.Ordinal)])))
+            .Where(g => g.Rows.Rows.Count > 0)
+            .Select(g => new WaitGroup(g.Reason, g.Title, g.Rows.Rows) { SharedWhy = g.Rows.Shared })
             .ToList();
 
         var landed = rows
             .Where(r => r.Horizon == Horizon.Landed && r.Landed is not null)
             .GroupBy(r => DateOnly.FromDateTime(r.Landed!.Value.ToLocalTime().DateTime))
             .OrderByDescending(g => g.Key)
-            .Select(g => new LandedDay(
-                g.Key,
-                DayTitle(g.Key, now),
-                [.. g.OrderByDescending(r => r.Landed!.Value)]))
+            .Select(g => (g.Key, Rows: Lift([.. g.OrderByDescending(r => r.Landed!.Value)])))
+            .Select(g => new LandedDay(g.Key, DayTitle(g.Key, now), g.Rows.Rows) { SharedWhy = g.Rows.Shared })
             .ToList();
 
         var history = rows.Where(r => r.Horizon == Horizon.History).Sum(r => r.Count);
 
-        return new Board(running, next, groups, landed, history, (slotsBusy, slotsTotal));
+        var (nowRows, nowShared) = Lift(running);
+        var (nextRows, nextShared) = Lift(next);
+
+        return new Board(nowRows, nextRows, groups, landed, history, (slotsBusy, slotsTotal))
+        {
+            NowSharedWhy = nowShared,
+            NextSharedWhy = nextShared,
+        };
     }
+
+    /// <summary>
+    /// One reason, said once.
+    /// </summary>
+    /// <remarks>
+    /// <para>A section whose rows all say the same thing is a section that said it in the wrong place:
+    /// sixteen queued rows each reading "waiting for an audit slot for 10h 36m" spend sixteen rows' worth
+    /// of width on one fact, and the width they spend is the title's. So the section header says it, and
+    /// the rows keep only what is theirs.</para>
+    ///
+    /// <para>Two shapes of "the same thing", because a Why can carry a varying tail. Where the whole line
+    /// matches, the header takes the whole line and the rows fall silent. Where only the
+    /// <see cref="Chain.WhyLede"/> matches — the same wait, different durations — the header takes the
+    /// lede and each row keeps its own tail ("for 3h 20m"), which is the part that differs and the part
+    /// worth reading.</para>
+    ///
+    /// <para>A MAJORITY is enough, not unanimity. The live queue's Next was nine items waiting for an
+    /// audit slot, one waiting to push and six merely queued behind them — and since the waiting nine sort
+    /// first, every row an operator could see said the same sentence while the section as a whole did not.
+    /// A header that is honest about its coverage ("9 of 16 waiting for an audit slot") lifts that, and the
+    /// rows that say something else keep saying it.</para>
+    ///
+    /// <para>Never for a single row: a set of one does not need a quantifier, and the row has the space.</para>
+    /// </remarks>
+    internal static (IReadOnlyList<Chain> Rows, string Shared) Lift(IReadOnlyList<Chain> rows)
+    {
+        if (rows.Count < 2)
+        {
+            return (rows, string.Empty);
+        }
+
+        var dominant = rows
+            .Where(r => r.WhyLede.Length > 0)
+            .GroupBy(r => r.WhyLede, StringComparer.Ordinal)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        // Three rows saying one thing is repetition worth lifting even in a section of sixteen — the live
+        // Next had seven of its rows waiting for an audit slot, sorted to the front, so every row on
+        // screen said it while the section as a whole did not. The header is quantified ("7 of 16"), so
+        // lifting a minority states a fact rather than implying one. A section of two lifts only when both
+        // rows agree: one repetition is not a pattern, and a two-row header has nothing to gain.
+        if (dominant is null || (dominant.Count() < 3 && dominant.Count() != rows.Count))
+        {
+            return (rows, string.Empty);
+        }
+
+        var lede = dominant.Key;
+        var whole = dominant.First().Why;
+        var identical = dominant.All(r => string.Equals(r.Why, whole, StringComparison.Ordinal));
+        var quantifier = dominant.Count() == rows.Count
+            ? "all"
+            : $"{dominant.Count().ToString(CultureInfo.InvariantCulture)} of {rows.Count.ToString(CultureInfo.InvariantCulture)}";
+
+        return (
+            [.. rows.Select(r => string.Equals(r.WhyLede, lede, StringComparison.Ordinal)
+                ? r with { ShownWhy = identical ? string.Empty : Tail(r.Why, lede) }
+                : r)],
+            $"{quantifier} {(identical ? whole : lede)}");
+    }
+
+    /// <summary>What is left of a Why once its section has said the lede.</summary>
+    private static string Tail(string why, string lede)
+        => why.StartsWith(lede, StringComparison.Ordinal) ? why[lede.Length..].Trim() : why;
 
     private static string DayTitle(DateOnly day, DateTimeOffset now)
     {

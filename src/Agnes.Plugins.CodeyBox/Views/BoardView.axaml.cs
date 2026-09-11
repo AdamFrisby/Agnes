@@ -71,6 +71,19 @@ public partial class BoardView : UserControl
     {
         InitializeComponent();
 
+        // The key's two sample strips. Assigned here rather than bound, because they are not data about
+        // any board — they are the control demonstrating itself, and drawing them with the real
+        // ChainStrip is what stops the key and the runway from ever disagreeing.
+        if (this.FindControl<Controls.ChainStrip>("LegendStrip") is { } sample)
+        {
+            sample.Steps = LegendChain;
+        }
+
+        if (this.FindControl<Controls.ChainStrip>("LegendLongStrip") is { } capped)
+        {
+            capped.Steps = LegendLongChain;
+        }
+
         DragDrop.SetAllowDrop(this, true);
         AddHandler(PointerPressedEvent, OnPointerPressedAnywhere, RoutingStrategies.Tunnel);
         AddHandler(PointerMovedEvent, OnPointerMovedAnywhere, RoutingStrategies.Tunnel);
@@ -80,6 +93,38 @@ public partial class BoardView : UserControl
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    /// <summary>A five-step chain part-way through, for the key: done, done, running, ready, blocked.</summary>
+    internal static IReadOnlyList<Step> LegendChain { get; } = Sample(
+    [
+        StepState.Done, StepState.Done, StepState.Running, StepState.Ready, StepState.Blocked,
+    ]);
+
+    /// <summary>
+    /// A chain long enough to be folded, so the key shows the gap mark being a gap mark rather than
+    /// describing it in words.
+    /// </summary>
+    internal static IReadOnlyList<Step> LegendLongChain { get; } = Sample(
+    [
+        .. Enumerable.Repeat(StepState.Done, 9),
+        StepState.Running,
+        .. Enumerable.Repeat(StepState.Blocked, 8),
+    ]);
+
+    private static IReadOnlyList<Step> Sample(IReadOnlyList<StepState> states)
+        => [.. states.Select((state, i) => new Step(
+            new WorkItemRow(
+                Id: $"legend-{i}",
+                Title: $"step {i + 1}",
+                State: state.ToString(),
+                Agent: null,
+                ProjectId: null,
+                QueuePosition: i,
+                UpdatedAt: default,
+                LastError: null),
+            i,
+            state,
+            $"{i + 1}/{states.Count}"))];
 
     /// <summary>
     /// The format the board's own drags carry: in-process, so the payload is the <see cref="Chain"/>
