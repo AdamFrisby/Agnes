@@ -29,6 +29,18 @@ public static class Program
     {
         // Live mode (--host …) renders the same window against a REAL host instead of the simulator; see
         // LiveCapture for why that is worth a mode of its own. Everything else is the simulated tour.
+        // Plugin-screen mode (--screen …) renders a client plugin's screen inside the real window, over the
+        // simulator, and needs no host: the screen brings its own data. See PluginScreenCapture.
+        if (PluginScreenCapture.TryParse(args) is { } plugin)
+        {
+            _outDir = plugin.OutDir;
+            Directory.CreateDirectory(_outDir);
+            using var pluginSession = HeadlessUnitTestSession.StartNew(typeof(HeadlessApp));
+            pluginSession.Dispatch(() => PluginScreenCapture.Run(plugin), CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"Done. Screenshots in {_outDir}");
+            return;
+        }
+
         if (LiveCapture.TryParse(args) is { } live)
         {
             _outDir = live.OutDir;

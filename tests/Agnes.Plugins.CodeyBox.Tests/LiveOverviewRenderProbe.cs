@@ -166,6 +166,6 @@ internal static class LiveOverviewInputs
         var history = new OverviewHistory().Read();
         return new OverviewInputs(
             DateTimeOffset.Now, items, traces, questions, queue, concurrency, probes,
-            QuotaHistoryMap.ToBurnDown(rowsOut), health, history, ceilings);
+            QuotaHistoryMap.ToBurnDown(rowsOut, probes, DateTimeOffset.UtcNow), health, history, ceilings);
     }
 }

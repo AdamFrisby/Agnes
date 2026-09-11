@@ -807,8 +807,20 @@ public sealed record QuotaProbe(
 public sealed record QuotaSnapshot(
     [property: JsonPropertyName("availablePct")] double? AvailablePct,
     [property: JsonPropertyName("isKnown")] bool IsKnown,
-    [property: JsonPropertyName("resetAt")] DateTimeOffset? ResetAt);
+    [property: JsonPropertyName("resetAt")] DateTimeOffset? ResetAt,
+    [property: JsonPropertyName("windows")] IReadOnlyList<QuotaWindowReading>? Windows = null)
+{
+    /// <summary>The router's present reading of one named window, if the probe publishes it.</summary>
+    public QuotaWindowReading? Window(string name)
+        => Windows?.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
+}
 
+/// <summary>One window of the routed model as the probe sees it right now — the same quantity the history
+/// records per window (<em>available</em>, never used), so the two can be compared directly.</summary>
+public sealed record QuotaWindowReading(
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("availablePct")] double? AvailablePct,
+    [property: JsonPropertyName("resetAt")] DateTimeOffset? ResetAt);
 /// <summary>Quota failures the orchestrator actually observed, grouped the way it groups them.</summary>
 public sealed record QuotaFailureGroup(
     [property: JsonPropertyName("projectId")] string? ProjectId,
@@ -986,22 +998,36 @@ public static class QuotaHistoryMap
     /// historical sample can know.</para>
     /// </summary>
     public static IReadOnlyList<QuotaBurn> ToBurnDown(IEnumerable<QuotaHistoryRow> rows)
+        => ToBurnDown(rows, [], DateTimeOffset.UtcNow);
+
+    /// <summary>
+    /// As above, with the router's present readings to settle two things the history alone cannot.
+    ///
+    /// <para>First, which model. The sampler records every model an agent can route to, and for some
+    /// agents it records them all with a null <c>modelId</c> — so one (agent, window) key holds two
+    /// interleaved series, one per model, and drawing them as one produced antigravity's seven-day window
+    /// at "100%" while the router had it at 0.4%. The rows of one tick are split into strands by their
+    /// order within the tick, and the strand that ends where the probe reads now is the routed model.</para>
+    ///
+    /// <para>Second, what "now" is. The probe's reading is appended as the newest sample when the history
+    /// lags it, so the number the chart ends on is the number the router is using.</para>
+    /// </summary>
+    public static IReadOnlyList<QuotaBurn> ToBurnDown(IEnumerable<QuotaHistoryRow> rows, IReadOnlyList<QuotaProbe> probes, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(rows);
-
+        ArgumentNullException.ThrowIfNull(probes);
         var burns = new List<QuotaBurn>();
-
         foreach (var agent in rows
                      .Where(r => r.IsSample && !string.IsNullOrWhiteSpace(r.Agent))
                      .GroupBy(r => r.Agent, StringComparer.OrdinalIgnoreCase)
                      .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
+            var probe = probes.FirstOrDefault(p => string.Equals(p.Agent, agent.Key, StringComparison.OrdinalIgnoreCase));
             var windowed = agent
                 .Where(r => r.WindowName is { Length: > 0 })
                 .GroupBy(r => r.WindowName!, StringComparer.OrdinalIgnoreCase)
-                .Select(g => Burn(agent.Key, g.Key, g))
+                .Select(g => Burn(agent.Key, g.Key, Routed(g, probe?.LatestSnapshot?.Window(g.Key)?.AvailablePct), Current(probe, g.Key, now)))
                 .ToList();
-
             if (windowed.Count > 0)
             {
                 // Nearest reset first; an unknown reset sorts last, because a window that never says when
@@ -1016,18 +1042,75 @@ public static class QuotaHistoryMap
             var overall = agent.Where(r => string.IsNullOrEmpty(r.WindowName)).ToList();
             if (overall.Count > 0)
             {
-                burns.Add(Burn(agent.Key, null, overall));
+                var current = probe?.LatestSnapshot is { IsKnown: true, AvailablePct: { } pct }
+                    ? (Pct: pct, At: now)
+                    : ((double Pct, DateTimeOffset At)?)null;
+                burns.Add(Burn(agent.Key, null, Routed(overall, probe?.LatestSnapshot?.AvailablePct), current));
             }
         }
 
         return burns;
     }
 
-    private static QuotaBurn Burn(string agent, string? window, IEnumerable<QuotaHistoryRow> rows)
+    /// <summary>The probe's present reading of a window, with when it was taken.</summary>
+    private static (double Pct, DateTimeOffset At)? Current(QuotaProbe? probe, string window, DateTimeOffset now)
+        => probe?.LatestSnapshot is { IsKnown: true } snapshot && snapshot.Window(window)?.AvailablePct is { } pct
+            ? (Pct: pct, At: now)
+            : null;
+
+    /// <summary>
+    /// The one model's series out of an (agent, window) group. Rows carrying the routed model's own id
+    /// are preferred; among rows with no id, the rows of each sampling tick are dealt into strands by
+    /// their order in the tick, and the strand ending nearest the probe's present reading is kept. With
+    /// no reading to steer by, the first strand.
+    /// </summary>
+    internal static List<QuotaHistoryRow> Routed(IEnumerable<QuotaHistoryRow> rows, double? current)
     {
         var ordered = rows.OrderBy(r => r.SampledAt).ToList();
-        var samples = Stride(ordered.ConvertAll(r => new BurnSample(r.SampledAt, r.Pct!.Value)));
+        var unnamed = ordered.Where(r => string.IsNullOrEmpty(r.ModelId)).ToList();
+        var pool = unnamed.Count > 0 ? unnamed : ordered;
+        var strands = new List<List<QuotaHistoryRow>>();
+        DateTimeOffset? tick = null;
+        var lane = 0;
+        foreach (var row in pool)
+        {
+            var at = row.SampledAt.ToUniversalTime();
+            at = new DateTimeOffset(at.Year, at.Month, at.Day, at.Hour, at.Minute, at.Second, TimeSpan.Zero);
+            lane = at == tick ? lane + 1 : 0;
+            tick = at;
+            while (strands.Count <= lane)
+            {
+                strands.Add([]);
+            }
+            strands[lane].Add(row);
+        }
+        if (strands.Count <= 1)
+        {
+            return pool;
+        }
+        if (current is not { } now)
+        {
+            return strands[0];
+        }
+        return strands
+            .Where(s => s.Count > 0)
+            .OrderBy(s => Math.Abs((s[^1].Pct ?? double.NaN) - now))
+            .ThenByDescending(s => s.Count)
+            .First();
+    }
 
+    private static readonly TimeSpan CurrentLag = TimeSpan.FromMinutes(1);
+
+    private static QuotaBurn Burn(string agent, string? window, IEnumerable<QuotaHistoryRow> rows, (double Pct, DateTimeOffset At)? current)
+    {
+        var ordered = rows.OrderBy(r => r.SampledAt).ToList();
+        var points = ordered.ConvertAll(r => new BurnSample(r.SampledAt, r.Pct!.Value));
+        // The reading the router is using right now is the last point, whatever the sampler has got to.
+        if (current is { } latest && (points.Count == 0 || latest.At - points[^1].At > CurrentLag))
+        {
+            points.Add(new BurnSample(latest.At, latest.Pct));
+        }
+        var samples = Stride(points);
         // The LATEST reset the series carries, not the first: a window that has rolled over part-way
         // through reports the next reset only on its newer rows.
         var resetAt = ordered

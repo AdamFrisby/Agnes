@@ -71,9 +71,15 @@
               </TextBlock>
             </StackPanel>
 
-            <!-- The audit loop as a shape. What it is doing, not how many times it has done it. -->
-            <c:TraceGlyph Grid.Column="2" Trace="{Binding}" Width="124" Height="22"
-                          VerticalAlignment="Center" Margin="10,0,0,0" IsVisible="{Binding HasTrace}" />
+            <!-- The audit loop as a shape, captioned: what the bars are is not guessable, and it was
+                 guessed wrong. The key is one hover away and once, in words, at the band's head. -->
+            <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center" Margin="10,0,0,0"
+                        IsVisible="{Binding HasTrace}"
+                        ToolTip.Tip="Each bar is one audit round: its height is how many blocking findings the auditors raised. Falling bars are converging; a pink bar objected on the same gate as the round before; a green pip is a clean pass; an outlined bar is still being audited; the dot fades the longer the item has been silent.">
+              <c:TraceGlyph Trace="{Binding}" Width="132" Height="22" />
+              <TextBlock Text="{Binding TraceCaption}" FontSize="9" Foreground="{DynamicResource FgFaint}"
+                         HorizontalAlignment="Right" />
+            </StackPanel>
           </Grid>
         </Button>
 
@@ -142,6 +148,15 @@
       <Setter Property="FontSize" Value="12" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="Border.quotacard">
+      <Setter Property="Background" Value="{DynamicResource Panel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="12,9" />
+      <Setter Property="Width" Value="312" />
+      <Setter Property="Margin" Value="0,0,10,10" />
     </Style>
     <Style Selector="TextBlock.vitalperiod">
       <Setter Property="FontSize" Value="9" />
@@ -215,7 +230,12 @@
          Worst first. Everything that is moving and converging collapses into a single count, because a
          list that shows healthy work at the same weight as wedged work is a list nobody reads. -->
     <StackPanel Spacing="6">
-      <TextBlock Classes="bandhead" Text="Needs a look" />
+      <Grid ColumnDefinitions="Auto,*">
+        <TextBlock Grid.Column="0" Classes="bandhead" Text="Needs a look" />
+        <TextBlock Grid.Column="1" Classes="quiet" Margin="14,0,0,0" VerticalAlignment="Center" TextWrapping="NoWrap"
+                   TextTrimming="CharacterEllipsis"
+                   Text="bars = blocking audit findings per round · falling is converging · pink = same gate again · green pip = passed" />
+      </Grid>
       <TextBlock Classes="quiet" Text="Nothing needs a look." IsVisible="{Binding !HasAttention}" />
       <ItemsControl ItemsSource="{Binding Attention}" ItemTemplate="{StaticResource TraceRow}" />
       <!-- Stopped at a phase boundary nothing here can release: one line per boundary, folded, because
@@ -244,43 +264,47 @@
       </Expander>
     </StackPanel>
 
-    <!-- ============ BAND 3: the trend ============ -->
-    <Grid ColumnDefinitions="3*,20,2*">
-
-      <!-- Did it land whole. The slope of the landed band is throughput; the gap above it is WIP. -->
-      <StackPanel Grid.Column="0" Spacing="6">
-        <!-- The key is the numbers: each band named in its own hue, with what it added this month. -->
-        <StackPanel Orientation="Horizontal" Spacing="10">
-          <TextBlock Classes="bandhead" Text="Cumulative flow · 30 days" />
-          <TextBlock FontSize="10" Foreground="{DynamicResource StatusDone}" Text="{Binding Flow.LandedLegend}"
-                     VerticalAlignment="Center" />
-          <TextBlock FontSize="10" Foreground="{DynamicResource StatusWorking}" Text="{Binding Flow.InFlightLegend}"
-                     VerticalAlignment="Center" />
-          <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}" Text="{Binding Flow.CancelledLegend}"
-                     VerticalAlignment="Center" IsVisible="{Binding Flow.HasCancelled}" />
-        </StackPanel>
-        <c:FlowChart Series="{Binding Flow}" Height="140" HorizontalAlignment="Stretch"
-                     IsVisible="{Binding Flow.HasData}" />
-        <TextBlock Classes="quiet" Text="Not enough history to draw a flow yet."
-                   IsVisible="{Binding !Flow.HasData}" />
+    <!-- ============ BAND 3: the trend ============
+         The flow chart takes the width; the quota windows sit under it as a grid of cards, one per
+         (agent, window), so a fleet with nine windows is three rows of three rather than a column that
+         runs off the bottom of the panel. -->
+    <StackPanel Spacing="6">
+      <!-- The key is the numbers: each band named in its own hue, with what it added this month. -->
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBlock Classes="bandhead" Text="Cumulative flow · 30 days" />
+        <TextBlock FontSize="10" Foreground="{DynamicResource StatusDone}" Text="{Binding Flow.LandedLegend}"
+                   VerticalAlignment="Center" />
+        <TextBlock FontSize="10" Foreground="{DynamicResource StatusWorking}" Text="{Binding Flow.InFlightLegend}"
+                   VerticalAlignment="Center" />
+        <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}" Text="{Binding Flow.CancelledLegend}"
+                   VerticalAlignment="Center" IsVisible="{Binding Flow.HasCancelled}" />
       </StackPanel>
-
-      <!-- Can it keep going. Unspent quota at the reset is the only waste under a subscription, so the
-           projection is the number, not the spend. -->
-      <StackPanel Grid.Column="2" Spacing="6" MinWidth="300">
-        <TextBlock Classes="bandhead" Text="Quota to reset" />
-        <TextBlock Classes="quiet" Text="No quota history on this host."
-                   IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.NoQuotaHistory}}" />
-        <ItemsControl ItemsSource="{Binding Quota}"
-                      IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.HasQuotaHistory}}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <StackPanel Spacing="2" Margin="0,0,0,10" IsVisible="{Binding HasSamples}">
+      <c:FlowChart Series="{Binding Flow}" Height="150" HorizontalAlignment="Stretch"
+                   IsVisible="{Binding Flow.HasData}" />
+      <TextBlock Classes="quiet" Text="Not enough history to draw a flow yet."
+                 IsVisible="{Binding !Flow.HasData}" />
+    </StackPanel>
+    <!-- Can it keep going. Unspent quota at the reset is the only waste under a subscription, so the
+         projection is the number, not the spend. "Available" is the provider's own word for the number,
+         and the only one used here. -->
+    <StackPanel Spacing="6">
+      <TextBlock Classes="bandhead" Text="Quota to reset · % available, per window" />
+      <TextBlock Classes="quiet" Text="No quota history on this host."
+                 IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.NoQuotaHistory}}" />
+      <ItemsControl ItemsSource="{Binding Quota}"
+                    IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.HasQuotaHistory}}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Classes="quotacard" IsVisible="{Binding HasSamples}">
+              <StackPanel Spacing="3">
                 <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11"
-                             Foreground="{DynamicResource FgDim}" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Grid.Column="1" FontSize="11" Foreground="{DynamicResource Fg}" Margin="8,0,0,0"
-                             Text="{Binding NowPct, StringFormat='{}{0:0}% left'}"
+                  <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11" FontWeight="SemiBold"
+                             Foreground="{DynamicResource Fg}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="1" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}"
+                             Margin="8,0,0,0" Text="{Binding NowPct, StringFormat='{}{0:0.#}%'}"
                              IsVisible="{Binding NowPct, Converter={x:Static ObjectConverters.IsNotNull}}" />
                 </Grid>
                 <!-- The chart's two edges, in words: how far back it reaches, and when the window resets. -->
@@ -290,14 +314,14 @@
                   <TextBlock Grid.Column="1" FontSize="9" Foreground="{DynamicResource FgFaint}" Margin="8,0,0,0"
                              Text="{Binding ResetLabel}" />
                 </Grid>
-                <c:BurnDown Burn="{Binding}" Height="44" HorizontalAlignment="Stretch" />
+                <c:BurnDown Burn="{Binding}" Height="46" HorizontalAlignment="Stretch" />
                 <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}" Text="{Binding ProjectionLabel}"
                            IsVisible="{Binding ProjectionLabel, Converter={x:Static ObjectConverters.IsNotNull}}" />
               </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </StackPanel>
-    </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
   </StackPanel>
 </UserControl>

@@ -854,7 +854,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
             }
         }
 
-        _quotaBurns = QuotaHistoryMap.ToBurnDown(rows);
+        _quotaBurns = QuotaHistoryMap.ToBurnDown(rows, probes, DateTimeOffset.UtcNow);
         _quotaBurnsAt = DateTimeOffset.UtcNow;
         return _quotaBurns;
     }

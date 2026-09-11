@@ -108,6 +108,9 @@ public sealed record ItemTrace(
 
     public bool HasTrace => Points.Count > 0;
 
+    /// <summary>What the bars are, in words, because a bar chart with no caption was read as noise:
+    /// "audit findings · 16 rounds".</summary>
+    public string TraceCaption => Points.Count == 1 ? "audit findings · 1 round" : FormattableString.Invariant($"audit findings · {Points.Count} rounds");
     public bool IsMoving => Motion == Motion.Moving;
     public bool IsParked => Motion == Motion.Parked;
     public bool IsBlocked => Motion == Motion.Blocked;
