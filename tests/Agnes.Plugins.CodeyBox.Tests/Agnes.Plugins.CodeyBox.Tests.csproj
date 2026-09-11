@@ -16,6 +16,10 @@
          still throws when a CommandParameter reaches a typed command as the wrong type. Rendering it
          headlessly is what turns "it built" into "it opens". -->
     <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
+    <!-- A real rasteriser, so a render test can hand back pixels rather than a null frame. Only the
+         board's shot harness and the live probe ask for it (see BoardShotTests); the rest of the render
+         tests stay on headless drawing, where capture is a documented no-op. -->
+    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
     <!-- The plugin excludes these from its own output (the host supplies them at runtime), so the test
          project asks for them directly rather than inheriting them transitively. -->
