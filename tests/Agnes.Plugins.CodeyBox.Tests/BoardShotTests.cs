@@ -28,6 +28,12 @@ namespace Agnes.Plugins.CodeyBox.Tests;
 /// <para>The live half is GET-only, and silent where no CodeyBox is configured or the one configured is
 /// not running — the same contract as <see cref="LiveOverviewProbe"/>, for the same reason: the host it
 /// runs against is doing real work.</para>
+///
+/// <para><b>Run this class on its own when you want to look at the frames</b>
+/// (<c>--filter FullyQualifiedName~BoardShotTests</c>). A headless session is process-global, and after
+/// the suite's other render classes have started and disposed theirs, the frames still come back — but
+/// with no glyphs in them, which is a property of the harness rather than of the board. Geometry is
+/// unaffected either way, and no assertion here depends on text.</para>
 /// </remarks>
 [Collection("avalonia-headless")]
 public sealed class BoardShotTests
