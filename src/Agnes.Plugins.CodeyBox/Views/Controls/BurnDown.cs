@@ -35,8 +35,8 @@ public sealed class BurnDown : ThemedDrawing
             return;
         }
 
-        var top = 2.0;
-        var bottom = Bounds.Height - 2;
+        var top = 3.0;
+        var bottom = Bounds.Height - 3;
         // The reset marker owns the right edge; the series stops short of it.
         var right = Bounds.Width - 2;
 
@@ -47,8 +47,17 @@ public sealed class BurnDown : ThemedDrawing
         double X(DateTimeOffset at) => span <= 0 ? right : Math.Clamp((at - start).TotalSeconds / span * right, 0, right);
         double Y(double pct) => bottom - (Math.Clamp(pct, 0, 100) / 100 * (bottom - top));
 
+        // The scale: 0% is the baseline, 100% the faint line at the top, half way a fainter one. Three
+        // lines are what turn a wiggle into a reading.
         context.DrawLine(Pen(1, Roles.Line), new Point(0, bottom), new Point(right, bottom));
-
+        using (context.PushOpacity(0.45))
+        {
+            context.DrawLine(Pen(1, Roles.Line), new Point(0, top), new Point(right, top));
+        }
+        using (context.PushOpacity(0.25))
+        {
+            context.DrawLine(Pen(1, Roles.Line), new Point(0, Y(50)), new Point(right, Y(50)));
+        }
         var hue = burn.Eligible ? Roles.Sky : Roles.Faint;
 
         if (burn.Samples.Count >= 2)
@@ -70,7 +79,8 @@ public sealed class BurnDown : ThemedDrawing
 
         var lastPoint = new Point(X(burn.Samples[^1].At), Y(burn.Samples[^1].Pct));
         context.DrawEllipse(Brush(hue), null, lastPoint, 2, 2);
-
+        // "Now" is where the solid line stops; a tick on the baseline says so where the dot is faint.
+        context.DrawLine(Pen(1, Roles.Faint), new Point(lastPoint.X, bottom), new Point(lastPoint.X, bottom - 4));
         if (burn.ResetAt is not null)
         {
             using (context.PushOpacity(0.8))
@@ -79,7 +89,8 @@ public sealed class BurnDown : ThemedDrawing
             }
         }
 
-        if (burn.ProjectedUnspentPct is { } unspent)
+        // Only a line that is going down projects. A flat window with a dashed tail reads as broken.
+        if (burn.IsBurning && burn.ProjectedUnspentPct is { } unspent)
         {
             var dashed = new Pen(Brush(hue), 1.2, new DashStyle([3, 3], 0));
             context.DrawLine(dashed, lastPoint, new Point(right, Y(unspent)));

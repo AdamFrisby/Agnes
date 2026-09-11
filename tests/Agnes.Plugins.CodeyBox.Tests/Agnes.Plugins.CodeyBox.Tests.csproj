@@ -16,6 +16,9 @@
          still throws when a CommandParameter reaches a typed command as the wrong type. Rendering it
          headlessly is what turns "it built" into "it opens". -->
     <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
+    <!-- Pixels for the render tests and the live probes: with Skia behind the headless platform, CaptureRenderedFrame
+         returns a real frame, so a chart can be looked at rather than only asserted not to throw. -->
+    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
     <!-- The plugin excludes these from its own output (the host supplies them at runtime), so the test
          project asks for them directly rather than inheriting them transitively. -->

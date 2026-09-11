@@ -38,6 +38,11 @@ public sealed class TraceGlyph : ThemedDrawing
     /// <summary>An hour of silence is where the dot has faded as far as it goes.</summary>
     private static readonly TimeSpan FullyStale = TimeSpan.FromMinutes(60);
 
+    /// <summary>How many iterations fit before the glyph stops being a shape and becomes a barcode. A
+    /// 57-iteration trace at 124 px was one; the last two dozen are the part that says anything, and a
+    /// leading ellipsis says the rest exists.</summary>
+    internal const int MaxBars = 24;
+    private const double EllipsisRoom = 9;
     protected override Size MeasureOverride(Size availableSize) => new(120, 22);
 
     public override void Render(DrawingContext context)
@@ -63,19 +68,31 @@ public sealed class TraceGlyph : ThemedDrawing
         {
             return;
         }
-
+        var skip = Math.Max(0, points.Count - MaxBars);
+        var left = 0.0;
+        if (skip > 0)
+        {
+            for (var d = 0; d < 3; d++)
+            {
+                context.DrawRectangle(Brush(Roles.Faint), null, new Rect(d * 3, baseline - 1.5, 1.5, 1.5));
+            }
+            left = EllipsisRoom;
+            barsWidth -= EllipsisRoom;
+        }
+        var shown = points.Count - skip;
         // x spans the ceiling when there is one, so two items with the same trace but different budgets
-        // do not look equally close to the end of theirs.
-        var slots = Math.Max(points.Count, trace.Ceiling > 0 ? trace.Ceiling : points.Count);
+        // do not look equally close to the end of theirs — but only the room left under it, once the
+        // trace has been cut to its tail, and never more than a few slots of it.
+        var room = trace.Ceiling > skip ? Math.Min(trace.Ceiling - skip, shown + 8) : shown;
+        var slots = Math.Max(shown, room);
         var slot = barsWidth / slots;
         var barWidth = Math.Max(1.0, Math.Min(slot - 1, 7));
         var worst = points.Max(p => p.BlockingFindings);
         var full = height - 3;
-
-        for (var i = 0; i < points.Count; i++)
+        for (var i = skip; i < points.Count; i++)
         {
             var point = points[i];
-            var x = i * slot;
+            var x = left + ((i - skip) * slot);
             var rise = i > 0 && point.BlockingFindings > points[i - 1].BlockingFindings;
             var oscillating = rise && point.SameGateAsPrevious;
             var brush = Brush(oscillating ? Roles.Pink : Roles.Dim);
@@ -104,9 +121,9 @@ public sealed class TraceGlyph : ThemedDrawing
         // The cap is already legible as the empty space the bars have not reached, so the tick is drawn
         // only where it says something that space cannot: an item that has run PAST its budget, with
         // bars continuing to the right of the line.
-        if (trace.Ceiling > 0 && trace.Ceiling < points.Count)
+        if (trace.Ceiling > skip && trace.Ceiling < points.Count)
         {
-            var x = trace.Ceiling * slot - 0.5;
+            var x = left + ((trace.Ceiling - skip) * slot) - 0.5;
             context.DrawLine(Pen(1, Roles.Amber), new Point(x, 0), new Point(x, baseline));
         }
     }

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Agnes.Plugins.CodeyBox;
 
 // ---------------------------------------------------------------------------------------------------
@@ -113,6 +115,18 @@ public sealed record ItemTrace(
     public bool IsOscillating => Shape == Convergence.Oscillating;
 }
 
+/// <summary>
+/// Items stopped at the same phase boundary — an audit slot, a merge, a push — that nothing on this screen
+/// can release. They are not moving and there is nothing to decide, so the attention band folds them into
+/// one line per boundary rather than listing twenty rows that say the same thing.
+/// </summary>
+/// <param name="Title">"18 items waiting for an audit slot".</param>
+/// <param name="Detail">How long the stillest has been quiet, and that it is not the operator's move.</param>
+public sealed record AttentionGroup(string Title, string Detail, IReadOnlyList<ItemTrace> Items)
+{
+    public int Count => Items.Count;
+}
+
 /// <summary>Which way a vital is heading against its own norm.</summary>
 public enum Trend
 {
@@ -146,6 +160,11 @@ public sealed record Vital(
 {
     public bool HasBand => Median is not null;
     public bool HasSpark => Spark.Count >= 2;
+
+    /// <summary>What span the sparkline and band cover — "last 3h 50m", "8 weeks, by week". A sparkline
+    /// with no stated period is a shape with no meaning; this is what makes it one.</summary>
+    public string Period { get; init; } = string.Empty;
+    public bool HasPeriod => Period.Length > 0;
     public bool IsNeutral => Tone == TileTone.Neutral;
     public bool IsActive => Tone == TileTone.Active;
     public bool IsAttention => Tone == TileTone.Attention;
@@ -168,6 +187,20 @@ public sealed record FlowPoint(DateOnly Day, int Created, int Landed, int Cancel
 public sealed record FlowSeries(IReadOnlyList<FlowPoint> Days)
 {
     public bool HasData => Days.Count >= 2 && Days[^1].Created > 0;
+
+    /// <summary>Where the landed band starts: everything that had landed before the window opened. The
+    /// chart draws from here rather than from zero, so a month's work is not a sliver on top of a year's.</summary>
+    public int Floor => Days.Count == 0 ? 0 : Days[0].Landed;
+    /// <summary>The top of the stack as the chart draws it: landed, in flight, and only the cancellations
+    /// that happened inside the window.</summary>
+    public int Peak => Days.Count == 0 ? 0 : Days.Max(d => d.Landed + d.InFlight + d.Cancelled - Days[0].Cancelled);
+    public int LandedInWindow => Days.Count == 0 ? 0 : Days[^1].Landed - Days[0].Landed;
+    public int CancelledInWindow => Days.Count == 0 ? 0 : Days[^1].Cancelled - Days[0].Cancelled;
+    public int InFlightNow => Days.Count == 0 ? 0 : Days[^1].InFlight;
+    public bool HasCancelled => CancelledInWindow > 0;
+    public string LandedLegend => FormattableString.Invariant($"+{LandedInWindow} landed");
+    public string InFlightLegend => FormattableString.Invariant($"{InFlightNow} in flight");
+    public string CancelledLegend => FormattableString.Invariant($"+{CancelledInWindow} cancelled");
 }
 
 /// <summary>One quota sample.</summary>
@@ -195,6 +228,23 @@ public sealed record QuotaBurn(
 {
     public bool HasSamples => Samples.Count >= 2;
     public string Label => Window is { Length: > 0 } w ? $"{Agent} · {w.Replace('_', ' ')}" : Agent;
+
+    /// <summary>"resets 06:54 · in 8h 44m" — the right edge of the chart, in words.</summary>
+    public string? ResetLabel { get; init; }
+
+    /// <summary>"last 6h 12m" — how far back the samples reach; the left edge of the chart, in words.</summary>
+    public string? SpanLabel { get; init; }
+
+    /// <summary>A projection only means something when the line is going down. A flat window at 100%
+    /// with a dashed tail reads as broken; it is merely an agent nobody dispatched to.</summary>
+    public bool IsBurning => ProjectedUnspentPct is { } projected && NowPct is { } now && projected < now - 1;
+
+    public string? ProjectionLabel => IsBurning
+        ? FormattableString.Invariant($"leaves ~{ProjectedUnspentPct:0}% unspent at reset")
+        : ProjectedUnspentPct is not null || IsFlat ? "not burning" : null;
+
+    /// <summary>No sample differs from the last by more than half a point: nothing was spent.</summary>
+    public bool IsFlat => HasSamples && Samples.All(s => Math.Abs(s.Pct - Samples[^1].Pct) <= 0.5);
 }
 
 /// <summary>
@@ -270,4 +320,13 @@ public sealed record Overview(
     public bool HasHealthy => Healthy.Count > 0;
     public bool HasQuota => Quota.Count > 0;
     public string HealthyLabel => Healthy.Count == 1 ? "1 item converging normally" : $"{Healthy.Count} items converging normally";
+
+    /// <summary>Stopped at a phase boundary nothing here can release, one group per boundary. Not in
+    /// <see cref="Attention"/>: they need a slot, not a look.</summary>
+    public IReadOnlyList<AttentionGroup> Folded { get; init; } = [];
+    public bool HasFolded => Folded.Count > 0;
+
+    /// <summary>Every clock on this screen is local time; this is the one place that says so.</summary>
+    public string AsOf => FormattableString.Invariant(
+        $"as of {Sample.At.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture)} · times are local");
 }

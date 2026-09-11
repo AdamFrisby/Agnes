@@ -98,7 +98,10 @@ public static partial class OverviewModel
                         p.LatestSnapshot!.ResetAt,
                         p.LatestSnapshot.AvailablePct,
                         ProjectedUnspentPct: null,
-                        Eligible: p is { WouldAllow: true, Paused: false }))
+                        Eligible: p is { WouldAllow: true, Paused: false })
+                    {
+                        ResetLabel = ResetLabelFor(inputs.Now, p.LatestSnapshot.ResetAt),
+                    })
             ];
         }
 
@@ -111,9 +114,17 @@ public static partial class OverviewModel
                 NowPct = burn.NowPct ?? (burn.Samples.Count > 0 ? burn.Samples[^1].Pct : (double?)null),
                 ProjectedUnspentPct = ProjectUnspent(burn),
                 Eligible = eligible.Contains(burn.Agent, StringComparer.OrdinalIgnoreCase),
+                ResetLabel = ResetLabelFor(inputs.Now, burn.ResetAt),
+                SpanLabel = burn.Samples.Count >= 2 ? Inv($"last {Duration(inputs.Now - burn.Samples[0].At)}") : null,
             })
         ];
     }
+
+    /// <summary>The reset as a clock time and a distance, because a chart edge with no label is a guess.</summary>
+    internal static string? ResetLabelFor(DateTimeOffset now, DateTimeOffset? resetAt)
+        => resetAt is not { } at ? null
+            : at > now ? Inv($"resets {Clock(at)} · in {Duration(at - now)}")
+            : Inv($"reset was due {Clock(at)}");
 
     /// <summary>
     /// What will be left at the reset if the current burn rate holds. Only the samples since the last

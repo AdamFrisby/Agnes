@@ -61,6 +61,19 @@ public static partial class OverviewModel
     /// the vital reports no band and a trend of <see cref="Trend.Unknown"/>.</summary>
     internal const int BandMinSamples = 8;
 
+    /// <summary>Settled samples must also reach back at least this far. Eight readings from one afternoon
+    /// are that afternoon, not a norm — and "vs a usual 0" under a fresh install is what they produced.</summary>
+    internal static readonly TimeSpan BandMinSpan = TimeSpan.FromHours(24);
+
+    /// <summary>"Landed this week" has a norm the orchestrator already holds: the previous weeks' landings,
+    /// read off the items themselves. This many prior rolling weeks build it, and it takes at least
+    /// <see cref="LandedNormMinWeeks"/> of them before it is used instead of the local history.</summary>
+    internal const int LandedNormWeeks = 8;
+    internal const int LandedNormMinWeeks = 4;
+
+    /// <summary>A week in which nothing landed is a week the fleet was off, not a data point about its
+    /// pace; only weeks with a landing count, looked for this far back.</summary>
+    internal const int LandedNormLookbackWeeks = 26;
     /// <summary>The control band is the middle 60% of the fleet's own recent history (nearest-rank
     /// percentiles, so the edges are always real observed readings).</summary>
     internal const double BandLowPercentile = 20;
@@ -112,12 +125,13 @@ public static partial class OverviewModel
 
         var vitals = BuildVitals(inputs, counts);
         var (sentence, verdict) = BuildSentence(inputs, counts);
+        var (folded, attention) = Fold([.. traces.Where(t => t.NeedsAttention).Order(AttentionOrder)]);
 
         return new Overview(
             sentence,
             verdict,
             vitals,
-            [.. traces.Where(t => t.NeedsAttention).Order(AttentionOrder)],
+            attention,
             [.. traces.Where(t => !t.NeedsAttention).OrderBy(t => t.SinceMoved)],
             BuildFlow(inputs),
             BuildQuota(inputs),
@@ -132,7 +146,66 @@ public static partial class OverviewModel
                 counts.SlotsBusy,
                 counts.SlotsTotal,
                 inputs.Health?.InfraFailureRate ?? 0,
-                counts.NeedsPerson));
+                counts.NeedsPerson))
+        {
+            Folded = folded,
+        };
+    }
+
+    /// <summary>
+    /// The phase boundary an item is stopped at, when that is the only thing wrong with it — or null for
+    /// an item that needs a look for its own reasons (a person, a repeating gate, a budget, a silent agent
+    /// mid-phase). Only the former folds: twenty rows saying "waiting for an audit slot" are one fact about
+    /// the audit stage, and the operator asked, rightly, why they were being shown at all.
+    /// </summary>
+    internal static string? FoldKey(ItemTrace trace)
+    {
+        if (trace.NeedsPerson || trace.NearCeiling || trace.Shape is Convergence.Oscillating or Convergence.Stuck)
+        {
+            return null;
+        }
+        return trace.Motion switch
+        {
+            Motion.Wedged => trace.Item.State switch
+            {
+                "WorkComplete" => "waiting for an audit slot",
+                "AuditPassed" => "audit passed, waiting to merge",
+                "Merged" => "merged, waiting to push",
+                "PlanApproved" => "plan approved, waiting for a slot",
+                _ => null,
+            },
+            // Queued behind a parent step, or parked until quota or a retry timer: the pipeline's own
+            // waits, released by the pipeline.
+            Motion.Blocked => "waiting on a dependency",
+            Motion.Parked => "parked until quota or a retry",
+            _ => null,
+        };
+    }
+
+    private static string FoldNote(string key, ItemTrace stillest) => key switch
+    {
+        "waiting on a dependency" => "released by their parent steps · not your move",
+        "parked until quota or a retry" => Inv($"{stillest.Why} · not your move"),
+        _ => Inv($"quiet up to {Duration(stillest.SinceMoved)} · not your move: they need a slot, not a look"),
+    };
+    internal static (IReadOnlyList<AttentionGroup> Folded, IReadOnlyList<ItemTrace> Attention) Fold(IReadOnlyList<ItemTrace> attention)
+    {
+        var groups = new List<AttentionGroup>();
+        var rest = new List<ItemTrace>();
+        foreach (var byBoundary in attention.GroupBy(FoldKey))
+        {
+            if (byBoundary.Key is null)
+            {
+                rest.AddRange(byBoundary);
+                continue;
+            }
+            var items = byBoundary.OrderByDescending(t => t.SinceMoved).ToList();
+            groups.Add(new AttentionGroup(
+                Inv($"{items.Count} {Plural(items.Count, "item", "items")} {byBoundary.Key}"),
+                FoldNote(byBoundary.Key, items[0]),
+                items));
+        }
+        return ([.. groups.OrderByDescending(g => g.Count)], rest);
     }
 
     /// <summary>Rank first, then the one that has been still longest, then the one that matters most.</summary>

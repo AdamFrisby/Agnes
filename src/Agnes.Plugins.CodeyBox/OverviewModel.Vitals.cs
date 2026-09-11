@@ -22,7 +22,8 @@ public static partial class OverviewModel
         double? Median,
         double? Low,
         double? High,
-        Trend Trend)
+        Trend Trend,
+        string Period)
     {
         public bool Below(double current) => Low is { } low && current < low;
 
@@ -44,12 +45,14 @@ public static partial class OverviewModel
     private static Vital Landed(OverviewInputs inputs, FleetCounts counts)
     {
         double current = counts.Landed7d;
-        var norm = Normal(inputs, s => s.Landed7d, current);
+        // The items themselves are the history here; the local sample file only stands in until there are
+        // enough weeks of them.
+        var norm = LandedNorm(inputs, current) ?? Normal(inputs, s => s.Landed7d, current);
 
         return new Vital(
             "Landed this week",
             counts.Landed7d.ToString(CultureInfo.InvariantCulture),
-            norm.Median is { } median ? Inv($"vs a usual {median:0}") : "no history yet",
+            norm.Median is { } median ? Inv($"vs a usual {median:0} a week") : "no history yet",
 
             // Never Bad. A week below the usual rate is worth noticing and is not a failure, and this is
             // the one vital an operator would otherwise learn to read as an accusation.
@@ -59,7 +62,45 @@ public static partial class OverviewModel
             norm.Low,
             norm.High,
             current,
-            norm.Trend);
+            norm.Trend)
+        {
+            Period = norm.Period,
+        };
+    }
+
+    /// <summary>
+    /// The previous rolling weeks' landings, counted off the work items: the norm "landed this week" is
+    /// read against. Null until enough weeks of items exist to call it one.
+    /// </summary>
+    internal static Norm? LandedNorm(OverviewInputs inputs, double current)
+    {
+        // The current rolling week is the reading, not part of its norm; before it, the most recent
+        // weeks that landed anything at all, oldest first.
+        var counts = new List<double>(LandedNormWeeks);
+        for (var back = 1; back <= LandedNormLookbackWeeks && counts.Count < LandedNormWeeks; back++)
+        {
+            var end = inputs.Now - TimeSpan.FromDays(7 * back);
+            var start = end - LandedWindow;
+            var landed = inputs.Items.Count(i => i.State == "Done" && i.UpdatedAt > start && i.UpdatedAt <= end);
+            if (landed > 0)
+            {
+                counts.Insert(0, landed);
+            }
+        }
+        var weeks = counts.Count;
+        if (weeks < LandedNormMinWeeks)
+        {
+            return null;
+        }
+        List<double> sorted = [.. counts.Order()];
+        var median = MedianOf(sorted);
+        return new Norm(
+            [.. counts, current],
+            median,
+            Percentile(sorted, BandLowPercentile),
+            Percentile(sorted, BandHighPercentile),
+            TrendOf(current, median),
+            Inv($"{weeks} active weeks"));
     }
 
     private static Vital InMotion(OverviewInputs inputs, FleetCounts counts)
@@ -99,7 +140,10 @@ public static partial class OverviewModel
             norm.Low,
             norm.High,
             current,
-            norm.Trend);
+            norm.Trend)
+        {
+            Period = norm.Period,
+        };
     }
 
     private static Vital EligibleCapacity(OverviewInputs inputs, FleetCounts counts)
@@ -129,7 +173,10 @@ public static partial class OverviewModel
             norm.Low,
             norm.High,
             current,
-            norm.Trend);
+            norm.Trend)
+        {
+            Period = norm.Period,
+        };
     }
 
     /// <summary>
@@ -184,7 +231,10 @@ public static partial class OverviewModel
                 norm.Low,
                 norm.High,
                 current,
-                norm.Trend);
+                norm.Trend)
+        {
+            Period = norm.Period,
+        };
         }
 
         var tone = norm.Above(current) || (rate > InfraBadRate && transitions >= InfraBadMinTransitions)
@@ -205,7 +255,10 @@ public static partial class OverviewModel
             norm.Low,
             norm.High,
             current,
-            norm.Trend);
+            norm.Trend)
+        {
+            Period = norm.Period,
+        };
     }
 
     private static Vital BlockedOnYou(OverviewInputs inputs, FleetCounts counts)
@@ -223,7 +276,10 @@ public static partial class OverviewModel
             norm.Low,
             norm.High,
             current,
-            norm.Trend);
+            norm.Trend)
+        {
+            Period = norm.Period,
+        };
     }
 
     // -------------------------------------------------------------------------------------------
@@ -240,33 +296,40 @@ public static partial class OverviewModel
     /// </summary>
     internal static Norm Normal(OverviewInputs inputs, Func<OverviewSample, double> pick, double current)
     {
-        List<double> spark = [.. inputs.History.Skip(Math.Max(0, inputs.History.Count - SparkWindow)).Select(pick), current];
+        var recent = inputs.History.Skip(Math.Max(0, inputs.History.Count - SparkWindow)).ToList();
+        List<double> spark = [.. recent.Select(pick), current];
+        var period = recent.Count == 0 ? string.Empty : Inv($"last {Duration(inputs.Now - recent[0].At)}");
 
-        List<double> settled =
-        [
-            .. inputs.History
-                .Where(s => inputs.Now - s.At > BandSettleAge)
-                .Select(pick)
-                .Order()
-        ];
-
-        if (settled.Count < BandMinSamples)
+        var settledSamples = inputs.History.Where(s => inputs.Now - s.At > BandSettleAge).ToList();
+        List<double> settled = [.. settledSamples.Select(pick).Order()];
+        var reach = settledSamples.Count == 0
+            ? TimeSpan.Zero
+            : settledSamples.Max(s => s.At) - settledSamples.Min(s => s.At);
+        if (settled.Count < BandMinSamples || reach < BandMinSpan)
         {
-            return new Norm(spark, null, null, null, Trend.Unknown);
+            return new Norm(spark, null, null, null, Trend.Unknown, period);
         }
 
         var median = MedianOf(settled);
-        var trend = current > median * (1 + TrendDeadband) ? Trend.Up
-            : current < median * (1 - TrendDeadband) ? Trend.Down
-            : Trend.Flat;
+        return new Norm(
+            spark,
+            median,
+            Percentile(settled, BandLowPercentile),
+            Percentile(settled, BandHighPercentile),
+            TrendOf(current, median),
+            period);
+    }
 
+    private static Trend TrendOf(double current, double median)
+    {
         // A median of zero has no proportional band around it, so any non-zero reading is a direction.
         if (median == 0)
         {
-            trend = current > 0 ? Trend.Up : Trend.Flat;
+            return current > 0 ? Trend.Up : Trend.Flat;
         }
-
-        return new Norm(spark, median, Percentile(settled, BandLowPercentile), Percentile(settled, BandHighPercentile), trend);
+        return current > median * (1 + TrendDeadband) ? Trend.Up
+            : current < median * (1 - TrendDeadband) ? Trend.Down
+            : Trend.Flat;
     }
 
     private static double MedianOf(IReadOnlyList<double> sorted)

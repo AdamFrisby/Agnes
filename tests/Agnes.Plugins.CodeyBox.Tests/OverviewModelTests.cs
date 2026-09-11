@@ -138,7 +138,7 @@ public sealed class OverviewModelTests
             ceilings ?? new Dictionary<string, int>());
 
     private static ItemTrace Only(Overview overview)
-        => overview.Attention.Concat(overview.Healthy).Single();
+        => overview.Attention.Concat(overview.Healthy).Concat(overview.Folded.SelectMany(g => g.Items)).Single();
 
     private static string At(DateTimeOffset when)
         => when.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
@@ -493,9 +493,12 @@ public sealed class OverviewModelTests
             ]));
 
         Assert.Equal(
-            ["wedged", "oscillating", "ceiling", "stuck", "person", "parked", "dependency"],
+            ["wedged", "oscillating", "ceiling", "stuck", "person"],
             overview.Attention.Select(t => t.Item.Id));
-
+        // Parked and dependency-blocked items are the pipeline's own waits: folded, one line each.
+        Assert.Equal(
+            ["1 item parked until quota or a retry", "1 item waiting on a dependency"],
+            overview.Folded.Select(g => g.Title));
         Assert.Equal(["moving"], overview.Healthy.Select(t => t.Item.Id));
         Assert.Equal("1 item converging normally", overview.HealthyLabel);
     }
@@ -557,7 +560,7 @@ public sealed class OverviewModelTests
         Assert.Equal(18, quiet.Median);
         Assert.Equal(16, quiet.BandLow);
         Assert.Equal(19, quiet.BandHigh);
-        Assert.Equal("vs a usual 18", quiet.Caption);
+        Assert.Equal("vs a usual 18 a week", quiet.Caption);
         Assert.Equal("0", quiet.Value);
         Assert.Equal(Trend.Down, quiet.Trend);
 

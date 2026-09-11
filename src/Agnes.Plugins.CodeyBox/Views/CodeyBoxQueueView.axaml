@@ -231,7 +231,8 @@
          rendered (and screenshotted) from a hand-built record with no view model behind it. The two
          commands a row needs cannot ride on that record, so they are set here, from THIS view's data
          context, via $parent — an ordinary {Binding} on the element would resolve against the Overview. -->
-    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDashboard}" Padding="14">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDashboard}" Padding="14"
+                  HorizontalScrollBarVisibility="Disabled">
       <StackPanel Spacing="14">
         <!-- Until the first build lands there is nothing to say but what the pane header already says. -->
         <TextBlock Text="Gathering the fleet's state…" Foreground="{DynamicResource FgFaint}" FontSize="11"

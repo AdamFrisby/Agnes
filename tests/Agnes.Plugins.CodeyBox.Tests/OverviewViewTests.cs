@@ -470,8 +470,8 @@ public class OverviewViewTests
                 .Select(t => t.Text ?? string.Empty)
                 .ToList();
 
-            Assert.Contains("Nothing is in flight.", said);
-            Assert.Contains("Sparklines fill in as the tab is left open.", said);
+            Assert.Contains("Nothing needs a look.", said);
+            Assert.Contains("Sparklines cover the time this tab has been open; a norm appears after a day of history.", said);
             Assert.Contains("No quota history on this host.", said);
         });
     }

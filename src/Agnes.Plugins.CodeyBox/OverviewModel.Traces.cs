@@ -435,9 +435,15 @@ public static partial class OverviewModel
     {
         if (motion.Motion != Motion.Moving)
         {
-            return motion.Why;
+            // A stopped item with a shape worth naming says both: where it is stopped, and that the loop
+            // was not closing anyway — which is what keeps it out of the folded groups.
+            return shape switch
+            {
+                Convergence.Oscillating => Inv($"{motion.Why} · {(repeatingGate.Length > 0 ? Inv($"same gate repeating: {repeatingGate}") : "findings going back up")}"),
+                Convergence.Stuck => Inv($"{motion.Why} · same findings for {StuckRun} iterations"),
+                _ => motion.Why,
+            };
         }
-
         if (nearCeiling)
         {
             return Inv($"iteration {lastIteration} of {ceiling}, {(shape == Convergence.New ? "still early" : "converging")}");

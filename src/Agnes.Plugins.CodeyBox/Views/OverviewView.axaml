@@ -143,6 +143,15 @@
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Foreground" Value="{DynamicResource Fg}" />
     </Style>
+    <Style Selector="TextBlock.vitalperiod">
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+    </Style>
+    <Style Selector="Expander.fold">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
     <Style Selector="TextBlock.quiet">
       <Setter Property="FontSize" Value="11" />
       <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
@@ -150,14 +159,17 @@
     </Style>
   </UserControl.Styles>
 
-  <StackPanel Spacing="16">
+  <StackPanel Spacing="16" Margin="0,0,12,0">
 
     <!-- ============ BAND 1: the state of the world ============
          One sentence naming the constraint, in the words you would use out loud, and five vitals read
          against the fleet's own trailing norm rather than an absolute — so a quiet day reads as quiet
          instead of as a collapse. -->
-    <Grid ColumnDefinitions="Auto,*">
+    <Grid ColumnDefinitions="Auto,*,Auto">
       <c:ToneEdge Grid.Column="0" Tone="{Binding Verdict}" Width="3" Margin="0,0,10,0" />
+      <!-- The one place the screen says its clocks are local, and how fresh it is. -->
+      <TextBlock Grid.Column="2" Classes="quiet" Text="{Binding AsOf}" Margin="14,0,0,0"
+                 VerticalAlignment="Center" TextWrapping="NoWrap" />
       <TextBlock Grid.Column="1" Text="{Binding Sentence}" FontSize="15" FontWeight="SemiBold"
                  Foreground="{DynamicResource Fg}" TextWrapping="Wrap" VerticalAlignment="Center" />
     </Grid>
@@ -174,7 +186,12 @@
                 <!-- Tone on the edge only. -->
                 <c:ToneEdge Grid.Column="0" Tone="{Binding Tone}" Width="3" Margin="0,0,10,0" />
                 <StackPanel Grid.Column="1" Spacing="2">
-                  <TextBlock Classes="vitallabel" Text="{Binding Label}" />
+                  <!-- The period is what makes the sparkline a fact rather than a shape. -->
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Classes="vitallabel" Text="{Binding Label}" />
+                    <TextBlock Grid.Column="1" Classes="vitalperiod" Text="{Binding Period}"
+                               IsVisible="{Binding HasPeriod}" Margin="8,0,0,0" />
+                  </Grid>
                   <TextBlock Classes="vitalvalue" Text="{Binding Value}" />
                   <!-- The band sits behind the number's history, not behind the number: what is normal
                        is a property of the series. -->
@@ -190,7 +207,7 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <TextBlock Classes="quiet" Text="Sparklines fill in as the tab is left open."
+      <TextBlock Classes="quiet" Text="Sparklines cover the time this tab has been open; a norm appears after a day of history."
                  IsVisible="{Binding Vitals, Converter={x:Static v:OverviewConverters.NoVitalHasBand}}" />
     </StackPanel>
 
@@ -199,10 +216,27 @@
          list that shows healthy work at the same weight as wedged work is a list nobody reads. -->
     <StackPanel Spacing="6">
       <TextBlock Classes="bandhead" Text="Needs a look" />
-      <TextBlock Classes="quiet" Text="Nothing is in flight." IsVisible="{Binding !HasAttention}" />
+      <TextBlock Classes="quiet" Text="Nothing needs a look." IsVisible="{Binding !HasAttention}" />
       <ItemsControl ItemsSource="{Binding Attention}" ItemTemplate="{StaticResource TraceRow}" />
+      <!-- Stopped at a phase boundary nothing here can release: one line per boundary, folded, because
+           they are not moving and there is nothing to decide. The rows are still there for the curious. -->
+      <ItemsControl ItemsSource="{Binding Folded}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Expander Classes="fold" IsExpanded="False" Padding="0" Margin="0,4,0,0">
+              <Expander.Header>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="{Binding Title}" FontSize="11" Foreground="{DynamicResource FgDim}" />
+                  <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{DynamicResource FgFaint}" />
+                </StackPanel>
+              </Expander.Header>
+              <ItemsControl ItemsSource="{Binding Items}" ItemTemplate="{StaticResource TraceRow}" />
+            </Expander>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
 
-      <Expander IsVisible="{Binding HasHealthy}" Padding="0" Margin="0,4,0,0">
+      <Expander Classes="fold" IsVisible="{Binding HasHealthy}" Padding="0" Margin="0,4,0,0">
         <Expander.Header>
           <TextBlock Text="{Binding HealthyLabel}" FontSize="11" Foreground="{DynamicResource FgDim}" />
         </Expander.Header>
@@ -211,11 +245,20 @@
     </StackPanel>
 
     <!-- ============ BAND 3: the trend ============ -->
-    <Grid ColumnDefinitions="*,16,Auto">
+    <Grid ColumnDefinitions="3*,20,2*">
 
       <!-- Did it land whole. The slope of the landed band is throughput; the gap above it is WIP. -->
       <StackPanel Grid.Column="0" Spacing="6">
-        <TextBlock Classes="bandhead" Text="Cumulative flow · 30 days" />
+        <!-- The key is the numbers: each band named in its own hue, with what it added this month. -->
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock Classes="bandhead" Text="Cumulative flow · 30 days" />
+          <TextBlock FontSize="10" Foreground="{DynamicResource StatusDone}" Text="{Binding Flow.LandedLegend}"
+                     VerticalAlignment="Center" />
+          <TextBlock FontSize="10" Foreground="{DynamicResource StatusWorking}" Text="{Binding Flow.InFlightLegend}"
+                     VerticalAlignment="Center" />
+          <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}" Text="{Binding Flow.CancelledLegend}"
+                     VerticalAlignment="Center" IsVisible="{Binding Flow.HasCancelled}" />
+        </StackPanel>
         <c:FlowChart Series="{Binding Flow}" Height="140" HorizontalAlignment="Stretch"
                      IsVisible="{Binding Flow.HasData}" />
         <TextBlock Classes="quiet" Text="Not enough history to draw a flow yet."
@@ -224,7 +267,7 @@
 
       <!-- Can it keep going. Unspent quota at the reset is the only waste under a subscription, so the
            projection is the number, not the spend. -->
-      <StackPanel Grid.Column="2" Spacing="6" MinWidth="240">
+      <StackPanel Grid.Column="2" Spacing="6" MinWidth="300">
         <TextBlock Classes="bandhead" Text="Quota to reset" />
         <TextBlock Classes="quiet" Text="No quota history on this host."
                    IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.NoQuotaHistory}}" />
@@ -232,18 +275,24 @@
                       IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.HasQuotaHistory}}">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <StackPanel Spacing="2" Margin="0,0,0,8" IsVisible="{Binding HasSamples}">
+              <StackPanel Spacing="2" Margin="0,0,0,10" IsVisible="{Binding HasSamples}">
                 <Grid ColumnDefinitions="*,Auto">
                   <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11"
                              Foreground="{DynamicResource FgDim}" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Grid.Column="1" FontSize="11" Foreground="{DynamicResource Fg}"
+                  <TextBlock Grid.Column="1" FontSize="11" Foreground="{DynamicResource Fg}" Margin="8,0,0,0"
                              Text="{Binding NowPct, StringFormat='{}{0:0}% left'}"
                              IsVisible="{Binding NowPct, Converter={x:Static ObjectConverters.IsNotNull}}" />
                 </Grid>
-                <c:BurnDown Burn="{Binding}" Height="40" HorizontalAlignment="Stretch" />
-                <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}"
-                           Text="{Binding ProjectedUnspentPct, StringFormat='leaves ~{0:0}% unspent at reset'}"
-                           IsVisible="{Binding ProjectedUnspentPct, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <!-- The chart's two edges, in words: how far back it reaches, and when the window resets. -->
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Grid.Column="0" FontSize="9" Foreground="{DynamicResource FgFaint}"
+                             Text="{Binding SpanLabel}" />
+                  <TextBlock Grid.Column="1" FontSize="9" Foreground="{DynamicResource FgFaint}" Margin="8,0,0,0"
+                             Text="{Binding ResetLabel}" />
+                </Grid>
+                <c:BurnDown Burn="{Binding}" Height="44" HorizontalAlignment="Stretch" />
+                <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}" Text="{Binding ProjectionLabel}"
+                           IsVisible="{Binding ProjectionLabel, Converter={x:Static ObjectConverters.IsNotNull}}" />
               </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
