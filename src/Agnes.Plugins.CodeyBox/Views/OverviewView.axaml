@@ -174,7 +174,7 @@
     </Style>
   </UserControl.Styles>
 
-  <StackPanel Spacing="16" Margin="0,0,12,0">
+  <StackPanel Spacing="16" Margin="0,0,24,0">
 
     <!-- ============ BAND 1: the state of the world ============
          One sentence naming the constraint, in the words you would use out loud, and five vitals read
