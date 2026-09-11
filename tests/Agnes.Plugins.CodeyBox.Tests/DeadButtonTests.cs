@@ -90,6 +90,13 @@ public class DeadButtonTests
                         continue;
                     }
 
+                    // A button that opens a flyout is driven by the flyout, not by a command — pressing it
+                    // does exactly what it looks like it does.
+                    if (button.Flyout is not null)
+                    {
+                        continue;
+                    }
+
                     dead.Add($"{section}: \"{Describe(button)}\"");
                 }
 

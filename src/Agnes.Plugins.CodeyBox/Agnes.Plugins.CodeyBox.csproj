@@ -25,6 +25,11 @@
          plugin boundary, so the load context can isolate it and a version skew with the host cannot
          break either side. -->
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
+    <!-- Icons. Same rule as every head: a named glyph from fluentui-system-icons, never a character
+         standing in for one. It ships with the plugin for the same reason SignalR does — nothing of it
+         crosses the plugin boundary (it derives from the Avalonia types the loader forces into the host's
+         own context), so the load context can isolate it without a version skew breaking either side. -->
+    <PackageReference Include="FluentIcons.Avalonia" Version="2.1.333" />
   </ItemGroup>
 
 

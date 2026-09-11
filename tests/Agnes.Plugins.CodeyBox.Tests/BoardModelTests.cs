@@ -192,7 +192,7 @@ public sealed class BoardModelTests
     // -----------------------------------------------------------------------------------------------
 
     [Fact]
-    public void A_running_step_says_where_it_is_in_the_chain_and_who_is_on_it()
+    public void A_running_step_says_who_is_on_it_and_leaves_the_position_to_the_pips()
     {
         var board = Build(
             Item("s1", "Done", title: "Test selection 1/3: inventory", createdMinutesAgo: 30),
@@ -200,7 +200,7 @@ public sealed class BoardModelTests
             Item("s3", title: "Test selection 3/3: enforce", createdMinutesAgo: 28, satisfied: false));
 
         var row = Assert.Single(board.Now);
-        Assert.Equal("step 2 of 3 running on claude", row.Why);
+        Assert.Equal("running on claude", row.Why);
         Assert.Equal("s2", row.Head.Id);
         Assert.Equal(Horizon.Now, row.Horizon);
     }
@@ -223,7 +223,7 @@ public sealed class BoardModelTests
 
         Assert.Equal(2, board.Now.Count);
         Assert.Equal(["s2", "s1"], board.Now.Select(r => r.Head.Id));  // most recently touched first
-        Assert.Equal("step 1 of 2 running on claude", board.Now[1].Why);
+        Assert.Equal("running on claude", board.Now[1].Why);
     }
 
     [Fact]
@@ -324,7 +324,8 @@ public sealed class BoardModelTests
 
         Assert.Equal(["Today", "Yesterday", "Fri 4 Sep"], board.Landed.Select(d => d.Title));
         Assert.Equal("landed 14:02", board.Landed[0].Chains[0].Why);
-        Assert.Equal("landed Sat 09:30", board.Landed[1].Chains[0].Why);
+        // One day format across the board: the same "ddd d MMM" the day headings and the archive use.
+        Assert.Equal("landed Sat 5 Sep 09:30", board.Landed[1].Chains[0].Why);
         Assert.Equal(3, board.LandedCount);
     }
 
@@ -350,7 +351,7 @@ public sealed class BoardModelTests
 
         var row = Assert.Single(board.Landed.SelectMany(d => d.Chains));
         Assert.Equal(Horizon.Landed, row.Horizon);
-        Assert.Equal("1 of 2", row.Progress);
+        Assert.Equal("1/2 steps", row.Progress);
     }
 
     [Fact]
@@ -609,5 +610,189 @@ public sealed class BoardModelTests
         var board = Build(stale);
 
         Assert.Equal("waiting for an audit slot for 15h 31m", board.Next.Single().Why);
+    }
+
+    // -----------------------------------------------------------------------------------------------
+    // One reason, said once
+    // -----------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void A_section_whose_rows_all_say_one_thing_says_it_in_the_header_instead()
+    {
+        // Three items wedged at the same instant read identically — which is how the live queue looked,
+        // and printing it three times cost three titles the width they needed.
+        var board = Build(
+            Item("a", "WorkComplete", createdMinutesAgo: 900, updatedMinutesAgo: 636),
+            Item("b", "WorkComplete", createdMinutesAgo: 899, updatedMinutesAgo: 636),
+            Item("c", "WorkComplete", createdMinutesAgo: 898, updatedMinutesAgo: 636));
+
+        Assert.Equal("all waiting for an audit slot for 10h 36m", board.NextSharedWhy);
+        Assert.True(board.HasNextSharedWhy);
+
+        // It is NOT in the heading: an Expander measures its header at the header's own width, and a
+        // heading long enough to carry this sentence made every row in the section overflow the pane.
+        Assert.Equal("Next  ·  3 in dispatch order", board.NextHeader);
+
+        // The rows still KNOW their reason — the pane and the tooltip read it — they just stop printing it.
+        Assert.All(board.Next, c => Assert.Equal("waiting for an audit slot for 10h 36m", c.Why));
+        Assert.All(board.Next, c => Assert.Equal(string.Empty, c.ShownWhy));
+        Assert.All(board.Next, c => Assert.False(c.HasShownWhy));
+    }
+
+    [Fact]
+    public void A_shared_wait_of_differing_lengths_leaves_each_row_its_own_duration()
+    {
+        var board = Build(
+            Item("a", "WorkComplete", createdMinutesAgo: 900, updatedMinutesAgo: 600),
+            Item("b", "WorkComplete", createdMinutesAgo: 899, updatedMinutesAgo: 300),
+            Item("c", "WorkComplete", createdMinutesAgo: 898, updatedMinutesAgo: 200));
+
+        Assert.Equal("all waiting for an audit slot", board.NextSharedWhy);
+        Assert.Equal(["for 10h 00m", "for 5h 00m", "for 3h 20m"], board.Next.Select(c => c.ShownWhy));
+    }
+
+    [Fact]
+    public void A_reason_shared_by_most_of_a_section_is_lifted_and_says_how_many()
+    {
+        // The live shape: the boundary rows sort to the front, so every row on screen said the same thing
+        // while the section as a whole did not. A quantified header lifts it without overstating it.
+        WorkItemRow[] items =
+        [
+            .. Enumerable.Range(0, 3).Select(i =>
+                Item($"wait{i}", "WorkComplete", createdMinutesAgo: 900 - i, updatedMinutesAgo: 636)),
+            .. Enumerable.Range(0, 2).Select(i =>
+                Item($"fresh{i}", "Queued", createdMinutesAgo: 500 - i)),
+        ];
+
+        var board = Build(items);
+
+        Assert.Equal("3 of 5 waiting for an audit slot for 10h 36m", board.NextSharedWhy);
+        Assert.Equal([string.Empty, string.Empty, string.Empty, "4th in line", "5th in line"],
+                     board.Next.Select(c => c.ShownWhy));
+    }
+
+    [Fact]
+    public void A_section_of_unrelated_reasons_lifts_nothing()
+    {
+        var board = Build(
+            Item("top", priority: 10, createdMinutesAgo: 50),
+            Item("mid", priority: 5, createdMinutesAgo: 100),
+            Item("late", priority: 5, createdMinutesAgo: 20));
+
+        Assert.Equal(string.Empty, board.NextSharedWhy);
+        Assert.False(board.HasNextSharedWhy);
+        Assert.Equal(["next up", "2nd in line", "3rd in line"], board.Next.Select(c => c.ShownWhy));
+    }
+
+    [Fact]
+    public void Two_rows_lift_only_when_they_agree_and_one_row_lifts_nothing()
+    {
+        var pair = BoardModel.Lift(
+        [
+            Fake.Chain(Fake.Row("a")) with { Why = "waiting for a slot" },
+            Fake.Chain(Fake.Row("b")) with { Why = "waiting for a slot" },
+        ]);
+        Assert.Equal("all waiting for a slot", pair.Shared);
+
+        var mixed = BoardModel.Lift(
+        [
+            Fake.Chain(Fake.Row("a")) with { Why = "waiting for a slot" },
+            Fake.Chain(Fake.Row("b")) with { Why = "waiting for a slot" },
+            Fake.Chain(Fake.Row("c")) with { Why = "next up" },
+            Fake.Chain(Fake.Row("d")) with { Why = "4th in line" },
+        ]);
+        Assert.Equal(string.Empty, mixed.Shared);
+
+        var alone = BoardModel.Lift([Fake.Chain(Fake.Row("a")) with { Why = "waiting for a slot" }]);
+        Assert.Equal(string.Empty, alone.Shared);
+    }
+
+    [Fact]
+    public void Landed_rows_keep_their_own_times_because_a_landing_time_is_not_shared()
+    {
+        var board = Build(
+            Item("a", "Done", createdMinutesAgo: 900, updatedMinutesAgo: 90),
+            Item("b", "Done", createdMinutesAgo: 899, updatedMinutesAgo: 30));
+
+        var day = Assert.Single(board.Landed);
+        Assert.Equal(string.Empty, day.SharedWhy);
+        Assert.All(day.Chains, c => Assert.True(c.HasShownWhy));
+    }
+
+    // -----------------------------------------------------------------------------------------------
+    // What the headers say
+    // -----------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void One_waiting_group_is_named_by_the_horizon_rather_than_nested_under_it()
+    {
+        var board = Build(
+            Item("ask", "NeedsOperatorInput", createdMinutesAgo: 300),
+            Item("dead", "Failed", createdMinutesAgo: 200));
+
+        var group = Assert.Single(board.Waiting);
+        Assert.True(board.WaitingIsOneGroup);
+        Assert.False(board.WaitingIsGrouped);
+        Assert.Equal(WaitReason.Person, group.Reason);
+        Assert.Equal("Waiting  ·  2 need you", board.WaitingHeader);
+    }
+
+    [Fact]
+    public void Only_what_needs_a_person_opens_by_itself()
+    {
+        var board = Build(
+            Item("ask", "NeedsOperatorInput", createdMinutesAgo: 300),
+            Item("parked", "Queued", createdMinutesAgo: 200, quotaRetry: Now.AddHours(2)),
+            Item("blocked", dependsOn: ["missing"], satisfied: false, createdMinutesAgo: 100));
+
+        Assert.True(board.WaitingIsGrouped);
+        Assert.Equal(
+            [WaitReason.Person],
+            board.Waiting.Where(g => g.OpenByDefault).Select(g => g.Reason));
+    }
+
+    [Fact]
+    public void Landed_says_once_that_its_times_are_local()
+    {
+        var board = Build(Item("a", "Done", createdMinutesAgo: 900, updatedMinutesAgo: 60));
+
+        Assert.EndsWith("·  local time", board.LandedHeader, StringComparison.Ordinal);
+        Assert.DoesNotContain("local time", board.NextHeader, StringComparison.Ordinal);
+
+        // …and nothing to be local about when nothing landed.
+        Assert.DoesNotContain("local time", Build(Item("q")).LandedHeader, StringComparison.Ordinal);
+    }
+
+    // -----------------------------------------------------------------------------------------------
+    // The fold
+    // -----------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void A_long_dispatch_order_shows_its_front_and_folds_the_rest()
+    {
+        var board = Build([.. Enumerable.Range(0, 16).Select(i => Item($"q{i}", createdMinutesAgo: 600 - i))]);
+
+        Assert.True(board.NextIsFolded);
+        Assert.Equal(Board.NextPreview, board.NextShown.Count);
+        Assert.Equal(11, board.NextRest.Count);
+        Assert.Equal("Show 11 more", board.NextMoreLabel);
+
+        // The fold hides nothing from the header: the section still states its whole length.
+        Assert.Contains("16 in dispatch order", board.NextHeader, StringComparison.Ordinal);
+
+        // Together they are the queue, in order, with nothing dropped or repeated.
+        Assert.Equal(board.Next.Select(c => c.Id), board.NextShown.Concat(board.NextRest).Select(c => c.Id));
+    }
+
+    [Fact]
+    public void A_short_dispatch_order_is_not_folded_and_never_folds_a_tail_of_one()
+    {
+        var six = Build([.. Enumerable.Range(0, 6).Select(i => Item($"q{i}", createdMinutesAgo: 600 - i))]);
+
+        // Six is five shown and one behind a button, which is a button in place of a row.
+        Assert.False(six.NextIsFolded);
+        Assert.Equal(6, six.NextShown.Count);
+        Assert.Empty(six.NextRest);
+        Assert.Equal(string.Empty, six.NextMoreLabel);
     }
 }

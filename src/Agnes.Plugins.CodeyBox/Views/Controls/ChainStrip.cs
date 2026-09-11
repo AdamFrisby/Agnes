@@ -28,6 +28,26 @@ public sealed class ChainStrip : ThemedDrawing
     /// <summary>Room above and below the pip for the selected step's ring.</summary>
     private const double Ring = 2;
 
+    // ----------------------------------------------------------------------------------------------
+    // THE CAP. A live chain of 32 steps drew a 32-pip strip 349px wide, which on a 600px runway took the
+    // title's width away from it and ran the agent name over the ordinal beside it. Past a dozen pips the
+    // strip has also stopped being readable as a shape — nobody counts 27 solid squares — so beyond that
+    // it is drawn as its beginning, a gap, and its end: where the work started, that there is a lot of
+    // it, and where it has got to. The tooltip still names every step, so nothing is lost, only folded.
+    // ----------------------------------------------------------------------------------------------
+
+    /// <summary>Longest strip drawn in full.</summary>
+    internal const int MaxPips = 12;
+
+    /// <summary>How much of a longer chain is drawn from the front.</summary>
+    internal const int HeadPips = 8;
+
+    /// <summary>…and from the end, which is where a long chain's news is.</summary>
+    internal const int TailPips = 3;
+
+    /// <summary>Width of the mark that stands for the steps not drawn.</summary>
+    private const double Skip = 11;
+
     public static readonly StyledProperty<IReadOnlyList<Step>?> StepsProperty =
         AvaloniaProperty.Register<ChainStrip, IReadOnlyList<Step>?>(nameof(Steps));
 
@@ -63,12 +83,39 @@ public sealed class ChainStrip : ThemedDrawing
         set => SetValue(StepCommandProperty, value);
     }
 
-    protected override Size MeasureOverride(Size availableSize)
+    /// <summary>
+    /// The slots drawn, left to right: a step, or <c>null</c> for the gap standing in for the ones folded
+    /// away. The layout is computed rather than clipped so that measure, render and hit-testing cannot
+    /// disagree about which pip is where.
+    /// </summary>
+    internal static IReadOnlyList<Step?> Lay(IReadOnlyList<Step>? steps)
     {
-        var count = Steps?.Count ?? 0;
-        var width = count == 0 ? 0 : (count * (Pip + Gap)) - Gap;
-        return new Size(width, Pip + (Ring * 2));
+        if (steps is not { Count: > 0 })
+        {
+            return [];
+        }
+
+        if (steps.Count <= MaxPips)
+        {
+            return [.. steps];
+        }
+
+        return [.. steps.Take(HeadPips), null, .. steps.Skip(steps.Count - TailPips)];
     }
+
+    private static double Widths(IReadOnlyList<Step?> slots)
+    {
+        var width = 0.0;
+        for (var i = 0; i < slots.Count; i++)
+        {
+            width += (slots[i] is null ? Skip : Pip) + Gap;
+        }
+
+        return width <= 0 ? 0 : width - Gap;
+    }
+
+    protected override Size MeasureOverride(Size availableSize)
+        => new(Widths(Lay(Steps)), Pip + (Ring * 2));
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -93,29 +140,47 @@ public sealed class ChainStrip : ThemedDrawing
         // exactly the kind of silently-dead affordance this codebase already has a test class for.
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
 
-        if (Steps is not { Count: > 0 } steps)
+        var slots = Lay(Steps);
+        if (slots.Count == 0)
         {
             return;
         }
 
         var top = Math.Max(0, (Bounds.Height - Pip) / 2);
-        for (var i = 0; i < steps.Count; i++)
+        var x = 0.0;
+        foreach (var slot in slots)
         {
-            var x = i * (Pip + Gap);
-            if (x + Pip > Bounds.Width + 0.5)
+            var width = slot is null ? Skip : Pip;
+            if (x + width > Bounds.Width + 0.5)
             {
                 // Ran out of room. Better a short strip than pips drawn over the text beside it.
                 return;
             }
 
+            if (slot is null)
+            {
+                // The steps not drawn, as three dots on the pips' own baseline — never a text ellipsis,
+                // which would be a character standing in for a glyph and would not take the role hue.
+                var brush = Brush(ThemedRoles.Faint);
+                for (var dot = 0; dot < 3; dot++)
+                {
+                    context.FillRectangle(brush, new Rect(x + (dot * 4), top + (Pip / 2) - 0.9, 1.8, 1.8));
+                }
+
+                x += width + Gap;
+                continue;
+            }
+
             var rect = new Rect(x, top, Pip, Pip);
-            var (role, fill) = StepMarks.Of(steps[i].State);
+            var (role, fill) = StepMarks.Of(slot.State);
             StepMarks.Draw(context, rect, Brush(role), fill);
 
-            if (SelectedId is { Length: > 0 } selected && steps[i].Item.Id == selected)
+            if (SelectedId is { Length: > 0 } selected && slot.Item.Id == selected)
             {
                 context.DrawRectangle(null, Pen(1, ThemedRoles.Fg), new RoundedRect(rect.Inflate(1.6), 4));
             }
+
+            x += width + Gap;
         }
     }
 
@@ -123,19 +188,29 @@ public sealed class ChainStrip : ThemedDrawing
     {
         base.OnPointerPressed(e);
 
-        if (Steps is not { Count: > 0 } steps || StepCommand is not { } command)
+        if (StepCommand is not { } command)
         {
             return;
         }
 
-        var index = (int)Math.Floor(e.GetPosition(this).X / (Pip + Gap));
-        if (index < 0 || index >= steps.Count)
+        // Walked rather than divided, because a capped strip's slots are not all the same width: the gap
+        // mark is wider than a pip, and a click on it selects nothing rather than the wrong step.
+        var at = e.GetPosition(this).X;
+        var x = 0.0;
+        Step? step = null;
+        foreach (var slot in Lay(Steps))
         {
-            return;
+            var width = (slot is null ? Skip : Pip) + Gap;
+            if (at < x + width)
+            {
+                step = slot;
+                break;
+            }
+
+            x += width;
         }
 
-        var step = steps[index];
-        if (!command.CanExecute(step))
+        if (step is null || !command.CanExecute(step))
         {
             return;
         }

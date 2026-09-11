@@ -26,6 +26,75 @@ public static class BoardSamples
         HistoryCount: 372,
         Slots: (2, 3));
 
+    /// <summary>
+    /// The shapes a real queue has and <see cref="Fleet"/> does not: a dispatch order long enough to fold,
+    /// a chain of 32 steps, and a run of rows all stuck on the same thing.
+    /// </summary>
+    /// <remarks>
+    /// Every layout fault the runway has had came from one of these. Four tidy queued singletons prove the
+    /// markup parses; sixteen entries of which seven read "waiting for an audit slot for 11h 06m" and one
+    /// draws a strip a third of a metre wide are what actually squeezed the titles to nothing. The counts
+    /// are the live instance's own: 16 in Next, 7 of them at a phase boundary, longest chain 32.
+    /// </remarks>
+    public static Board Busy()
+    {
+        var boundary = "waiting for an audit slot for 11h 06m";
+        List<Chain> next = [Long("Test selection (RTS)", 32, 27)];
+
+        for (var i = 0; i < 7; i++)
+        {
+            next.Add(Solo($"Audit gate {i + 1}: re-run the affected tests only", "WorkComplete", "copilot",
+                          StepState.Ready, Horizon.Next, WaitReason.Slot, boundary, days: 0, rank: i + 1)
+                     with { WhyLede = "waiting for an audit slot" });
+        }
+
+        for (var i = 0; i < 8; i++)
+        {
+            next.Add(Solo($"Queued work {i + 1}: something an operator could still reorder", "Queued", "claude",
+                          StepState.Ready, Horizon.Next, WaitReason.Slot,
+                          BoardModel.WhyNext(i + 8), days: 0, rank: i + 8));
+        }
+
+        var (rows, shared) = BoardModel.Lift(next);
+
+        return new Board(
+            Now: [Series()],
+            Next: rows,
+            Waiting: Waiting(),
+            Landed: Landed(),
+            HistoryCount: 372,
+            Slots: (2, 3)) { NextSharedWhy = shared };
+    }
+
+    /// <summary>A chain with more steps than a strip will ever draw: the case the cap exists for.</summary>
+    public static Chain Long(string title, int steps, int done)
+    {
+        var members = new List<Step>(steps);
+        for (var i = 0; i < steps; i++)
+        {
+            var state = i < done ? StepState.Done : i == done ? StepState.Running : StepState.Blocked;
+            members.Add(new Step(
+                Item($"{title} — {i + 1}/{steps} carve the {i + 1}th piece", StateWord(state), "copilot", 30 - i, "codeybox-self"),
+                i,
+                state,
+                $"{i + 1}/{steps}"));
+        }
+
+        return new Chain(
+            Id: members[0].Item.Id,
+            Title: title,
+            ProjectId: "codeybox-self",
+            Steps: members,
+            Head: members[done].Item,
+            Horizon: Horizon.Next,
+            Reason: WaitReason.Slot,
+            Why: "next up",
+            Blocker: null,
+            DispatchRank: 0,
+            LastActivity: Now.AddMinutes(-2),
+            Landed: null);
+    }
+
     /// <summary>What search turns up beyond the four horizons: older, or cancelled.</summary>
     public static IReadOnlyList<Chain> History() =>
     [
@@ -116,7 +185,7 @@ public static class BoardSamples
             Head: steps[3].Item,
             Horizon: Horizon.Now,
             Reason: WaitReason.None,
-            Why: "step 4 of 7 running on claude",
+            Why: "running on claude",
             Blocker: null,
             DispatchRank: -1,
             LastActivity: Now.AddMinutes(-3),
@@ -130,13 +199,13 @@ public static class BoardSamples
     private static IReadOnlyList<Chain> Queued() =>
     [
         Solo("Harden the Incus volume lifecycle", "Queued", "codex", StepState.Ready,
-             Horizon.Next, WaitReason.None, "next when a slot frees", days: 0, rank: 0),
+             Horizon.Next, WaitReason.None, "next up", days: 0, rank: 0),
         Solo("Port the mobile inbox to sheets", "Queued", "claude", StepState.Ready,
-             Horizon.Next, WaitReason.None, "2nd in dispatch order", days: 0, rank: 1),
+             Horizon.Next, WaitReason.None, "2nd in line", days: 0, rank: 1),
         // A queued CHAIN, so the Next list is not accidentally all singletons.
-        Pair("Copilot BYOK", "Queued", "claude", Horizon.Next, "3rd in dispatch order", rank: 2),
+        Pair("Copilot BYOK", "Queued", "claude", Horizon.Next, "3rd in line", rank: 2),
         Solo("Add a Pi smoke test", "Queued", "pi", StepState.Ready,
-             Horizon.Next, WaitReason.None, "4th in dispatch order", days: 0, rank: 3),
+             Horizon.Next, WaitReason.None, "4th in line", days: 0, rank: 3),
     ];
 
     /// <summary>One group per reason, because a reason is an unblock and each needs to be seen.</summary>
