@@ -143,7 +143,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         foreach (var archived in _archiveStore.Load())
         {
-            ArchivedSessions.Add(archived);
+            ArchivedSessions.Add(Rekey(archived));
         }
 
         ArchivedSessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasArchived));
@@ -3042,7 +3042,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             return Task.CompletedTask;
         }
 
-        foreach (var descriptor in saved)
+        foreach (var descriptor in saved.Select(Rekey))
         {
             var doc = new SessionDocument(this, _dispatcher)
             {
@@ -3331,12 +3331,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var connected = await SelectHostAsync(doc, host, announceRole: justPaired);
         if (connected)
         {
-            if (!_knownHosts.Any(h => h.Url == host.Url))
-            {
-                _knownHosts.Add(host);
-            }
-
-            _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+            RememberHost(host);
             _dispatcher.Post(() => doc.ShowAddHost = false);
         }
         else if (pairingFailed)
@@ -3409,12 +3404,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var connected = await SelectHostAsync(doc, host, announceRole: true);
             if (connected)
             {
-                if (!_knownHosts.Any(h => h.Url == host.Url))
-                {
-                    _knownHosts.Add(host);
-                }
-
-                _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+                RememberHost(host);
                 _dispatcher.Post(() => doc.ShowAddHost = false);
             }
         }
@@ -3467,12 +3457,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var connected = await SelectHostAsync(doc, host, announceRole: true);
             if (connected)
             {
-                if (!_knownHosts.Any(h => h.Url == host.Url))
-                {
-                    _knownHosts.Add(host);
-                }
-
-                _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+                RememberHost(host);
                 _dispatcher.Post(() => doc.ShowAddHost = false);
             }
         }
@@ -3949,6 +3934,57 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     private string? FingerprintFor(string hostUrl)
         => _knownHosts.FirstOrDefault(h => string.Equals(h.Url, hostUrl, StringComparison.OrdinalIgnoreCase))?.Fingerprint;
 
+    /// <summary>
+    /// A saved tab or archived session names its host and carries the token it had when it was saved; the
+    /// host registry is where a re-pair puts the new one. Trusting the tab's copy meant a device that had
+    /// paired again came back with every tab presenting a dead token and failing 401 forever, while the
+    /// registry beside it held a live one. The registry wins; the copy only stands in for a host the
+    /// registry no longer knows.
+    /// </summary>
+    private SessionDescriptor Rekey(SessionDescriptor descriptor)
+    {
+        var host = _knownHosts.FirstOrDefault(h => string.Equals(h.Url, descriptor.HostUrl, StringComparison.OrdinalIgnoreCase));
+        return host is null || string.IsNullOrEmpty(host.Token) || host.Token == descriptor.Token
+            ? descriptor
+            : descriptor with { Token = host.Token };
+    }
+
+    /// <summary>
+    /// Records a host that just connected after pairing. Pairing a host the registry already knows is a
+    /// re-pair: its identity (name, role) stays and its credential changes — the old record used to be kept
+    /// whole, so the new token lived only in the open tab and was gone at the next start. Open tabs on the
+    /// host take the new token too, so their next reconnect does not present the revoked one.
+    /// </summary>
+    private void RememberHost(KnownHost host)
+    {
+        var index = _knownHosts.FindIndex(h => string.Equals(h.Url, host.Url, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0)
+        {
+            _knownHosts[index] = _knownHosts[index] with
+            {
+                Token = host.Token,
+                Fingerprint = host.Fingerprint ?? _knownHosts[index].Fingerprint,
+            };
+        }
+        else
+        {
+            _knownHosts.Add(host);
+        }
+
+        _hostStore.Save(_knownHosts.Where(h => IsForgettableHost(h.Url)).ToList());
+
+        foreach (var doc in _factory.DocumentDock?.VisibleDockables?.OfType<SessionDocument>() ?? [])
+        {
+            if (doc.Descriptor is { } d
+                && string.Equals(d.HostUrl, host.Url, StringComparison.OrdinalIgnoreCase)
+                && d.Token != host.Token)
+            {
+                doc.Descriptor = d with { Token = host.Token };
+                doc.HostToken = host.Token;
+            }
+        }
+    }
+
     /// <summary>Reads one query value from an <c>agnes://</c> link.</summary>
     private static string? ReadLinkValue(string link, string key)
     {
@@ -4233,6 +4269,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     {
         ArchivedSessions.Remove(descriptor);
         _archiveStore.Save(ArchivedSessions.ToList());
+        descriptor = Rekey(descriptor);
 
         var doc = new SessionDocument(this, _dispatcher)
         {
