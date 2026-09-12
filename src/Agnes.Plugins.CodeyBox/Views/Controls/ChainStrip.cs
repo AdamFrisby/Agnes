@@ -184,32 +184,108 @@ public sealed class ChainStrip : ThemedDrawing
         }
     }
 
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    /// <summary>The step under an x position, or null over the gap mark or past the end. Walked rather
+    /// than divided, because a capped strip's slots are not all the same width.</summary>
+    internal static Step? StepAt(IReadOnlyList<Step>? steps, double at)
     {
-        base.OnPointerPressed(e);
-
-        if (StepCommand is not { } command)
-        {
-            return;
-        }
-
-        // Walked rather than divided, because a capped strip's slots are not all the same width: the gap
-        // mark is wider than a pip, and a click on it selects nothing rather than the wrong step.
-        var at = e.GetPosition(this).X;
         var x = 0.0;
-        Step? step = null;
-        foreach (var slot in Lay(Steps))
+        foreach (var slot in Lay(steps))
         {
             var width = (slot is null ? Skip : Pip) + Gap;
             if (at < x + width)
             {
-                step = slot;
-                break;
+                return slot;
             }
-
             x += width;
         }
+        return null;
+    }
 
+    private Step? _hovered;
+
+    // ----------------------------------------------------------------------------------------------
+    // THE TOOLTIP IS PER PIP. One tooltip naming all thirty-two steps is a list to read; the question a
+    // pointer over a pip asks is "what is this one" — so the tip follows the pointer from pip to pip and
+    // says that step's number, its state, its title and what is known about where it is. Over the gap
+    // mark or off the end it falls back to the whole strip, which is the only way to reach the steps the
+    // cap folded away.
+    // ----------------------------------------------------------------------------------------------
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        var step = StepAt(Steps, e.GetPosition(this).X);
+        if (ReferenceEquals(step, _hovered))
+        {
+            return;
+        }
+        _hovered = step;
+        ToolTip.SetTip(this, step is null ? Describe(Steps) : Tip(step, Steps));
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        _hovered = null;
+        ToolTip.SetTip(this, Describe(Steps));
+    }
+
+    /// <summary>The lines a pip's tooltip says, first to last: "Step 2 of 7 · running", the title, then
+    /// the state the orchestrator reports with the agent and how long ago it moved, then the error if it
+    /// carries one.</summary>
+    internal static IReadOnlyList<string> TipLines(Step step, IReadOnlyList<Step>? steps)
+    {
+        var count = steps?.Count ?? 0;
+        var position = step.Series is { Length: > 0 } given
+            ? string.Create(CultureInfo.InvariantCulture, $"Step {given}")
+            : string.Create(CultureInfo.InvariantCulture, $"Step {step.Index + 1} of {count}");
+        var lines = new List<string>
+        {
+            string.Create(CultureInfo.InvariantCulture, $"{position} · {StepMarks.Word(step.State)}"),
+            step.Item.Title,
+        };
+        var facts = new List<string> { step.Item.State };
+        if (!string.IsNullOrWhiteSpace(step.Item.Agent))
+        {
+            facts.Add(step.Item.Agent);
+        }
+        if (step.Item.UpdatedAt != default)
+        {
+            facts.Add(WorkItemRow.Relative(step.Item.UpdatedAt));
+        }
+        lines.Add(string.Join(" · ", facts));
+        if (step.Item.HasError)
+        {
+            lines.Add(step.Item.ErrorSummary);
+        }
+        return lines;
+    }
+
+    private Control Tip(Step step, IReadOnlyList<Step>? steps)
+    {
+        var lines = TipLines(step, steps);
+        var panel = new StackPanel { Spacing = 2, MaxWidth = 360 };
+        for (var i = 0; i < lines.Count; i++)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = lines[i],
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = i == 0 ? 12 : 11,
+                FontWeight = i == 0 ? FontWeight.SemiBold : FontWeight.Normal,
+                Foreground = Brush(i <= 1 ? ThemedRoles.Fg : ThemedRoles.Faint),
+            });
+        }
+        return panel;
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (StepCommand is not { } command)
+        {
+            return;
+        }
+        var step = StepAt(Steps, e.GetPosition(this).X);
         if (step is null || !command.CanExecute(step))
         {
             return;

@@ -13,8 +13,13 @@ public class OverviewLabelsTests
     public void A_reset_is_named_as_a_clock_time_and_a_distance()
     {
         Assert.Null(OverviewModel.ResetLabelFor(Now, null));
-        Assert.Equal("resets 14:30 · in 2h 30m", OverviewModel.ResetLabelFor(Now, Now.AddHours(2.5)));
-        Assert.Equal("reset was due 11:00", OverviewModel.ResetLabelFor(Now, Now.AddHours(-1)));
+        // Local clock: these times are built with the machine's offset so the day words hold anywhere.
+        var now = new DateTimeOffset(new DateTime(2026, 9, 12, 12, 0, 0, DateTimeKind.Local));
+        Assert.Equal("resets today 14:30 · in 2h 30m", OverviewModel.ResetLabelFor(now, now.AddHours(2.5)));
+        Assert.Equal("resets tomorrow 09:00 · in 21h", OverviewModel.ResetLabelFor(now, now.AddHours(21)));
+        Assert.Equal("resets Fri 06:54 · in 5d 18h", OverviewModel.ResetLabelFor(now, now.AddDays(5).AddHours(18).AddMinutes(54)));
+        Assert.Equal("resets 26 Sep 03:20 · in 13d 15h", OverviewModel.ResetLabelFor(now, now.AddDays(13).AddHours(15).AddMinutes(20)));
+        Assert.Equal("reset was due today 11:00", OverviewModel.ResetLabelFor(now, now.AddHours(-1)));
     }
 
     [Fact]

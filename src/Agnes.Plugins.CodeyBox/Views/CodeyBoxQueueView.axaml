@@ -231,9 +231,9 @@
          rendered (and screenshotted) from a hand-built record with no view model behind it. The two
          commands a row needs cannot ride on that record, so they are set here, from THIS view's data
          context, via $parent — an ordinary {Binding} on the element would resolve against the Overview. -->
-    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDashboard}" Padding="14"
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDashboard}"
                   HorizontalScrollBarVisibility="Disabled">
-      <StackPanel Spacing="14">
+      <StackPanel Margin="14" Spacing="14">
         <!-- Until the first build lands there is nothing to say but what the pane header already says. -->
         <TextBlock Text="Gathering the fleet's state…" Foreground="{DynamicResource FgFaint}" FontSize="11"
                    IsVisible="{Binding !Sections.HasOverview}" />
@@ -842,8 +842,8 @@
     </Grid>
 
     <!-- Fleet: per-project queue depth, spend against budget, and any agent an operator has paused. -->
-    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsFleet}" Padding="14">
-      <StackPanel Spacing="10">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsFleet}">
+      <StackPanel Margin="14" Spacing="10">
         <TextBlock Text="Projects" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" FontSize="12" />
         <ItemsControl ItemsSource="{Binding Sections.Fleet}">
           <ItemsControl.ItemTemplate>
@@ -1008,8 +1008,8 @@
         <TextBlock Text="{Binding Sections.SuggestionSummary}" Foreground="{DynamicResource FgFaint}" FontSize="11" />
       </StackPanel>
 
-      <ScrollViewer Grid.Row="1" Padding="14,0,14,14">
-        <StackPanel>
+      <ScrollViewer Grid.Row="1">
+        <StackPanel Margin="14,0,14,14">
           <TextBlock Text="Nothing matches those filters." Foreground="{DynamicResource FgFaint}" FontSize="12"
                      Margin="0,12" HorizontalAlignment="Center"
                      IsVisible="{Binding !Sections.Suggestions.Count}" />
@@ -1062,8 +1062,8 @@
     </Grid>
 
     <!-- Releases, and the templates a new batch of work can be queued from. -->
-    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsReleases}" Padding="14">
-      <StackPanel Spacing="10">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsReleases}">
+      <StackPanel Margin="14" Spacing="10">
         <TextBlock Text="Releases" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" FontSize="12" />
         <ItemsControl ItemsSource="{Binding Sections.Releases}">
           <ItemsControl.ItemTemplate>
@@ -1117,8 +1117,8 @@
     </ScrollViewer>
 
     <!-- Projects: what the orchestrator runs work for, and its per-project queue control. -->
-    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsProjects}" Padding="14">
-      <ItemsControl ItemsSource="{Binding Sections.Projects}">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsProjects}">
+      <ItemsControl Margin="14" ItemsSource="{Binding Sections.Projects}">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <Border Background="{DynamicResource Panel}" CornerRadius="6" Padding="10,8" Margin="0,2">
@@ -1165,8 +1165,8 @@
           <Button Grid.Column="1" Content="Close" FontSize="11" Padding="8,3"
                   Command="{Binding Sections.CloseRowDetailCommand}" />
         </Grid>
-        <ScrollViewer Grid.Row="1" Padding="14,0,14,12">
-          <SelectableTextBlock Text="{Binding Sections.RowDetail}" FontFamily="monospace" FontSize="11"
+        <ScrollViewer Grid.Row="1">
+          <SelectableTextBlock Margin="14,0,14,12" Text="{Binding Sections.RowDetail}" FontFamily="monospace" FontSize="11"
                                Foreground="{DynamicResource FgDim}" TextWrapping="Wrap" />
         </ScrollViewer>
       </Grid>
@@ -1243,8 +1243,8 @@
          carried forward twice. The two surfaces that answer the question the section is actually opened
          for ("why is nothing dispatching") are lifted out and given a shape; the other eighteen stay raw,
          labelled as raw, and collapsed. They are genuinely useful and genuinely secondary. -->
-    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDiagnostics}" Padding="14">
-      <StackPanel Spacing="14">
+    <ScrollViewer Grid.Row="2" IsVisible="{Binding Sections.IsDiagnostics}">
+      <StackPanel Margin="14" Spacing="14">
 
         <StackPanel Spacing="4" IsVisible="{Binding Sections.HasConcurrency}">
           <TextBlock Text="Dispatch capacity" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" FontSize="12" />

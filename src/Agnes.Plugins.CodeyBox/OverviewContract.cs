@@ -210,6 +210,16 @@ public sealed record FlowSeries(IReadOnlyList<FlowPoint> Days)
 public sealed record BurnSample(DateTimeOffset At, double Pct);
 
 /// <summary>
+/// One agent's quota as a card: the longest window drawn as a burn-down, because that is the one whose
+/// unspent remainder at reset is the waste, and every shorter window as a gauge of where it stands now,
+/// because a five-hour window inside a seven-day one refills many times before the big one does and its
+/// history is a sawtooth that says little.
+/// </summary>
+public sealed record QuotaCard(string Agent, QuotaBurn Primary, IReadOnlyList<QuotaBurn> Others)
+{
+    public bool HasOthers => Others.Count > 0;
+}
+/// <summary>
 /// One agent's quota window drawn as a burn-down to its reset. Under subscriptions the marginal token is
 /// free and unspent quota at the reset is the only waste, so the number that matters is
 /// <paramref name="ProjectedUnspentPct"/>, not spend.
@@ -232,9 +242,11 @@ public sealed record QuotaBurn(
     public bool HasSamples => Samples.Count >= 2;
     public string Label => Window is { Length: > 0 } w ? $"{Agent} · {w.Replace('_', ' ')}" : Agent;
 
+    /// <summary>The window's name as a person says it: "seven day", "5h rolling", or "overall".</summary>
+    public string WindowShort => Window is { Length: > 0 } w ? w.Replace('_', ' ').Replace('-', ' ') : "overall";
+
     /// <summary>"resets 06:54 · in 8h 44m" — the right edge of the chart, in words.</summary>
     public string? ResetLabel { get; init; }
-
     /// <summary>"last 6h 12m" — how far back the samples reach; the left edge of the chart, in words.</summary>
     public string? SpanLabel { get; init; }
 
@@ -327,6 +339,9 @@ public sealed record Overview(
     /// <summary>Stopped at a phase boundary nothing here can release, one group per boundary. Not in
     /// <see cref="Attention"/>: they need a slot, not a look.</summary>
     public IReadOnlyList<AttentionGroup> Folded { get; init; } = [];
+
+    /// <summary>One card per agent: the longest window as the chart, the rest as gauges beside it.</summary>
+    public IReadOnlyList<QuotaCard> QuotaCards => OverviewModel.Cards(Quota, Sample.At);
     public bool HasFolded => Folded.Count > 0;
 
     /// <summary>Every clock on this screen is local time; this is the one place that says so.</summary>

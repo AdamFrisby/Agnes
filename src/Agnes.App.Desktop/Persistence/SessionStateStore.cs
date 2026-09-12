@@ -11,7 +11,18 @@ public sealed record SessionDescriptor(
     string AdapterId,
     string Title,
     bool Pinned = false,
-    IReadOnlyList<string>? Tags = null);
+    IReadOnlyList<string>? Tags = null,
+    string? ScreenId = null)
+{
+    /// <summary>A plugin screen tab (CodeyBox, say) rather than a session: it names the screen and nothing
+    /// else, and comes back on restore when a loaded plugin still offers that screen. Older tab files have
+    /// no such field and read as sessions, as they always did.</summary>
+    public bool IsScreen => !string.IsNullOrEmpty(ScreenId);
+
+    /// <summary>The descriptor a plugin screen saves as.</summary>
+    public static SessionDescriptor ForScreen(string screenId, string title)
+        => new(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, title, ScreenId: screenId);
+}
 
 /// <summary>Persists the set of open session tabs so they auto-reconnect on relaunch.</summary>
 public sealed class SessionStateStore

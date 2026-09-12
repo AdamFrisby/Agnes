@@ -511,9 +511,9 @@
          clips its own text at the pane boundary and gives the operator a scrollbar to read a title with.
          Rows measure within the width they are given (see the row template), and the right padding is
          the scrollbar's gutter, so the vertical bar never sits on top of a reason. -->
-    <ScrollViewer Grid.Row="1" Padding="8,0,16,10" HorizontalScrollBarVisibility="Disabled"
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto">
-      <StackPanel Spacing="10">
+      <StackPanel Margin="8,0,16,10" Spacing="10">
 
         <Expander Classes="horizon" IsExpanded="True">
           <Expander.Header>

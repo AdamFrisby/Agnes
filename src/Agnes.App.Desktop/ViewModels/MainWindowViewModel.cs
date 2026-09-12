@@ -97,8 +97,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         IPermissionPolicy? policy = null,
         IOnboardingStore? onboarding = null,
         KeymapService? keymap = null,
-        string? clientPluginDirectory = null)
+        string? clientPluginDirectory = null,
+        IEnumerable<IClientPluginModule>? clientPluginModules = null)
     {
+        _clientPluginModules = clientPluginModules;
         _clientPluginDirectory = clientPluginDirectory;
         _connector = connector;
         _dispatcher = dispatcher;
@@ -2577,9 +2579,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public static string DefaultClientPluginDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "client-plugins");
 
+    private readonly IEnumerable<IClientPluginModule>? _clientPluginModules;
+
     private ClientPluginSet EnsureClientPlugins()
         => _clientPlugins ??= DesktopClientPlugins.Build(
-            Notifier, _clientPluginDirectory ?? DefaultClientPluginDirectory);
+            Notifier, _clientPluginDirectory ?? DefaultClientPluginDirectory, additionalModules: _clientPluginModules);
 
     /// <summary>Custom screens contributed by client plugins, for the New-tab menu to list and open.</summary>
     public IReadOnlyList<ICustomScreenProvider> CustomScreens => EnsureClientPlugins().CustomScreens;
@@ -3044,6 +3048,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
         foreach (var descriptor in saved.Select(Rekey))
         {
+            if (descriptor.IsScreen)
+            {
+                // A plugin screen tab comes back if a loaded plugin still offers it; if the plugin is gone,
+                // so is the tab, quietly — there is nothing to show and nothing to reconnect.
+                var provider = CustomScreens.FirstOrDefault(p => string.Equals(p.ScreenId, descriptor.ScreenId, StringComparison.Ordinal));
+                if (provider is not null)
+                {
+                    OpenCustomScreen(provider);
+                }
+                continue;
+            }
+
             var doc = new SessionDocument(this, _dispatcher)
             {
                 Title = descriptor.Title,
@@ -4232,10 +4248,18 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             return;
         }
 
+        // Session tabs and plugin screen tabs, in the order they sit in the strip: a screen the operator
+        // keeps open (the orchestrator's overview, say) used to vanish at every restart while the sessions
+        // beside it came back.
         var tabs = _factory.DocumentDock?.VisibleDockables?
-            .OfType<SessionDocument>()
-            .Where(d => d.Descriptor is not null)
-            .Select(Snapshot)
+            .Select(d => d switch
+            {
+                SessionDocument { Descriptor: not null } session => Snapshot(session),
+                PluginScreenDocument screen => SessionDescriptor.ForScreen((string)screen.Id!, screen.Title ?? string.Empty),
+                _ => null,
+            })
+            .Where(d => d is not null)
+            .Select(d => d!)
             .ToList() ?? [];
         _tabStore.Save(tabs);
     }

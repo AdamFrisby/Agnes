@@ -17,9 +17,19 @@ public static class DesktopClientPlugins
 
     /// <summary>Builds the desktop client plugin set: the built-in OS notifier expressed as a channel, plus
     /// every dynamic module found under <paramref name="dynamicPluginDirectory"/> (if any).</summary>
-    public static ClientPluginSet Build(INotifier notifier, string? dynamicPluginDirectory = null, Action<string, Exception>? onLoadError = null)
+    public static ClientPluginSet Build(
+        INotifier notifier,
+        string? dynamicPluginDirectory = null,
+        Action<string, Exception>? onLoadError = null,
+        IEnumerable<IClientPluginModule>? additionalModules = null)
     {
         var modules = new List<IClientPluginModule> { new DesktopBuiltInModule(notifier) };
+        if (additionalModules is not null)
+        {
+            // In-process modules: how a test (or an embedding head) contributes a screen without a
+            // plugin assembly on disk.
+            modules.AddRange(additionalModules);
+        }
         if (!string.IsNullOrWhiteSpace(dynamicPluginDirectory))
         {
             modules.AddRange(DesktopClientPluginLoader.LoadModules(dynamicPluginDirectory, onLoadError));

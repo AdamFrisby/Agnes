@@ -288,35 +288,61 @@
          projection is the number, not the spend. "Available" is the provider's own word for the number,
          and the only one used here. -->
     <StackPanel Spacing="6">
-      <TextBlock Classes="bandhead" Text="Quota to reset · % available, per window" />
+      <TextBlock Classes="bandhead" Text="Quota to reset · % available · the longest window charted, the rest as gauges" />
       <TextBlock Classes="quiet" Text="No quota history on this host."
                  IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.NoQuotaHistory}}" />
-      <ItemsControl ItemsSource="{Binding Quota}"
+      <ItemsControl ItemsSource="{Binding QuotaCards}"
                     IsVisible="{Binding Quota, Converter={x:Static v:OverviewConverters.HasQuotaHistory}}">
+        <!-- CardFlow, not WrapPanel: the panel's promised height must be the height it uses, or the page's
+             scroll extent stops short of the last row (it did). -->
         <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+          <ItemsPanelTemplate><c:CardFlow /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate>
-            <Border Classes="quotacard" IsVisible="{Binding HasSamples}">
+            <Border Classes="quotacard">
               <StackPanel Spacing="3">
+                <!-- The agent, and where its longest window stands. -->
                 <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11" FontWeight="SemiBold"
+                  <TextBlock Grid.Column="0" Text="{Binding Agent}" FontSize="12" FontWeight="SemiBold"
                              Foreground="{DynamicResource Fg}" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Grid.Column="1" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}"
-                             Margin="8,0,0,0" Text="{Binding NowPct, StringFormat='{}{0:0.#}%'}"
-                             IsVisible="{Binding NowPct, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                  <TextBlock Grid.Column="1" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource Fg}"
+                             Margin="8,0,0,0" Text="{Binding Primary.NowPct, StringFormat='{}{0:0.#}%'}"
+                             IsVisible="{Binding Primary.NowPct, Converter={x:Static ObjectConverters.IsNotNull}}" />
                 </Grid>
-                <!-- The chart's two edges, in words: how far back it reaches, and when the window resets. -->
                 <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Grid.Column="0" FontSize="9" Foreground="{DynamicResource FgFaint}"
-                             Text="{Binding SpanLabel}" />
+                  <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="{Binding Primary.WindowShort}" FontSize="10" Foreground="{DynamicResource FgDim}" />
+                    <TextBlock Text="{Binding Primary.SpanLabel}" FontSize="9" Foreground="{DynamicResource FgFaint}"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
                   <TextBlock Grid.Column="1" FontSize="9" Foreground="{DynamicResource FgFaint}" Margin="8,0,0,0"
-                             Text="{Binding ResetLabel}" />
+                             Text="{Binding Primary.ResetLabel}" />
                 </Grid>
-                <c:BurnDown Burn="{Binding}" Height="46" HorizontalAlignment="Stretch" />
-                <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}" Text="{Binding ProjectionLabel}"
-                           IsVisible="{Binding ProjectionLabel, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <!-- The chart, and the shorter windows as gauges beside it. -->
+                <Grid ColumnDefinitions="*,Auto">
+                  <c:BurnDown Grid.Column="0" Burn="{Binding Primary}" Height="46" HorizontalAlignment="Stretch" />
+                  <ItemsControl Grid.Column="1" ItemsSource="{Binding Others}" Margin="10,0,0,0"
+                                IsVisible="{Binding HasOthers}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <StackPanel Spacing="1" HorizontalAlignment="Center" ToolTip.Tip="{Binding ResetLabel}">
+                          <TextBlock FontSize="9" Foreground="{DynamicResource Fg}" HorizontalAlignment="Center"
+                                     Text="{Binding NowPct, StringFormat='{}{0:0}%'}" />
+                          <c:QuotaGauge Pct="{Binding NowPct}" Eligible="{Binding Eligible}" Height="46" Width="10"
+                                        HorizontalAlignment="Center" />
+                          <TextBlock FontSize="8" Foreground="{DynamicResource FgFaint}" HorizontalAlignment="Center"
+                                     Text="{Binding WindowShort}" MaxWidth="44" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Grid>
+                <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}" Text="{Binding Primary.ProjectionLabel}"
+                           IsVisible="{Binding Primary.ProjectionLabel, Converter={x:Static ObjectConverters.IsNotNull}}" />
               </StackPanel>
             </Border>
           </DataTemplate>

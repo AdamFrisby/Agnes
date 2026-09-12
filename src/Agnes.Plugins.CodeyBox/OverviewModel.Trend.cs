@@ -1,3 +1,4 @@
+using System.Globalization;
 namespace Agnes.Plugins.CodeyBox;
 
 // ---------------------------------------------------------------------------------------------------
@@ -120,11 +121,75 @@ public static partial class OverviewModel
         ];
     }
 
+    /// <summary>
+    /// Groups the burn-downs by agent and picks the longest window as each card's chart. Length is read
+    /// off the window's name where the name says it (seven_day, weekly, five_hour, 5h-rolling, ...) and
+    /// otherwise off how far away its reset is — a window that turns over in six days is a longer window
+    /// than one that turns over in two hours, whatever it is called. Agents the router would dispatch to
+    /// come first, then by name.
+    /// </summary>
+    internal static IReadOnlyList<QuotaCard> Cards(IReadOnlyList<QuotaBurn> burns, DateTimeOffset now)
+        =>
+        [
+            .. burns
+                .Where(b => b.HasSamples || b.NowPct is not null)
+                .GroupBy(b => b.Agent, StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    var ordered = g.OrderByDescending(b => WindowLength(b, now)).ThenBy(b => b.WindowShort, StringComparer.Ordinal).ToList();
+                    return new QuotaCard(g.Key, ordered[0], [.. ordered.Skip(1)]);
+                })
+                .OrderByDescending(c => c.Primary.Eligible)
+                .ThenBy(c => c.Agent, StringComparer.OrdinalIgnoreCase),
+        ];
+
+    /// <summary>How long a window is, in hours, as best its name or its reset says.</summary>
+    internal static double WindowLength(QuotaBurn burn, DateTimeOffset now)
+    {
+        var name = (burn.Window ?? string.Empty).ToLowerInvariant();
+        if (name.Contains("month", StringComparison.Ordinal))
+        {
+            return 24 * 30;
+        }
+        if (name.Contains("week", StringComparison.Ordinal) || name.Contains("seven", StringComparison.Ordinal) || name.Contains("7d", StringComparison.Ordinal))
+        {
+            return 24 * 7;
+        }
+        if (name.Contains("day", StringComparison.Ordinal) || name.Contains("24h", StringComparison.Ordinal) || name.Contains("daily", StringComparison.Ordinal))
+        {
+            return 24;
+        }
+        if (name.Contains("five", StringComparison.Ordinal) || name.Contains("5h", StringComparison.Ordinal))
+        {
+            return 5;
+        }
+        return burn.ResetAt is { } reset && reset > now ? (reset - now).TotalHours : 0;
+    }
+
     /// <summary>The reset as a clock time and a distance, because a chart edge with no label is a guess.</summary>
     internal static string? ResetLabelFor(DateTimeOffset now, DateTimeOffset? resetAt)
         => resetAt is not { } at ? null
-            : at > now ? Inv($"resets {Clock(at)} · in {Duration(at - now)}")
-            : Inv($"reset was due {Clock(at)}");
+            : at > now ? Inv($"resets {Day(now, at)} · in {Duration(at - now)}")
+            : Inv($"reset was due {Day(now, at)}");
+
+    /// <summary>A clock time with enough of the day to place it: "today 14:40", "tomorrow 09:00",
+    /// "Wed 06:54" inside a week, "26 Sep 03:20" beyond. A bare time under a six-day countdown was a
+    /// puzzle.</summary>
+    internal static string Day(DateTimeOffset now, DateTimeOffset at)
+    {
+        var local = at.ToLocalTime();
+        var today = now.ToLocalTime().Date;
+        var days = (local.Date - today).Days;
+        var clock = local.ToString("HH:mm", CultureInfo.InvariantCulture);
+        return days switch
+        {
+            0 => Inv($"today {clock}"),
+            1 => Inv($"tomorrow {clock}"),
+            -1 => Inv($"yesterday {clock}"),
+            > 1 and < 7 => Inv($"{local.ToString("ddd", CultureInfo.InvariantCulture)} {clock}"),
+            _ => Inv($"{local.ToString("d MMM", CultureInfo.InvariantCulture)} {clock}"),
+        };
+    }
 
     /// <summary>
     /// What will be left at the reset if the current burn rate holds. Only the samples since the last
