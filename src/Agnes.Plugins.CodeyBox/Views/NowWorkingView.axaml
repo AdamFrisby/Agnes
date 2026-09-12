@@ -1,0 +1,407 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.Plugins.CodeyBox.Views.Controls"
+             x:Class="Agnes.Plugins.CodeyBox.Views.NowWorkingView">
+  <!-- NOW WORKING — the wall.
+
+       The overview is for deciding; this is for watching. It is meant to be left on a spare monitor, so
+       it is laid out to be read from across a room: four big slot cards, a column of large figures, the
+       orchestrator's feed as a log, and an hour of its own pulse along the bottom.
+
+       Everything on it is real. Nothing animates that was not caused by the fleet actually moving, with
+       two stated exceptions — the second hand on an elapsed timer and the breathing of a quota window
+       that is measurably going down — and CALM switches both of those off along with every flash.
+
+       The DataContext is a NowWorkingViewModel. Every colour is a DynamicResource role; the status hues
+       keep their one meaning each (sky = in motion, amber = blocked on you, mint = landed, pink = failed)
+       and the brand gradient appears exactly once, as the hairline under the header. -->
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.eyebrow">
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+    </Style>
+
+    <!-- A panel on the wall. Everything sits in one of these so the screen reads as a board rather than
+         as a page of sections. -->
+    <Style Selector="Border.panel">
+      <Setter Property="Background" Value="{DynamicResource Panel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="14,12" />
+    </Style>
+
+    <!-- A slot card. Big on purpose: this is the thing being watched. -->
+    <Style Selector="Border.slot">
+      <Setter Property="Background" Value="{DynamicResource Panel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="14,12" />
+      <!-- A floor, not a fixed height: the grid of cards fills the pane, so on a 1440p monitor the
+           cards get bigger rather than leaving a third of the screen empty. -->
+      <Setter Property="MinHeight" Value="172" />
+    </Style>
+    <Style Selector="Border.slot.free">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    </Style>
+
+    <!-- The one place a status hue is allowed to fill rather than to outline: the flash that says this
+         card just moved. It is an overlay, so the card's own colours never change under it. -->
+    <Style Selector="Border.flash">
+      <Setter Property="BorderThickness" Value="2" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusWorking}" />
+    </Style>
+    <Style Selector="Border.flash.attention">
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusAttention}" />
+    </Style>
+    <Style Selector="Border.flash.failed">
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusError}" />
+    </Style>
+    <Style Selector="Border.flash.landed">
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusDone}" />
+    </Style>
+
+    <Style Selector="TextBlock.agent">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Border.phase">
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusWorking}" />
+    </Style>
+    <Style Selector="Border.phase > TextBlock">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource StatusWorking}" />
+    </Style>
+    <Style Selector="Border.phase.attention">
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusAttention}" />
+    </Style>
+    <Style Selector="Border.phase.attention > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+    </Style>
+    <Style Selector="Border.phase.failed">
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusError}" />
+    </Style>
+    <Style Selector="Border.phase.failed > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+    </Style>
+
+    <!-- The elapsed timer. Tabular so the seconds do not jitter the layout as they tick. -->
+    <Style Selector="TextBlock.clock">
+      <Setter Property="FontFamily" Value="monospace" />
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="TextBlock.out">
+      <Setter Property="FontFamily" Value="monospace" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="MaxLines" Value="1" />
+    </Style>
+
+    <!-- A headline figure. The size is the point: these are meant to be legible across a room. -->
+    <Style Selector="TextBlock.figure">
+      <Setter Property="FontSize" Value="30" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="TextBlock.figure.active">
+      <Setter Property="Foreground" Value="{DynamicResource StatusWorking}" />
+    </Style>
+    <Style Selector="TextBlock.figure.attention">
+      <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+    </Style>
+    <Style Selector="TextBlock.figure.bad">
+      <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+    </Style>
+
+    <Style Selector="TextBlock.logtime">
+      <Setter Property="FontFamily" Value="monospace" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.verb">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    </Style>
+    <Style Selector="TextBlock.verb.working">
+      <Setter Property="Foreground" Value="{DynamicResource StatusWorking}" />
+    </Style>
+    <Style Selector="TextBlock.verb.landed">
+      <Setter Property="Foreground" Value="{DynamicResource StatusDone}" />
+    </Style>
+    <Style Selector="TextBlock.verb.attention">
+      <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+    </Style>
+    <Style Selector="TextBlock.verb.failed">
+      <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+    </Style>
+
+    <Style Selector="Button.switch">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="11,5" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+    </Style>
+    <Style Selector="Button.switch.on">
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Background="{DynamicResource Bg}">
+
+    <!-- THE HEADER. What the fleet is doing, in one line, plus the two switches. -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="16,14,16,8">
+      <StackPanel Grid.Column="0" Spacing="2">
+        <TextBlock Text="NOW WORKING" Classes="eyebrow" />
+        <TextBlock Text="{Binding Headline}" FontSize="20" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Fg}" />
+      </StackPanel>
+
+      <TextBlock Grid.Column="1" Text="{Binding Pulse}" Classes="eyebrow" VerticalAlignment="Bottom"
+                 Margin="16,0,0,4" TextTrimming="CharacterEllipsis" />
+
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <Button Classes="switch" Classes.on="{Binding IsCalm}" Content="{Binding CalmButtonText}"
+                Command="{Binding ToggleCalmCommand}"
+                ToolTip.Tip="Stops the flashes, slides, count-ups and the quota breathing. Every live update carries on." />
+        <Button Classes="switch" Classes.on="{Binding IsWall}" Content="{Binding WallButtonText}"
+                Command="{Binding ToggleWallCommand}"
+                ToolTip.Tip="Hides the CodeyBox rail and pane header so the wall fills the tab." />
+      </StackPanel>
+    </Grid>
+
+    <!-- The one appearance of the brand gradient on this screen, and it is the host's own brush rather
+         than a re-typed copy of its stops — a plugin that hard-codes the gradient stops matching the app
+         the moment the brand moves. -->
+    <Border Grid.Row="1" Height="2" Margin="16,0,16,10" Background="{DynamicResource GradAgnesH}" />
+
+    <!-- THE SLOTS, and the numbers beside them. -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="16,0,16,0">
+
+      <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                    Name="SlotScroller">
+        <StackPanel Spacing="10" Margin="0,0,14,10">
+          <TextBlock Text="Waiting for the fleet's first read…" Foreground="{DynamicResource FgFaint}"
+                     FontSize="12" IsVisible="{Binding !HasData}" />
+
+          <!-- The grid takes the scroller's own height as a floor, which is what makes the cards grow
+               with the screen instead of sitting at one size with a third of a monitor empty below them;
+               past that floor the cards keep their minimum and the scroller does its job. -->
+          <ItemsControl ItemsSource="{Binding Slots}"
+                        MinHeight="{Binding #SlotScroller.Bounds.Height}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <!-- Two columns, so a card is always wide enough for a title and a line of output. At
+                     2560 that makes them large, which is the point. -->
+                <UniformGrid Columns="2" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="{Binding Enter}" Opacity="{Binding Appear}">
+                  <Border Classes="slot" Classes.free="{Binding IsFree}" Margin="0,0,10,10">
+                    <!-- Five rows: who, what, what it is saying, the space a taller screen gives away,
+                         and the audit loop pinned to the floor. The output sits directly under the title
+                         rather than at the bottom, because the two are one thought and a card stretched
+                         to a 1440p row would otherwise read as two fragments with a hole between them. -->
+                    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+
+                      <!-- WHO, WHAT PHASE, HOW LONG -->
+                      <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto" IsVisible="{Binding IsBusy}">
+                        <c:MotionDot Grid.Column="0" Motion="{Binding Card.Motion}" Width="11" Height="11"
+                                     VerticalAlignment="Center" Margin="0,0,9,0" />
+                        <TextBlock Grid.Column="1" Classes="agent" Text="{Binding Card.Agent}" />
+                        <Border Grid.Column="2" Classes="phase" Margin="10,0,0,0"
+                                Classes.attention="{Binding IsAttention}" Classes.failed="{Binding IsFailed}">
+                          <TextBlock Text="{Binding Phase}" />
+                        </Border>
+                        <TextBlock Grid.Column="4" Classes="clock" Text="{Binding Elapsed}" />
+                      </Grid>
+
+                      <!-- WHAT IT IS -->
+                      <StackPanel Grid.Row="1" Spacing="3" Margin="0,9,0,0" IsVisible="{Binding IsBusy}">
+                        <TextBlock Text="{Binding Card.Title}" FontSize="15" TextWrapping="Wrap"
+                                   MaxLines="2" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource Fg}" />
+                        <TextBlock Text="{Binding Card.Provenance}" FontSize="10"
+                                   Foreground="{DynamicResource FgFaint}" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+
+                      <!-- WHAT IT IS SAYING. Oldest faintest: the bottom line is the live one. -->
+                      <StackPanel Grid.Row="2" Spacing="1" Margin="0,10,0,0" VerticalAlignment="Top"
+                                  IsVisible="{Binding Card.HasOutput}">
+                        <TextBlock Classes="out" Text="{Binding Card.Older}" Opacity="0.35" />
+                        <TextBlock Classes="out" Text="{Binding Card.Recent}" Opacity="0.6" />
+                        <TextBlock Classes="out" Text="{Binding Card.Latest}"
+                                   Foreground="{DynamicResource Fg}" />
+                      </StackPanel>
+
+                      <!-- The audit loop, where the item has one. -->
+                      <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0"
+                                  IsVisible="{Binding Card.HasTrace}">
+                        <c:TraceGlyph Trace="{Binding Card.Trace}" Width="150" Height="22"
+                                      VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Card.Trace.TraceCaption}" FontSize="9"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource FgFaint}" />
+                      </StackPanel>
+
+                      <!-- A free slot says so, rather than being a gap. -->
+                      <StackPanel Grid.Row="0" Grid.RowSpan="5" IsVisible="{Binding IsFree}"
+                                  VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
+                        <c:MotionDot Motion="Parked" Width="11" Height="11" HorizontalAlignment="Center" />
+                        <TextBlock Text="free" Foreground="{DynamicResource FgFaint}" FontSize="13"
+                                   HorizontalAlignment="Center" />
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+
+                  <!-- The flash. An overlay, so nothing about the card itself changes colour. -->
+                  <Border Classes="flash" Margin="0,0,10,10" Opacity="{Binding Glow}"
+                          Classes.attention="{Binding IsAttention}"
+                          Classes.failed="{Binding IsFailed}"
+                          Classes.landed="{Binding IsLanded}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- THE NUMBERS. -->
+      <Border Grid.Column="1" Classes="panel" Width="440" VerticalAlignment="Stretch" Margin="0,0,0,10">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <!-- Two columns, because the column that mattered most — what is waiting on a person — was the
+               one that fell off the bottom of a single tall list at laptop height. -->
+          <ItemsControl ItemsSource="{Binding Numbers}" VerticalAlignment="Top">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Columns="2" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Spacing="1" Margin="0,0,10,12">
+                  <TextBlock Classes="eyebrow" Text="{Binding Label}" />
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Classes="figure" Text="{Binding Text}"
+                               TextTrimming="CharacterEllipsis"
+                               Classes.active="{Binding IsActive}"
+                               Classes.attention="{Binding IsAttention}"
+                               Classes.bad="{Binding IsBad}" />
+                    <c:Sparkline Grid.Column="1" Width="60" Height="24" VerticalAlignment="Bottom"
+                                 Margin="6,0,0,5" IsVisible="{Binding HasSpark}"
+                                 Values="{Binding Spark}" Tone="{Binding Tone}" />
+                  </Grid>
+                  <TextBlock Text="{Binding Caption}" FontSize="10" TextWrapping="Wrap"
+                             IsVisible="{Binding HasCaption}" Foreground="{DynamicResource FgFaint}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+
+    <!-- THE FEED, as a log. Newest at the top, sliding in from the right and pushing the rest down. -->
+    <Border Grid.Row="3" Classes="panel" Margin="16,4,16,10" Padding="14,10">
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="Auto,*">
+          <TextBlock Grid.Column="0" Classes="eyebrow" Text="FEED" />
+          <TextBlock Grid.Column="1" Classes="eyebrow" Margin="10,0,0,0"
+                     Text="the orchestrator's own events, newest first"
+                     IsVisible="{Binding HasTicker}" />
+        </Grid>
+        <TextBlock Text="Nothing has happened since this screen opened." FontSize="11"
+                   Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !HasTicker}" />
+        <ItemsControl ItemsSource="{Binding Ticker}" MaxHeight="230">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="{Binding Enter}">
+                <!-- The newest line is brighter for a moment, then joins the log. -->
+                <Border Background="{DynamicResource PanelAlt}" CornerRadius="4" Opacity="{Binding Glow}" />
+                <Grid ColumnDefinitions="Auto,*,Auto" Margin="6,2">
+                  <TextBlock Grid.Column="0" Classes="logtime" Text="{Binding Time}" Margin="0,0,12,0" />
+                  <TextBlock Grid.Column="1" Text="{Binding Subject}" FontSize="12"
+                             Foreground="{DynamicResource Fg}" TextTrimming="CharacterEllipsis"
+                             VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="2" Classes="verb" Text="{Binding Verb}" Margin="14,0,0,0"
+                             Classes.working="{Binding IsWorking}"
+                             Classes.landed="{Binding IsLanded}"
+                             Classes.attention="{Binding IsAttention}"
+                             Classes.failed="{Binding IsFailed}" />
+                </Grid>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+
+    <!-- THE PULSE: an hour of the fleet's own events, the month's flow, and where the quota stands. -->
+    <Grid Grid.Row="4" ColumnDefinitions="*,*,Auto" Margin="16,0,16,14">
+      <Border Grid.Column="0" Classes="panel" Margin="0,0,10,0">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="eyebrow" Text="HEARTBEAT · EVENTS PER MINUTE" />
+          <c:Heartbeat Minutes="{Binding Minutes}" Height="96" />
+        </StackPanel>
+      </Border>
+
+      <Border Grid.Column="1" Classes="panel" Margin="0,0,10,0">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="eyebrow" Text="CUMULATIVE FLOW · 30 DAYS" />
+          <c:FlowChart Series="{Binding Flow}" Height="96" IsVisible="{Binding HasFlow}" />
+          <TextBlock Text="Not enough history yet." FontSize="11" Foreground="{DynamicResource FgFaint}"
+                     IsVisible="{Binding !HasFlow}" />
+        </StackPanel>
+      </Border>
+
+      <Border Grid.Column="2" Classes="panel" IsVisible="{Binding HasGauges}">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="eyebrow" Text="QUOTA" />
+          <ItemsControl ItemsSource="{Binding Gauges}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="18" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Spacing="4" HorizontalAlignment="Center">
+                  <!-- Breathing only while the window is measurably going down; a flat one sits still. -->
+                  <c:QuotaGauge Pct="{Binding Pct}" Eligible="{Binding Eligible}" Width="12" Height="62"
+                                Opacity="{Binding Pulse}" HorizontalAlignment="Center" />
+                  <TextBlock Text="{Binding Headroom}" FontSize="11" HorizontalAlignment="Center"
+                             Foreground="{DynamicResource FgDim}" />
+                  <TextBlock Text="{Binding Agent}" FontSize="9" HorizontalAlignment="Center"
+                             Foreground="{DynamicResource FgFaint}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>
