@@ -6,9 +6,10 @@
   <!-- THE OVERVIEW. Three bands, read top to bottom in about five seconds, answering in this order:
        is it moving, is it converging, did it land whole.
 
-         Band 1  the state of the world in one sentence, then five vitals against their own norms
-         Band 2  one trace per live item, worst first; the healthy ones collapse to a count
-         Band 3  the trend: cumulative flow over 30 days, and quota burning down to its reset
+         Band 1  the state of the world in one sentence, then the vitals against their own norms
+         Band 2  quota burning down to its reset, one card per agent
+         Band 3  the trend: cumulative flow over 30 days
+         Band 4  one trace per live item, worst first; the pipeline's own waits fold, the healthy collapse
 
        The DataContext here is the Overview record itself, so nothing in this file knows about a view
        model, a client or a host. The two things a row can DO arrive as properties on this control
@@ -226,65 +227,9 @@
                  IsVisible="{Binding Vitals, Converter={x:Static v:OverviewConverters.NoVitalHasBand}}" />
     </StackPanel>
 
-    <!-- ============ BAND 2: one trace per live item ============
-         Worst first. Everything that is moving and converging collapses into a single count, because a
-         list that shows healthy work at the same weight as wedged work is a list nobody reads. -->
-    <StackPanel Spacing="6">
-      <Grid ColumnDefinitions="Auto,*">
-        <TextBlock Grid.Column="0" Classes="bandhead" Text="Needs a look" />
-        <TextBlock Grid.Column="1" Classes="quiet" Margin="14,0,0,0" VerticalAlignment="Center" TextWrapping="NoWrap"
-                   TextTrimming="CharacterEllipsis"
-                   Text="bars = blocking audit findings per round · falling is converging · pink = same gate again · green pip = passed" />
-      </Grid>
-      <TextBlock Classes="quiet" Text="Nothing needs a look." IsVisible="{Binding !HasAttention}" />
-      <ItemsControl ItemsSource="{Binding Attention}" ItemTemplate="{StaticResource TraceRow}" />
-      <!-- Stopped at a phase boundary nothing here can release: one line per boundary, folded, because
-           they are not moving and there is nothing to decide. The rows are still there for the curious. -->
-      <ItemsControl ItemsSource="{Binding Folded}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <Expander Classes="fold" IsExpanded="False" Padding="0" Margin="0,4,0,0">
-              <Expander.Header>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <TextBlock Text="{Binding Title}" FontSize="11" Foreground="{DynamicResource FgDim}" />
-                  <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{DynamicResource FgFaint}" />
-                </StackPanel>
-              </Expander.Header>
-              <ItemsControl ItemsSource="{Binding Items}" ItemTemplate="{StaticResource TraceRow}" />
-            </Expander>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-
-      <Expander Classes="fold" IsVisible="{Binding HasHealthy}" Padding="0" Margin="0,4,0,0">
-        <Expander.Header>
-          <TextBlock Text="{Binding HealthyLabel}" FontSize="11" Foreground="{DynamicResource FgDim}" />
-        </Expander.Header>
-        <ItemsControl ItemsSource="{Binding Healthy}" ItemTemplate="{StaticResource TraceRow}" />
-      </Expander>
-    </StackPanel>
-
-    <!-- ============ BAND 3: the trend ============
-         The flow chart takes the width; the quota windows sit under it as a grid of cards, one per
-         (agent, window), so a fleet with nine windows is three rows of three rather than a column that
-         runs off the bottom of the panel. -->
-    <StackPanel Spacing="6">
-      <!-- The key is the numbers: each band named in its own hue, with what it added this month. -->
-      <StackPanel Orientation="Horizontal" Spacing="10">
-        <TextBlock Classes="bandhead" Text="Cumulative flow · 30 days" />
-        <TextBlock FontSize="10" Foreground="{DynamicResource StatusDone}" Text="{Binding Flow.LandedLegend}"
-                   VerticalAlignment="Center" />
-        <TextBlock FontSize="10" Foreground="{DynamicResource StatusWorking}" Text="{Binding Flow.InFlightLegend}"
-                   VerticalAlignment="Center" />
-        <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}" Text="{Binding Flow.CancelledLegend}"
-                   VerticalAlignment="Center" IsVisible="{Binding Flow.HasCancelled}" />
-      </StackPanel>
-      <c:FlowChart Series="{Binding Flow}" Height="150" HorizontalAlignment="Stretch"
-                   IsVisible="{Binding Flow.HasData}" />
-      <TextBlock Classes="quiet" Text="Not enough history to draw a flow yet."
-                 IsVisible="{Binding !Flow.HasData}" />
-    </StackPanel>
-    <!-- Can it keep going. Unspent quota at the reset is the only waste under a subscription, so the
+    <!-- ============ BAND 2: can it keep going ============
+         Quota, one card per agent, directly under the vitals: the operator reads capacity right after the
+         headline numbers and before the trend or any single item. Can it keep going. Unspent quota at the reset is the only waste under a subscription, so the
          projection is the number, not the spend. "Available" is the provider's own word for the number,
          and the only one used here. -->
     <StackPanel Spacing="6">
@@ -349,5 +294,61 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
     </StackPanel>
+    <!-- ============ BAND 3: the trend ============
+         The flow chart takes the width. Above it (band 2) the quota cards; below it (band 4) the items. -->
+    <StackPanel Spacing="6">
+      <!-- The key is the numbers: each band named in its own hue, with what it added this month. -->
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBlock Classes="bandhead" Text="Cumulative flow · 30 days" />
+        <TextBlock FontSize="10" Foreground="{DynamicResource StatusDone}" Text="{Binding Flow.LandedLegend}"
+                   VerticalAlignment="Center" />
+        <TextBlock FontSize="10" Foreground="{DynamicResource StatusWorking}" Text="{Binding Flow.InFlightLegend}"
+                   VerticalAlignment="Center" />
+        <TextBlock FontSize="10" Foreground="{DynamicResource FgFaint}" Text="{Binding Flow.CancelledLegend}"
+                   VerticalAlignment="Center" IsVisible="{Binding Flow.HasCancelled}" />
+      </StackPanel>
+      <c:FlowChart Series="{Binding Flow}" Height="150" HorizontalAlignment="Stretch"
+                   IsVisible="{Binding Flow.HasData}" />
+      <TextBlock Classes="quiet" Text="Not enough history to draw a flow yet."
+                 IsVisible="{Binding !Flow.HasData}" />
+    </StackPanel>
+    <!-- ============ BAND 4: one trace per live item ============
+         Worst first. Everything that is moving and converging collapses into a single count, because a
+         list that shows healthy work at the same weight as wedged work is a list nobody reads. -->
+    <StackPanel Spacing="6">
+      <Grid ColumnDefinitions="Auto,*">
+        <TextBlock Grid.Column="0" Classes="bandhead" Text="Needs a look" />
+        <TextBlock Grid.Column="1" Classes="quiet" Margin="14,0,0,0" VerticalAlignment="Center" TextWrapping="NoWrap"
+                   TextTrimming="CharacterEllipsis"
+                   Text="bars = blocking audit findings per round · falling is converging · pink = same gate again · green pip = passed" />
+      </Grid>
+      <TextBlock Classes="quiet" Text="Nothing needs a look." IsVisible="{Binding !HasAttention}" />
+      <ItemsControl ItemsSource="{Binding Attention}" ItemTemplate="{StaticResource TraceRow}" />
+      <!-- Stopped at a phase boundary nothing here can release: one line per boundary, folded, because
+           they are not moving and there is nothing to decide. The rows are still there for the curious. -->
+      <ItemsControl ItemsSource="{Binding Folded}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Expander Classes="fold" IsExpanded="False" Padding="0" Margin="0,4,0,0">
+              <Expander.Header>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="{Binding Title}" FontSize="11" Foreground="{DynamicResource FgDim}" />
+                  <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{DynamicResource FgFaint}" />
+                </StackPanel>
+              </Expander.Header>
+              <ItemsControl ItemsSource="{Binding Items}" ItemTemplate="{StaticResource TraceRow}" />
+            </Expander>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Expander Classes="fold" IsVisible="{Binding HasHealthy}" Padding="0" Margin="0,4,0,0">
+        <Expander.Header>
+          <TextBlock Text="{Binding HealthyLabel}" FontSize="11" Foreground="{DynamicResource FgDim}" />
+        </Expander.Header>
+        <ItemsControl ItemsSource="{Binding Healthy}" ItemTemplate="{StaticResource TraceRow}" />
+      </Expander>
+    </StackPanel>
+
   </StackPanel>
 </UserControl>
