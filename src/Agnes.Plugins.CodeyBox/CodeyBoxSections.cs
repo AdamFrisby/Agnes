@@ -783,7 +783,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
             }
             if (runs.Count > 0)
             {
-                effort.Add(new ItemEffort(item.Id, ItemEffort.ActiveTime(runs, now), item.State == "Done", item.UpdatedAt));
+                effort.Add(new ItemEffort(item.Id, ItemEffort.ActiveTime(runs, now, item.IsActive), item.State == "Done", item.UpdatedAt));
             }
         }
         return effort;

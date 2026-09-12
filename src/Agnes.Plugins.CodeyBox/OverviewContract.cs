@@ -302,16 +302,63 @@ public sealed record ItemAuditProgress(string WorkItemId, IReadOnlyList<AuditPro
 /// </summary>
 public sealed record ItemEffort(string Id, TimeSpan Active, bool Landed, DateTimeOffset At)
 {
-    public static TimeSpan ActiveTime(IEnumerable<AgentRun> runs, DateTimeOffset now)
+    /// <summary>
+    /// The time an item has had an agent on it. Two rules the raw run list needs:
+    /// <list type="bullet">
+    /// <item>Runs that overlap count once. Auditors run in parallel, one run each, and a rework can be
+    /// recorded over a still-open audit; the drain estimate wants the slot's time, not the sum of every
+    /// auditor's clock.</item>
+    /// <item>A run with no end counts to <paramref name="now"/> only when it is the item's latest run and
+    /// the item is active right now. Anything else without an end is a run a crash or a restart never
+    /// closed — the live instance had one open since June — and counting it to now is how "time already
+    /// spent" came to 164 days and the estimate to "under a minute".</item>
+    /// </list>
+    /// </summary>
+    public static TimeSpan ActiveTime(IEnumerable<AgentRun> runs, DateTimeOffset now, bool active)
     {
-        var total = TimeSpan.Zero;
-        foreach (var run in runs)
+        var list = runs.ToList();
+        var latest = list.Count == 0 ? null : list.MaxBy(r => r.StartedAt);
+        var spans = new List<(DateTimeOffset Start, DateTimeOffset End)>(list.Count);
+        foreach (var run in list)
         {
-            var end = run.EndedAt ?? now;
+            DateTimeOffset end;
+            if (run.EndedAt is { } ended)
+            {
+                end = ended;
+            }
+            else if (active && ReferenceEquals(run, latest))
+            {
+                end = now;
+            }
+            else
+            {
+                continue;
+            }
             if (end > run.StartedAt)
             {
-                total += end - run.StartedAt;
+                spans.Add((run.StartedAt, end));
             }
+        }
+        var total = TimeSpan.Zero;
+        DateTimeOffset? openStart = null;
+        DateTimeOffset? openEnd = null;
+        foreach (var (start, end) in spans.OrderBy(s => s.Start))
+        {
+            if (openEnd is { } current && start <= current)
+            {
+                openEnd = end > current ? end : current;
+                continue;
+            }
+            if (openStart is { } s0 && openEnd is { } e0)
+            {
+                total += e0 - s0;
+            }
+            openStart = start;
+            openEnd = end;
+        }
+        if (openStart is { } s1 && openEnd is { } e1)
+        {
+            total += e1 - s1;
         }
         return total;
     }

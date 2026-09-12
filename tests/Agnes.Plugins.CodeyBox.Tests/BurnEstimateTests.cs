@@ -114,16 +114,41 @@ public class BurnEstimateTests
         Assert.Null(overview.Burn);
     }
 
+    private static AgentRun Run(string id, string phase, double startHoursAgo, double? endHoursAgo, int? iteration = null)
+        => new(id, "copilot", null, phase, Now.AddHours(-startHoursAgo), endHoursAgo is { } e ? Now.AddHours(-e) : null, iteration, endHoursAgo is null ? null : "success");
+
     [Fact]
-    public void Active_time_is_the_sum_of_the_runs_with_an_open_run_counted_to_now()
+    public void Active_time_is_the_sum_of_the_runs_with_the_latest_open_run_counted_to_now_on_an_active_item()
+    {
+        var runs = new[] { Run("r1", "work", 5, 4), Run("r2", "audit:tests", 3, 2.5, 1), Run("r3", "rework", 0.5, null, 2) };
+
+        Assert.Equal(TimeSpan.FromHours(2), ItemEffort.ActiveTime(runs, Now, active: true));
+    }
+
+    [Fact]
+    public void An_open_run_on_an_item_that_is_not_active_is_a_run_nobody_closed_and_counts_nothing()
+    {
+        // The live instance had an audit run open since June on an item that was merely queued.
+        var runs = new[] { Run("r1", "work", 5, 4), Run("r2", "audit:architecture", 24 * 80, null, 3) };
+
+        Assert.Equal(TimeSpan.FromHours(1), ItemEffort.ActiveTime(runs, Now, active: false));
+        // Even on an active item, only the LATEST open run is live; an older one is stale.
+        var withLive = new[] { Run("r1", "work", 5, 4), Run("stale", "audit:architecture", 24 * 80, null, 3), Run("live", "rework", 0.25, null, 4) };
+        Assert.Equal(TimeSpan.FromMinutes(75), ItemEffort.ActiveTime(withLive, Now, active: true));
+    }
+
+    [Fact]
+    public void Parallel_auditors_count_once_because_the_slot_was_busy_once()
     {
         var runs = new[]
         {
-            new AgentRun("r1", "copilot", null, "work", Now.AddHours(-5), Now.AddHours(-4), null, "success"),
-            new AgentRun("r2", "copilot", null, "audit:tests", Now.AddHours(-3), Now.AddHours(-2.5), 1, "success"),
-            new AgentRun("r3", "copilot", null, "rework", Now.AddMinutes(-30), null, 2, null),
+            Run("a", "audit:tests", 3, 2, 1),
+            Run("b", "audit:style", 3, 2.5, 1),
+            Run("c", "audit:architecture", 2.8, 1.5, 1),
+            Run("d", "work", 10, 9),
         };
 
-        Assert.Equal(TimeSpan.FromHours(2), ItemEffort.ActiveTime(runs, Now));
+        // 10→9 is an hour; 3→1.5 is one merged span of 1h 30m.
+        Assert.Equal(TimeSpan.FromMinutes(150), ItemEffort.ActiveTime(runs, Now, active: false));
     }
 }

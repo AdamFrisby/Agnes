@@ -169,7 +169,7 @@ internal static class LiveOverviewInputs
             var runs = await client.GetAgentRunsAsync(item.Id, cts.Token);
             if (runs.Count > 0)
             {
-                effort.Add(new ItemEffort(item.Id, ItemEffort.ActiveTime(runs, DateTimeOffset.UtcNow), item.State == "Done", item.UpdatedAt));
+                effort.Add(new ItemEffort(item.Id, ItemEffort.ActiveTime(runs, DateTimeOffset.UtcNow, item.IsActive), item.State == "Done", item.UpdatedAt));
             }
         }
         // The operator's own accumulated history, read-only: what the real tab would judge against today.
