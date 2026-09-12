@@ -116,9 +116,16 @@
 
     <!-- Destinations live here; actions stay in the pane header. Grouped by how often the operator needs
          them, so the daily task is not competing with one-off administration. -->
+    <!-- Hidden while the wall has the tab (Sections.IsChromeVisible). The Agnes tab strip above is
+         untouched, so there is always a way out. -->
     <Border Grid.Column="0" Width="168" Background="{DynamicResource Panel}"
-            BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0"
-            IsVisible="{Binding IsConfigured}">
+            BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0">
+      <Border.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.And}">
+          <Binding Path="IsConfigured" />
+          <Binding Path="Sections.IsChromeVisible" />
+        </MultiBinding>
+      </Border.IsVisible>
       <ScrollViewer>
         <StackPanel Margin="6,10">
           <StackPanel Orientation="Horizontal" Spacing="8" Margin="10,0,0,4">
@@ -128,6 +135,10 @@
           <TextBlock Classes="navgroup" Text="WORK" />
           <Button Classes="nav" Classes.current="{Binding Sections.IsDashboard}" Content="Overview"
                   Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Dashboard}" />
+          <!-- Beside the overview because it answers a neighbouring question out of the same gather:
+               the overview is for deciding, this is for watching. -->
+          <Button Classes="nav" Classes.current="{Binding Sections.IsNowWorking}" Content="Now working"
+                  Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.NowWorking}" />
           <Button Classes="nav" Classes.current="{Binding Sections.IsQueue}" Content="Work queue"
                   Command="{Binding Sections.ShowCommand}" CommandParameter="{x:Static cb:CodeyBoxSection.Queue}" />
           <Button Classes="nav" Classes.current="{Binding Sections.IsSuggestions}"
@@ -187,7 +198,7 @@
   <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" Background="{DynamicResource Bg}">
 
     <Border Grid.Row="0" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
-            BorderThickness="0,0,0,1" Padding="14,9">
+            BorderThickness="0,0,0,1" Padding="14,9" IsVisible="{Binding Sections.IsChromeVisible}">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <TextBlock Grid.Column="0" Text="{Binding Sections.SectionTitle}" FontWeight="SemiBold" FontSize="14"
                    Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
@@ -243,6 +254,13 @@
                         ExtendCeilingCommand="{Binding $parent[UserControl].DataContext.Sections.ExtendCeilingCommand}" />
       </StackPanel>
     </ScrollViewer>
+
+    <!-- NOW WORKING. Its own control over its own view model, and the only section here that owns a
+         clock — see NowWorkingViewModel for what it runs and when it stops. No ScrollViewer around it:
+         the wall lays itself out to the pane it is given, and the one list inside it that can overflow
+         carries its own. -->
+    <v:NowWorkingView Grid.Row="2" DataContext="{Binding Sections.NowWorking}"
+                      IsVisible="{Binding $parent[UserControl].DataContext.Sections.IsNowWorking}" />
 
     <!-- THREE FIFTHS TO THE RUNWAY. It was an even split, which is the right answer only if both halves
          are equally full: in practice the queue is dozens of rows that were clipping their own reason text

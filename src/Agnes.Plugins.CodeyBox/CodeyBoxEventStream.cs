@@ -9,7 +9,20 @@ namespace Agnes.Plugins.CodeyBox;
 /// <param name="WorkItemId">Set for <c>work_item.*</c>; null for queue- and agent-level events.</param>
 /// <param name="OccurredAt">When the orchestrator generated it — not when we read it. The distinction
 /// matters on connect, because the feed replays its buffer.</param>
-internal sealed record CodeyBoxEvent(long Id, string Type, string? WorkItemId, string? ProjectId, DateTimeOffset OccurredAt)
+/// <param name="Title">The item's title as the event carried it. Present on every <c>work_item.*</c>
+/// frame and on the phase events beneath them, which is what lets a live log name what moved without
+/// going back to the API for it.</param>
+/// <param name="State">The item's state <em>after</em> the transition. The feed does not carry the state
+/// before it, so a reader that wants "Working → Auditing" has to remember the previous one itself.</param>
+internal sealed record CodeyBoxEvent(
+    long Id,
+    string Type,
+    string? WorkItemId,
+    string? ProjectId,
+    DateTimeOffset OccurredAt,
+    string? Title = null,
+    string? State = null,
+    string? Agent = null)
 {
     public bool IsWorkItem => Type.StartsWith("work_item.", StringComparison.Ordinal);
 
@@ -211,9 +224,12 @@ internal sealed class CodeyBoxEventStream(CodeyBoxOptions options, Func<HttpClie
             return new CodeyBoxEvent(
                 id ?? 0,
                 payload?.EventType ?? type,
-                payload?.WorkItem?.Id,
-                payload?.Project?.Id,
-                payload?.OccurredAt ?? DateTimeOffset.MinValue);
+                payload?.WorkItem?.Id ?? payload?.Details?.WorkItemId,
+                payload?.Project?.Id ?? payload?.Details?.ProjectId,
+                payload?.OccurredAt ?? DateTimeOffset.MinValue,
+                payload?.WorkItem?.Title,
+                payload?.WorkItem?.State,
+                payload?.WorkItem?.Agent);
         }
         catch (JsonException ex)
         {
@@ -225,7 +241,12 @@ internal sealed class CodeyBoxEventStream(CodeyBoxOptions options, Func<HttpClie
 
     /// <summary>The envelope's fields we act on. The feed carries considerably more (usage, revisions,
     /// release state); it is deliberately not modelled here, because this type exists to answer "what
-    /// changed" and the answer is then read from the API in full.</summary>
+    /// changed" and the answer is then read from the API in full.
+    ///
+    /// <para>Two shapes, not one: every frame carries a <c>details</c> object keyed per event type, and
+    /// most — but not all — also carry the whole work item. A phase event such as
+    /// <c>iteration.started</c> names its item only in <c>details.workItemId</c>, so a reader that looks
+    /// solely at <c>workItem</c> silently loses it.</para></summary>
     private sealed record EventEnvelope
     {
         [JsonPropertyName("eventType")]
@@ -237,6 +258,9 @@ internal sealed class CodeyBoxEventStream(CodeyBoxOptions options, Func<HttpClie
         [JsonPropertyName("workItem")]
         public EventWorkItem? WorkItem { get; init; }
 
+        [JsonPropertyName("details")]
+        public EventDetails? Details { get; init; }
+
         [JsonPropertyName("project")]
         public EventProject? Project { get; init; }
     }
@@ -245,6 +269,25 @@ internal sealed class CodeyBoxEventStream(CodeyBoxOptions options, Func<HttpClie
     {
         [JsonPropertyName("id")]
         public string? Id { get; init; }
+
+        [JsonPropertyName("title")]
+        public string? Title { get; init; }
+
+        [JsonPropertyName("state")]
+        public string? State { get; init; }
+
+        [JsonPropertyName("agent")]
+        public string? Agent { get; init; }
+    }
+
+    /// <summary>The two fields every <c>details</c> shape shares when it is about an item at all.</summary>
+    private sealed record EventDetails
+    {
+        [JsonPropertyName("workItemId")]
+        public string? WorkItemId { get; init; }
+
+        [JsonPropertyName("projectId")]
+        public string? ProjectId { get; init; }
     }
 
     private sealed record EventProject

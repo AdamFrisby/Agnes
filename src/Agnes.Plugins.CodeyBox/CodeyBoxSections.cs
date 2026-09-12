@@ -15,6 +15,11 @@ public enum CodeyBoxSection
     /// start, does anything need me — precede every question the queue answers.</summary>
     Dashboard,
 
+    /// <summary>The wall: what the fleet is doing this second, drawn to be watched rather than read.
+    /// Beside the overview because it is built from the same gather — a different question asked of the
+    /// same facts, not a second copy of them.</summary>
+    NowWorking,
+
     Queue,
     Fleet,
     Supervision,
@@ -54,13 +59,26 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
     /// </summary>
     private readonly Action<Suggestion>? _promote;
 
+    /// <summary>
+    /// The tab's current runway. Supplied as a function for the same reason <see cref="_openItem"/> is:
+    /// the sections do not know what contains them, and the wall needs the board the queue already
+    /// built rather than a second one of its own.
+    /// </summary>
+    private readonly Func<Board?> _board;
+
+    /// <summary>The work-item list the last overview gather read, so the wall can total a day's cost
+    /// without asking for the list again.</summary>
+    private IReadOnlyList<WorkItemRow> _lastItems = [];
+
     public CodeyBoxSectionsViewModel(
         CodeyBoxClient client,
         Func<Action, Task> toUi,
         Confirmation? confirmation = null,
         Action<string>? openItem = null,
         OverviewHistory? history = null,
-        Action<Suggestion>? promote = null)
+        Action<Suggestion>? promote = null,
+        Func<Board?>? board = null,
+        IWallClock? clock = null)
     {
         _client = client;
         _toUi = toUi;
@@ -89,7 +107,40 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
         });
         ShipReleaseCommand = new AsyncRelayCommand<Release>(r => ReleaseAction(r, _client.ShipReleaseAsync));
         QueueTemplateCommand = new AsyncRelayCommand<TaskTemplate>(QueueTemplateAsync);
+        _board = board ?? (() => null);
+
+        NowWorking = new NowWorkingViewModel(
+            _board,
+            () => Overview,
+            () => _lastItems,
+            toUi,
+            client.GetStdoutTailAsync,
+            clock: clock);
+
+        // The wall's "fill the tab" switch reaches out of this view model, because what it hides — the
+        // rail and the pane header — belongs to the tab and not to the section.
+        NowWorking.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(NowWorkingViewModel.IsWall))
+            {
+                OnPropertyChanged(nameof(IsChromeVisible));
+            }
+        };
     }
+
+    /// <summary>The wall — see <see cref="NowWorkingViewModel"/>. Built up front rather than on first
+    /// visit because it has to be able to take feed events from the moment the tab connects, or its log
+    /// would start empty every time the section is opened.</summary>
+    public NowWorkingViewModel NowWorking { get; }
+
+    /// <summary>
+    /// Whether the tab draws its own chrome — the rail of sections and the pane header.
+    /// </summary>
+    /// <remarks>
+    /// False only while the wall is in its full-tab mode. The Agnes tab strip is untouched either way:
+    /// a screen you cannot get out of is not a mode, it is a trap.
+    /// </remarks>
+    public bool IsChromeVisible => !(IsNowWorking && NowWorking.IsWall);
 
     public ObservableCollection<FleetProject> Fleet { get; } = [];
     public ObservableCollection<AgentPause> PausedAgents { get; } = [];
@@ -242,6 +293,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
     public string SectionTitle => Section switch
     {
         CodeyBoxSection.Dashboard => "Overview",
+        CodeyBoxSection.NowWorking => "Now working",
         CodeyBoxSection.Queue => "Work queue",
         CodeyBoxSection.Suggestions => "Suggestions",
         CodeyBoxSection.Fleet => "Fleet",
@@ -254,6 +306,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
     };
 
     public bool IsDashboard => Section == CodeyBoxSection.Dashboard;
+    public bool IsNowWorking => Section == CodeyBoxSection.NowWorking;
     public bool IsQueue => Section == CodeyBoxSection.Queue;
     public bool IsFleet => Section == CodeyBoxSection.Fleet;
     public bool IsSupervision => Section == CodeyBoxSection.Supervision;
@@ -518,12 +571,24 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
 
     partial void OnSectionChanged(CodeyBoxSection value)
     {
-        foreach (var name in new[] { nameof(IsDashboard), nameof(IsQueue), nameof(IsFleet),
-                                     nameof(IsSupervision), nameof(IsSuggestions), nameof(IsReleases),
-                                     nameof(IsProjects), nameof(IsTesting), nameof(IsSetup),
-                                     nameof(IsDiagnostics), nameof(SectionTitle) })
+        foreach (var name in new[] { nameof(IsDashboard), nameof(IsNowWorking), nameof(IsQueue),
+                                     nameof(IsFleet), nameof(IsSupervision), nameof(IsSuggestions),
+                                     nameof(IsReleases), nameof(IsProjects), nameof(IsTesting),
+                                     nameof(IsSetup), nameof(IsDiagnostics), nameof(SectionTitle),
+                                     nameof(IsChromeVisible) })
         {
             OnPropertyChanged(name);
+        }
+
+        // Every timer the wall owns stops the moment it is not the section on screen. A screensaver for
+        // a screen nobody is looking at costs this machine a frame loop and the orchestrator a poll.
+        if (value == CodeyBoxSection.NowWorking)
+        {
+            NowWorking.Start();
+        }
+        else
+        {
+            NowWorking.Stop();
         }
     }
 
@@ -552,6 +617,10 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
             switch (section)
             {
                 case CodeyBoxSection.Dashboard:
+                case CodeyBoxSection.NowWorking:
+                    // One gather, two screens. The wall shows a different slice of the same facts, so
+                    // giving it a gather of its own would double the load on the orchestrator and let
+                    // the two screens disagree about the same second.
                     await LoadOverviewAsync().ConfigureAwait(false);
                     break;
 
@@ -726,6 +795,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
 
         await _toUi(() =>
         {
+            _lastItems = items;
             Overview = built;
             Reconcile.Apply(Quota, [.. probes.Where(p => p.IsKnown).OrderBy(p => p.Available)], p => p.Label);
             Concurrency = concurrency;
@@ -992,6 +1062,10 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
     /// — a quota window reopening, a projection running down — moves without any item transitioning.</summary>
     private static readonly TimeSpan OverviewIdleRefresh = TimeSpan.FromSeconds(60);
 
+    /// <summary>Which sections are built out of the overview gather, and therefore keep it current.
+    /// Two now: the overview itself and the wall.</summary>
+    private bool NeedsOverview => Section is CodeyBoxSection.Dashboard or CodeyBoxSection.NowWorking;
+
     private readonly CancellationTokenSource _refresh = new();
     private readonly SemaphoreSlim _nudged = new(0, 1);
     private int _nudgePending;
@@ -1017,7 +1091,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
     /// </summary>
     public void NoteWorkItemsChanged()
     {
-        if (Section != CodeyBoxSection.Dashboard)
+        if (!NeedsOverview)
         {
             return;
         }
@@ -1027,6 +1101,17 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
             _nudged.Release();
         }
     }
+
+    /// <summary>
+    /// Hands one feed event to the wall.
+    /// </summary>
+    /// <remarks>
+    /// Every event, not the coalesced "something changed" nudge above it: the wall's log names what
+    /// moved and its heartbeat counts how often, and both of those are lost the moment a burst is folded
+    /// into one signal. The wall drops the lot when it is not running, so this costs nothing while any
+    /// other section is on screen.
+    /// </remarks>
+    internal void NoteEvent(CodeyBoxEvent evt) => NowWorking.Note(evt);
 
     private async Task RefreshOverviewLoopAsync()
     {
@@ -1047,9 +1132,9 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
                     }
                 }
 
-                if (Section == CodeyBoxSection.Dashboard)
+                if (NeedsOverview)
                 {
-                    await LoadAsync(CodeyBoxSection.Dashboard, force: true).ConfigureAwait(false);
+                    await LoadAsync(Section, force: true).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
@@ -1065,6 +1150,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
 
     public async ValueTask DisposeAsync()
     {
+        NowWorking.Dispose();
         await _refresh.CancelAsync().ConfigureAwait(false);
         _refresh.Dispose();
         _nudged.Dispose();

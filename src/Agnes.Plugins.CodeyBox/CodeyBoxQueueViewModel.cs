@@ -82,8 +82,11 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         // The sections are handed ways to reach the queue rather than a reference to it: the overview
         // needs to hand a row over, and promoting a suggestion needs to open the composer. The sections
         // deliberately do not know what contains them.
+        // The board goes in as a function, not as a value: "Now working" draws the running half of the
+        // same runway this view model builds, and handing it a snapshot would freeze it at construction.
         Sections = new CodeyBoxSectionsViewModel(
-            client, toUi, Confirmation, SelectById, promote: PromoteSuggestionViaComposer);
+            client, toUi, Confirmation, SelectById, promote: PromoteSuggestionViaComposer,
+            board: () => Board);
     }
 
     /// <summary>A pending irreversible action, awaiting confirmation. Shared with the sections below, so
@@ -1984,6 +1987,11 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
 
     private Task OnFeedEventAsync(CodeyBoxEvent evt)
     {
+        // Every event, before the filter: the queue only needs to know that something moved, but the
+        // wall's log names what moved and its heartbeat counts how often — and the phase-level events
+        // this filter drops are most of what a busy fleet emits.
+        Sections.NoteEvent(evt);
+
         if (evt.IsWorkItem || evt.IsQueue)
         {
             _pending.Writer.TryWrite(evt);

@@ -128,7 +128,8 @@ public class DeadButtonTests
         MergedPrUrl: "https://github.com/AdamFrisby/CodeyBox/pull/7");
 
     public static TheoryData<string> Sections => new(
-        ["Dashboard", "Queue", "Suggestions", "Fleet", "Releases", "Projects", "Supervision", "Diagnostics"]);
+        ["Dashboard", "NowWorking", "Queue", "Suggestions", "Fleet", "Releases", "Projects",
+         "Supervision", "Diagnostics"]);
 
     [Theory]
     [MemberData(nameof(Sections))]
