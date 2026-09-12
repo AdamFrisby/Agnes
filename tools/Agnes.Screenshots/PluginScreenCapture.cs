@@ -193,7 +193,7 @@ public static class PluginScreenCapture
     private static bool IsReady(object screen, object? sections, string section)
         => section.ToLowerInvariant() switch
         {
-            "dashboard" or "overview" => Property(sections, "HasOverview") is true,
+            "dashboard" or "overview" or "nowworking" => Property(sections, "HasOverview") is true,
             "queue" => Property(screen, "HasBoard") is true,
             _ => true,
         };
