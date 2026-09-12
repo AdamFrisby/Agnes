@@ -177,4 +177,40 @@ public class DeadButtonTests
 
         Assert.Empty(dead);
     }
+
+    /// <summary>
+    /// The decision card, in every state that produces one.
+    /// </summary>
+    /// <remarks>
+    /// The card is nine or ten buttons that did not exist before — two or three choices, three lookups, a
+    /// reply box's Send — and all of them are bound from inside an ItemsControl's item template, which is
+    /// the exact shape that produced the fifteen dead buttons this class was written for. The theory above
+    /// cannot reach them: it selects a Queued row, and a Queued row is asking nobody for anything.
+    /// </remarks>
+    [Theory]
+    [InlineData("NeedsOperatorInput")]
+    [InlineData("Failed")]
+    [InlineData("AuditFailed")]
+    [InlineData("MergeConflictResolutionFailed")]
+    [InlineData("AbandonedAfterRecoveryAttempts")]
+    public void The_decision_card_renders_no_button_that_cannot_be_pressed(string state)
+    {
+        var dead = DeadButtons(CodeyBoxSection.Queue, vm =>
+        {
+            var row = DecisionSamples.Row(state, "the audit never converged", "other");
+            vm.Load([row]);
+            vm.Selected = row;
+
+            // A question, so the answer/dismiss choices and the reply box are all materialised. The
+            // orchestrator only ever puts questions on a parked item, but rendering them against each
+            // state costs nothing and proves the templates are not state-dependent.
+            var question = DecisionSamples.Question();
+            vm.Questions.Add(question);
+            vm.AnsweringQuestion = question;
+
+            Assert.NotNull(vm.Decision);
+        });
+
+        Assert.Empty(dead);
+    }
 }

@@ -58,6 +58,15 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
         AnswerQuestionCommand = new AsyncRelayCommand<WorkItemQuestion>(AnswerAsync);
         DismissQuestionCommand = new AsyncRelayCommand<WorkItemQuestion>(DismissAsync);
 
+        // Whoever changes the question list changes the decision — the loader, an answer landing, a
+        // dismissal. Subscribing is what makes that true of every writer rather than of the two that
+        // remembered to say so.
+        Questions.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasOpenQuestions));
+            RebuildDecision();
+        };
+
         _client.StdoutReceived += OnStdout;
         _client.StreamCompleted += OnStreamCompleted;
 
@@ -529,6 +538,161 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
     public IAsyncRelayCommand<WorkItemQuestion> AnswerQuestionCommand { get; }
     public IAsyncRelayCommand<WorkItemQuestion> DismissQuestionCommand { get; }
 
+    // ---- the decision ------------------------------------------------------------------------------
+    // An item blocked on a person is the only thing on this tab that a person MUST act on, and until now
+    // the pane said so only by not saying anything else: a state name in a fact row, a truncated error
+    // under the output, and eight lifecycle buttons of which exactly two or three applied. What the
+    // decision was, what to read before making it, and what each button would actually do were all left
+    // to the reader. See Decision.
+
+    /// <summary>
+    /// What the selected item is asking of the operator, or null when it is asking nothing.
+    /// </summary>
+    /// <remarks>
+    /// Derived, never assigned from outside: <see cref="RebuildDecision"/> is the only writer, and it is
+    /// called from each of the four places an input to it changes — the selection, the question list, the
+    /// audit rows (which carry the ceiling), and a refresh that re-reads the projects.
+    /// </remarks>
+    [ObservableProperty]
+    private Decision? _decision;
+
+    public bool HasDecision => Decision is not null;
+
+    /// <summary>
+    /// Whether the transcript's own error box is the one telling the story.
+    /// </summary>
+    /// <remarks>
+    /// It is, unless there is a card — the card carries the failure whole, labelled and beside the choices
+    /// it bears on, and the box would repeat it a screen lower in truncated form. The box keeps the case
+    /// it was written for: a Cancelled item carrying an error is most of the errors on a real instance and
+    /// is asking nobody for anything, so it gets no card and needs the box.
+    /// </remarks>
+    public bool ShowErrorBox => Selected is { HasError: true } && Decision is null;
+
+    partial void OnDecisionChanged(Decision? value)
+    {
+        OnPropertyChanged(nameof(HasDecision));
+        OnPropertyChanged(nameof(ShowErrorBox));
+    }
+
+    /// <summary>The commands the decision's choices run. Built once: they are the same instances the rest
+    /// of the pane binds, which is the point — the card rearranges the tab's actions rather than adding a
+    /// second set of them.</summary>
+    private DecisionActions Actions => _actions ??= new DecisionActions(
+        Answer: AnswerQuestionCommand,
+        Dismiss: DismissQuestionCommand,
+        Retry: RetryCommand,
+        RaiseCeiling: RaiseAuditCeilingCommand,
+        Replay: ReplayCommand,
+        Cancel: CancelCommand,
+        ShowOutput: ShowOutputCommand,
+        ShowTimeline: ShowTimelineCommand,
+        ShowDiff: ShowDiffCommand);
+
+    private DecisionActions? _actions;
+
+    /// <summary>
+    /// Recomputes the card from the selection, its questions, its project and its audit budget.
+    /// </summary>
+    /// <remarks>
+    /// Cheap enough to call on every input change — it is a few string switches over one row — and that
+    /// is deliberate: a card that is stale about whether a question is still open is worse than no card.
+    /// </remarks>
+    private void RebuildDecision()
+    {
+        Decision = Decision.For(Selected, [.. Questions], Actions, BaseBranchOf(Selected), CeilingOf(Selected));
+
+        // Explicitly, not only through OnDecisionChanged: moving between two items that are both
+        // undecided leaves Decision null on both, raises nothing, and would strand the error box on
+        // whichever answer the previous item happened to give.
+        OnPropertyChanged(nameof(ShowErrorBox));
+    }
+
+    /// <summary>The branch a merge would have gone into. The work item does not carry it; its project
+    /// does, and a merge failure that cannot name what it failed against is half a sentence.</summary>
+    private string? BaseBranchOf(WorkItemRow? item) => item?.ProjectId is { Length: > 0 } id
+        ? _projectRecords.FirstOrDefault(p => p.Id == id)?.DefaultBaseBranch
+        : null;
+
+    /// <summary>
+    /// The audit-iteration budget this item was measured against, or 0 when it is unknown.
+    /// </summary>
+    /// <remarks>
+    /// Two sources, exact first: the item's own audit-progress rows state the ceiling each iteration ran
+    /// against, and they are loaded with the timeline. Where they have not been read, the project's
+    /// default is the same number on this deployment — the work item does not carry one of its own.
+    /// </remarks>
+    private int CeilingOf(WorkItemRow? item)
+    {
+        if (item is null)
+        {
+            return 0;
+        }
+
+        var fromRows = AuditRows.Count > 0 ? AuditRows.Max(r => r.MaxIterations) : 0;
+        if (fromRows > 0)
+        {
+            return fromRows;
+        }
+
+        return item.ProjectId is { Length: > 0 } id
+            ? _projectRecords.FirstOrDefault(p => p.Id == id)?.AuditMaxIterations ?? 0
+            : 0;
+    }
+
+    /// <summary>
+    /// Retries an item that exhausted its audit budget, with a bigger budget.
+    /// </summary>
+    /// <remarks>
+    /// <para>Retry THEN patch, and that order is forced rather than chosen: <c>PATCH /workitems/{id}</c>
+    /// refuses an audit-budget change on a terminal item, and AuditFailed is terminal. So the retry is
+    /// what makes the item patchable, and the patch lands on the queued item behind it. The budget is
+    /// read at audit time — after the work phase, minutes away — so the dispatcher picking the item up in
+    /// between is not a race that matters.</para>
+    ///
+    /// <para>The step is the same five the overview's own "Extend ceiling" buys, for the same reason: a
+    /// nudge, not a decision to stop measuring.</para>
+    /// </remarks>
+    public IAsyncRelayCommand<WorkItemRow> RaiseAuditCeilingCommand =>
+        _raiseCeiling ??= new AsyncRelayCommand<WorkItemRow>(RaiseAuditCeilingAsync);
+
+    private IAsyncRelayCommand<WorkItemRow>? _raiseCeiling;
+
+    private async Task RaiseAuditCeilingAsync(WorkItemRow? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        var ceiling = CeilingOf(row);
+        if (ceiling <= 0)
+        {
+            await _toUi(() => Status = $"{row.ShortId}: no audit budget to raise.").ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            await _client.RetryAsync(row.Id, _cts.Token).ConfigureAwait(false);
+            await _client.PatchWorkItemAsync(
+                row.Id,
+                new AuditBudgetPatch(ceiling + Decision.CeilingStep),
+                _cts.Token).ConfigureAwait(false);
+            await RefreshAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic.Report($"raise audit ceiling {row.ShortId}", ex);
+            await _toUi(() => Status = $"{row.ShortId}: {ex.Message}").ConfigureAwait(false);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     /// <summary>
     /// Questions the selected item's agent is waiting on. Kept beside the transcript rather than behind a
     /// section: an agent blocked on a person is the one thing here that should interrupt someone.
@@ -780,6 +944,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
                     x => x.Phase);
                 TimelineEmpty = _allRuns.Count == 0;
                 OnPropertyChanged(nameof(HasAuditRows));
+                RebuildDecision();
                 OnPropertyChanged(nameof(AuditSummaryLine));
                 OnPropertyChanged(nameof(BlockedIterationCount));
                 OnPropertyChanged(nameof(HasGates));
@@ -1756,6 +1921,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             }
 
             OnPropertyChanged(nameof(HasOpenQuestions));
+            RebuildDecision();
         }).ConfigureAwait(false);
     }
 
@@ -1925,6 +2091,10 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
                     Selected = Items.FirstOrDefault(i => i.Id == keep) ?? Selected;
                 }
 
+                // The projects were just re-read, and they carry the base branch and the audit budget the
+                // card's sentences are built from.
+                RebuildDecision();
+
                 QueuePaused = queue?.IsPaused ?? false;
                 Status = QueuePaused ? "Queue paused" : string.Empty;
             }).ConfigureAwait(false);
@@ -1968,6 +2138,7 @@ public sealed partial class CodeyBoxQueueViewModel : ObservableObject, IAsyncDis
             AnsweringQuestion = null;
             IsAddingDependency = false;
             OnPropertyChanged(nameof(HasOpenQuestions));
+            RebuildDecision();
 
             // The relations band belongs to whichever item is selected, so it is rebuilt here as well as
             // on every refresh — otherwise it would keep describing the item you just navigated away from
