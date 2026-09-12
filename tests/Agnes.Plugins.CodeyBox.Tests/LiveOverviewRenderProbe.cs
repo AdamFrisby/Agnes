@@ -162,10 +162,23 @@ internal static class LiveOverviewInputs
         var ceilings = projects
             .Where(p => p.AuditMaxIterations > 0)
             .ToDictionary(p => p.Id, p => p.AuditMaxIterations, StringComparer.Ordinal);
+        var effort = new List<ItemEffort>();
+        foreach (var item in items.Where(i => i.State == "Done").OrderByDescending(i => i.UpdatedAt).Take(OverviewModel.BurnSample)
+                     .Concat(items.Where(i => !i.IsTerminal)))
+        {
+            var runs = await client.GetAgentRunsAsync(item.Id, cts.Token);
+            if (runs.Count > 0)
+            {
+                effort.Add(new ItemEffort(item.Id, ItemEffort.ActiveTime(runs, DateTimeOffset.UtcNow), item.State == "Done", item.UpdatedAt));
+            }
+        }
         // The operator's own accumulated history, read-only: what the real tab would judge against today.
         var history = new OverviewHistory().Read();
         return new OverviewInputs(
             DateTimeOffset.Now, items, traces, questions, queue, concurrency, probes,
-            QuotaHistoryMap.ToBurnDown(rowsOut, probes, DateTimeOffset.UtcNow), health, history, ceilings);
+            QuotaHistoryMap.ToBurnDown(rowsOut, probes, DateTimeOffset.UtcNow), health, history, ceilings)
+        {
+            Effort = effort,
+        };
     }
 }

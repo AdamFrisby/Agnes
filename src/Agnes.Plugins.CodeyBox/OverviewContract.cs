@@ -295,6 +295,44 @@ public sealed record ItemAuditProgress(string WorkItemId, IReadOnlyList<AuditPro
 /// is off.</param>
 /// <param name="History">This plugin's own recent samples, oldest first, for sparklines and bands.</param>
 /// <param name="Ceilings">Audit iteration cap by project id, from <c>/projects</c>.</param>
+/// <summary>
+/// One item's active agent time: the sum of its runs (work, audit, rework), with a run still open counted
+/// to now. Waiting — for a slot, for quota, for a person — is not in it, which is what makes it a cost per
+/// item rather than a calendar.
+/// </summary>
+public sealed record ItemEffort(string Id, TimeSpan Active, bool Landed, DateTimeOffset At)
+{
+    public static TimeSpan ActiveTime(IEnumerable<AgentRun> runs, DateTimeOffset now)
+    {
+        var total = TimeSpan.Zero;
+        foreach (var run in runs)
+        {
+            var end = run.EndedAt ?? now;
+            if (end > run.StartedAt)
+            {
+                total += end - run.StartedAt;
+            }
+        }
+        return total;
+    }
+}
+
+/// <summary>
+/// How long the queue takes to drain at today's pace: what remains times the median active time of the
+/// last landed items, less the active time the in-flight items have already had, over the slots.
+/// </summary>
+public sealed record BurnEstimate(
+    int Remaining,
+    int Sampled,
+    TimeSpan MedianPerItem,
+    TimeSpan LowPerItem,
+    TimeSpan HighPerItem,
+    TimeSpan SpentOnLive,
+    TimeSpan WorkRemaining,
+    int Slots,
+    TimeSpan Wall,
+    IReadOnlyList<double> SparkHours);
+
 public sealed record OverviewInputs(
     DateTimeOffset Now,
     IReadOnlyList<WorkItemRow> Items,
@@ -306,7 +344,12 @@ public sealed record OverviewInputs(
     IReadOnlyList<QuotaBurn> QuotaHistory,
     TransitionHealth? Health,
     IReadOnlyList<OverviewSample> History,
-    IReadOnlyDictionary<string, int> Ceilings);
+    IReadOnlyDictionary<string, int> Ceilings)
+{
+    /// <summary>Active time per item, for the last landed items and everything not yet terminal. Empty on
+    /// a host whose agent history is off; the drain estimate then simply does not appear.</summary>
+    public IReadOnlyList<ItemEffort> Effort { get; init; } = [];
+}
 
 /// <summary>
 /// The overview, ready to draw.
@@ -342,6 +385,9 @@ public sealed record Overview(
 
     /// <summary>One card per agent: the longest window as the chart, the rest as gauges beside it.</summary>
     public IReadOnlyList<QuotaCard> QuotaCards => OverviewModel.Cards(Quota, Sample.At);
+
+    /// <summary>Time to drain the queue at today's pace; null without enough landed items to price one.</summary>
+    public BurnEstimate? Burn { get; init; }
     public bool HasFolded => Folded.Count > 0;
 
     /// <summary>Every clock on this screen is local time; this is the one place that says so.</summary>

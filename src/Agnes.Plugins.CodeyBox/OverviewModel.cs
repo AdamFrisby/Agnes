@@ -90,6 +90,12 @@ public static partial class OverviewModel
     /// <summary>The cumulative flow chart's window.</summary>
     internal const int FlowDays = 30;
 
+    /// <summary>How many of the most recently landed items price the next one. Twenty is the operator's
+    /// number: enough that one runaway item does not set the pace, few enough that last month's fleet does
+    /// not either. The median, not the mean, for the same reason.</summary>
+    internal const int BurnSample = 20;
+    internal const int BurnMinSample = 3;
+
     /// <summary>A jump up of more than this many percentage points between consecutive quota samples is
     /// a window refill, not a burn — the fit has to start again after it.</summary>
     internal const double QuotaRefillJump = 15;
@@ -126,7 +132,11 @@ public static partial class OverviewModel
         var vitals = BuildVitals(inputs, counts);
         var (sentence, verdict) = BuildSentence(inputs, counts);
         var (folded, attention) = Fold([.. traces.Where(t => t.NeedsAttention).Order(AttentionOrder)]);
-
+        var burn = BuildBurn(inputs);
+        if (burn is not null)
+        {
+            vitals = [.. vitals, Drain(burn)];
+        }
         return new Overview(
             sentence,
             verdict,
@@ -149,9 +159,74 @@ public static partial class OverviewModel
                 counts.NeedsPerson))
         {
             Folded = folded,
+            Burn = burn,
         };
     }
 
+    /// <summary>
+    /// The drain estimate: (items not yet terminal × median active time of the last landed items) − active
+    /// time the in-flight items already had, spread over the slots. Null until enough items have landed to
+    /// call the median a price.
+    /// </summary>
+    internal static BurnEstimate? BuildBurn(OverviewInputs inputs)
+    {
+        var sample = inputs.Effort
+            .Where(e => e.Landed)
+            .OrderByDescending(e => e.At)
+            .Take(BurnSample)
+            .OrderBy(e => e.At)
+            .ToList();
+        if (sample.Count < BurnMinSample)
+        {
+            return null;
+        }
+        List<double> hours = [.. sample.Select(e => e.Active.TotalHours)];
+        List<double> sorted = [.. hours.Order()];
+        var median = MedianOf(sorted);
+        var remaining = inputs.Items.Where(i => !i.IsTerminal).ToList();
+        var liveIds = remaining.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+        var spent = TimeSpan.FromTicks(inputs.Effort.Where(e => !e.Landed && liveIds.Contains(e.Id)).Sum(e => e.Active.Ticks));
+        var work = TimeSpan.FromHours(remaining.Count * median) - spent;
+        if (work < TimeSpan.Zero)
+        {
+            work = TimeSpan.Zero;
+        }
+        var slots = Math.Max(1, inputs.Concurrency?.GlobalMaxConcurrent ?? 1);
+        return new BurnEstimate(
+            remaining.Count,
+            sample.Count,
+            TimeSpan.FromHours(median),
+            TimeSpan.FromHours(Percentile(sorted, BandLowPercentile)),
+            TimeSpan.FromHours(Percentile(sorted, BandHighPercentile)),
+            spent,
+            work,
+            slots,
+            TimeSpan.FromTicks(work.Ticks / slots),
+            hours);
+    }
+
+    /// <summary>The estimate as a vital: the wall-clock figure, and the arithmetic said out loud.</summary>
+    private static Vital Drain(BurnEstimate burn)
+    {
+        var value = burn.Remaining == 0 ? "nothing queued" : Inv($"~{Duration(burn.Wall)}");
+        var caption = burn.Remaining == 0
+            ? Inv($"an item costs {Duration(burn.MedianPerItem)} of agent time lately")
+            : Inv($"{burn.Remaining} {Plural(burn.Remaining, "item", "items")} × {Duration(burn.MedianPerItem)} median − {Duration(burn.SpentOnLive)} already spent, over {burn.Slots} {Plural(burn.Slots, "slot", "slots")}");
+        return new Vital(
+            "Time to drain",
+            value,
+            caption,
+            TileTone.Neutral,
+            burn.SparkHours,
+            burn.MedianPerItem.TotalHours,
+            burn.LowPerItem.TotalHours,
+            burn.HighPerItem.TotalHours,
+            burn.Remaining == 0 ? 0 : burn.Wall.TotalHours,
+            Trend.Unknown)
+        {
+            Period = Inv($"last {burn.Sampled} landed"),
+        };
+    }
     /// <summary>
     /// The phase boundary an item is stopped at, when that is the only thing wrong with it — or null for
     /// an item that needs a look for its own reasons (a person, a repeating gate, a budget, a silent agent

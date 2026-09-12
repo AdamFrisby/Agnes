@@ -700,7 +700,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
         var progress = await TracesAsync(traced).ConfigureAwait(false);
         var questions = await QuestionsAsync(items).ConfigureAwait(false);
         var quota = await QuotaBurnAsync(probes).ConfigureAwait(false);
-
+        var effort = await EffortAsync(items).ConfigureAwait(false);
         var ceilings = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var project in projects.Where(p => p.AuditMaxIterations > 0))
         {
@@ -718,8 +718,10 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
             quota,
             health,
             _history.Read(),
-            ceilings);
-
+            ceilings)
+        {
+            Effort = effort,
+        };
         var built = OverviewModel.Build(inputs);
 
         await _toUi(() =>
@@ -735,6 +737,59 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
         // nothing on screen is waiting for it.
         _history.Append(built.Sample);
     }
+
+    /// <summary>
+    /// Active agent time per item, for the drain estimate: the last <see cref="OverviewModel.BurnSample"/>
+    /// landed items (fetched once each — a finished item's runs do not change) and everything not yet
+    /// terminal (re-read while it moves, cached against its UpdatedAt like the traces).
+    /// </summary>
+    private async Task<IReadOnlyList<ItemEffort>> EffortAsync(IReadOnlyList<WorkItemRow> items)
+    {
+        var landed = items.Where(i => i.State == "Done").OrderByDescending(i => i.UpdatedAt).Take(OverviewModel.BurnSample).ToList();
+        var live = items.Where(i => !i.IsTerminal).ToList();
+        var stale = landed.Concat(live)
+            .Where(i => !(_effort.TryGetValue(i.Id, out var cached) && cached.At == i.UpdatedAt))
+            .ToList();
+        var fetched = new System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<AgentRun>>(StringComparer.Ordinal);
+        await Parallel.ForEachAsync(
+            stale,
+            new ParallelOptions { MaxDegreeOfParallelism = TraceParallelism },
+            async (item, token) =>
+            {
+                try
+                {
+                    fetched[item.Id] = await _client.GetAgentRunsAsync(item.Id, token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Diagnostic.Report($"agent-history {item.ShortId}", ex);
+                }
+            }).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+        var effort = new List<ItemEffort>(landed.Count + live.Count);
+        foreach (var item in landed.Concat(live))
+        {
+            if (fetched.TryGetValue(item.Id, out var runs))
+            {
+                _effort[item.Id] = (item.UpdatedAt, runs);
+            }
+            else if (_effort.TryGetValue(item.Id, out var cached))
+            {
+                runs = cached.Runs;
+            }
+            else
+            {
+                continue;
+            }
+            if (runs.Count > 0)
+            {
+                effort.Add(new ItemEffort(item.Id, ItemEffort.ActiveTime(runs, now), item.State == "Done", item.UpdatedAt));
+            }
+        }
+        return effort;
+    }
+
+    private readonly Dictionary<string, (DateTimeOffset At, IReadOnlyList<AgentRun> Runs)> _effort = new(StringComparer.Ordinal);
 
     /// <summary>Audit progress for the items that can still change, capped and cached.</summary>
     private async Task<IReadOnlyList<ItemAuditProgress>> TracesAsync(IReadOnlyList<WorkItemRow> items)
