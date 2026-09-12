@@ -1161,3 +1161,16 @@ public static class QuotaHistoryMap
 /// </remarks>
 public sealed record DependencyPatch(
     [property: JsonPropertyName("dependsOn")] IReadOnlyList<string> DependsOn);
+
+/// <summary>
+/// The body of an audit-budget raise: <c>PATCH /workitems/{id}</c> with only <c>auditMaxIterations</c>.
+/// </summary>
+/// <remarks>
+/// Named for the same reason <see cref="DependencyPatch"/> is: this is our own call shape, not a boundary
+/// schema being relayed. The orchestrator exempts the audit-budget fields from the Queued-only rule the
+/// other editable fields follow, but NOT from the terminal-state rule — a patch at this path is refused on
+/// a terminal item, which is why the decision card's "raise the ceiling" retries first. See
+/// <see cref="CodeyBoxQueueViewModel.RaiseAuditCeilingCommand"/>.
+/// </remarks>
+public sealed record AuditBudgetPatch(
+    [property: JsonPropertyName("auditMaxIterations")] int AuditMaxIterations);

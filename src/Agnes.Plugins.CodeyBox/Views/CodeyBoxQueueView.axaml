@@ -292,7 +292,11 @@
 
       <GridSplitter Grid.Row="1" Grid.Column="1" Background="{DynamicResource Line}" />
 
-      <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,*">
+      <!-- Four rows, not three: the decision card earns one of its own between WHAT THIS IS and the
+           actions. It cannot live in the scroll region — the whole complaint was that the decision was
+           not obvious, and a card you have to scroll to is not obvious — and it cannot be an overlay
+           like the More… row, because it is not transient. -->
+      <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,Auto,*">
 
         <!-- WHAT THIS IS. Pinned above the scroll region, because it is the answer to "which one am I
              looking at" and it must not scroll away from the content it describes.
@@ -364,18 +368,28 @@
             </StackPanel>
           </Border>
 
-          <!-- WHERE IT SITS. Between the facts about this item and the output it is producing, because
-               it is neither: every control in it acts on a DIFFERENT item — the parent to retry, the
-               child to open, the follow-up to create — and mixing those into the row of buttons below
-               would make "Retry" mean two things a centimetre apart. See RelationsBandView. -->
-          <v:RelationsBandView Margin="-10,2,-10,0" />
         </StackPanel>
 
         <!-- Nothing selected: say so, rather than leaving half the tab blank. -->
-        <TextBlock Grid.Row="2" Text="Select a work item to see what it is doing."
+        <TextBlock Grid.Row="3" Text="Select a work item to see what it is doing."
                    Foreground="{DynamicResource FgFaint}" FontSize="12"
                    HorizontalAlignment="Center" VerticalAlignment="Center"
                    IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNull}}" />
+
+        <!-- WHAT YOU ARE BEING ASKED, then WHERE IT SITS. Both pinned above the scroll region, in that
+             order and not the other way round.
+
+             The decision comes first because the pane's whole failing was that it did not say what the
+             decision was; a card you have to scroll to, or read past a dependency graph to reach, is not
+             an answer to that. The relations band follows because everything in it acts on a DIFFERENT
+             item — the parent to retry, the child to open — and it used to sit inside the identity block
+             above, where it pushed everything below it down by its own height on every item that has
+             dependencies. On an item with none it is invisible and this row is just the card; on an item
+             with no decision it is just the band, exactly where it always was. -->
+        <StackPanel Grid.Row="1">
+          <v:DecisionView Margin="10,0,10,2" />
+          <v:RelationsBandView Margin="0,2,0,0" />
+        </StackPanel>
 
         <!-- Two different classes of control, no longer rendered identically. On the left, things that
              CHANGE the item; on the right, things that change only what you are looking at. Previously
@@ -385,7 +399,7 @@
              Grid gave each cluster its desired width and clipped whatever did not fit, so at this width
              "Detail" simply fell off the edge. Wrapping keeps both clusters whole and keeps them apart —
              the separator, not the alignment, is what says these are two kinds of control. -->
-        <WrapPanel Grid.Row="1" Margin="10,0,10,6" Orientation="Horizontal"
+        <WrapPanel Grid.Row="2" Margin="10,0,10,6" Orientation="Horizontal"
                    IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
           <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,10,4">
             <Button Content="Retry" FontSize="11" Padding="8,3" Command="{Binding RetryCommand}"
@@ -414,7 +428,7 @@
 
         <!-- Recovery moves for an item that has gone wrong, and the two that destroy work. Disclosed on
              request so that eight equal buttons never again make abandoning look like retrying. -->
-        <Border Grid.Row="2" VerticalAlignment="Top" Margin="10,0,10,6" Padding="9,7" CornerRadius="6"
+        <Border Grid.Row="3" VerticalAlignment="Top" Margin="10,0,10,6" Padding="9,7" CornerRadius="6"
                 Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
                 IsVisible="{Binding ShowMoreActions}" ZIndex="2">
           <WrapPanel Orientation="Horizontal">
@@ -434,55 +448,27 @@
           </WrapPanel>
         </Border>
 
-        <!-- Questions the agent is waiting on. Above the transcript, because an agent blocked on a person
-             is the one thing here that should interrupt someone — everything else can be scrolled to. -->
-        <Border Grid.Row="2" VerticalAlignment="Top" Margin="10,0,10,6" Padding="10,8" CornerRadius="6"
-                Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
-                IsVisible="{Binding HasOpenQuestions}" ZIndex="1">
-          <StackPanel Spacing="6">
-            <TextBlock Text="The agent is waiting on you" FontWeight="SemiBold" FontSize="12"
-                       Foreground="{DynamicResource Fg}" />
-            <ItemsControl ItemsSource="{Binding Questions}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <StackPanel Spacing="4" Margin="0,3" IsVisible="{Binding IsOpen}">
-                    <TextBlock Text="{Binding QuestionText}" Foreground="{DynamicResource Fg}" FontSize="12"
-                               TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding Age}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <Button Content="Answer" FontSize="11" Padding="8,3"
-                              Command="{Binding $parent[ItemsControl].DataContext.AnswerQuestionCommand}"
-                              CommandParameter="{Binding}" />
-                      <Button Content="Dismiss" FontSize="11" Padding="8,3"
-                              Command="{Binding $parent[ItemsControl].DataContext.DismissQuestionCommand}"
-                              CommandParameter="{Binding}" />
-                    </StackPanel>
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <!-- The reply box appears against the question being answered, so it can never be sent to a
-                 different one if the list refreshes underneath. -->
-            <StackPanel Spacing="4"
-                        IsVisible="{Binding AnsweringQuestion, Converter={x:Static ObjectConverters.IsNotNull}}">
-              <TextBox Text="{Binding AnswerText, Mode=TwoWay}" AcceptsReturn="True" MinHeight="52"
-                       TextWrapping="Wrap" FontSize="12" Watermark="Your answer…" />
-              <Button Content="Send answer" Classes="accent" FontSize="11" Padding="10,4"
-                      HorizontalAlignment="Left"
-                      Command="{Binding AnswerQuestionCommand}" CommandParameter="{Binding AnsweringQuestion}" />
-            </StackPanel>
-          </StackPanel>
-        </Border>
+        <!-- The question box that used to stand here is gone: it is inside the decision card above,
+             which is the point. Two boxes both headed "the agent is waiting on you" — one saying what was
+             asked, one offering the lifecycle buttons — is the shape that made the decision non-obvious. -->
 
         <!-- The agent's own output, streamed. Monospaced and selectable because it is terminal text. -->
-        <ScrollViewer Grid.Row="2" x:Name="OutputScroller" Padding="10,0,10,10"
-                      IsVisible="{Binding ShowStory}">
-          <StackPanel Spacing="8">
+        <!-- Padding lives on the CHILD, not on the ScrollViewer: this Avalonia build leaves a
+             ScrollViewer's own Padding out of its scroll extent, so a padded scroller can never bring the
+             last 10px of its content into view. Same change throughout the tab. -->
+        <ScrollViewer Grid.Row="3" x:Name="OutputScroller" IsVisible="{Binding ShowStory}">
+          <StackPanel Spacing="8" Margin="10,0,10,10">
             <!-- Why it stopped, first. Titled from the STATE rather than always "Failure": 45 of the 67
                  items here carrying an error are Cancelled, and heading those in the danger hue overstates
-                 them and devalues the colour on the 22 that genuinely failed. -->
+                 them and devalues the colour on the 22 that genuinely failed.
+
+                 Gated on there being NO decision card, not merely on there being an error. Where an item
+                 is blocked on a person the card already carries the failure whole and in context; leaving
+                 this here as well printed the same sentence twice on one pane, once truncated. Cancelled
+                 items — which are most of the errors here and are asking nobody for anything — still get
+                 this box, which is what it was for. -->
             <Border Classes="errorbox" Classes.failure="{Binding Selected.ErrorIsFailure, FallbackValue=false}"
-                    IsVisible="{Binding Selected.HasError, FallbackValue=false}">
+                    IsVisible="{Binding ShowErrorBox, FallbackValue=false}">
               <StackPanel Spacing="3">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <TextBlock Text="{Binding Selected.ErrorTitle}" FontSize="10" FontWeight="SemiBold"
@@ -543,8 +529,8 @@
         <!-- How the item got here, out of the orchestrator's DATABASE rather than its logs. The admin UI
              scrapes audit logs for this; those roll daily, and on this instance every scraped timeline was
              empty while agent-history returned seventy-two runs for the same item. -->
-        <ScrollViewer Grid.Row="2" Padding="10,0,10,10" IsVisible="{Binding IsTimelineVisible}">
-          <StackPanel Spacing="10">
+        <ScrollViewer Grid.Row="3" IsVisible="{Binding IsTimelineVisible}">
+          <StackPanel Spacing="10" Margin="10,0,10,10">
             <TextBlock Text="No agent runs recorded for this item."
                        Foreground="{DynamicResource FgFaint}" FontSize="11" Margin="0,8"
                        IsVisible="{Binding TimelineEmpty}" />
@@ -768,8 +754,8 @@
              only in colour; as plain monospace it was the least legible thing on the screen. Capped at
              2,000 lines because a work-branch diff can be enormous, and the cap is stated rather than
              silently applied. -->
-        <ScrollViewer Grid.Row="2" Padding="10,0,10,10" IsVisible="{Binding IsDiffVisible}">
-          <StackPanel Spacing="6">
+        <ScrollViewer Grid.Row="3" IsVisible="{Binding IsDiffVisible}">
+          <StackPanel Spacing="6" Margin="10,0,10,10">
             <TextBlock Text="{Binding DiffSummary}" Foreground="{DynamicResource FgDim}" FontSize="11" />
             <ItemsControl ItemsSource="{Binding Diff}">
               <ItemsControl.ItemTemplate>
@@ -795,8 +781,8 @@
 
         <!-- Timeline, diff, costs, timings, agent history, audit reports, attachments and dependents,
              fetched only when this pane is opened. Each part is optional and says so when absent. -->
-        <ScrollViewer Grid.Row="2" Padding="10,0,10,10" IsVisible="{Binding IsDetailVisible}">
-          <StackPanel Spacing="8">
+        <ScrollViewer Grid.Row="3" IsVisible="{Binding IsDetailVisible}">
+          <StackPanel Spacing="8" Margin="10,0,10,10">
             <!-- The two things about a queued item that are worth changing from here. -->
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock Text="Priority" Foreground="{DynamicResource FgDim}" FontSize="11" VerticalAlignment="Center" />

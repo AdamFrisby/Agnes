@@ -1,0 +1,209 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             x:Class="Agnes.Plugins.CodeyBox.Views.DecisionView">
+  <!-- THE DECISION. What the selected item is asking of you, what to read before answering, and what each
+       answer would do. Shown only when something is actually blocked on a person; otherwise this control
+       collapses to nothing and the pane is exactly what it was.
+
+       It inherits the queue view model as its DataContext rather than taking the Decision as its own, so
+       the reply box can reach AnswerText and AnsweringQuestion — the card FOLDS IN the old "the agent is
+       waiting on you" box rather than sitting above a second copy of it. Which text and which choices is
+       decided in Decision, not here: this file is a renderer.
+
+       Hues: amber is blocked-on-you and pink is failed, and the card wears exactly one of them. -->
+  <UserControl.Styles>
+    <!-- The card. Its edge is the whole signal, so it is a full border rather than a left rule: at two
+         fifths of a tab the eye lands on the pane's top-left corner and a 3px rule there is invisible. -->
+    <Style Selector="Border.decision">
+      <Setter Property="Background" Value="{DynamicResource StatusAttentionSoft}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusAttention}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="11,9" />
+    </Style>
+    <Style Selector="Border.decision.failed">
+      <Setter Property="Background" Value="{DynamicResource StatusErrorSoft}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusError}" />
+    </Style>
+
+    <!-- The icon and the sentence take the card's hue. Everything below them is ordinary text: a card
+         that is entirely amber says nothing, because nothing on it stands out. -->
+    <Style Selector="ic|SymbolIcon.decisionmark">
+      <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+      <Setter Property="FontSize" Value="17" />
+    </Style>
+    <Style Selector="ic|SymbolIcon.decisionmark.failed">
+      <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+    </Style>
+
+    <Style Selector="TextBlock.situation">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- Evidence: a signpost the size of the pane's other fact labels, then the content verbatim. -->
+    <Style Selector="TextBlock.evidencelabel">
+      <Setter Property="FontSize" Value="9" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Border.evidence">
+      <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="Padding" Value="8,6" />
+    </Style>
+
+    <!-- A route to a view, not an action on the item. Reads as a link for the same reason the pane's
+         other disclosures do. -->
+    <Style Selector="Button.lookup">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0,0,14,2" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.lookup /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- A choice. Every one of them is the same width so the consequences line up into a column that can
+         be read down — the comparison between choices IS the decision. -->
+    <Style Selector="Button.choice">
+      <Setter Property="MinWidth" Value="178" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.choice.primary">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <!-- Irreversible, and marked the way the rest of the tab marks irreversible. It still goes through
+         the confirmation bar: the command armed here is the same CancelCommand the More… row uses. -->
+    <Style Selector="Button.choice.destructive">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+
+    <Style Selector="TextBlock.consequence">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="10,0,0,0" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Classes="decision" VerticalAlignment="Top"
+          Classes.failed="{Binding Decision.IsFailure, FallbackValue=false}"
+          IsVisible="{Binding HasDecision, FallbackValue=false}">
+    <StackPanel Spacing="9">
+
+      <!-- 1. WHAT IS BEING ASKED OF ME. One sentence, and the only thing on the card that is allowed to
+           be large. -->
+      <Grid ColumnDefinitions="Auto,*">
+        <ic:SymbolIcon Grid.Column="0" Classes="decisionmark" Margin="0,1,9,0" VerticalAlignment="Top"
+                       Classes.failed="{Binding Decision.IsFailure, FallbackValue=false}"
+                       Symbol="{Binding Decision.Glyph}" />
+        <TextBlock Grid.Column="1" Classes="situation" Text="{Binding Decision.Situation}" />
+      </Grid>
+
+      <!-- 2. WHAT I NEED TO SEE. The question verbatim, or the failure in full — never the one-line
+           summary, because chasing the rest of it is the thing this card exists to stop. -->
+      <ItemsControl ItemsSource="{Binding Decision.Passages}"
+                    IsVisible="{Binding Decision.HasPassages, FallbackValue=false}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Classes="evidence" Margin="0,0,0,5">
+              <StackPanel Spacing="3">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="evidencelabel" Text="{Binding Label}" />
+                  <TextBlock Classes="evidencelabel" Text="{Binding Note}"
+                             FontWeight="Normal" IsVisible="{Binding HasNote}" />
+                </StackPanel>
+                <!-- Capped and scrollable: a stack trace in lastError must not push the choices off the
+                     bottom of the pane, which is the one thing the card must never do. -->
+                <ScrollViewer MaxHeight="96" HorizontalScrollBarVisibility="Disabled">
+                  <SelectableTextBlock Text="{Binding Text}" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource Fg}" />
+                </ScrollViewer>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- The identifiers, side by side in the pane's own labelled-fact shape. A branch name is a value
+           to be read once, not a passage. -->
+      <ItemsControl ItemsSource="{Binding Decision.Facts}"
+                    IsVisible="{Binding Decision.HasFacts, FallbackValue=false}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <StackPanel Margin="0,0,20,3">
+              <TextBlock Classes="evidencelabel" Text="{Binding Label}" HorizontalAlignment="Left" />
+              <SelectableTextBlock Text="{Binding Text}" FontFamily="monospace" FontSize="12"
+                                   Foreground="{DynamicResource Fg}" />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- The rest of the evidence, where it already lives. These switch the pane's own view rather than
+           rendering a second copy of a diff that would then be free to disagree with the first. -->
+      <ItemsControl ItemsSource="{Binding Decision.Lookups}"
+                    IsVisible="{Binding Decision.HasLookups, FallbackValue=false}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Button Classes="lookup" Content="{Binding Label}" Command="{Binding Command}" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- 3. THE CHOICES, each saying what it does and what happens next. -->
+      <ItemsControl ItemsSource="{Binding Decision.Choices}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,6">
+              <Button Grid.Column="0" Classes="choice" Content="{Binding Label}"
+                      Classes.primary="{Binding IsPrimary}"
+                      Classes.destructive="{Binding IsDestructive}"
+                      Command="{Binding Command}" CommandParameter="{Binding Parameter}" />
+              <TextBlock Grid.Column="1" Classes="consequence" Text="{Binding Consequence}" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- The reply box, against the question being answered so a refresh underneath can never redirect
+           it. Inside the card, because "Answer" is one of the choices above and the box is where that
+           choice lands — the two used to be in different boxes saying the same thing. -->
+      <StackPanel Spacing="5"
+                  IsVisible="{Binding AnsweringQuestion, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Classes="evidencelabel" Text="YOUR ANSWER" />
+        <TextBox Text="{Binding AnswerText, Mode=TwoWay}" AcceptsReturn="True" MinHeight="56"
+                 TextWrapping="Wrap" FontSize="12" Watermark="What should the agent do?" />
+        <Button Content="Send the answer" Classes="accent" FontSize="11" Padding="10,4"
+                HorizontalAlignment="Left"
+                Command="{Binding AnswerQuestionCommand}" CommandParameter="{Binding AnsweringQuestion}" />
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

@@ -68,6 +68,20 @@ public sealed class BoardStub
 
     public WorkItemRow? Selected { get; set; }
 
+    /// <summary>What the selected item is asking of the operator. Null on most items, which is the whole
+    /// point: the card is absent unless somebody is blocked.</summary>
+    public Decision? Decision { get; set; }
+
+    public bool HasDecision => Decision is not null;
+
+    /// <summary>The question the reply box belongs to, and what is being typed into it. On the stub
+    /// because the card owns the reply box — it folded in the old "waiting on you" box.</summary>
+    public WorkItemQuestion? AnsweringQuestion { get; set; }
+
+    public string AnswerText { get; set; } = string.Empty;
+
+    public Fired AnswerQuestionCommand { get; } = new();
+
     public Relations? Relations { get; init; }
 
     public Chain? PendingMove { get; init; }
