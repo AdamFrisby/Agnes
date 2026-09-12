@@ -84,6 +84,21 @@ public class BurnEstimateTests
     }
 
     [Fact]
+    public void An_item_far_over_its_price_is_credited_its_price_and_no_more()
+    {
+        // Median 4h. One queued item and one that has been reworked for 20h: the queued one still costs 4h.
+        var items = new[] { Item("q1", "Queued"), Item("w1", "Reworking") };
+        var effort = new[] { Landed("a", 2, 3), Landed("b", 4, 2), Landed("c", 6, 1), Live("w1", 20) };
+
+        var burn = OverviewModel.BuildBurn(Inputs(items, effort, slots: 5));
+
+        Assert.Equal(TimeSpan.FromHours(4), burn!.SpentOnLive);
+        Assert.Equal(TimeSpan.FromHours(4), burn.WorkRemaining);
+        // Five slots, but one item cannot be split five ways: the wall clock is that item's remaining price.
+        Assert.Equal(TimeSpan.FromHours(4), burn.Wall);
+    }
+
+    [Fact]
     public void An_empty_queue_has_nothing_to_drain_and_says_so_without_a_number()
     {
         var overview = OverviewModel.Build(Inputs([Item("d", "Done")], [Landed("a", 1, 3), Landed("b", 1, 2), Landed("c", 1, 1)]));

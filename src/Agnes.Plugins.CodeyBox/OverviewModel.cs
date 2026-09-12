@@ -184,14 +184,34 @@ public static partial class OverviewModel
         List<double> sorted = [.. hours.Order()];
         var median = MedianOf(sorted);
         var remaining = inputs.Items.Where(i => !i.IsTerminal).ToList();
-        var liveIds = remaining.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
-        var spent = TimeSpan.FromTicks(inputs.Effort.Where(e => !e.Landed && liveIds.Contains(e.Id)).Sum(e => e.Active.Ticks));
-        var work = TimeSpan.FromHours(remaining.Count * median) - spent;
-        if (work < TimeSpan.Zero)
+        var spentBy = inputs.Effort.Where(e => !e.Landed).ToDictionary(e => e.Id, e => e.Active, StringComparer.Ordinal);
+        // Item by item, not in aggregate: an item that has already had ten times the median (a rework loop
+        // that has run for weeks) is credited its own price and no more, or its excess would pay for every
+        // other item in the queue and the estimate would read "under a minute" — as it did.
+        var price = TimeSpan.FromHours(median);
+        var spent = TimeSpan.Zero;
+        var work = TimeSpan.Zero;
+        var longest = TimeSpan.Zero;
+        foreach (var item in remaining)
         {
-            work = TimeSpan.Zero;
+            var had = spentBy.TryGetValue(item.Id, out var t) ? t : TimeSpan.Zero;
+            var credited = had < price ? had : price;
+            spent += credited;
+            var left = price - credited;
+            work += left;
+            if (left > longest)
+            {
+                longest = left;
+            }
         }
         var slots = Math.Max(1, inputs.Concurrency?.GlobalMaxConcurrent ?? 1);
+        // Spread over the slots — but never faster than the longest single item, which is what bounds the
+        // clock once fewer items remain than there are slots.
+        var wall = TimeSpan.FromTicks(work.Ticks / slots);
+        if (wall < longest)
+        {
+            wall = longest;
+        }
         return new BurnEstimate(
             remaining.Count,
             sample.Count,
@@ -201,7 +221,7 @@ public static partial class OverviewModel
             spent,
             work,
             slots,
-            TimeSpan.FromTicks(work.Ticks / slots),
+            wall,
             hours);
     }
 
