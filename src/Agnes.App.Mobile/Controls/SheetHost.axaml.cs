@@ -89,6 +89,12 @@ public partial class SheetHost : UserControl
 
     private void ApplySide()
     {
+        // A pill you drag down means nothing on a panel that slides sideways.
+        if (this.FindControl<Border>("GrabberPill") is { } pill)
+        {
+            pill.IsVisible = !Side;
+        }
+
         if (Side)
         {
             _panel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;

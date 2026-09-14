@@ -41,7 +41,7 @@
 
         <!-- grabber + title: the drag target -->
         <StackPanel Name="Grabber" Grid.Row="0" Background="Transparent" Spacing="2">
-          <Border Width="40" Height="4" Margin="0,10,0,6"
+          <Border Name="GrabberPill" Width="40" Height="4" Margin="0,10,0,6"
                   CornerRadius="{StaticResource RadiusPill}"
                   Background="{DynamicResource BorderStrong}"
                   HorizontalAlignment="Center" />
