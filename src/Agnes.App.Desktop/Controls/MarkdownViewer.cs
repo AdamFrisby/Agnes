@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Markdown.Avalonia;
 using Markdown.Avalonia.Parsers;
 using Markdown.Avalonia.Plugins;
+using Markdown.Avalonia.Utils;
 
 namespace Agnes.App.Desktop.Controls;
 
@@ -17,29 +18,60 @@ namespace Agnes.App.Desktop.Controls;
 /// It remains a MarkdownScrollViewer, preserving the library's cross-block selection and scroll
 /// behaviour, while the custom parser only claims explicitly-labelled Markdown fences.
 /// </summary>
-public sealed class MarkdownViewer : global::Markdown.Avalonia.Full.MarkdownScrollViewer
+/// <remarks>
+/// Every viewer shares one plugin set (<see cref="MarkdownEngine.SharedPlugins"/>) — the library's full
+/// set plus Agnes' fence plugin. Building that set is the expensive part of constructing a viewer (the
+/// HTML plugin's parser tables are assembled by reflection and its patterns compiled), and it was being
+/// done per transcript row: 17 ms of a row's 30 ms. This derives from the library's lean viewer rather
+/// than its "Full" one for the same reason: the Full class exists only to construct a full plugin set in
+/// its constructor, which this replaces anyway. The one plugin that needs to know which viewer it is
+/// rendering for, the fence plugin, finds it through <see cref="FenceRendering"/>, which the viewer's
+/// engine sets for the duration of each render.
+/// </remarks>
+public sealed class MarkdownViewer : global::Markdown.Avalonia.MarkdownScrollViewer, IFenceHost
 {
-    private readonly MarkdownFencePlugin _fencePlugin;
     private readonly HashSet<int> _sourceFences = [];
+    private int _nextOrdinal;
+    private string[] _originalFences = [];
 
     public MarkdownViewer()
     {
-        _fencePlugin = new MarkdownFencePlugin(CreateFence);
-        Plugins = MarkdownEngine.CreatePlugins(_fencePlugin);
+        Plugins = MarkdownEngine.SharedPlugins;
+        // The library renders from several places — the Markdown setter, an attach, a style change — all
+        // through its engine, so the engine is where this viewer is made the current fence host.
+        Engine = new ScopedEngine(this, new global::Markdown.Avalonia.Markdown { Plugins = MarkdownEngine.SharedPlugins });
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         if (change.Property == MarkdownProperty)
         {
-            _fencePlugin.BeginRender(change.GetNewValue<string?>());
+            BeginRender(change.GetNewValue<string?>());
         }
 
         base.OnPropertyChanged(change);
     }
 
-    private Control CreateFence(string source, int ordinal)
-        => new MarkdownFenceView(
+    /// <summary>A re-render of the same markdown (a theme change, an attach) starts the fence count over.</summary>
+    void IFenceHost.BeginRender() => _nextOrdinal = 0;
+
+    private void BeginRender(string? markdown)
+    {
+        _nextOrdinal = 0;
+        _originalFences = MarkdownFence.Pattern.Matches(markdown ?? string.Empty)
+            .Select(MarkdownFence.Body)
+            .ToArray();
+    }
+
+    /// <summary>The fence plugin asks the rendering viewer for its next fence: the source as it was
+    /// written (the parser's match has been normalised), and a toggle whose state survives re-renders.</summary>
+    public Control NextFence(Match match)
+    {
+        var ordinal = _nextOrdinal++;
+        var source = ordinal < _originalFences.Length
+            ? _originalFences[ordinal]
+            : MarkdownFence.Body(match);
+        return new MarkdownFenceView(
             source,
             _sourceFences.Contains(ordinal),
             showSource =>
@@ -53,21 +85,98 @@ public sealed class MarkdownViewer : global::Markdown.Avalonia.Full.MarkdownScro
                     _sourceFences.Remove(ordinal);
                 }
             });
+    }
 }
 
-internal sealed class MarkdownFencePlugin(Func<string, int, Control> create) : IMdAvPlugin
+/// <summary>Whatever is rendering markdown and owns the fences in it: a viewer, or a fence's own nested
+/// render. Supplies each fence as the parser reaches it, with the source as written and a toggle whose
+/// state survives re-renders.</summary>
+internal interface IFenceHost
 {
-    private int _nextOrdinal;
-    private string[] _originalFences = [];
+    /// <summary>Called by the engine at the start of every transform, so ordinals restart from zero.</summary>
+    void BeginRender();
 
-    public void BeginRender(string? markdown)
+    Control NextFence(Match match);
+}
+
+/// <summary>
+/// The engine a viewer renders with: the library's own, with every transform run as its host — so the
+/// shared fence plugin, which has no state, always finds the viewer (or nested fence) whose fences it is
+/// producing. The whole render is forced inside the scope, because the library builds its document
+/// lazily and would otherwise run the parsers after the scope had closed.
+/// </summary>
+internal sealed class ScopedEngine(IFenceHost host, global::Markdown.Avalonia.Markdown inner) : IMarkdownEngine2
+{
+    public string AssetPathRoot { get => inner.AssetPathRoot; set => inner.AssetPathRoot = value; }
+    public System.Windows.Input.ICommand? HyperlinkCommand { get => inner.HyperlinkCommand; set => inner.HyperlinkCommand = value; }
+    public IContainerBlockHandler? ContainerBlockHandler { get => inner.ContainerBlockHandler; set => inner.ContainerBlockHandler = value; }
+    public MdAvPlugins Plugins { get => inner.Plugins; set => inner.Plugins = value; }
+    public bool UseResource { get => inner.UseResource; set => inner.UseResource = value; }
+    public CascadeDictionary CascadeResources => inner.CascadeResources;
+    public Avalonia.Controls.IResourceDictionary Resources { get => inner.Resources; set => inner.Resources = value; }
+
+    public Control Transform(string text) => TransformElement(text).Control;
+
+    public ColorDocument.Avalonia.DocumentElement TransformElement(string text)
     {
-        _nextOrdinal = 0;
-        _originalFences = MarkdownFence.Pattern.Matches(markdown ?? string.Empty)
-            .Select(MarkdownFence.Body)
-            .ToArray();
+        host.BeginRender();
+        using (FenceRendering.By(host))
+        {
+            var element = inner.TransformElement(text);
+            _ = element.Control; // materialise now, while this host is current
+            return element;
+        }
     }
 
+    public IEnumerable<ColorDocument.Avalonia.DocumentElement> ParseGamutElement(string? text, ParseStatus status)
+    {
+        using (FenceRendering.By(host))
+        {
+            return inner.ParseGamutElement(text, status).ToList();
+        }
+    }
+
+    public IEnumerable<ColorTextBlock.Avalonia.CInline> ParseGamutInline(string? text)
+    {
+        using (FenceRendering.By(host))
+        {
+            return inner.ParseGamutInline(text).ToList();
+        }
+    }
+}
+
+/// <summary>The host whose markdown is being transformed on this thread right now. A transform is
+/// synchronous, which is what lets one shared plugin set serve every viewer: the plugin asks here.</summary>
+internal static class FenceRendering
+{
+    [ThreadStatic]
+    private static IFenceHost? _current;
+
+    public static IFenceHost? Current => _current;
+
+    /// <summary>Makes <paramref name="host"/> current until disposed; nests, so a fence's own render inside
+    /// a viewer's render hands fences to the fence, then the viewer again.</summary>
+    public static Scope By(IFenceHost host) => new(host);
+
+    public readonly struct Scope : IDisposable
+    {
+        private readonly IFenceHost? _previous;
+
+        public Scope(IFenceHost host)
+        {
+            _previous = _current;
+            _current = host;
+        }
+
+        public void Dispose() => _current = _previous;
+    }
+}
+
+/// <summary>Agnes' fence handling, registered once into the shared plugin set. It carries no state of
+/// its own: the host being rendered supplies the fence (<see cref="IFenceHost.NextFence"/>). A render
+/// outside any host — none exists today — gets a plain fence from the match.</summary>
+internal sealed class MarkdownFencePlugin : IMdAvPlugin
+{
     public void Setup(SetupInfo info)
     {
         info.Register(new MarkdownCodeFenceOverride(info, CreateFence));
@@ -82,14 +191,9 @@ internal sealed class MarkdownFencePlugin(Func<string, int, Control> create) : I
         info.RegisterTop(parser);
     }
 
-    private Control CreateFence(Match match)
-    {
-        var ordinal = _nextOrdinal++;
-        var source = ordinal < _originalFences.Length
-            ? _originalFences[ordinal]
-            : MarkdownFence.Body(match);
-        return create(source, ordinal);
-    }
+    private static Control CreateFence(Match match)
+        => FenceRendering.Current?.NextFence(match)
+            ?? new MarkdownFenceView(MarkdownFence.Body(match), showSource: false, _ => { });
 }
 
 internal sealed class MarkdownCodeFenceOverride(
@@ -138,7 +242,7 @@ internal sealed class MarkdownCodeFenceOverride(
         // through an unmodified full engine, preserving normal code rendering and syntax highlighting.
         var fallback = new global::Markdown.Avalonia.Markdown
         {
-            Plugins = new global::Markdown.Avalonia.Full.MdAvPlugins(),
+            Plugins = MarkdownEngine.StockPlugins,
         };
         var source = text[parseTextBegin..parseTextEnd];
         return fallback.RunBlockGamut(source, status);
@@ -147,16 +251,20 @@ internal sealed class MarkdownCodeFenceOverride(
 
 internal static class MarkdownEngine
 {
+    /// <summary>The library's own full plugin set, built once: what a backtick fence's fallback engine
+    /// renders with.</summary>
+    public static global::Markdown.Avalonia.Full.MdAvPlugins StockPlugins { get; } = new();
+
+    /// <summary>The plugin set every <see cref="MarkdownViewer"/> renders with, built once. Parser overrides
+    /// are first-match-wins, so Agnes' fence plugin precedes SyntaxHigh's code-fence override.</summary>
+    public static global::Markdown.Avalonia.Full.MdAvPlugins SharedPlugins { get; } = CreatePlugins(new MarkdownFencePlugin());
+
     public static global::Markdown.Avalonia.Full.MdAvPlugins CreatePlugins(IMdAvPlugin fencePlugin)
     {
         var plugins = new global::Markdown.Avalonia.Full.MdAvPlugins();
-        // Parser overrides are first-match-wins; Agnes must precede SyntaxHigh's code-fence override.
         plugins.Plugins.Insert(0, fencePlugin);
         return plugins;
     }
-
-    public static global::Markdown.Avalonia.Markdown Create(MarkdownFencePlugin fencePlugin)
-        => new() { Plugins = CreatePlugins(fencePlugin) };
 }
 
 internal sealed class MarkdownFenceView : Border
@@ -235,10 +343,11 @@ internal sealed class MarkdownFenceView : Border
     }
 }
 
-internal sealed class InlineMarkdown : ContentControl
+internal sealed class InlineMarkdown : ContentControl, IFenceHost
 {
-    private readonly MarkdownFencePlugin _fencePlugin;
     private readonly HashSet<int> _sourceFences = [];
+    private readonly string[] _originalFences;
+    private int _nextOrdinal;
 
     public InlineMarkdown(string source)
     {
@@ -246,12 +355,11 @@ internal sealed class InlineMarkdown : ContentControl
         {
             Source = new Uri("avares://Agnes.App.Desktop/Themes/MarkdownNestedCodeStyles.axaml"),
         });
-        _fencePlugin = new MarkdownFencePlugin(CreateFence);
-        var engine = MarkdownEngine.Create(_fencePlugin);
+        _originalFences = MarkdownFence.Pattern.Matches(source).Select(MarkdownFence.Body).ToArray();
+        var engine = new ScopedEngine(this, new global::Markdown.Avalonia.Markdown { Plugins = MarkdownEngine.SharedPlugins });
 
         try
         {
-            _fencePlugin.BeginRender(source);
             Content = engine.Transform(source);
         }
         catch
@@ -262,8 +370,13 @@ internal sealed class InlineMarkdown : ContentControl
         }
     }
 
-    private Control CreateFence(string source, int ordinal)
-        => new MarkdownFenceView(
+    void IFenceHost.BeginRender() => _nextOrdinal = 0;
+
+    public Control NextFence(Match match)
+    {
+        var ordinal = _nextOrdinal++;
+        var source = ordinal < _originalFences.Length ? _originalFences[ordinal] : MarkdownFence.Body(match);
+        return new MarkdownFenceView(
             source,
             _sourceFences.Contains(ordinal),
             showSource =>
@@ -271,4 +384,5 @@ internal sealed class InlineMarkdown : ContentControl
                 if (showSource) { _sourceFences.Add(ordinal); }
                 else { _sourceFences.Remove(ordinal); }
             });
+    }
 }

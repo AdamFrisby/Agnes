@@ -41,6 +41,14 @@ public static class Program
             return;
         }
 
+        // Row bench (--row-bench N): what one transcript row costs to build and lay out; see RowBench.
+        if (RowBench.TryParse(args) is { } rows)
+        {
+            using var rowSession = HeadlessUnitTestSession.StartNew(typeof(HeadlessApp));
+            rowSession.Dispatch(() => RowBench.Run(rows), CancellationToken.None).GetAwaiter().GetResult();
+            return;
+        }
+
         // Timing mode (--switch-timing) measures a tab switch between this desktop's real sessions; see TabSwitchTiming.
         if (TabSwitchTiming.TryParse(args) is { } timing)
         {

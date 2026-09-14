@@ -303,6 +303,22 @@ public static class TabSwitchTiming
             Console.WriteLine($"{host.count,7:N0}  {c.GetType().Name,-12} name='{c.Name}' items={c.ItemCount:N0} of {first?.GetType().Name ?? "?"} visible={c.IsEffectivelyVisible} dc={c.DataContext?.GetType().Name} in [{chain}]");
         }
 
+        // The tab's own top-level regions: each direct child of the Workspace grid and of the chat viewport,
+        // with what it costs and whether it shows — the map for building the collapsed ones lazily.
+        Console.WriteLine("--- regions (direct children of Workspace / ChatViewport)");
+        foreach (var grid in all.OfType<Grid>().Where(g => g.Name is "Workspace" or "ChatViewport"))
+        {
+            foreach (var child in grid.Children)
+            {
+                var count = child.GetVisualDescendants().Count();
+                var col = Grid.GetColumn(child);
+                var row = Grid.GetRow(child);
+                var label = child.Name ?? child.GetType().Name;
+                var first = (child as Panel)?.Children.FirstOrDefault()?.GetType().Name;
+                Console.WriteLine($"{count,7:N0}  {grid.Name}[{row},{col}] {child.GetType().Name} '{label}' visible={child.IsEffectivelyVisible} size={child.Bounds.Width:0}x{child.Bounds.Height:0} first={first}");
+            }
+        }
+
         // The named element with the most descendants of its own, at any depth: what to look at first.
         Console.WriteLine("--- heaviest named elements (own descendants)");
         var named = all.OfType<Control>().Where(c => !string.IsNullOrEmpty(c.Name))
