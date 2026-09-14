@@ -36,6 +36,9 @@ internal sealed class FleetHandler : HttpMessageHandler
     /// <summary>What <c>GET /workitems</c> answers.</summary>
     public string ItemsBody { get; set; } = "[]";
 
+    /// <summary>What <c>GET /workitems/{id}/diff</c> answers. Empty is what a landed item gives.</summary>
+    public string DiffBody { get; set; } = string.Empty;
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -52,6 +55,8 @@ internal sealed class FleetHandler : HttpMessageHandler
         var answer = path switch
         {
             _ when path.EndsWith("/questions", StringComparison.Ordinal) => QuestionsBody,
+            // What a landed item's diff endpoint actually answers: nothing at all.
+            _ when path.EndsWith("/diff", StringComparison.Ordinal) => DiffBody,
             "/workitems" => ItemsBody,
             "/queue/status" => """{"state":"Running","pausedAt":null,"pausedReason":null}""",
             _ => "[]",

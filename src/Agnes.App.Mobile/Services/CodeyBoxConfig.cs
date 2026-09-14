@@ -48,4 +48,58 @@ public sealed record CodeyBoxConfig(string BaseUrl = "", string ApiKey = "")
     /// <summary>Where the overview keeps its sparkline samples on this device — the app's own private
     /// directory, not the plugin's desktop default under <c>%APPDATA%</c>.</summary>
     public static string HistoryPath => JsonStore.PathFor("codeybox-overview-history.json");
+
+    /// <summary>Whether this address is plain <c>http</c> to somewhere only this network can reach.</summary>
+    /// <remarks>
+    /// <para>This is the whole cleartext question, asked once. The app bans cleartext app-wide
+    /// (<c>Resources/xml/network_security_config.xml</c>) because Agnes's own traffic carries a bearer
+    /// token and session content and is TLS by design — and that ban must stay. But CodeyBox is a
+    /// different service with different rules: it is the operator's own orchestrator, bound to their own
+    /// machine, with no TLS listener and no certificate to pin, and the address they type is a LAN one.
+    /// Android's network-security config cannot express "cleartext, but only to a private address" — its
+    /// <c>&lt;domain&gt;</c> entries are hostnames, not CIDRs — so the rule is stated here instead, and
+    /// <c>AndroidCodeyBoxTransport</c> is the only thing that acts on it.</para>
+    ///
+    /// <para>Deliberately narrow. A plain-http CodeyBox on a <em>public</em> address is refused, because
+    /// that would be a bearer key crossing the internet in the clear; an <c>https</c> one goes through the
+    /// platform stack with its trust anchors, exactly like an Agnes host.</para>
+    /// </remarks>
+    public static bool IsPrivateCleartext(string? url)
+    {
+        if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var host = uri.Host.Trim('[', ']');
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!System.Net.IPAddress.TryParse(host, out var ip))
+        {
+            // A name we cannot resolve here is not a private address we can vouch for.
+            return false;
+        }
+
+        if (System.Net.IPAddress.IsLoopback(ip))
+        {
+            return true;
+        }
+
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var b = ip.GetAddressBytes();
+            return b[0] == 10                                   // 10.0.0.0/8
+                || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)    // 172.16.0.0/12
+                || (b[0] == 192 && b[1] == 168)                 // 192.168.0.0/16
+                || (b[0] == 169 && b[1] == 254)                 // 169.254.0.0/16, link-local
+                || b[0] == 100 && b[1] >= 64 && b[1] <= 127;    // 100.64.0.0/10, CGNAT — where tailnets live
+        }
+
+        // fc00::/7 unique-local, fe80::/10 link-local.
+        return ip.IsIPv6LinkLocal || (ip.GetAddressBytes()[0] & 0xFE) == 0xFC;
+    }
 }

@@ -444,11 +444,16 @@ public sealed partial class CodeyBoxItemPageViewModel : PageViewModel
         try
         {
             var body = await fetch().ConfigureAwait(true);
-            _shell.ShowSheet(new DetailSheetViewModel(
-                _shell,
-                title,
-                string.IsNullOrWhiteSpace(body) ? "Nothing recorded." : body,
-                command: Item.Title));
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                // Said, not shown. A landed item's diff endpoint answers with nothing at all, and an empty
+                // sheet is a screen's worth of chrome around the absence of an answer — it reads as a bug
+                // in the app rather than as a fact about the item.
+                _shell.Toast($"No {title.ToLowerInvariant()} recorded for this item.");
+                return;
+            }
+
+            _shell.ShowSheet(new DetailSheetViewModel(_shell, title, body, command: Item.Title));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

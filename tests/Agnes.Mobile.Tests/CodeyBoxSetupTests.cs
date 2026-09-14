@@ -49,6 +49,35 @@ public sealed class CodeyBoxSetupTests : IDisposable
         Assert.True(new CodeyBoxConfig("http://10.0.0.188:5836", "k").IsConfigured);
     }
 
+    [Theory]
+    // The operator's own machine, wherever it is: loopback, the three RFC1918 blocks, link-local, and
+    // the CGNAT range a tailnet lives in.
+    [InlineData("http://127.0.0.1:5836", true)]
+    [InlineData("http://localhost:5836", true)]
+    [InlineData("http://10.0.0.188:5836", true)]
+    [InlineData("http://172.16.4.2:5836", true)]
+    [InlineData("http://172.32.4.2:5836", false)]
+    [InlineData("http://192.168.1.10:5836", true)]
+    [InlineData("http://169.254.7.7:5836", true)]
+    [InlineData("http://100.105.1.30:5836", true)]
+    [InlineData("http://[fd12::1]:5836", true)]
+    // A bearer key does not cross the internet in the clear on our account.
+    [InlineData("http://codeybox.example.com:5836", false)]
+    [InlineData("http://93.184.216.34:5836", false)]
+    // TLS goes through the platform stack with its trust anchors, exactly like an Agnes host.
+    [InlineData("https://10.0.0.188:5836", false)]
+    [InlineData("", false)]
+    [InlineData("not a url", false)]
+    public void Cleartext_is_allowed_only_to_somewhere_this_network_can_reach(string url, bool allowed)
+    {
+        // The app bans cleartext app-wide (Resources/xml/network_security_config.xml) and Android cannot
+        // express "except to a private address" — its <domain> entries are hostnames, not CIDRs. So this
+        // predicate is where that exception lives, and AndroidCodeyBoxTransport is the only thing that
+        // acts on it. Without it, a plain-http CodeyBox on the LAN fails before any of our code runs,
+        // with an error indistinguishable from an unreachable address.
+        Assert.Equal(allowed, CodeyBoxConfig.IsPrivateCleartext(url));
+    }
+
     [Fact]
     public void An_unreachable_address_and_a_refused_key_are_told_apart()
     {

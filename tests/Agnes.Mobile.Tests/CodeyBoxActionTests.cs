@@ -214,6 +214,20 @@ public sealed class CodeyBoxActionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_lookup_with_nothing_behind_it_says_so_rather_than_opening_an_empty_sheet()
+    {
+        // A landed item's diff endpoint answers with nothing at all. A sheet containing that is a screen's
+        // worth of chrome around the absence of an answer, and reads as a bug in the app.
+        var (_, shell, page) = Page(DecisionSamples.Row("Done"));
+        await page.LoadAsync();
+
+        await page.ShowDiffCommand.ExecuteAsync(null);
+
+        Assert.Empty(shell.Sheets);
+        Assert.Contains(shell.Toasts, t => t.Contains("No diff recorded", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task The_facts_say_what_the_item_is()
     {
         var (_, _, page) = Page(DecisionSamples.Row("Working"));

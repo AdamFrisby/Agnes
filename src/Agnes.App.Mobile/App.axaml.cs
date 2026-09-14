@@ -51,7 +51,11 @@ public partial class App : Avalonia.Application
                 // application context — everything above the shell just asks the handler what it can do.
                 receivedFiles: new AndroidReceivedFileHandler(AndroidHost.Context),
                 // Only the graphical-session screen asks, and only to pick a quality tier.
-                isMeteredNetwork: () => AndroidCapabilities.IsMetered);
+                isMeteredNetwork: () => AndroidCapabilities.IsMetered,
+                // CodeyBox is plain http on the operator's own LAN, and this app bans cleartext for
+                // everything. See AndroidCodeyBoxTransport for the one exception and why it is stated
+                // here rather than in the network-security config.
+                codeyBoxClient: AndroidCodeyBoxTransport.Create);
 
             // Android recreates the activity (and therefore the view) independently of the app object, so
             // Avalonia wants a factory rather than a single instance — `MainView` logs
