@@ -26,8 +26,9 @@ public enum WidthClass
 /// all in <c>ConfigurationChanges</c>), so this updates in place from the root view's size and the views
 /// re-lay themselves; nothing reloads. The numbers are Material's breakpoints with two adjustments a
 /// phone forces: two panes need <i>height</i> as well as width (an 891×411 landscape phone is
-/// "expanded" by width and has no room for a list beside a transcript), and a rail is worth having in
-/// any landscape, because the bar's sixty pixels come out of a height that is already short.</para>
+/// "expanded" by width and has no room for a list beside a transcript), and a rail is worth having only
+/// where width is not the scarce axis — any landscape, or a window with room for two panes — because on
+/// a portrait tablet it would spend the narrow axis to save the tall one.</para>
 /// <para>Geometries this is tuned against, in dp: phone 411×891; phone landscape 891×411; Pixel 9 Pro
 /// Fold inner 890×923; Galaxy Z Fold 6 inner 794×924, outer 378×927; the 10" tablet it is verified on,
 /// 640×1072 (its panel is 800×1340 at 200 dpi).</para>
@@ -81,9 +82,11 @@ public sealed partial class WindowLayout : ObservableObject
 
     public bool IsLandscape => Width > Height;
 
-    /// <summary>The destinations as a vertical rail on the left rather than a bar along the bottom: any
-    /// landscape (the bar's height is the scarce dimension) and any width past compact.</summary>
-    public bool UseRail => IsLandscape || WidthClass != WidthClass.Compact;
+    /// <summary>The destinations as a vertical rail on the left rather than a bar along the bottom, where
+    /// width is not the scarce dimension: any landscape (the bar's height is what is short) and any window
+    /// wide enough for two panes. A portrait tablet at 640 dp keeps the bar — a rail there spends the
+    /// narrow axis to save the tall one, which reads as odd because it is.</summary>
+    public bool UseRail => IsLandscape || TwoPane;
 
     /// <summary>A list pane beside a detail pane: the sessions list stays while a session is open, the
     /// fleet's queue stays while an item is open. Needs height as well as width.</summary>

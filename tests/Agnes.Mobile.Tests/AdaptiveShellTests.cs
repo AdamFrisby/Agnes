@@ -29,7 +29,7 @@ public sealed class AdaptiveShellTests(AvaloniaSession avalonia)
     [InlineData(378, 927, WidthClass.Compact, false, false, false, 2, "a Galaxy Z Fold 6, folded")]
     [InlineData(794, 924, WidthClass.Medium, true, true, true, 3, "a Galaxy Z Fold 6, open")]
     [InlineData(890, 923, WidthClass.Expanded, true, true, true, 3, "a Pixel 9 Pro Fold, open")]
-    [InlineData(640, 1072, WidthClass.Medium, true, false, false, 2, "the 10-inch tablet, portrait")]
+    [InlineData(640, 1072, WidthClass.Medium, false, false, false, 2, "the 10-inch tablet, portrait")]
     [InlineData(1072, 640, WidthClass.Expanded, true, true, true, 4, "the 10-inch tablet, landscape")]
     public void The_window_decides_bar_or_rail_one_pane_or_two(
         double width, double height, WidthClass widthClass, bool rail, bool twoPane, bool sideSheets, int columns, string device)

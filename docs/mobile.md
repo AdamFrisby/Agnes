@@ -312,8 +312,8 @@ than measuring itself:
 
 | Window | Destinations | Panes | Sheets | Example |
 |---|---|---|---|---|
-| Compact portrait (< 600 dp wide) | bar along the bottom | one; pages push over the list | rise from the bottom | a phone; a Z Fold 6 folded (378×927) |
-| Any landscape, or medium width (600–839) | rail down the left | one, unless there is height for two | from the right in landscape | a phone in landscape (891×411); the 10" tablet upright (640×1072) |
+| Portrait without room for two panes | bar along the bottom | one; pages push over the list | rise from the bottom | a phone; a Z Fold 6 folded (378×927); the 10" tablet upright (640×1072) |
+| Landscape without room for two panes | rail down the left | one | from the right | a phone in landscape (891×411) |
 | Room for two (≥ 720 wide **and** ≥ 480 tall) | rail | the tab's list in a fixed column, the open session or fleet item beside it | from the right | a Pixel 9 Pro Fold open (890×923); a Z Fold 6 open (794×924); the tablet sideways (1072×640) |
 
 A detail page is the same view model wherever it shows. With two panes it goes into the shell's
@@ -322,7 +322,9 @@ device and it moves onto the navigation stack and covers the screen; open it aga
 `ShellViewModel.OnLayoutChanged`, and `AdaptiveShellTests` walks exactly that. The fleet's card grids
 take a third column past 720 dp and a fourth past 1000. Two panes need height as well as width because
 an 891×411 landscape phone is "expanded" by Material's width classes and has no room for a list beside
-a transcript; there the rail alone earns back the bar's sixty pixels.
+a transcript; there the rail alone earns back the bar's sixty pixels. And the rail appears only where
+width is not the scarce axis — a portrait tablet at 640 dp keeps the bar, because a rail there spends
+the narrow dimension to save the tall one.
 
 ## The screen
 
