@@ -60,6 +60,20 @@
           </Grid>
         </Border>
 
+        <!-- The certificate the host presented, learned on first contact. It is on screen to be compared
+             with the line the host logs beside its pairing code, and it turns to a refusal when a host this
+             device already pinned shows a different key. -->
+        <Border Classes="inset" IsVisible="{Binding HasCertificateNote}" Padding="12,10">
+          <StackPanel Spacing="6">
+            <TextBlock Text="{Binding CertificateFingerprint}" Classes="mono" TextWrapping="Wrap"
+                       FontSize="{StaticResource TextXs}" Foreground="{DynamicResource Text}" />
+            <TextBlock Text="{Binding CertificateNote}" TextWrapping="Wrap" FontSize="{StaticResource TextXs}"
+                       Foreground="{DynamicResource TextDim}" IsVisible="{Binding !CertificateChanged}" />
+            <TextBlock Text="{Binding CertificateNote}" TextWrapping="Wrap" FontSize="{StaticResource TextXs}"
+                       Foreground="{DynamicResource Danger}" IsVisible="{Binding CertificateChanged}" />
+          </StackPanel>
+        </Border>
+
         <!-- ===== pairing code ===== -->
         <StackPanel Spacing="10" IsVisible="{Binding ShowPairing}">
           <TextBlock Classes="section" Text="PAIRING CODE" />

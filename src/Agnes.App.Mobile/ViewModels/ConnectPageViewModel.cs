@@ -40,11 +40,16 @@ public sealed partial class ConnectPageViewModel : PageViewModel
     private readonly SessionsViewModel _sessions;
     private CancellationTokenSource? _discovery;
 
-    /// <summary>The host certificate fingerprint a scanned QR carried, if any.</summary>
-    private readonly string? _fingerprint;
-
+    /// <summary>The host certificate fingerprint this page trusts: the one a scanned QR carried, or the
+    /// one learned from the host itself on a typed address (see <see cref="DiscoverAsync"/>).</summary>
+    private string? _fingerprint;
     /// <summary>An HTTP client pinned to <see cref="_fingerprint"/>, or null when there's nothing to pin.</summary>
-    private readonly HttpClient? _http;
+    private HttpClient? _http;
+    /// <summary>Whether <see cref="_fingerprint"/> arrived with the page (a scan) rather than being learned.</summary>
+    private readonly bool _pinnedByScan;
+    /// <summary>The address the learned fingerprint belongs to; a different address starts over.</summary>
+    private string? _learnedFor;
+    private readonly Func<string, CancellationToken, Task<string>> _probeFingerprint;
 
     public ConnectPageViewModel(
         IAppShell shell,
@@ -54,8 +59,10 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         string? prefillCode = null,
         string? sessionId = null,
         bool autoSubmit = false,
-        string? fingerprint = null)
+        string? fingerprint = null,
+        Func<string, CancellationToken, Task<string>>? fingerprintProbe = null)
     {
+        _probeFingerprint = fingerprintProbe ?? ((url, ct) => HostFingerprint.ProbeAsync(url, ct));
         _shell = shell;
         _hosts = hosts;
         _sessions = sessions;
@@ -67,6 +74,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         // hub will, over the same self-signed HTTPS. Without the pin the very first request fails on trust,
         // long before the token we're here to fetch could be used.
         _http = _fingerprint is null ? null : PinnedTls.CreateClient(_fingerprint);
+        _pinnedByScan = _http is not null;
         _address = prefillUrl ?? "https://";
         _code = prefillCode ?? string.Empty;
 
@@ -204,6 +212,10 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         {
             // Debounce: a phone keyboard produces a burst of keystrokes, and each would otherwise be a probe.
             await Task.Delay(450, cts.Token).ConfigureAwait(false);
+            if (!await TrustOnFirstUseAsync(url, cts.Token).ConfigureAwait(false))
+            {
+                return;
+            }
             var probe = await AuthDiscovery.ProbeAsync(url, _http, cts.Token).ConfigureAwait(false);
             _shell.Dispatcher.Post(() =>
             {
@@ -239,6 +251,97 @@ public sealed partial class ConnectPageViewModel : PageViewModel
             }
         }
     }
+
+    // ---- trust on first use ----
+
+    /// <summary>
+    /// Learns a typed host's certificate before anything else is asked of it. An Agnes host is usually
+    /// self-signed, and a scan carries its fingerprint — but an address typed by hand carries nothing, so
+    /// the very first request failed on trust and this screen said "can't reach that address" about a
+    /// host that was right there. This is SSH's answer: read the key the host presents, show it, and pin
+    /// it; a host whose key has changed since it was paired is refused outright, because that is the one
+    /// case a pin exists for. The pairing code is still what admits the device — the fingerprint on
+    /// screen is for comparing with the line the host logged beside that code.
+    /// </summary>
+    /// <returns>False when the page must stop here (a changed certificate); true to carry on probing.</returns>
+    private async Task<bool> TrustOnFirstUseAsync(string url, CancellationToken cancellationToken)
+    {
+        if (_pinnedByScan || !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        var key = url.TrimEnd('/');
+        if (string.Equals(_learnedFor, key, StringComparison.OrdinalIgnoreCase) && _http is not null)
+        {
+            return true;
+        }
+        // A different address than the one this pin was learned from: forget it.
+        _http?.Dispose();
+        _http = null;
+        _fingerprint = null;
+        _learnedFor = null;
+        _shell.Dispatcher.Post(() => { CertificateFingerprint = string.Empty; CertificateNote = string.Empty; CertificateChanged = false; });
+        string seen;
+        try
+        {
+            seen = await _probeFingerprint(url, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // Nothing presented a certificate — not listening, wrong port, plain http behind https. The
+            // ordinary probe runs next and says which, in words.
+            return true;
+        }
+        var known = _hosts.Links
+            .FirstOrDefault(l => string.Equals(l.Url.TrimEnd('/'), key, StringComparison.OrdinalIgnoreCase))
+            ?.Saved.Fingerprint;
+        if (known is { Length: > 0 } && !string.Equals(known, seen, StringComparison.OrdinalIgnoreCase))
+        {
+            _shell.Dispatcher.Post(() =>
+            {
+                CertificateChanged = true;
+                CertificateFingerprint = HostFingerprint.ForDisplay(seen);
+                CertificateNote = "This host's certificate is not the one it had when this device paired with it. "
+                    + "If the host was reinstalled, remove it from Hosts and pair again; if it was not, stop here.";
+                Reach = HostReach.Unreachable;
+                ReachDetail = "Certificate changed since pairing.";
+                IsDiscovering = false;
+                RaiseCanSignIn();
+            });
+            return false;
+        }
+        _fingerprint = seen;
+        _http = PinnedTls.CreateClient(seen);
+        _learnedFor = key;
+        _shell.Dispatcher.Post(() =>
+        {
+            CertificateChanged = false;
+            CertificateFingerprint = HostFingerprint.ForDisplay(seen);
+            CertificateNote = "The host's certificate. It logs this same SHA-256 beside its pairing code — compare before pairing; this device will hold it to it from now on.";
+        });
+        return true;
+    }
+
+    /// <summary>The certificate fingerprint on show, grouped for reading, or empty.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCertificateNote))]
+    private string _certificateFingerprint = string.Empty;
+
+    [ObservableProperty]
+    private string _certificateNote = string.Empty;
+
+    /// <summary>The refusal case: a pinned host presented a different key.</summary>
+    [ObservableProperty]
+    private bool _certificateChanged;
+
+    public bool HasCertificateNote => CertificateFingerprint.Length > 0;
+
+    /// <summary>What this page will pin when it saves the host: scanned or learned.</summary>
+    public string? TrustedFingerprint => _fingerprint;
 
     // ---- reachability ----
 
