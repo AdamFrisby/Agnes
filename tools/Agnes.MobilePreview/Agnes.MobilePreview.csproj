@@ -41,6 +41,8 @@
     <ProjectReference Include="..\..\src\Agnes.Client\Agnes.Client.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
+    <!-- The mobile head's CodeyBox screens are built over these models; see its own csproj. -->
+    <ProjectReference Include="..\..\src\Agnes.Plugins.CodeyBox\Agnes.Plugins.CodeyBox.csproj" />
   </ItemGroup>
 
   <!-- The platform-neutral half of the mobile head, linked in. Anything under Platform/, the
@@ -59,6 +61,9 @@
          Android-only handler beside them, so both this harness and the tests can exercise them. -->
     <Compile Include="..\..\src\Agnes.App.Mobile\Services\ReceivedFileNaming.cs" LinkBase="Mobile\Services" />
     <Compile Include="..\..\src\Agnes.App.Mobile\Services\ThemeApplier.cs" LinkBase="Mobile\Services" />
+    <!-- Where this device finds CodeyBox. Pure record over JsonStore, so the harness and the tests read
+         and write it exactly as the phone does — into the temp directory JsonStore is pointed at. -->
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\CodeyBoxConfig.cs" LinkBase="Mobile\Services" />
     <Compile Include="*.cs" />
   </ItemGroup>
 

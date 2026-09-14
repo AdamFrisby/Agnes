@@ -5,6 +5,11 @@
              xmlns:vm="using:Agnes.App.Mobile.ViewModels"
              x:Class="Agnes.App.Mobile.Views.InboxView"
              x:DataType="vm:InboxViewModel">
+  <!-- A local attribute beats a Style setter, so a row whose tone varies states it as a class. -->
+  <UserControl.Styles>
+    <Style Selector="Border.needs"><Setter Property="BorderBrush" Value="{DynamicResource Warning}" /></Style>
+    <Style Selector="Border.needs.failed"><Setter Property="BorderBrush" Value="{DynamicResource Danger}" /></Style>
+  </UserControl.Styles>
   <!--
     The inbox — the reason to have Agnes on a phone at all.
 
@@ -120,6 +125,66 @@
                           CommandParameter="{Binding}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                       <TextBlock Text="Open the session" Foreground="{DynamicResource AccentText}"
+                                 FontSize="{StaticResource TextSm}" FontWeight="SemiBold" />
+                      <c:Icon Data="{StaticResource IconChevronRight}" Size="15"
+                              Stroke="{DynamicResource AccentText}" />
+                    </StackPanel>
+                  </Button>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ===== the fleet =====
+             Below the Agnes approvals, deliberately. An Agnes approval is an agent that has stopped
+             mid-turn in a session you started and is doing nothing until you answer; a fleet question is
+             an item that parked itself while the rest of the queue keeps moving. Both belong here — but
+             if only one can be above the fold it is the one costing a live turn.
+
+             A question is answerable from the row, because the answer is prose and the sheet carries the
+             question with it. A failure is not: deciding what to do about one needs the evidence, so that
+             row opens the item's decision card instead of offering a guess. -->
+        <TextBlock Classes="section" Text="CODEYBOX NEEDS YOU" Margin="4,10,0,8"
+                   IsVisible="{Binding HasCodeyBoxRows}" />
+
+        <ItemsControl ItemsSource="{Binding CodeyBoxRows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:CodeyBoxNeedsRow">
+              <Border Classes="card needs" Margin="0,0,0,10" BorderThickness="1.5"
+                      Classes.failed="{Binding !IsQuestion}">
+                <StackPanel Spacing="12">
+
+                  <StackPanel Spacing="4">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Border Classes="pill"
+                              Classes.needs="{Binding IsQuestion}"
+                              Classes.error="{Binding !IsQuestion}">
+                        <TextBlock Text="{Binding Kind}" />
+                      </Border>
+                      <TextBlock Classes="caption" Text="{Binding Provenance}" VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock Classes="title" Text="{Binding Title}" Margin="0,4,0,0"
+                               TextWrapping="Wrap" MaxLines="4" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="muted" Text="{Binding Detail}" TextWrapping="Wrap" MaxLines="3"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+
+                  <Grid ColumnDefinitions="*,10,*" IsVisible="{Binding IsQuestion}">
+                    <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Dismiss"
+                            Command="{Binding $parent[UserControl].DataContext.DismissCodeyBoxCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Grid.Column="2" Theme="{StaticResource PrimaryButton}" Content="Answer"
+                            Command="{Binding $parent[UserControl].DataContext.AnswerCodeyBoxCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+
+                  <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Left" Padding="0"
+                          Command="{Binding $parent[UserControl].DataContext.OpenCodeyBoxCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="{Binding OpenVerb}" Foreground="{DynamicResource AccentText}"
                                  FontSize="{StaticResource TextSm}" FontWeight="SemiBold" />
                       <c:Icon Data="{StaticResource IconChevronRight}" Size="15"
                               Stroke="{DynamicResource AccentText}" />

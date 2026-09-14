@@ -22,6 +22,21 @@ public enum ShellTab
 
     /// <summary>Hosts, appearance, notifications, the rest.</summary>
     More,
+
+    /// <summary>
+    /// The CodeyBox fleet — present only on a device that has been given an orchestrator to watch.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why a fifth destination and not a card on Sessions.</b> docs/mobile.md's four tabs are four
+    /// <em>jobs</em>, and a fleet of autonomous agents is a fifth one: it is not a session, it has its own
+    /// three-segment page stack and its own item pages, and a row at the top of Sessions would put every
+    /// visit two taps deep and pop back into a list it has nothing to do with — while spending the top of
+    /// the one screen whose whole value is being readable at a glance. It appears only when CodeyBox is
+    /// configured, so for everyone else this is byte-for-byte the four-destination app the brief
+    /// describes: no tab, no inbox rows, no requests. Five equal targets across 411 dp is 82 dp each,
+    /// comfortably over the 48 dp floor, and on the tablet it is not close.
+    /// </remarks>
+    CodeyBox,
 }
 
 /// <summary>
@@ -55,7 +70,8 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Action<string>? openUrl = null,
         Action<string>? clearNotification = null,
         IReceivedFileHandler? receivedFiles = null,
-        Func<bool>? isMeteredNetwork = null)
+        Func<bool>? isMeteredNetwork = null,
+        Func<Agnes.Plugins.CodeyBox.CodeyBoxOptions, Agnes.Plugins.CodeyBox.CodeyBoxClient?>? codeyBoxClient = null)
     {
         _connector = connector;
         Dispatcher = dispatcher;
@@ -79,7 +95,20 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
 
         Hosts = new HostBook(connector, dispatcher);
         Sessions = new SessionsViewModel(this, Hosts, _prompts, _policy, Notifier);
-        Inbox = new InboxViewModel(this, Hosts, Sessions);
+        // Built before the Inbox, because the Inbox projects its "waiting on you" rows. The client
+        // factory is injected for the same reason the received-file handler is: the headless harness and
+        // the render tests need these screens without an orchestrator behind them, and returning null
+        // there means "configured, but nothing to talk to" — which is exactly a canned fleet.
+        CodeyBox = new CodeyBoxViewModel(this, clientFactory: codeyBoxClient);
+        CodeyBox.ConfigurationChanged += () => Dispatcher.Post(() =>
+        {
+            OnPropertyChanged(nameof(HasCodeyBox));
+            if (!HasCodeyBox && Tab == ShellTab.CodeyBox)
+            {
+                SelectTab(ShellTab.Sessions);
+            }
+        });
+        Inbox = new InboxViewModel(this, Hosts, Sessions, CodeyBox);
         Search = new SearchViewModel(this, Hosts, Sessions);
         More = new MoreViewModel(this);
 
@@ -121,6 +150,12 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
 
     public MoreViewModel More { get; }
 
+    /// <summary>The fleet, or an inert object that has never been given an orchestrator to watch.</summary>
+    public CodeyBoxViewModel CodeyBox { get; }
+
+    /// <summary>Whether the fifth tab exists at all.</summary>
+    public bool HasCodeyBox => CodeyBox.IsConfigured;
+
     public bool CanDictate => _dictate is not null;
 
     // ---- tabs ----
@@ -130,12 +165,14 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     [NotifyPropertyChangedFor(nameof(IsInboxTab))]
     [NotifyPropertyChangedFor(nameof(IsSearchTab))]
     [NotifyPropertyChangedFor(nameof(IsMoreTab))]
+    [NotifyPropertyChangedFor(nameof(IsCodeyBoxTab))]
     private ShellTab _tab = ShellTab.Sessions;
 
     public bool IsSessionsTab => Tab == ShellTab.Sessions;
     public bool IsInboxTab => Tab == ShellTab.Inbox;
     public bool IsSearchTab => Tab == ShellTab.Search;
     public bool IsMoreTab => Tab == ShellTab.More;
+    public bool IsCodeyBoxTab => Tab == ShellTab.CodeyBox;
 
     public IRelayCommand<string> SelectTabCommand { get; }
 
@@ -149,8 +186,17 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         }
 
         PopToRoot();
+        var leaving = Tab;
         Tab = tab;
         Haptics.Tick();
+
+        // The fleet's feed and timers belong to the tab, not to the app: a phone in a pocket must not be
+        // holding an SSE connection open to an orchestrator nobody is looking at.
+        if (leaving == ShellTab.CodeyBox && tab != ShellTab.CodeyBox)
+        {
+            CodeyBox.OnHidden();
+        }
+
         switch (tab)
         {
             case ShellTab.Inbox:
@@ -158,6 +204,9 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
                 break;
             case ShellTab.Search:
                 Search.OnShown();
+                break;
+            case ShellTab.CodeyBox:
+                CodeyBox.OnShown();
                 break;
         }
     }

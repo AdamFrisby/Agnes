@@ -75,7 +75,10 @@ public static class Program
             // can do nothing — which would render the received-file sheet with no buttons at all and hide
             // the very thing worth screenshotting. This one says yes and writes into the harness's own
             // scratch directory.
-            receivedFiles: new PreviewReceivedFileHandler());
+            receivedFiles: new PreviewReceivedFileHandler(),
+            // The fleet screens get no orchestrator at all: null means "configured, nothing to talk to",
+            // which is what lets them be handed a canned gather instead of asking for one.
+            codeyBoxClient: _ => null);
 
         var window = new Window
         {
@@ -314,6 +317,144 @@ public static class Program
 
         ThemeApplier.Apply("Dark");
         Settle(200);
+
+        // 10) CodeyBox — the fifth destination, present only on a device that watches a fleet.
+        CaptureFleet(shell, window);
+    }
+
+    /// <summary>
+    /// The CodeyBox screens: the three segments and one item's decision card.
+    /// </summary>
+    /// <remarks>
+    /// The fleet is canned (<see cref="FakeFleet"/>) and pushed in rather than gathered, because the only
+    /// CodeyBox on this machine is the operator's own and it is doing real work — a screenshot run must
+    /// not touch it. What the models make of that queue is real: the overview, the runway and the wall are
+    /// all built by the plugin's own pure code from the work-item list.
+    /// </remarks>
+    private static void CaptureFleet(ShellViewModel shell, Window window)
+    {
+        new CodeyBoxConfig("http://10.0.0.188:5836", "preview").Save();
+        shell.CodeyBox.Apply(CodeyBoxConfig.Load());
+        shell.SelectTab(ShellTab.CodeyBox);
+
+        // Nothing is live behind it, so the tab's feed and loop are stopped before the canned fleet goes
+        // in — otherwise the first (empty) gather would land on top of it.
+        shell.CodeyBox.OnHidden();
+
+        foreach (var (id, tail) in FakeFleet.Tails())
+        {
+            shell.CodeyBox.NowWorking.SetOutput(id, tail);
+        }
+
+        var fleet = FakeFleet.Build();
+        shell.CodeyBox.Show(fleet);
+        Settle(500);
+        Shot(window, "14-fleet-overview");
+
+        shell.CodeyBox.ShowNowWorkingCommand.Execute(null);
+        shell.CodeyBox.NowWorking.Rebuild(DateTimeOffset.Now);
+        Feed(shell.CodeyBox.NowWorking);
+        Settle(500);
+        Shot(window, "14b-fleet-now-working");
+
+        shell.CodeyBox.ShowQueueCommand.Execute(null);
+        Settle(400);
+        Shot(window, "14c-fleet-queue");
+
+        // One item, full screen. The failed one, because that is the card with the most to say: the
+        // evidence in full, the lookups, and four choices with their consequences.
+        var client = new Agnes.Plugins.CodeyBox.CodeyBoxClient(
+            new Agnes.Plugins.CodeyBox.CodeyBoxOptions("http://offline.invalid", "preview"),
+            new FakeFleet.OfflineHandler());
+
+        var failed = new CodeyBoxItemPageViewModel(shell, shell.CodeyBox, client, FakeFleet.Failed());
+        shell.Push(failed);
+        Pump(() => failed.HasDecision, 2000);
+        Settle(400);
+        Shot(window, "14d-fleet-item-failed");
+
+        // …and the parked one, whose card is the other half of the model: a question, verbatim, with
+        // Answer and Dismiss as the choices.
+        shell.PopToRoot();
+        shell.SelectTab(ShellTab.CodeyBox);
+        shell.CodeyBox.OnHidden();
+        if (shell.CodeyBox.Find(FakeFleet.ParkedId) is { } parked)
+        {
+            var asked = new CodeyBoxItemPageViewModel(shell, shell.CodeyBox, client, parked);
+            shell.Push(asked);
+            Pump(() => asked.HasDecision, 2000);
+            Settle(400);
+            Shot(window, "14e-fleet-item-parked");
+
+            // The reply box, over the card that raised it.
+            asked.AnswerCommand.Execute(asked.Questions.FirstOrDefault());
+            Settle(400);
+            Shot(window, "14f-fleet-answer");
+            shell.CloseSheet();
+        }
+
+        // The fleet in the Inbox, which is the phone's whole point: unblocking without opening anything.
+        shell.PopToRoot();
+        shell.SelectTab(ShellTab.Inbox);
+        Settle(400);
+        foreach (var row in Needs(shell.CodeyBox))
+        {
+            shell.Inbox.CodeyBoxRows.Add(row);
+        }
+
+        Settle(300);
+        Shot(window, "14g-fleet-inbox");
+
+        // Leave the app as it was found: no fleet, four destinations.
+        shell.PopToRoot();
+        shell.CodeyBox.Save(new CodeyBoxConfig());
+        shell.SelectTab(ShellTab.Sessions);
+        Settle(200);
+    }
+
+    /// <summary>A handful of real feed events, so the wall's log and heartbeat are not empty.</summary>
+    private static void Feed(Agnes.Plugins.CodeyBox.NowWorkingViewModel wall)
+    {
+        var now = DateTimeOffset.Now;
+        var events = new[]
+        {
+            ("work_item.done", "Landed work 1", "Done", -110),
+            ("work_item.state_changed", "tests:coverage — diff-scoped coverage gate", "Auditing", -74),
+            ("work_item.needs_operator_input", "Decide the token scope for the credential broker", "NeedsOperatorInput", -51),
+            ("work_item.state_changed", "Harden the Incus volume lifecycle", "Reworking", -33),
+            ("work_item.failed", "Land the upstream push retry", "AuditFailed", -18),
+            ("work_item.state_changed", "Rewrite the credential broker", "Working", -6),
+        };
+
+        long id = 1;
+        foreach (var (type, title, state, secondsAgo) in events)
+        {
+            wall.Accept(
+                new Agnes.Plugins.CodeyBox.CodeyBoxEvent(
+                    id++, type, "wi", "codeybox-self", now.AddSeconds(secondsAgo), title, state, "claude"),
+                now.AddSeconds(secondsAgo));
+        }
+    }
+
+    /// <summary>The fleet rows the Inbox shows, built the way the live read builds them.</summary>
+    private static IReadOnlyList<CodeyBoxNeedsRow> Needs(CodeyBoxViewModel fleet)
+    {
+        var rows = new List<CodeyBoxNeedsRow>();
+        if (fleet.Find(FakeFleet.ParkedId) is { } parked)
+        {
+            rows.Add(new CodeyBoxNeedsRow(parked, new Agnes.Plugins.CodeyBox.WorkItemQuestion(
+                "aa11", parked.Id, "q-token-scope",
+                "The broker can mint a token per push or one per session. Per push is safer but adds a "
+                + "round trip to every commit — which do you want?",
+                "open", DateTimeOffset.Now.AddMinutes(-42), null, null, null, null)));
+        }
+
+        if (fleet.Find(FakeFleet.FailedId) is { } failed)
+        {
+            rows.Add(new CodeyBoxNeedsRow(failed, null));
+        }
+
+        return rows;
     }
 
     /// <summary>

@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.CodeyBoxSetupPageView"
+             x:DataType="vm:CodeyBoxSetupPageViewModel"
+             Background="{DynamicResource Bg}">
+  <!--
+    More › CodeyBox. Two fields and a Test.
+
+    The desktop plugin has no screen like this: it reads ~/.config/codeybox/config.json on the machine
+    that runs the orchestrator. A phone is not that machine — it reaches CodeyBox across the LAN, by
+    address, over plain http — so it has to be told, and the "same network" sentence is on screen because
+    that is the failure that actually happens (the phone drops to mobile data and everything goes blank).
+  -->
+  <Grid RowDefinitions="Auto,*">
+    <c:PageHeader Grid.Row="0" Title="CodeyBox" />
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="16,14,16,28" Spacing="14">
+
+        <TextBlock Classes="dim" TextWrapping="Wrap" LineHeight="21"
+                   Text="CodeyBox runs on your own machine and is reached over your network, so this phone needs its address and an API key. Both come from the machine it runs on — the key is the one in ~/.config/codeybox/config.json." />
+
+        <StackPanel Spacing="6">
+          <TextBlock Classes="section" Text="ADDRESS" />
+          <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding Address, Mode=TwoWay}"
+                   PlaceholderText="{Binding ExampleAddress}"
+                   FontFamily="{StaticResource MonoFont}" />
+          <TextBlock Classes="caption" TextWrapping="Wrap"
+                     Text="An IP, not localhost — on a phone that would mean the phone." />
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+          <TextBlock Classes="section" Text="API KEY" />
+          <TextBox Theme="{StaticResource MobileTextBox}" Text="{Binding ApiKey, Mode=TwoWay}"
+                   PasswordChar="•" PlaceholderText="Paste the key" />
+        </StackPanel>
+
+        <Button Theme="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
+                Content="Test the connection" Command="{Binding TestCommand}"
+                IsEnabled="{Binding !IsTesting}" />
+
+        <!-- What Test found, in the app's two states: it worked, or it didn't and here is which half. -->
+        <Border Classes="inset" IsVisible="{Binding HasStatus}"
+                Classes.good="{Binding StatusIsGood}">
+          <Border.Styles>
+            <Style Selector="Border.good">
+              <Setter Property="Background" Value="{DynamicResource SuccessSoft}" />
+            </Style>
+          </Border.Styles>
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="{StaticResource TextSm}"
+                     LineHeight="20" />
+        </Border>
+
+        <Button Theme="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
+                Content="Save" Command="{Binding SaveCommand}" />
+
+        <!-- Forget, not "disable": a key this phone keeps but no longer uses is a credential nobody is
+             watching. It takes the tab and the inbox rows with it. -->
+        <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Center"
+                IsVisible="{Binding IsConfigured}" Command="{Binding ForgetCommand}">
+          <TextBlock Text="Forget CodeyBox on this device" Foreground="{DynamicResource Danger}"
+                     FontSize="{StaticResource TextSm}" FontWeight="SemiBold" />
+        </Button>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

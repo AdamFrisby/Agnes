@@ -26,6 +26,11 @@ public sealed partial class MoreViewModel : ObservableObject
         PromptsCommand = new RelayCommand(() => _shell.Push(new PromptsPageViewModel(_shell)));
         DevicesCommand = new RelayCommand(() => _shell.Push(new DevicesPageViewModel(_shell)));
         AboutCommand = new RelayCommand(() => _shell.Push(new AboutPageViewModel(_shell)));
+        CodeyBoxCommand = new RelayCommand(() => _shell.Push(
+            new CodeyBoxSetupPageViewModel(_shell, ((ShellViewModel)_shell).CodeyBox)));
+        // The row's caption is the only place the app says whether the fleet is set up at all, so it
+        // re-reads whenever that changes rather than only on a rebuild of the tab.
+        ((ShellViewModel)_shell).CodeyBox.ConfigurationChanged += () => _shell.Dispatcher.Post(RefreshCodeyBox);
         // The host line is live: it re-reads when a host connects, drops, is added or removed.
         _shell.Hosts.Changed += () => _shell.Dispatcher.Post(Refresh);
     }
@@ -37,6 +42,25 @@ public sealed partial class MoreViewModel : ObservableObject
     public IRelayCommand PromptsCommand { get; }
     public IRelayCommand DevicesCommand { get; }
     public IRelayCommand AboutCommand { get; }
+
+    /// <summary>
+    /// More › CodeyBox. Always listed, even unconfigured — it is the only way to configure it, so hiding
+    /// it until it is configured would be a setting nobody could ever reach.
+    /// </summary>
+    public IRelayCommand CodeyBoxCommand { get; }
+
+    public string CodeyBoxDetail
+    {
+        get
+        {
+            var codeybox = ((ShellViewModel)_shell).CodeyBox;
+            return codeybox.IsConfigured
+                ? codeybox.Config.NormalizedUrl
+                : "Watch a CodeyBox fleet from this phone";
+        }
+    }
+
+    public void RefreshCodeyBox() => OnPropertyChanged(nameof(CodeyBoxDetail));
 
     public string HostsDetail
     {

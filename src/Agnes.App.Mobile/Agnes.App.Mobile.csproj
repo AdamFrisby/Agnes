@@ -72,6 +72,18 @@
     <ProjectReference Include="..\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj"
                       Condition="'$(Configuration)' == 'Debug'" />
     <ProjectReference Include="..\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
+    <!--
+      CodeyBox, as models rather than as a plugin. This head has no plugin loader and is not growing one:
+      what it takes is CodeyBoxClient, OverviewGather, OverviewModel, BoardModel, Decision,
+      NowWorkingViewModel and the small drawn controls, none of which know what a window is. The plugin's
+      own Views/*.axaml come along in its assembly and are simply never instantiated — the phone's screens
+      are its own (docs/mobile.md).
+
+      The plugin's Avalonia and CommunityToolkit references are PrivateAssets="all", so nothing of its UI
+      stack flows here; this project's own copies (identical versions) are what everything binds against.
+      Its SignalR client is 10.0.10, the same version Agnes.Client already carries.
+    -->
+    <ProjectReference Include="..\Agnes.Plugins.CodeyBox\Agnes.Plugins.CodeyBox.csproj" />
   </ItemGroup>
 
 </Project>

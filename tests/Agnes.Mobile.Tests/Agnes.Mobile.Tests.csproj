@@ -34,6 +34,14 @@
     <!-- Mobile UI tests exercise the debug-only offline simulator. Keep the app-facing Release build
          separate, but link this test harness to its Debug configuration. -->
     <ProjectReference Include="..\..\tools\Agnes.MobilePreview\Agnes.MobilePreview.csproj" SetConfiguration="Configuration=Debug" />
+    <!--
+      For the canned fleet the CodeyBox render tests draw: BoardSamples, OverviewSamples, DecisionSamples
+      and NowWorkingSamples. They are a test project's fixtures and they stay there — they are exercised
+      by the plugin's own tests first, and copying them here is how two heads start drawing two different
+      fleets and calling both "the sample". A test project referencing another is only a library
+      reference: xunit discovers tests in the assembly under test, not in what it references.
+    -->
+    <ProjectReference Include="..\Agnes.Plugins.CodeyBox.Tests\Agnes.Plugins.CodeyBox.Tests.csproj" />
   </ItemGroup>
 
 </Project>

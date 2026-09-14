@@ -85,7 +85,7 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
         _confirmation = confirmation ?? new Confirmation();
         _openItem = openItem;
         _promote = promote;
-        _history = history ?? new OverviewHistory();
+        _gather = new OverviewGather(client, history);
         OpenItemCommand = new RelayCommand<ItemTrace>(OpenItem);
         ExtendCeilingCommand = new AsyncRelayCommand<ItemTrace>(ExtendCeilingAsync);
         InjectCommand = new AsyncRelayCommand(InjectAsync, () => CanInject);
@@ -706,290 +706,35 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
 
     partial void OnOverviewChanged(Overview? value) => OnPropertyChanged(nameof(HasOverview));
 
-    /// <summary>Audit progress by work-item id, keyed on the item's <c>UpdatedAt</c>.</summary>
-    /// <remarks>
-    /// The heaviest items answer <c>/audit-progress</c> with 1.2–1.8 MB, and the overview re-reads on every
-    /// transition anywhere in the fleet. Without this, one item finishing would re-download the audit
-    /// history of every other live item — so a row is refetched only when the item itself has moved, which
-    /// is exactly when its trace can have changed.
-    /// </remarks>
-    private readonly Dictionary<string, (DateTimeOffset At, IReadOnlyList<AuditProgressRow> Rows)> _traces = [];
-
-    /// <summary>How many audit-progress reads may be in flight at once. The orchestrator serves a single
-    /// fleet; a client that fans out over every live item at once is a load spike, not a fast refresh.</summary>
-    private const int TraceParallelism = 4;
-
-    /// <summary>How far back the quota series is asked for. A week covers the longest window a provider
-    /// publishes (<c>seven_day</c>), so a burn-down never starts mid-window with no history behind it.</summary>
-    private static readonly TimeSpan QuotaWindow = TimeSpan.FromDays(7);
-
-    private readonly OverviewHistory _history;
 
     /// <summary>
-    /// Everything the overview needs, gathered in one pass and handed to the pure model.
+    /// The pass over the orchestrator that every overview is built from.
     /// </summary>
     /// <remarks>
-    /// <para>The gather is the only part that touches the network, and every surface in it is optional
-    /// except the work-item list: quota history, transition health and concurrency are all switched off on
-    /// some hosts, so each degrades to null/empty and the model says so rather than inventing a number.</para>
-    ///
-    /// <para>Audit progress is read for the live items and the failed family only — a decided item's trace
-    /// cannot change, and reading 325 finished items would cost more than the whole rest of the overview
-    /// put together.</para>
+    /// It lives in <see cref="OverviewGather"/> rather than here because the rules that keep it affordable
+    /// are caches keyed on what has actually moved, and a second head that wants an overview must share
+    /// those rules rather than re-implement them. What is left in this class is what is genuinely the
+    /// desktop's: marshalling the result onto the UI thread and reconciling the quota strip.
     /// </remarks>
+    private readonly OverviewGather _gather;
+
     private async Task LoadOverviewAsync()
     {
-        // One gather at a time. Two can be asked for at once — a feed burst and the idle tick, or a manual
-        // reload over either — and they share the trace cache, so overlapping them would both double the
-        // load on the orchestrator and race the dictionary they are trying to save it with.
-        await _gathering.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            await GatherOverviewAsync().ConfigureAwait(false);
-        }
-        finally
-        {
-            _gathering.Release();
-        }
-    }
-
-    private readonly SemaphoreSlim _gathering = new(1, 1);
-
-    private async Task GatherOverviewAsync()
-    {
-        var items = await _client.ListWorkItemsAsync().ConfigureAwait(false);
-        var queue = await _client.GetQueueStatusAsync().ConfigureAwait(false);
-        var concurrency = await _client.GetConcurrencyAsync().ConfigureAwait(false);
-        var probes = await _client.GetQuotaProbesAsync().ConfigureAwait(false);
-        var health = await _client.GetTransitionHealthAsync().ConfigureAwait(false);
-        var projects = await _client.GetProjectsAsync().ConfigureAwait(false);
-
-        // A failed item is terminal but still the operator's problem, so its trace is what explains why.
-        var traced = items.Where(i => !i.IsTerminal || i.IsFailed).ToList();
-        var progress = await TracesAsync(traced).ConfigureAwait(false);
-        var questions = await QuestionsAsync(items).ConfigureAwait(false);
-        var quota = await QuotaBurnAsync(probes).ConfigureAwait(false);
-        var effort = await EffortAsync(items).ConfigureAwait(false);
-        var ceilings = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var project in projects.Where(p => p.AuditMaxIterations > 0))
-        {
-            ceilings[project.Id] = project.AuditMaxIterations;
-        }
-
-        var inputs = new OverviewInputs(
-            DateTimeOffset.Now,
-            items,
-            progress,
-            questions,
-            queue,
-            concurrency,
-            probes,
-            quota,
-            health,
-            _history.Read(),
-            ceilings)
-        {
-            Effort = effort,
-        };
-        var built = OverviewModel.Build(inputs);
+        var gathered = await _gather.GatherAsync().ConfigureAwait(false);
 
         await _toUi(() =>
         {
-            _lastItems = items;
-            Overview = built;
-            Reconcile.Apply(Quota, [.. probes.Where(p => p.IsKnown).OrderBy(p => p.Available)], p => p.Label);
-            Concurrency = concurrency;
+            _lastItems = gathered.Items;
+            Overview = gathered.Overview;
+            Reconcile.Apply(
+                Quota,
+                [.. gathered.Probes.Where(p => p.IsKnown).OrderBy(p => p.Available)],
+                p => p.Label);
+            Concurrency = gathered.Concurrency;
             OnPropertyChanged(nameof(HasQuota));
             SectionStatus = string.Empty;
         }).ConfigureAwait(false);
-
-        // Off the UI thread on purpose: this writes a file, and it is the sample the NEXT build reads, so
-        // nothing on screen is waiting for it.
-        _history.Append(built.Sample);
     }
-
-    /// <summary>
-    /// Active agent time per item, for the drain estimate: the last <see cref="OverviewModel.BurnSample"/>
-    /// landed items (fetched once each — a finished item's runs do not change) and everything not yet
-    /// terminal (re-read while it moves, cached against its UpdatedAt like the traces).
-    /// </summary>
-    private async Task<IReadOnlyList<ItemEffort>> EffortAsync(IReadOnlyList<WorkItemRow> items)
-    {
-        var landed = items.Where(i => i.State == "Done").OrderByDescending(i => i.UpdatedAt).Take(OverviewModel.BurnSample).ToList();
-        var live = items.Where(i => !i.IsTerminal).ToList();
-        var stale = landed.Concat(live)
-            .Where(i => !(_effort.TryGetValue(i.Id, out var cached) && cached.At == i.UpdatedAt))
-            .ToList();
-        var fetched = new System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<AgentRun>>(StringComparer.Ordinal);
-        await Parallel.ForEachAsync(
-            stale,
-            new ParallelOptions { MaxDegreeOfParallelism = TraceParallelism },
-            async (item, token) =>
-            {
-                try
-                {
-                    fetched[item.Id] = await _client.GetAgentRunsAsync(item.Id, token).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    Diagnostic.Report($"agent-history {item.ShortId}", ex);
-                }
-            }).ConfigureAwait(false);
-        var now = DateTimeOffset.UtcNow;
-        var effort = new List<ItemEffort>(landed.Count + live.Count);
-        foreach (var item in landed.Concat(live))
-        {
-            if (fetched.TryGetValue(item.Id, out var runs))
-            {
-                _effort[item.Id] = (item.UpdatedAt, runs);
-            }
-            else if (_effort.TryGetValue(item.Id, out var cached))
-            {
-                runs = cached.Runs;
-            }
-            else
-            {
-                continue;
-            }
-            if (runs.Count > 0)
-            {
-                effort.Add(new ItemEffort(item.Id, ItemEffort.ActiveTime(runs, now, item.IsActive), item.State == "Done", item.UpdatedAt));
-            }
-        }
-        return effort;
-    }
-
-    private readonly Dictionary<string, (DateTimeOffset At, IReadOnlyList<AgentRun> Runs)> _effort = new(StringComparer.Ordinal);
-
-    /// <summary>Audit progress for the items that can still change, capped and cached.</summary>
-    private async Task<IReadOnlyList<ItemAuditProgress>> TracesAsync(IReadOnlyList<WorkItemRow> items)
-    {
-        var fetched = new System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<AuditProgressRow>>(
-            StringComparer.Ordinal);
-
-        var stale = items.Where(i => !(_traces.TryGetValue(i.Id, out var cached) && cached.At == i.UpdatedAt)).ToList();
-
-        await Parallel.ForEachAsync(
-            stale,
-            new ParallelOptions { MaxDegreeOfParallelism = TraceParallelism },
-            async (item, token) =>
-            {
-                try
-                {
-                    fetched[item.Id] = await _client.GetAuditProgressAsync(item.Id, token).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // One item's history failing must not cost the other forty their traces.
-                    Diagnostic.Report($"audit-progress {item.ShortId}", ex);
-                }
-            }).ConfigureAwait(false);
-
-        var traces = new List<ItemAuditProgress>(items.Count);
-        foreach (var item in items)
-        {
-            if (fetched.TryGetValue(item.Id, out var rows))
-            {
-                _traces[item.Id] = (item.UpdatedAt, rows);
-            }
-            else if (_traces.TryGetValue(item.Id, out var cached))
-            {
-                rows = cached.Rows;
-            }
-            else
-            {
-                continue;
-            }
-
-            if (rows.Count > 0)
-            {
-                traces.Add(new ItemAuditProgress(item.Id, rows));
-            }
-        }
-
-        // Items that have left the live set never come back to it; keeping their traces would grow the
-        // cache by the size of the whole queue's history over a long-running session.
-        var live = items.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
-        foreach (var gone in _traces.Keys.Where(id => !live.Contains(id)).ToList())
-        {
-            _traces.Remove(gone);
-        }
-
-        return traces;
-    }
-
-    /// <summary>
-    /// Open-question counts, for the items that say they are waiting on one. Read only for
-    /// <c>NeedsOperatorInput</c>: the endpoint is per item, and the state is the orchestrator's own claim
-    /// that there is something to find.
-    /// </summary>
-    private async Task<IReadOnlyDictionary<string, int>> QuestionsAsync(IReadOnlyList<WorkItemRow> items)
-    {
-        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-
-        foreach (var item in items.Where(i => i.State.Equals("NeedsOperatorInput", StringComparison.Ordinal)))
-        {
-            try
-            {
-                var questions = await _client.GetQuestionsAsync(item.Id).ConfigureAwait(false);
-                var open = questions.Count(q => q.IsOpen);
-                if (open > 0)
-                {
-                    counts[item.Id] = open;
-                }
-            }
-            catch (Exception ex)
-            {
-                Diagnostic.Report($"questions {item.ShortId}", ex);
-            }
-        }
-
-        return counts;
-    }
-
-    /// <summary>
-    /// The burn-downs, one series request per agent that actually reported a reading. Absent everywhere on
-    /// a host without the statistics plugin, which is why this returns empty rather than failing the load.
-    /// </summary>
-    private async Task<IReadOnlyList<QuotaBurn>> QuotaBurnAsync(IReadOnlyList<QuotaProbe> probes)
-    {
-        // A week of samples is 31 753 rows — about 8 MB — across the four agents this instance probes, and
-        // a busy fleet can ask for a gather every five seconds. The series moves on the sampler's clock,
-        // not on work-item transitions, so re-reading it faster than it is written buys nothing and costs
-        // that 8 MB each time.
-        if (_quotaBurns is { } cached && DateTimeOffset.UtcNow - _quotaBurnsAt < QuotaBurnMaxAge)
-        {
-            return cached;
-        }
-
-        var since = DateTimeOffset.UtcNow - QuotaWindow;
-        var rows = new List<QuotaHistoryRow>();
-
-        foreach (var agent in probes.Where(p => p.IsKnown).Select(p => p.Agent)
-                     .Where(a => !string.IsNullOrWhiteSpace(a))
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            try
-            {
-                rows.AddRange(await _client.GetQuotaHistoryAsync(agent, since).ConfigureAwait(false));
-            }
-            catch (Exception ex)
-            {
-                Diagnostic.Report($"quota-history {agent}", ex);
-            }
-        }
-
-        _quotaBurns = QuotaHistoryMap.ToBurnDown(rows, probes, DateTimeOffset.UtcNow);
-        _quotaBurnsAt = DateTimeOffset.UtcNow;
-        return _quotaBurns;
-    }
-
-    /// <summary>How stale a burn-down may be. Matches the idle refresh, so the series is re-read on the
-    /// timer and not on every transition.</summary>
-    private static readonly TimeSpan QuotaBurnMaxAge = TimeSpan.FromSeconds(60);
-
-    private IReadOnlyList<QuotaBurn>? _quotaBurns;
-    private DateTimeOffset _quotaBurnsAt;
 
     /// <summary>Opens the item this row is about in the work queue.</summary>
     /// <remarks>The overview's job is to find the row worth looking at; the queue's is to show it. Sending
@@ -1154,7 +899,6 @@ public sealed partial class CodeyBoxSectionsViewModel : ObservableObject, IAsync
         await _refresh.CancelAsync().ConfigureAwait(false);
         _refresh.Dispose();
         _nudged.Dispose();
-        _gathering.Dispose();
     }
 
     /// <summary>Per-agent quota headroom — the first thing to look at when the queue stops moving.</summary>

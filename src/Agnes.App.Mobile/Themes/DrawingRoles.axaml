@@ -1,0 +1,59 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    ================= role aliases, for the plugin's drawn controls =================
+
+    The CodeyBox screens reuse the plugin's own small drawn controls — Sparkline, BurnDown, QuotaGauge,
+    TraceGlyph, StepDot, ChainStrip, FlowChart, MotionDot, Heartbeat. Each derives from ThemedDrawing,
+    which cannot use {DynamicResource} (a control that renders itself has no property to bind) and so
+    looks its colours up BY NAME against whatever theme it finds itself in.
+
+    The names it looks for are the DESKTOP head's: Fg, FgDim, FgFaint, Line, Panel/PanelAlt, and the
+    Status* hues. This head's vocabulary is Text/TextDim/TextMuted/Border/Surface*/Info/Warning/Success/
+    Danger. So rather than editing eight controls to know about a second set of names — which would make
+    every future control a decision about which head it is for — the names are aliased here, once.
+
+    The colours are restated rather than referenced, and that is not laziness: this head's Tokens.axaml
+    declares its roles as brushes INSIDE each theme dictionary, and a ResourceDictionary entry cannot be
+    a reference to another entry. `CodeyBoxRoleAliasTests` asserts every pair below resolves to the same
+    colour as the role it stands for, in both variants, so the two cannot drift apart silently.
+
+    Aliases only — nothing here invents a hue. Accent and Danger already exist under those exact names,
+    so they are deliberately absent.
+  -->
+  <ResourceDictionary.ThemeDictionaries>
+
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="Fg" Color="#E6E3F7" />
+      <SolidColorBrush x:Key="FgDim" Color="#9C97C4" />
+      <SolidColorBrush x:Key="FgFaint" Color="#6B6796" />
+      <SolidColorBrush x:Key="Line" Color="#1FFFFFFF" />
+      <SolidColorBrush x:Key="Panel" Color="#16112E" />
+      <SolidColorBrush x:Key="PanelAlt" Color="#1C1740" />
+
+      <!-- One meaning per hue, in this head's colours: sky in motion, amber blocked on you, mint done,
+           pink failed, and the quiet one for present-but-not-asking. -->
+      <SolidColorBrush x:Key="StatusWorking" Color="#38BDF8" />
+      <SolidColorBrush x:Key="StatusAttention" Color="#FFC53D" />
+      <SolidColorBrush x:Key="StatusDone" Color="#3ADBB4" />
+      <SolidColorBrush x:Key="StatusError" Color="#FF7BA5" />
+      <SolidColorBrush x:Key="StatusIdle" Color="#6B6796" />
+    </ResourceDictionary>
+
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="Fg" Color="#1D1546" />
+      <SolidColorBrush x:Key="FgDim" Color="#4E4E68" />
+      <SolidColorBrush x:Key="FgFaint" Color="#6E6E8C" />
+      <SolidColorBrush x:Key="Line" Color="#DEDEEB" />
+      <SolidColorBrush x:Key="Panel" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="PanelAlt" Color="#F5F5FA" />
+
+      <SolidColorBrush x:Key="StatusWorking" Color="#0EA5E9" />
+      <SolidColorBrush x:Key="StatusAttention" Color="#B37209" />
+      <SolidColorBrush x:Key="StatusDone" Color="#12B886" />
+      <SolidColorBrush x:Key="StatusError" Color="#F0356F" />
+      <SolidColorBrush x:Key="StatusIdle" Color="#6E6E8C" />
+    </ResourceDictionary>
+
+  </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

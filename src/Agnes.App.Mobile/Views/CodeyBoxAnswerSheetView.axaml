@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.CodeyBoxAnswerSheetView"
+             x:DataType="vm:CodeyBoxAnswerSheetViewModel">
+  <!--
+    Answering one of an agent's questions.
+
+    A sheet rather than an inline field, and the question stays above the box the whole time: the soft
+    keyboard takes half a phone's screen, and an answer typed without the question in front of you is a
+    guess. Send is disabled on an empty answer — the orchestrator would accept one, and it would un-park
+    the item having taught it nothing.
+  -->
+  <Grid RowDefinitions="Auto,*,Auto" Margin="20,4,20,16">
+
+    <StackPanel Grid.Row="0" Spacing="6" Margin="0,0,0,12">
+      <TextBlock Classes="section" Text="THE QUESTION" />
+      <SelectableTextBlock Text="{Binding QuestionText}" TextWrapping="Wrap"
+                           FontSize="{StaticResource TextMd}" LineHeight="22" />
+      <TextBlock Classes="caption" Text="{Binding Asked}" />
+    </StackPanel>
+
+    <TextBox Grid.Row="1" Theme="{StaticResource MobileTextBox}"
+             Text="{Binding Answer, Mode=TwoWay}"
+             PlaceholderText="Your answer" AcceptsReturn="True" TextWrapping="Wrap"
+             VerticalContentAlignment="Top" MinHeight="120" />
+
+    <StackPanel Grid.Row="2" Spacing="8" Margin="0,12,0,0">
+      <TextBlock Classes="caption" TextWrapping="Wrap"
+                 Text="Your answer reaches the agent on its next run. Once every question is resolved the item re-enters the pipeline on its own." />
+      <Button Theme="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
+              Content="Send the answer" Command="{Binding SendCommand}" />
+    </StackPanel>
+  </Grid>
+</UserControl>
