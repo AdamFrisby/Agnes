@@ -1,0 +1,521 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:cb="using:Agnes.Plugins.CodeyBox.Views.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.CodeyBoxView"
+             x:DataType="vm:CodeyBoxViewModel">
+  <!--
+    One meaning per hue, applied once for the whole screen.
+
+    These live here rather than beside each control because a local attribute beats a Style setter in
+    Avalonia: a Border that says BorderBrush="..." inline can never be re-tinted by a class, which is
+    exactly how a card meant to turn pink stays grey. So the default and the states are all styles, and
+    the markup below only says which class a thing wears.
+  -->
+  <UserControl.Styles>
+    <Style Selector="Border.tone"><Setter Property="BorderBrush" Value="{DynamicResource Border}" /></Style>
+    <Style Selector="Border.tone.working"><Setter Property="BorderBrush" Value="{DynamicResource Info}" /></Style>
+    <Style Selector="Border.tone.attention"><Setter Property="BorderBrush" Value="{DynamicResource Warning}" /></Style>
+    <Style Selector="Border.tone.error"><Setter Property="BorderBrush" Value="{DynamicResource Danger}" /></Style>
+    <Style Selector="Border.tone.free"><Setter Property="Opacity" Value="0.55" /></Style>
+
+    <Style Selector="TextBlock.figure"><Setter Property="Foreground" Value="{DynamicResource Text}" /></Style>
+    <Style Selector="TextBlock.figure.working"><Setter Property="Foreground" Value="{DynamicResource Info}" /></Style>
+    <Style Selector="TextBlock.figure.attention"><Setter Property="Foreground" Value="{DynamicResource Warning}" /></Style>
+    <Style Selector="TextBlock.figure.error"><Setter Property="Foreground" Value="{DynamicResource Danger}" /></Style>
+
+    <Style Selector="TextBlock.verb"><Setter Property="Foreground" Value="{DynamicResource TextDim}" /></Style>
+    <Style Selector="TextBlock.verb.working"><Setter Property="Foreground" Value="{DynamicResource Info}" /></Style>
+    <Style Selector="TextBlock.verb.done"><Setter Property="Foreground" Value="{DynamicResource Success}" /></Style>
+    <Style Selector="TextBlock.verb.attention"><Setter Property="Foreground" Value="{DynamicResource Warning}" /></Style>
+    <Style Selector="TextBlock.verb.error"><Setter Property="Foreground" Value="{DynamicResource Danger}" /></Style>
+  </UserControl.Styles>
+  <!--
+    ===================== THE FLEET =====================
+
+    Three segments, because a fleet is asked three questions and they want three shapes:
+
+      Overview     should I do anything — one sentence, six numbers, and the rows that need a look
+      Now working  what is it doing this second — one card per busy slot
+      Queue        what is in the pipeline, in the order it will be picked
+
+    The desktop plugin puts these in a rail of eleven sections beside a work-item pane. A phone has one
+    column and one thumb, so the eleven become the three that answer something at arm's length, and the
+    item itself is a pushed page rather than a pane — see CodeyBoxItemPageView.
+
+    The drawn parts (sparklines, the burn-downs, the gauges, the trace glyphs, the chain strips, the flow
+    chart, the heartbeat) are the plugin's OWN controls, not redrawn here: they are pure renderers over
+    the same models, and they take their colours from role names this head aliases in
+    Themes/DrawingRoles.axaml. What is not reused is the plugin's layout, which is built for a 660-1200px
+    pane and would be unreadable at 411dp.
+  -->
+  <Grid RowDefinitions="Auto,Auto,*">
+
+    <!-- ===================== header ===================== -->
+    <StackPanel Grid.Row="0">
+      <c:SafeSpacer Edge="Top" />
+      <Grid Margin="16,10,8,10" ColumnDefinitions="*,Auto,Auto">
+        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+          <TextBlock Classes="headline" Text="CodeyBox" />
+          <TextBlock Classes="caption" Text="{Binding AsOf}" IsVisible="{Binding HasOverview}" />
+        </StackPanel>
+
+        <!-- Calm belongs to the wall and nowhere else, so the switch only exists on that segment. It is
+             ON by default here: the frame timer is the one thing in this app that spends a battery on
+             decoration. -->
+        <Button Grid.Column="1" Theme="{StaticResource IconButton}"
+                IsVisible="{Binding IsNowWorking}"
+                Command="{Binding NowWorking.ToggleCalmCommand}">
+          <c:Icon Data="{StaticResource IconZap}" Size="20"
+                  Stroke="{DynamicResource TextDim}" />
+        </Button>
+
+        <Button Grid.Column="2" Theme="{StaticResource IconButton}" Command="{Binding RefreshCommand}">
+          <c:Icon Data="{StaticResource IconRefresh}" Size="21" Stroke="{DynamicResource TextDim}" />
+        </Button>
+      </Grid>
+
+      <!-- What went wrong, in words a person on a phone can act on: the address or the key. -->
+      <Border Background="{DynamicResource WarningSoft}" Padding="14,10" Margin="12,0,12,10"
+              CornerRadius="{StaticResource RadiusMd}" IsVisible="{Binding HasStatus}">
+        <Grid ColumnDefinitions="Auto,*">
+          <c:Icon Grid.Column="0" Data="{StaticResource IconAlertTriangle}" Size="18"
+                  Stroke="{DynamicResource Warning}" Margin="0,0,10,0" VerticalAlignment="Top" />
+          <TextBlock Grid.Column="1" Text="{Binding Status}" TextWrapping="Wrap"
+                     FontSize="{StaticResource TextSm}" LineHeight="19" />
+        </Grid>
+      </Border>
+    </StackPanel>
+
+    <!-- ===================== segments ===================== -->
+    <Border Grid.Row="1" Padding="12,0,12,10">
+      <Border Background="{DynamicResource Surface2}" CornerRadius="{StaticResource RadiusSm}" Padding="3">
+        <Grid ColumnDefinitions="*,*,*">
+          <RadioButton Grid.Column="0" GroupName="codeybox" Theme="{StaticResource SegmentButton}"
+                       Content="Overview" IsChecked="{Binding IsOverview, Mode=OneWay}"
+                       Command="{Binding ShowOverviewCommand}" />
+          <RadioButton Grid.Column="1" GroupName="codeybox" Theme="{StaticResource SegmentButton}"
+                       Content="Now working" IsChecked="{Binding IsNowWorking, Mode=OneWay}"
+                       Command="{Binding ShowNowWorkingCommand}" />
+          <RadioButton Grid.Column="2" GroupName="codeybox" Theme="{StaticResource SegmentButton}"
+                       Content="Queue" IsChecked="{Binding IsQueue, Mode=OneWay}"
+                       Command="{Binding ShowQueueCommand}" />
+        </Grid>
+      </Border>
+    </Border>
+
+    <Panel Grid.Row="2">
+
+      <!-- ======================================================================================
+           OVERVIEW
+           ====================================================================================== -->
+      <ScrollViewer IsVisible="{Binding IsOverview}">
+        <StackPanel Margin="12,0,12,24" Spacing="16">
+
+          <!-- The sentence. It names the constraint first, which is the whole reason it is generated
+               rather than assembled from the numbers under it. -->
+          <Border Classes="card tone" BorderThickness="1.5"
+                  Classes.working="{Binding VerdictIsActive}"
+                  Classes.attention="{Binding VerdictIsAttention}"
+                  Classes.error="{Binding VerdictIsBad}">
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding Sentence}" Classes="title" TextWrapping="Wrap" LineHeight="23" />
+              <TextBlock Classes="caption" Text="{Binding HealthyLabel}" IsVisible="{Binding HasHealthy}" />
+            </StackPanel>
+          </Border>
+
+          <!-- ===== vitals =====
+               Two columns, because a phone's width takes two numbers legibly and one number per row
+               would put the sixth below three screens of scrolling. Each card is a label, the figure,
+               its sparkline, what the figure means, and what span the line covers — a sparkline with no
+               stated period is a shape with no meaning. -->
+          <ItemsControl ItemsSource="{Binding Vitals}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Columns="2" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Classes="card" Margin="0,0,8,8" Padding="12,11">
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="section" Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Value}" Classes="figure"
+                               FontFamily="{StaticResource DisplayFont}"
+                               FontSize="{StaticResource Text2Xl}" LineHeight="30" FontWeight="SemiBold"
+                               Classes.working="{Binding IsActive}"
+                               Classes.attention="{Binding IsAttention}"
+                               Classes.error="{Binding IsBad}" />
+                    <cb:Sparkline Height="26" HorizontalAlignment="Stretch"
+                                  IsVisible="{Binding HasSpark}"
+                                  Values="{Binding Spark}" Median="{Binding Median}"
+                                  BandLow="{Binding BandLow}" BandHigh="{Binding BandHigh}"
+                                  Trend="{Binding Trend}" Tone="{Binding Tone}" />
+                    <TextBlock Classes="caption" Text="{Binding Caption}" TextWrapping="Wrap" />
+                    <TextBlock Classes="caption" Foreground="{DynamicResource TextMuted}"
+                               Text="{Binding Period}" IsVisible="{Binding HasPeriod}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- ===== needs a look ===== -->
+          <TextBlock Classes="section" Text="NEEDS A LOOK" Margin="4,0,0,0"
+                     IsVisible="{Binding HasAttention}" />
+
+          <ItemsControl ItemsSource="{Binding Attention}" IsVisible="{Binding HasAttention}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:CodeyBoxTraceRow">
+                <Button Theme="{StaticResource CardButton}" Margin="0,0,0,8"
+                        Command="{Binding $parent[UserControl].DataContext.OpenTraceCommand}"
+                        CommandParameter="{Binding}">
+                  <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+
+                    <!-- The motion dot is the plugin's own, so "sky is moving, amber is blocked, pink is
+                         wedged" has exactly one definition across both heads. -->
+                    <cb:MotionDot Grid.Row="0" Grid.Column="0" Motion="{Binding Motion}"
+                                  Width="9" Height="9" Margin="0,0,10,0" VerticalAlignment="Center" />
+
+                    <TextBlock Grid.Row="0" Grid.Column="1" Classes="title" Text="{Binding Title}"
+                               TextTrimming="CharacterEllipsis" MaxLines="1" />
+
+                    <!-- Sky for in motion, not the sessions list's mint: mint means done, and the motion
+                         dot beside it is already drawn sky by the plugin's own control. A dot and a chip
+                         on the same row disagreeing about what a colour means is how the colours stop
+                         meaning anything. -->
+                    <Border Grid.Row="0" Grid.Column="2" Classes="pill" Margin="8,0,0,0"
+                            Classes.info="{Binding IsWorking}"
+                            Classes.needs="{Binding IsAttention}"
+                            Classes.error="{Binding IsError}">
+                      <TextBlock Text="{Binding StateWord}" />
+                    </Border>
+
+                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="mono"
+                               Margin="0,3,0,0" Text="{Binding Detail}"
+                               Foreground="{DynamicResource TextMuted}"
+                               TextTrimming="CharacterEllipsis" MaxLines="1" />
+
+                    <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,8,0,0"
+                          ColumnDefinitions="*,Auto">
+                      <TextBlock Grid.Column="0" Classes="dim" Text="{Binding Why}"
+                                 IsVisible="{Binding HasWhy}" TextWrapping="Wrap" MaxLines="2"
+                                 FontSize="{StaticResource TextSm}" LineHeight="19"
+                                 TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                      <!-- The audit loop as a shape: a staircase converges, a sawtooth oscillates, a flat
+                           high line is stuck. None of that survives being reduced to "iteration 14 of 25". -->
+                      <cb:TraceGlyph Grid.Column="1" Trace="{Binding Trace}" Width="104" Height="22"
+                                     Margin="10,0,0,0" IsVisible="{Binding HasTrace}"
+                                     VerticalAlignment="Center" />
+                    </Grid>
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- ===== folded groups =====
+               Items stopped at the same phase boundary that nothing on this screen can release. One line
+               per boundary, not twenty rows saying the same thing — and it says so, because "16 items
+               waiting on a dependency" without "not your move" reads like a backlog you are ignoring. -->
+          <ItemsControl ItemsSource="{Binding Folded}" IsVisible="{Binding HasFolded}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Classes="inset" Margin="0,0,0,8">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="{Binding Title}" FontWeight="Medium"
+                               FontSize="{StaticResource TextSm}" TextWrapping="Wrap" />
+                    <TextBlock Classes="caption" Text="{Binding Detail}" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- ===== quota =====
+               One card per agent, full width: the longest window as a burn-down, because its unspent
+               remainder at the reset is the only real waste under a subscription, and every shorter
+               window beside it as a gauge of where it stands now. -->
+          <TextBlock Classes="section" Text="QUOTA" Margin="4,0,0,0"
+                     IsVisible="{Binding QuotaCards.Count}" />
+
+          <ItemsControl ItemsSource="{Binding QuotaCards}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Classes="card" Margin="0,0,0,8">
+                  <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Grid.Column="0" Classes="title" Text="{Binding Agent}" />
+                      <TextBlock Grid.Column="1" Classes="caption"
+                                 Text="{Binding Primary.WindowShort}" VerticalAlignment="Center" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                      <cb:BurnDown Grid.Column="0" Burn="{Binding Primary}" Height="46"
+                                   HorizontalAlignment="Stretch" />
+                      <ItemsControl Grid.Column="1" ItemsSource="{Binding Others}" Margin="12,0,0,0"
+                                    IsVisible="{Binding HasOthers}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="8" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <StackPanel Spacing="4" VerticalAlignment="Center">
+                              <cb:QuotaGauge Pct="{Binding NowPct}" Eligible="{Binding Eligible}"
+                                             Width="10" Height="46" HorizontalAlignment="Center" />
+                              <TextBlock Classes="caption" Text="{Binding WindowShort}"
+                                         HorizontalAlignment="Center" />
+                            </StackPanel>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </Grid>
+
+                    <TextBlock Classes="caption" Text="{Binding Primary.ResetLabel}" TextWrapping="Wrap" />
+                    <TextBlock Classes="caption" Text="{Binding Primary.ProjectionLabel}" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- ===== cumulative flow =====
+               Last, because it answers a question about the month rather than about now: the Done band's
+               slope is throughput and the gap above it is work in progress. -->
+          <StackPanel Spacing="8" IsVisible="{Binding HasFlow}">
+            <TextBlock Classes="section" Text="CUMULATIVE FLOW" Margin="4,0,0,0" />
+            <Border Classes="card">
+              <StackPanel Spacing="8">
+                <cb:FlowChart Series="{Binding Flow}" Height="120" HorizontalAlignment="Stretch" />
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                  <TextBlock Classes="caption" Text="{Binding Flow.LandedLegend}" />
+                  <TextBlock Classes="caption" Text="{Binding Flow.InFlightLegend}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- ======================================================================================
+           NOW WORKING
+           ====================================================================================== -->
+      <!-- IsVisible has to sit on the wrapper: on the ScrollViewer itself it would resolve against the
+           wall's own view model, which has no such property, and a binding that resolves to nothing
+           leaves the panel visible on top of the segment that was actually chosen. -->
+      <Panel IsVisible="{Binding IsNowWorking}">
+      <ScrollViewer DataContext="{Binding NowWorking}">
+        <StackPanel Margin="12,0,12,24" Spacing="14">
+
+          <TextBlock Classes="title" Text="{Binding Headline}" Margin="4,0,0,0" />
+
+          <!-- One card per dispatch slot, busy first. A free slot is drawn rather than omitted: capacity
+               you cannot see is capacity you forget you have. -->
+          <ItemsControl ItemsSource="{Binding Slots}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Classes="card tone" Margin="0,0,0,10" BorderThickness="1.5"
+                        Classes.working="{Binding IsWorking}"
+                        Classes.attention="{Binding IsAttention}"
+                        Classes.error="{Binding IsFailed}"
+                        Classes.free="{Binding IsFree}">
+                  <StackPanel Spacing="8">
+
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                        <Border Classes="pill"
+                                Classes.info="{Binding IsWorking}"
+                                Classes.needs="{Binding IsAttention}"
+                                Classes.error="{Binding IsFailed}">
+                          <TextBlock Text="{Binding Phase}" />
+                        </Border>
+                        <TextBlock Classes="caption" Text="{Binding Card.Agent}" VerticalAlignment="Center" />
+                      </StackPanel>
+                      <!-- The second hand: an agent that has been working nine minutes is a different
+                           fact from one that started nine minutes ago and stopped. -->
+                      <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Elapsed}"
+                                 VerticalAlignment="Center" Foreground="{DynamicResource TextDim}" />
+                    </Grid>
+
+                    <TextBlock Classes="title" Text="{Binding Card.Title}" TextWrapping="Wrap"
+                               MaxLines="2" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="mono" Text="{Binding Card.Provenance}"
+                               Foreground="{DynamicResource TextMuted}"
+                               TextTrimming="CharacterEllipsis" MaxLines="1" />
+
+                    <!-- What the agent actually printed. The newest line is what it is doing and the two
+                         above it are context, which is why they are three fields and not a list. -->
+                    <Border Classes="inset" IsVisible="{Binding Card.HasOutput}">
+                      <StackPanel>
+                        <TextBlock Classes="mono" Text="{Binding Card.Older}" Opacity="0.4"
+                                   TextTrimming="CharacterEllipsis" MaxLines="1"
+                                   FontSize="{StaticResource Text2Xs}" />
+                        <TextBlock Classes="mono" Text="{Binding Card.Recent}" Opacity="0.7"
+                                   TextTrimming="CharacterEllipsis" MaxLines="1"
+                                   FontSize="{StaticResource Text2Xs}" />
+                        <TextBlock Classes="mono" Text="{Binding Card.Latest}"
+                                   TextTrimming="CharacterEllipsis" MaxLines="1"
+                                   FontSize="{StaticResource Text2Xs}" />
+                      </StackPanel>
+                    </Border>
+
+                    <cb:TraceGlyph Trace="{Binding Card.Trace}" Height="22"
+                                   HorizontalAlignment="Stretch" IsVisible="{Binding Card.HasTrace}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- The headline figures, two across. -->
+          <ItemsControl ItemsSource="{Binding Numbers}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Columns="2" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Classes="card" Margin="0,0,8,8" Padding="12,11">
+                  <StackPanel Spacing="3">
+                    <TextBlock Classes="section" Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Text}" FontFamily="{StaticResource DisplayFont}"
+                               FontSize="{StaticResource Text2Xl}" LineHeight="30" FontWeight="SemiBold" />
+                    <TextBlock Classes="caption" Text="{Binding Caption}" TextWrapping="Wrap"
+                               IsVisible="{Binding HasCaption}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- The orchestrator's own feed, newest first. -->
+          <StackPanel Spacing="8" IsVisible="{Binding HasTicker}">
+            <TextBlock Classes="section" Text="FEED" Margin="4,0,0,0" />
+            <Border Classes="card" Padding="12,10">
+              <ItemsControl ItemsSource="{Binding Ticker}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,5">
+                      <TextBlock Grid.Column="0" Classes="mono" Text="{Binding Time}"
+                                 Foreground="{DynamicResource TextMuted}"
+                                 FontSize="{StaticResource Text2Xs}" Margin="0,0,10,0" />
+                      <TextBlock Grid.Column="1" Text="{Binding Subject}" FontSize="{StaticResource TextXs}"
+                                 TextTrimming="CharacterEllipsis" MaxLines="1" />
+                      <TextBlock Grid.Column="2" Text="{Binding Verb}" Classes="verb"
+                                 FontSize="{StaticResource TextXs}" Margin="10,0,0,0"
+                                 Classes.working="{Binding IsWorking}"
+                                 Classes.done="{Binding IsLanded}"
+                                 Classes.attention="{Binding IsAttention}"
+                                 Classes.error="{Binding IsFailed}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Border>
+          </StackPanel>
+
+          <!-- Events per minute over the last hour. It counts what actually happened — motion that is not
+               backed by a change is a lie that happens to look busy. -->
+          <StackPanel Spacing="8">
+            <TextBlock Classes="section" Text="PULSE" Margin="4,0,0,0" />
+            <Border Classes="card" Padding="12,10">
+              <StackPanel Spacing="6">
+                <cb:Heartbeat Minutes="{Binding Minutes}" Height="96" HorizontalAlignment="Stretch" />
+                <TextBlock Classes="caption" Text="{Binding Pulse}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+        </StackPanel>
+      </ScrollViewer>
+      </Panel>
+
+      <!-- ======================================================================================
+           QUEUE
+           ====================================================================================== -->
+      <ScrollViewer IsVisible="{Binding IsQueue}">
+        <ItemsControl ItemsSource="{Binding Sections}" Margin="12,0,12,24">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:CodeyBoxQueueSection">
+              <StackPanel Margin="0,0,0,18" IsVisible="{Binding HasRows}">
+
+                <TextBlock Classes="section" Text="{Binding Header}" Margin="4,0,0,6" />
+
+                <!-- The line every row in the section was saying, drawn once. Sixteen rows each repeating
+                     "waiting for an audit slot for 10h 36m" is one fact printed sixteen times, in the
+                     space their titles needed. -->
+                <TextBlock Classes="caption" Text="{Binding SharedWhy}" Margin="4,0,0,8"
+                           TextWrapping="Wrap" IsVisible="{Binding HasSharedWhy}" />
+
+                <ItemsControl ItemsSource="{Binding Rows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:CodeyBoxChainRow">
+                      <Button Theme="{StaticResource CardButton}" Margin="0,0,0,8"
+                              Command="{Binding $parent[UserControl].DataContext.OpenChainCommand}"
+                              CommandParameter="{Binding}">
+                        <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+
+                          <cb:StepDot Grid.Row="0" Grid.Column="0" State="{Binding Mark}"
+                                      Width="9" Height="9" Margin="0,0,10,0" VerticalAlignment="Center" />
+
+                          <TextBlock Grid.Row="0" Grid.Column="1" Classes="title" Text="{Binding Title}"
+                                     TextTrimming="CharacterEllipsis" MaxLines="1" />
+
+                          <TextBlock Grid.Row="0" Grid.Column="2" Classes="caption" Margin="8,0,0,0"
+                                     Text="{Binding Progress}" IsVisible="{Binding HasProgress}"
+                                     VerticalAlignment="Center" />
+
+                          <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="mono"
+                                     Margin="0,3,0,0" Text="{Binding Detail}"
+                                     Foreground="{DynamicResource TextMuted}"
+                                     TextTrimming="CharacterEllipsis" MaxLines="1" />
+
+                          <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,8,0,0"
+                                ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Classes="dim" Text="{Binding ShownWhy}"
+                                       IsVisible="{Binding HasShownWhy}" TextWrapping="Wrap" MaxLines="2"
+                                       FontSize="{StaticResource TextSm}" LineHeight="19"
+                                       VerticalAlignment="Center" />
+                            <!-- Already capped at twelve pips by the control itself: past a dozen nobody
+                                 counts squares, so a long chain draws its beginning and its end. -->
+                            <cb:ChainStrip Grid.Column="1" Steps="{Binding Steps}" Margin="10,0,0,0"
+                                           IsVisible="{Binding HasStrip}" VerticalAlignment="Center" />
+                          </Grid>
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Button Theme="{StaticResource GhostButton}" HorizontalAlignment="Left"
+                        IsVisible="{Binding HasMore}" Command="{Binding ShowMoreCommand}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="{Binding MoreLabel}" Foreground="{DynamicResource AccentText}"
+                               FontSize="{StaticResource TextSm}" FontWeight="SemiBold" />
+                    <c:Icon Data="{StaticResource IconChevronDown}" Size="15"
+                            Stroke="{DynamicResource AccentText}" />
+                  </StackPanel>
+                </Button>
+
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- Nothing has landed yet. Said once, over whichever segment is showing, rather than three times. -->
+      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10"
+                  Margin="32" IsVisible="{Binding !HasOverview}">
+        <c:Icon Data="{StaticResource IconLayers}" Size="34" Stroke="{DynamicResource TextMuted}"
+                HorizontalAlignment="Center" />
+        <TextBlock Classes="muted" Text="Reading the fleet…" HorizontalAlignment="Center" />
+      </StackPanel>
+
+    </Panel>
+  </Grid>
+</UserControl>

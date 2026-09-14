@@ -6,6 +6,8 @@
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
         <ResourceInclude Source="/Themes/Tokens.axaml" />
+        <!-- Aliases the plugin drawn controls' role names onto this head's; see DrawingRoles.axaml. -->
+        <ResourceInclude Source="/Themes/DrawingRoles.axaml" />
         <ResourceInclude Source="/Themes/Icons.axaml" />
         <ResourceInclude Source="/Themes/Controls.axaml" />
       </ResourceDictionary.MergedDictionaries>

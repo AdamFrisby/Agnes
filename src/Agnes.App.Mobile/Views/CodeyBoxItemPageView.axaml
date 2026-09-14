@@ -1,0 +1,201 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Agnes.App.Mobile.Controls"
+             xmlns:vm="using:Agnes.App.Mobile.ViewModels"
+             x:Class="Agnes.App.Mobile.Views.CodeyBoxItemPageView"
+             x:DataType="vm:CodeyBoxItemPageViewModel"
+             Background="{DynamicResource Bg}">
+  <!--
+    A local attribute beats a Style setter in Avalonia, so the card's tone and the choice buttons' family
+    are styles here rather than inline values — otherwise a card meant to turn pink stays grey and a
+    destructive choice stays the colour of an ordinary one.
+  -->
+  <UserControl.Styles>
+    <Style Selector="Border.decision"><Setter Property="BorderBrush" Value="{DynamicResource Border}" /></Style>
+    <Style Selector="Border.decision.attention"><Setter Property="BorderBrush" Value="{DynamicResource Warning}" /></Style>
+    <Style Selector="Border.decision.failure"><Setter Property="BorderBrush" Value="{DynamicResource Danger}" /></Style>
+
+    <!-- Which family a choice wears is the model's decision, not the markup's: exactly one primary per
+         card, and a destructive one is pink wherever it lands. -->
+    <Style Selector="Button.choice"><Setter Property="Theme" Value="{StaticResource SecondaryButton}" /></Style>
+    <Style Selector="Button.choice.primary"><Setter Property="Theme" Value="{StaticResource PrimaryButton}" /></Style>
+    <Style Selector="Button.choice.destructive"><Setter Property="Theme" Value="{StaticResource DangerButton}" /></Style>
+  </UserControl.Styles>
+
+  <!--
+    ===================== ONE WORK ITEM =====================
+
+    The decision comes first when there is one. Everything below it — project, agent, priority, cost,
+    branch — is context for an answer, and context that comes first is context that pushes the answer off
+    the screen. Decision.For decides whether there is one at all; it is the same pure function the desktop
+    card uses, handed this head's own commands.
+
+    The choices are full-width buttons because a phone has one thumb and no hover, the destructive one
+    wears the danger hue and arms before it fires, and each one states what it will do — a choice whose
+    effect cannot be stated is a choice that should not be offered.
+  -->
+  <Grid RowDefinitions="Auto,*">
+    <c:PageHeader Grid.Row="0" Title="{Binding Title}" Subtitle="{Binding Subtitle}" />
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="12,12,12,28" Spacing="14">
+
+        <!-- ===================== the decision ===================== -->
+        <Border Classes="card decision" IsVisible="{Binding HasDecision}" BorderThickness="1.5"
+                Classes.failure="{Binding Decision.IsFailure}"
+                Classes.attention="{Binding Decision.IsAttention}">
+          <StackPanel Spacing="14">
+
+            <TextBlock Text="{Binding Decision.Situation}" Classes="title" TextWrapping="Wrap"
+                       LineHeight="23" />
+
+            <!-- The evidence that is prose: the question verbatim, the whole failure message. Nothing is
+                 truncated — the point of the card is to stop the reader hunting for the rest of it. -->
+            <ItemsControl ItemsSource="{Binding Decision.Passages}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Classes="inset" Margin="0,0,0,8">
+                    <StackPanel Spacing="5">
+                      <TextBlock Classes="section" Text="{Binding Label}" />
+                      <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                           FontSize="{StaticResource TextSm}" LineHeight="20" />
+                      <TextBlock Classes="caption" Text="{Binding Note}" IsVisible="{Binding HasNote}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- The evidence that is an identifier — a branch name — beside each other rather than one
+                 per full-width box. -->
+            <ItemsControl ItemsSource="{Binding Decision.Facts}" IsVisible="{Binding Decision.HasFacts}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Spacing="2" Margin="0,0,20,8">
+                    <TextBlock Classes="section" Text="{Binding Label}" />
+                    <TextBlock Classes="mono" Text="{Binding Text}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Lookups CHANGE WHAT YOU LOOK AT and nothing else: each opens a sheet over the card rather
+                 than copying a view's content into it. Two renderings of one diff is how they start
+                 disagreeing. -->
+            <ItemsControl ItemsSource="{Binding Decision.Lookups}" IsVisible="{Binding Decision.HasLookups}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Theme="{StaticResource ChipButton}" Margin="0,0,8,8"
+                          Content="{Binding Label}" Command="{Binding Command}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border Classes="divider" />
+
+            <!-- The choices. Full-width, one per row, each with its consequence under it. -->
+            <ItemsControl ItemsSource="{Binding Decision.Choices}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Spacing="4" Margin="0,0,0,12">
+                    <Button Classes="choice" HorizontalAlignment="Stretch" Content="{Binding Label}"
+                            Command="{Binding Command}" CommandParameter="{Binding Parameter}"
+                            Classes.primary="{Binding IsPrimary}"
+                            Classes.destructive="{Binding IsDestructive}" />
+                    <TextBlock Classes="caption" Text="{Binding Consequence}" TextWrapping="Wrap"
+                               LineHeight="17" Margin="2,0,2,0" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Armed, not fired. A phone has no hover and no undo, so cancelling names what it will stop
+                 and asks once more. -->
+            <Border Background="{DynamicResource DangerSoft}" CornerRadius="{StaticResource RadiusMd}"
+                    Padding="14,12" IsVisible="{Binding IsConfirmingCancel}">
+              <StackPanel Spacing="10">
+                <TextBlock Text="{Binding ConfirmCancelText}" TextWrapping="Wrap"
+                           FontSize="{StaticResource TextSm}" LineHeight="20" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="The work branch and every commit on it stay on disk." />
+                <Grid ColumnDefinitions="*,10,*">
+                  <Button Grid.Column="0" Theme="{StaticResource SecondaryButton}" Content="Keep it"
+                          Command="{Binding KeepItemCommand}" />
+                  <Button Grid.Column="2" Theme="{StaticResource DangerButton}" Content="Cancel it"
+                          Command="{Binding CancelItemCommand}" CommandParameter="{Binding Item}" />
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Border>
+
+        <!-- ===================== what it is ===================== -->
+        <Border Classes="card">
+          <StackPanel Spacing="12">
+            <ItemsControl ItemsSource="{Binding Facts}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Spacing="2" Margin="0,0,22,10" MinWidth="90">
+                    <TextBlock Classes="section" Text="{Binding Label}" />
+                    <TextBlock Classes="mono" Text="{Binding Text}" TextTrimming="CharacterEllipsis"
+                               MaxLines="1" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Promote only exists for something the orchestrator would actually pick: the endpoint is
+                 refused outside Queued. -->
+            <Button Theme="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
+                    IsVisible="{Binding CanPromote}" Content="Promote to the front of the queue"
+                    Command="{Binding PromoteCommand}" CommandParameter="{Binding Item}" />
+          </StackPanel>
+        </Border>
+
+        <!-- ===================== the task ===================== -->
+        <StackPanel Spacing="8" IsVisible="{Binding Item.HasPrompt}">
+          <TextBlock Classes="section" Text="THE TASK" Margin="4,0,0,0" />
+          <Border Classes="card">
+            <SelectableTextBlock Text="{Binding Item.Prompt}" TextWrapping="Wrap"
+                                 FontSize="{StaticResource TextSm}" LineHeight="20" />
+          </Border>
+        </StackPanel>
+
+        <!-- Always reachable, decision or not: an item that is running is exactly the one whose output
+             you want, and it has no card. -->
+        <StackPanel Spacing="8">
+          <TextBlock Classes="section" Text="LOOK AT" Margin="4,0,0,0" />
+          <WrapPanel Orientation="Horizontal">
+            <Button Theme="{StaticResource ChipButton}" Margin="0,0,8,8" Content="Show output"
+                    Command="{Binding ShowOutputCommand}" />
+            <Button Theme="{StaticResource ChipButton}" Margin="0,0,8,8" Content="Show diff"
+                    Command="{Binding ShowDiffCommand}" />
+            <Button Theme="{StaticResource ChipButton}" Margin="0,0,8,8" Content="Show timeline"
+                    Command="{Binding ShowTimelineCommand}" />
+          </WrapPanel>
+        </StackPanel>
+
+        <Border Background="{DynamicResource WarningSoft}" Padding="14,10"
+                CornerRadius="{StaticResource RadiusMd}" IsVisible="{Binding HasStatus}">
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="{StaticResource TextSm}" />
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

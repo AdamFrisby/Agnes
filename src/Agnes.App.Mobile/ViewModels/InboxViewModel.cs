@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Agnes.App.Mobile.Services;
 using Agnes.Client;
+using Agnes.Plugins.CodeyBox;
 using Agnes.Protocol;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -68,12 +69,19 @@ public sealed partial class InboxViewModel : ObservableObject
     private readonly IAppShell _shell;
     private readonly HostBook _hosts;
     private readonly SessionsViewModel _sessions;
+    private readonly CodeyBoxViewModel? _codeybox;
 
-    public InboxViewModel(IAppShell shell, HostBook hosts, SessionsViewModel sessions)
+    /// <param name="codeybox">
+    /// The fleet, when this device watches one. Optional because most devices do not, and a null one
+    /// contributes no section at all — the Inbox must look exactly as it did for them.
+    /// </param>
+    public InboxViewModel(
+        IAppShell shell, HostBook hosts, SessionsViewModel sessions, CodeyBoxViewModel? codeybox = null)
     {
         _shell = shell;
         _hosts = hosts;
         _sessions = sessions;
+        _codeybox = codeybox;
 
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         OpenCommand = new RelayCommand<BlockerRow>(row =>
@@ -114,6 +122,98 @@ public sealed partial class InboxViewModel : ObservableObject
             OnPropertyChanged(nameof(HasPendingDevices));
             OnPropertyChanged(nameof(IsEmpty));
         };
+
+        // Same rule for the fleet's section, so anything that touches the collection — a live projection,
+        // a dismissal, a harness staging rows — updates the heading and the empty state.
+        CodeyBoxRows.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasCodeyBoxRows));
+            OnPropertyChanged(nameof(IsEmpty));
+        };
+
+        AnswerCodeyBoxCommand = new RelayCommand<CodeyBoxNeedsRow>(AnswerFleetQuestion);
+        DismissCodeyBoxCommand = new AsyncRelayCommand<CodeyBoxNeedsRow>(DismissFleetQuestionAsync);
+        OpenCodeyBoxCommand = new RelayCommand<CodeyBoxNeedsRow>(row =>
+        {
+            if (row is not null)
+            {
+                _codeybox?.OpenNeedsCommand.Execute(row);
+            }
+        });
+
+        if (_codeybox is { } fleet)
+        {
+            // A live projection, like the blocked list: the fleet re-reads on its own schedule and this
+            // follows whatever it last found rather than polling a second time.
+            fleet.NeedsYouChanged += () => _shell.Dispatcher.Post(RebuildFleet);
+        }
+    }
+
+    // ---- the fleet ---------------------------------------------------------------------------------
+
+    /// <summary>
+    /// CodeyBox items waiting on a person.
+    /// </summary>
+    /// <remarks>
+    /// <para>Below the Agnes approvals, deliberately. An Agnes approval is an agent that has stopped
+    /// mid-turn in a session you started and is doing nothing until you answer; a fleet question is an
+    /// item that parked itself and will keep the rest of the queue moving around it. Both belong here —
+    /// unblocking is what a phone is for — but if only one can be above the fold it is the one that is
+    /// costing a live turn.</para>
+    ///
+    /// <para>A question is answerable from the row, because the answer is prose and the sheet carries the
+    /// question with it. A failure is not: deciding what to do about one needs the evidence, so that row
+    /// opens the item's decision card instead of offering a guess.</para>
+    /// </remarks>
+    public ObservableCollection<CodeyBoxNeedsRow> CodeyBoxRows { get; } = [];
+
+    public bool HasCodeyBoxRows => CodeyBoxRows.Count > 0;
+
+    public IRelayCommand<CodeyBoxNeedsRow> AnswerCodeyBoxCommand { get; }
+    public IAsyncRelayCommand<CodeyBoxNeedsRow> DismissCodeyBoxCommand { get; }
+    public IRelayCommand<CodeyBoxNeedsRow> OpenCodeyBoxCommand { get; }
+
+    private void RebuildFleet()
+    {
+        CodeyBoxRows.Clear();
+        foreach (var row in _codeybox?.NeedsYou ?? [])
+        {
+            CodeyBoxRows.Add(row);
+        }
+    }
+
+    private void AnswerFleetQuestion(CodeyBoxNeedsRow? row)
+    {
+        if (row?.Question is not { } question || _codeybox?.Client is not { } client)
+        {
+            return;
+        }
+
+        _shell.ShowSheet(new CodeyBoxAnswerSheetViewModel(
+            _shell, client, question, () => _codeybox.RefreshNeedsYouAsync()));
+    }
+
+    private async Task DismissFleetQuestionAsync(CodeyBoxNeedsRow? row)
+    {
+        if (row?.Question is not { } question || _codeybox?.Client is not { } client)
+        {
+            return;
+        }
+
+        try
+        {
+            await client.DismissQuestionAsync(
+                question.WorkItemId, question.QuestionId, "Dismissed from the Agnes phone client")
+                .ConfigureAwait(true);
+            _shell.Haptics.Tick();
+            _shell.Toast("Dismissed — the agent carries on with the default it chose", ToastKind.Warning);
+        }
+        catch (Exception ex)
+        {
+            _shell.Toast(CodeyBoxViewModel.Explain(ex), ToastKind.Danger);
+        }
+
+        await _codeybox.RefreshNeedsYouAsync().ConfigureAwait(true);
     }
 
     /// <summary>Agents blocked on a human, newest first.</summary>
@@ -158,7 +258,8 @@ public sealed partial class InboxViewModel : ObservableObject
 
     public bool HasFinished => Finished.Count > 0;
 
-    public bool IsEmpty => !HasBlocked && !HasFinished && !HasPendingDevices && !HasSharedFiles && !IsRefreshing;
+    public bool IsEmpty => !HasBlocked && !HasFinished && !HasPendingDevices && !HasSharedFiles
+        && !HasCodeyBoxRows && !IsRefreshing;
 
     /// <summary>How many rows the "Sent to you" section keeps. It's a recent-things list, not an archive —
     /// the session itself is where a file from last Tuesday lives.</summary>
@@ -222,6 +323,12 @@ public sealed partial class InboxViewModel : ObservableObject
     {
         _shell.Dispatcher.Post(() => { IsRefreshing = true; Rebuild(); });
 
+        // The fleet's own cheap read, in parallel with the hosts': it is a different service entirely and
+        // an unreachable one must not hold up the section above it.
+        var fleet = _codeybox is { IsConfigured: true } box
+            ? box.RefreshNeedsYouAsync()
+            : Task.CompletedTask;
+
         var runs = new List<InboxRun>();
         foreach (var link in _hosts.Links)
         {
@@ -257,6 +364,8 @@ public sealed partial class InboxViewModel : ObservableObject
                 // A host that predates approval pairing simply has none.
             }
         }
+
+        await fleet.ConfigureAwait(false);
 
         _shell.Dispatcher.Post(() =>
         {

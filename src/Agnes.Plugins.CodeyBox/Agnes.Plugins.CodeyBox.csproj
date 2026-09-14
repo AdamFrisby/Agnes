@@ -37,5 +37,15 @@
     <!-- The reconciler and the event-stream parser are implementation detail, not plugin surface, but
          they are exactly the parts whose behaviour has to be pinned. -->
     <InternalsVisibleTo Include="Agnes.Plugins.CodeyBox.Tests" />
+    <!--
+      The Android head is a second first-party consumer, not a plugin host: it builds CodeyBox screens of
+      its own over these models (see docs/mobile.md § CodeyBox). It needs the change feed — the event
+      record, the SSE reader and NowWorkingViewModel.Note — and that feed is deliberately NOT public API:
+      it is an implementation detail of how this plugin stays current, and promoting it to the plugin's
+      surface would pin its shape for every future reader. One line here is the smaller commitment.
+      `tools/Agnes.MobilePreview` is covered by the same entry: its AssemblyName is Agnes.App.Mobile too,
+      on purpose, so the `avares://` font URIs resolve identically.
+    -->
+    <InternalsVisibleTo Include="Agnes.App.Mobile" />
   </ItemGroup>
 </Project>

@@ -37,7 +37,10 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public CodeyBoxClient(CodeyBoxOptions options, HttpMessageHandler? handler = null)
     {
         _options = options;
-        _http = handler is null ? new HttpClient() : new HttpClient(handler);
+        // disposeHandler: false for an injected one. A handler handed in belongs to whoever handed it in
+        // — a harness or a test commonly points several clients at the same recorder — and the default
+        // would let the first client disposed take the other clients' transport with it.
+        _http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
         _http.BaseAddress = new Uri(options.BaseUrl + "/");
         _http.Timeout = TimeSpan.FromSeconds(30);
         if (options.ApiKey is { Length: > 0 } key)

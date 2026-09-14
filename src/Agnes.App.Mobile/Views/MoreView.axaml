@@ -90,6 +90,25 @@
           </StackPanel>
         </Border>
 
+        <TextBlock Classes="section" Text="THE FLEET" Margin="4,0,0,0" />
+        <Border Classes="card" Padding="0">
+          <!-- Always listed, configured or not: it is the only way to configure it, so hiding it until it
+               is configured would be a setting nobody could reach. -->
+          <Button Theme="{StaticResource RowButton}" Command="{Binding CodeyBoxCommand}">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <c:Icon Grid.Column="0" Data="{StaticResource IconLayers}" Size="20"
+                      Stroke="{DynamicResource TextDim}" Margin="0,0,14,0" />
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="CodeyBox" />
+                <TextBlock Classes="caption" Text="{Binding CodeyBoxDetail}"
+                           TextTrimming="CharacterEllipsis" MaxLines="1" />
+              </StackPanel>
+              <c:Icon Grid.Column="2" Data="{StaticResource IconChevronRight}" Size="17"
+                      Stroke="{DynamicResource TextMuted}" />
+            </Grid>
+          </Button>
+        </Border>
+
         <TextBlock Classes="section" Text="ON THE HOST" Margin="4,0,0,0" />
         <Border Classes="card" Padding="0">
           <StackPanel>
