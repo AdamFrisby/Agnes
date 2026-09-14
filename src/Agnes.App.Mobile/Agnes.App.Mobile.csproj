@@ -14,15 +14,23 @@
          desktop head). -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!--
-      This head is reflection-heavy in two places that the linker cannot see: every XAML binding is a
-      reflection binding (AvaloniaUseCompiledBindingsByDefault is false, so `{Binding Foo}` walks the
-      DataContext's members at runtime), and the whole wire contract is serialized by System.Text.Json's
-      reflection-based serializer — including the polymorphic `SessionEvent` hierarchy, whose
-      `[JsonDerivedType]` subclasses nothing ever names in code. So trimming is on, but scoped: SdkOnly
-      links the framework assemblies only, and leaves every NuGet and project assembly whole.
+      Trim everything — framework, Avalonia, the lot — except the assemblies whose members are only ever
+      named by a string at runtime. Those are listed in ILLink.Descriptors.xml below, which explains
+      which string and why; between them they cover the reflection bindings and the reflection-based
+      JSON over the wire contract, the two things a whole-program trim would quietly break.
+
+      PublishTrimmed=false turns the linker off outright, so AndroidLinkMode on its own is ignored:
+      both have to say yes.
     -->
     <PublishTrimmed>true</PublishTrimmed>
-    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
+    <AndroidLinkMode>Full</AndroidLinkMode>
+    <!--
+      A full trim otherwise sets this to false, and System.Text.Json then throws
+      `InvalidOperationException: Reflection-based serialization has been disabled` on the first message
+      off the hub. We have no source-generated JsonSerializerContext, so reflection *is* the serializer;
+      the types it reflects over are rooted by the descriptor.
+    -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     <!--
       One ABI in a shipped build. arm64 is every current Android phone; x86_64 exists for emulators and
       doubles the APK for a device that will never load it. Debug keeps both so an emulator still works.
@@ -44,6 +52,11 @@
     -->
     <AndroidEnableMarshalMethods>false</AndroidEnableMarshalMethods>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Says what the linker must not remove, and why. -->
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.0" />

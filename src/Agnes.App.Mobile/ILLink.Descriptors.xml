@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the linker cannot see in this head.
+
+  Two things in this app are resolved by name at runtime, from strings the linker never reads:
+
+  1. Every XAML binding is a *reflection* binding. AvaloniaUseCompiledBindingsByDefault is false, so
+     `{Binding Title}` is a string walked against the DataContext's members when the view is realized —
+     754 of them across the views. Nothing in IL mentions those members, so a whole-program trim
+     removes the getters and the screen renders blank rather than throwing.
+
+  2. The wire contract is serialized by System.Text.Json's *reflection-based* serializer (there is no
+     source-generated context). Its properties are read by name, and `SessionEvent`'s `[JsonDerivedType]`
+     subclasses are constructed from a discriminator string — no code names them, so under a full trim
+     the hierarchy loses exactly the subclasses that carry every agent update.
+
+  Both are whole-assembly facts rather than a list of members, and both would fail silently or at the
+  first live event rather than at build time, so these assemblies are rooted entire. They are ~3 MB of
+  the payload between them; the savings from a full trim are in the framework and in the UI stack
+  around them, which stays trimmed.
+-->
+<linker>
+  <!-- The views and view models the reflection bindings resolve against. -->
+  <assembly fullname="Agnes.App.Mobile" preserve="all" />
+  <assembly fullname="Agnes.Ui.Core" preserve="all" />
+
+  <!-- The wire contract and the domain model behind it: SessionEvent and every [JsonDerivedType]. -->
+  <assembly fullname="Agnes.Abstractions" preserve="all" />
+  <assembly fullname="Agnes.Protocol" preserve="all" />
+  <assembly fullname="Agnes.Relay.Protocol" preserve="all" />
+
+  <!-- The hub client's own DTOs, deserialized the same way. -->
+  <assembly fullname="Agnes.Client" preserve="all" />
+
+  <!-- CodeyBox's JSON records (the fleet's board, decisions and events) and the view models the
+       Fleet screens bind to. -->
+  <assembly fullname="Agnes.Plugins.CodeyBox" preserve="all" />
+</linker>
