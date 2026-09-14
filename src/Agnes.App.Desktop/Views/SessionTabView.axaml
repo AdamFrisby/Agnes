@@ -1277,10 +1277,15 @@
                                                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                                             Background="Transparent" BorderThickness="0" Padding="6,5" CornerRadius="6" Cursor="Hand">
                                                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                                                            <ic:SymbolIcon Grid.Column="0" Symbol="Diamond" IconVariant="Filled" FontSize="10" VerticalAlignment="Top" Margin="0,4,0,0"
-                                                                       Foreground="{DynamicResource Good}" IsVisible="{Binding IsMain}" />
-                                                            <ic:SymbolIcon Grid.Column="0" Symbol="Circle" IconVariant="Filled" FontSize="10" VerticalAlignment="Top" Margin="0,4,0,0"
-                                                                       Foreground="{DynamicResource FgFaint}" IsVisible="{Binding !IsMain}" />
+                                                            <!-- One icon whose symbol and hue follow the node, not two with one hidden: a hidden
+                                                                 control is still built and styled, and this list can run to hundreds of rows. -->
+                                                            <ic:SymbolIcon Grid.Column="0" Symbol="{Binding Glyph}" IconVariant="Filled" FontSize="10" VerticalAlignment="Top" Margin="0,4,0,0"
+                                                                       Classes.main="{Binding IsMain}" Classes.sub="{Binding !IsMain}">
+                                                                <ic:SymbolIcon.Styles>
+                                                                    <Style Selector="ic|SymbolIcon.main"><Setter Property="Foreground" Value="{DynamicResource Good}" /></Style>
+                                                                    <Style Selector="ic|SymbolIcon.sub"><Setter Property="Foreground" Value="{DynamicResource FgFaint}" /></Style>
+                                                                </ic:SymbolIcon.Styles>
+                                                            </ic:SymbolIcon>
                                                             <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" TextWrapping="Wrap"
                                                                        Foreground="{DynamicResource Fg}" Opacity="{Binding IsActive, Converter={StaticResource ActiveOpacity}}" />
                                                         </Grid>
@@ -1292,6 +1297,8 @@
                                                 IsVisible="{Binding HasInactiveAgents}" HorizontalAlignment="Left" Cursor="Hand"
                                                 Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
                                                 Padding="6,3" FontSize="11" />
+                                        <TextBlock Text="{Binding AgentRowsNote}" IsVisible="{Binding AgentRowsNote, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                                                   Foreground="{DynamicResource FgDim}" FontSize="11" Margin="6,0,0,0" />
                                     </StackPanel>
                                 </StackPanel>
 

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FluentIcons.Common;
 
 namespace Agnes.Ui.Core.ViewModels;
 
@@ -32,6 +33,11 @@ public sealed class AgentNode : ObservableObject
 
     public string Name { get; }
     public bool IsMain { get; }
+
+    /// <summary>The roster mark: a diamond for the main agent, a dot for a subagent. Named here rather
+    /// than as two icons in the view with one hidden, because a hidden control is still a built and
+    /// styled control, and the roster is the one list in a session that can run to hundreds of rows.</summary>
+    public Symbol Glyph => IsMain ? Symbol.Diamond : Symbol.Circle;
 
     /// <summary>Visual indent level in the flattened agent list: the root and its direct subagents sit at
     /// level 0 (a flat roster in a narrow panel); only deeper nesting indents.</summary>

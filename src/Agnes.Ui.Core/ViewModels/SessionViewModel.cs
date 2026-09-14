@@ -242,7 +242,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // The roster (participant panel) consumes the same SubagentAdded pipeline, de-duped independently.
         _transcript.SubagentAdded += Subagents.Add;
         _transcript.SubagentFinished += FinishSubagent;
-        _transcript.SubagentDetached += id => _detachedSubagents.Add(id);
+        _transcript.SubagentDetached += DetachSubagent;
         // An expired request drops out of "waiting on you" and into "worth reviewing".
         _transcript.PermissionExpired += _ =>
         {
@@ -926,6 +926,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(VisibleAgentRows));
         OnPropertyChanged(nameof(HasInactiveAgents));
         OnPropertyChanged(nameof(MoreAgentsLabel));
+        OnPropertyChanged(nameof(AgentRowsNote));
     }
 
     // ---- agents: collapse + "active only, show all finished" (a subagent goes inactive when its Task
@@ -940,13 +941,44 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         set { if (SetProperty(ref _showAllAgents, value)) { RaiseAgentRows(); } }
     }
 
-    /// <summary>The agents to show: the main agent plus still-running subagents (and any currently-selected
-    /// one), until "show all" reveals the finished ones too.</summary>
-    public IEnumerable<AgentNode> VisibleAgentRows
-        => ShowAllAgents ? AgentRows : AgentRows.Where(n => n.IsMain || n.IsActive || n.IsSelected);
+    /// <summary>How many subagent rows the roster shows before "show all": the ones still running, newest
+    /// first in the log's order. The rest are a click away.</summary>
+    public const int AgentDisplayLimit = 20;
 
-    public bool HasInactiveAgents => !ShowAllAgents && AgentRows.Any(n => !n.IsMain && !n.IsActive && !n.IsSelected);
-    public string MoreAgentsLabel => $"Show all {AgentRows.Count}";
+    /// <summary>How many rows "show all" reveals. A session that has dispatched several hundred subagents
+    /// over its life is real (one live session had 684), and a roster that long is not a list a person
+    /// reads; it is only a list the layout has to build. The latest page is what "all" means here, and the
+    /// note beside it says so.</summary>
+    public const int AgentPageLimit = 100;
+
+    /// <summary>The agents to show: the main agent plus still-running subagents (and any currently-selected
+    /// one), until "show all" reveals the finished ones too — either way bounded, newest kept.</summary>
+    public IEnumerable<AgentNode> VisibleAgentRows
+    {
+        get
+        {
+            var main = AgentRows.Where(n => n.IsMain);
+            var rest = ShowAllAgents ? AgentRows.Where(n => !n.IsMain) : AgentRows.Where(n => !n.IsMain && (n.IsActive || n.IsSelected));
+            var limit = ShowAllAgents ? AgentPageLimit : AgentDisplayLimit;
+            var list = rest.ToList();
+            return main.Concat(list.Count > limit ? list.Skip(list.Count - limit) : list);
+        }
+    }
+
+    /// <summary>Whether rows are held back behind "show all" — finished subagents, or running ones past
+    /// the display limit.</summary>
+    public bool HasInactiveAgents => !ShowAllAgents && AgentRows.Count(n => !n.IsMain) > VisibleAgentRows.Count(n => !n.IsMain);
+    public string MoreAgentsLabel => $"Show all {AgentRows.Count(n => !n.IsMain)}";
+
+    /// <summary>"Latest 100 of 684" when "show all" is still a page; empty when it is really all.</summary>
+    public string AgentRowsNote
+    {
+        get
+        {
+            var total = AgentRows.Count(n => !n.IsMain);
+            return ShowAllAgents && total > AgentPageLimit ? $"Latest {AgentPageLimit} of {total}" : string.Empty;
+        }
+    }
 
     /// <summary>
     /// Retires a subagent that reported its own completion. Distinct from <see cref="MarkAgentInactive"/>,
@@ -967,6 +999,44 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// their own reports (<see cref="FinishSubagent"/>), never from that call's status.
     /// </summary>
     private readonly HashSet<string> _detachedSubagents = new(StringComparer.Ordinal);
+
+    /// <summary>A subagent reported running in the background: its launch call is over, the work is not.
+    /// A fresh report reactivates a row a turn end had retired.</summary>
+    private void DetachSubagent(string subagentId)
+    {
+        _detachedSubagents.Add(subagentId);
+        if (_agentNodes.TryGetValue(subagentId, out var node) && !node.IsActive)
+        {
+            node.IsActive = true;
+            RaiseAgentRows();
+        }
+    }
+
+    /// <summary>
+    /// Retires every background subagent still shown running when the main agent's turn ends. A background
+    /// subagent's end is reported only if the main agent later asks after it, and most never are: one
+    /// live session had 651 of its 684 launches never reported on, each shown as running for months.
+    /// Once the turn that dispatched them is over there is no evidence they are still working and nothing
+    /// that could bring any, so "running" would be a claim rather than a fact. A later report that says
+    /// running puts the row back (<see cref="DetachSubagent"/>).
+    /// </summary>
+    private void RetireDetachedSubagents()
+    {
+        var changed = false;
+        foreach (var id in _detachedSubagents)
+        {
+            if (_agentNodes.TryGetValue(id, out var node) && node.IsActive)
+            {
+                node.IsActive = false;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            RaiseAgentRows();
+        }
+    }
 
     /// <summary>Marks a subagent finished when its Task tool call reaches a terminal status. Right for an
     /// adapter whose launch call runs as long as the subagent does (Claude's Task tool); skipped for one
@@ -2274,6 +2344,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
             case TurnEndedEvent { Reason: not StopReason.Cancelled } turnEnd:
                 IsTurnActive = false;
+                RetireDetachedSubagents();
                 if (turnEnd.Reason is StopReason.EndTurn)
                 {
                     // A turn that finished normally settles the question. Refusal is deliberately excluded:
@@ -2294,6 +2365,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
             case TurnEndedEvent:
                 IsTurnActive = false;
+                RetireDetachedSubagents();
                 break;
 
             case AgentErrorEvent ae:
