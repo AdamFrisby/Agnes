@@ -38,8 +38,15 @@
     <RuntimeIdentifiers Condition="'$(Configuration)' == 'Debug'">android-arm64;android-x64</RuntimeIdentifiers>
     <RuntimeIdentifiers Condition="'$(Configuration)' != 'Debug'">android-arm64</RuntimeIdentifiers>
     <AndroidUseInterpreter>false</AndroidUseInterpreter>
-    <!-- AOT requires trimming, which we can't enable while bindings and the wire contract are resolved
-         reflectively. Release therefore JITs, like the desktop head. -->
+    <!--
+      AOT needs the linker, which is now on, so this is available — and it was measured rather than
+      assumed. Profiled AOT (RunAOTCompilation + AndroidEnableProfiledAot, compiling only what the SDK's
+      startup profile says a launch runs) built and ran correctly on a Lenovo TB310FU, and cost 2.9 MB
+      for 764 ms: 23.0 MB / 5785 ms against 20.1 MB / 6549 ms, medians of five cold starts. Twelve
+      percent off a start that is still five and a half seconds is not worth fourteen percent more APK
+      when the point of this configuration is size — and whatever dominates that six seconds is not JIT.
+      Flip both to true to take the other side of the trade.
+    -->
     <RunAOTCompilation>false</RunAOTCompilation>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <!--
