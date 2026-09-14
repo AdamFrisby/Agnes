@@ -5,5 +5,9 @@ namespace Agnes.App.Mobile.Views;
 
 public partial class SessionsView : UserControl
 {
-    public SessionsView() => AvaloniaXamlLoader.Load(this);
+    public SessionsView()
+    {
+        Agnes.App.Mobile.Services.StartupTrace.MarkOnce("tabview.built SessionsView");
+        AvaloniaXamlLoader.Load(this);
+    }
 }

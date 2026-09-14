@@ -47,6 +47,28 @@ public static class JsonStore
         }
     }
 
+    /// <summary>
+    /// Builds this shape's serializer converters now, by reading a throwaway document of it.
+    ///
+    /// <para>There is no source-generated context here, so the first <c>Deserialize&lt;T&gt;</c> of a
+    /// shape reflects over it, builds converters for every member, and JITs the lot. On a tablet that
+    /// first read cost 363 ms — spent in the middle of the shell's constructor, because that is where
+    /// the first real read happened to be. Doing it early and off-thread does not make the work smaller;
+    /// it makes it overlap with the platform's own start-up instead of queueing behind it.</para>
+    /// </summary>
+    public static void Prewarm<T>(string emptyDocument)
+    {
+        try
+        {
+            JsonSerializer.Deserialize<T>(emptyDocument, Options);
+        }
+        catch
+        {
+            // Warming is an optimisation. If a shape can't be read from an empty document, the real read
+            // will say so properly, in the place that can do something about it.
+        }
+    }
+
     public static string PathFor(string fileName) => Path.Combine(Directory, fileName);
 
     public static T Load<T>(string fileName, T fallback)

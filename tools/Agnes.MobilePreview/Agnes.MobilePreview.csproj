@@ -51,6 +51,9 @@
     <Compile Include="..\..\src\Agnes.App.Mobile\ViewModels\**\*.cs" LinkBase="Mobile\ViewModels" />
     <Compile Include="..\..\src\Agnes.App.Mobile\Views\**\*.cs" LinkBase="Mobile\Views" />
     <Compile Include="..\..\src\Agnes.App.Mobile\Controls\**\*.cs" LinkBase="Mobile\Controls" />
+    <!-- Linked so the instrumented call sites in the view models compile here too; the symbol
+         that would make them do anything is never defined for this harness. -->
+    <Compile Include="..\..\src\Agnes.App.Mobile\Services\StartupTrace.cs" LinkBase="Mobile\Services" />
     <Compile Include="..\..\src\Agnes.App.Mobile\Services\JsonStore.cs" LinkBase="Mobile\Services" />
     <Compile Include="..\..\src\Agnes.App.Mobile\Services\AppState.cs" LinkBase="Mobile\Services" />
     <Compile Include="..\..\src\Agnes.App.Mobile\Services\HostBook.cs" LinkBase="Mobile\Services" />

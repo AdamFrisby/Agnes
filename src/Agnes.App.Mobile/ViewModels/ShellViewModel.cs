@@ -57,6 +57,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     private readonly Action<string>? _openUrl;
     private readonly Action<string>? _clearNotification;
     private readonly Func<bool>? _isMetered;
+    private readonly Task _firstFrame;
 
     public ShellViewModel(
         IAgnesConnector connector,
@@ -71,9 +72,13 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Action<string>? clearNotification = null,
         IReceivedFileHandler? receivedFiles = null,
         Func<bool>? isMeteredNetwork = null,
-        Func<Agnes.App.Mobile.Services.CodeyBoxEndpoint, Agnes.Plugins.CodeyBox.CodeyBoxClient?>? codeyBoxClient = null)
+        Func<Agnes.App.Mobile.Services.CodeyBoxEndpoint, Agnes.Plugins.CodeyBox.CodeyBoxClient?>? codeyBoxClient = null,
+        Task? firstFrame = null)
     {
         _connector = connector;
+        // A head that draws frames hands us the one it is waiting for; anything that doesn't (the tests,
+        // the headless preview) gets a gate that is already open and the original single-phase start.
+        _firstFrame = firstFrame ?? Task.CompletedTask;
         Dispatcher = dispatcher;
         Settings = settings;
         DeviceName = deviceName;
@@ -92,14 +97,18 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
 
         _prompts = new FilePromptStore(JsonStore.PathFor("prompts.json"));
         _policy = new FilePermissionPolicy(JsonStore.PathFor("permission-policy.json"));
+        StartupTrace.Mark("shell.vm: prompt + policy stores");
 
         Hosts = new HostBook(connector, dispatcher);
+        StartupTrace.Mark("shell.vm: HostBook (reads mobile-hosts.json)");
         Sessions = new SessionsViewModel(this, Hosts, _prompts, _policy, Notifier);
+        StartupTrace.Mark("shell.vm: SessionsViewModel");
         // Built before the Inbox, because the Inbox projects its "waiting on you" rows. The client
         // factory is injected for the same reason the received-file handler is: the headless harness and
         // the render tests need these screens without an orchestrator behind them, and returning null
         // there means "configured, but nothing to talk to" — which is exactly a canned fleet.
         CodeyBox = new CodeyBoxViewModel(this, clientFactory: codeyBoxClient);
+        StartupTrace.Mark("shell.vm: CodeyBoxViewModel (reads codeybox.json)");
         Layout.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(WindowLayout.TwoPane))
@@ -118,6 +127,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Inbox = new InboxViewModel(this, Hosts, Sessions, CodeyBox);
         Search = new SearchViewModel(this, Hosts, Sessions);
         More = new MoreViewModel(this);
+        StartupTrace.Mark("shell.vm: Inbox + Search + More");
 
         SelectTabCommand = new RelayCommand<string>(name =>
         {
@@ -468,7 +478,15 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     /// </summary>
     public async Task StartAsync()
     {
-        await Sessions.RestoreAsync().ConfigureAwait(false);
+        // Phase one is the screen: what this device remembers, its hosts, and their catalogues.
+        await Sessions.ListAsync().ConfigureAwait(false);
+
+        // Then wait for the head to get that screen up before spending the UI thread on fifteen
+        // snapshot-and-tail subscriptions. The list is already complete; this only decides whether the
+        // reattach competes with the first layout or follows it, and on a tablet it was winning.
+        await _firstFrame.ConfigureAwait(false);
+        StartupTrace.Mark("restore: first frame is up — reattaching");
+        await Sessions.ReattachAllAsync().ConfigureAwait(false);
 
 #if DEBUG
         // Debug only: first launch with nothing paired seeds the offline demo so there is something to

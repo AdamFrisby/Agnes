@@ -22,6 +22,28 @@ public sealed record MobileSettings(
     public void Save() => JsonStore.Save("mobile-settings.json", this);
 }
 
+/// <summary>
+/// The shapes a launch reads off disk, warmed before it reads them.
+/// </summary>
+public static class LocalState
+{
+    /// <summary>
+    /// Starts building the serializer's converters for this device's own state files, on a background
+    /// thread, at the earliest point the app has one.
+    ///
+    /// <para>Called from <c>MainApplication.CustomizeAppBuilder</c>, roughly a second and a half before
+    /// the shell's constructor reads any of these — long enough that by the time it does, the work is
+    /// done and the read is a read. See <see cref="JsonStore.Prewarm{T}"/> for what the work is.</para>
+    /// </summary>
+    public static void Prewarm() => Task.Run(() =>
+    {
+        JsonStore.Prewarm<MobileSettings>("{}");
+        JsonStore.Prewarm<List<SavedHost>>("[]");
+        JsonStore.Prewarm<List<SavedSession>>("[]");
+        JsonStore.Prewarm<CodeyBoxConfig>("{}");
+    });
+}
+
 /// <summary>A host this device has paired with. The token is the per-device bearer token issued at
 /// pairing — revocable host-side, and never shared between devices.</summary>
 /// <param name="Role">

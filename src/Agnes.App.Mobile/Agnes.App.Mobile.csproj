@@ -61,6 +61,15 @@
     <AndroidEnableMarshalMethods>true</AndroidEnableMarshalMethods>
   </PropertyGroup>
 
+  <!--
+    Launch instrumentation, off unless asked for: `-p:AgnesStartupTrace=true` defines the symbol that
+    un-deletes StartupTrace's call sites (they are [Conditional], so without it they are not compiled at
+    all and cost nothing). See Services/StartupTrace.cs for how to read the result.
+  -->
+  <PropertyGroup Condition="'$(AgnesStartupTrace)' == 'true'">
+    <DefineConstants>$(DefineConstants);AGNES_STARTUP_TRACE</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Says what the linker must not remove, and why. -->
     <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />

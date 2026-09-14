@@ -5,5 +5,9 @@ namespace Agnes.App.Mobile.Views;
 
 public partial class CodeyBoxView : UserControl
 {
-    public CodeyBoxView() => AvaloniaXamlLoader.Load(this);
+    public CodeyBoxView()
+    {
+        Agnes.App.Mobile.Services.StartupTrace.MarkOnce("tabview.built CodeyBoxView");
+        AvaloniaXamlLoader.Load(this);
+    }
 }

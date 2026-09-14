@@ -57,22 +57,46 @@
            against that tab's own view model, not the shell. -->
       <Grid Name="PaneGrid" Grid.Row="0" Grid.Column="1" ColumnDefinitions="*,0">
         <Panel Grid.Column="0" Name="TabsPane">
-          <Panel IsVisible="{Binding IsSessionsTab}">
-            <v:SessionsView DataContext="{Binding Sessions}" />
-          </Panel>
-          <Panel IsVisible="{Binding IsInboxTab}">
-            <v:InboxView DataContext="{Binding Inbox}" />
-          </Panel>
-          <Panel IsVisible="{Binding IsSearchTab}">
-            <v:SearchView DataContext="{Binding Search}" />
-          </Panel>
-          <Panel IsVisible="{Binding IsMoreTab}">
-            <v:MoreView DataContext="{Binding More}" />
-          </Panel>
+          <!--
+            One ContentControl per destination, and the view is its template rather than its child.
+
+            That one indirection is what makes a launch show the Sessions list instead of building all
+            five screens first. A ContentPresenter materializes its child when it is measured, and an
+            invisible control is never measured — so a cold start builds exactly the tab you land on,
+            and each of the others the first time you go there. Measured on a Lenovo TB310FU: the shell's
+            constructor went from 1038 ms to 190 ms.
+
+            Nothing about the lifetime changes: Content never changes, so the view built on first visit
+            is the one you come back to, with its list and its scroll position. IsVisible stays on the
+            wrapper for the reason it always did — on the view itself it would resolve against that tab's
+            own view model, not the shell.
+          -->
+          <ContentControl IsVisible="{Binding IsSessionsTab}" Content="{Binding Sessions}">
+            <ContentControl.ContentTemplate>
+              <DataTemplate><v:SessionsView /></DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+          <ContentControl IsVisible="{Binding IsInboxTab}" Content="{Binding Inbox}">
+            <ContentControl.ContentTemplate>
+              <DataTemplate><v:InboxView /></DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+          <ContentControl IsVisible="{Binding IsSearchTab}" Content="{Binding Search}">
+            <ContentControl.ContentTemplate>
+              <DataTemplate><v:SearchView /></DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+          <ContentControl IsVisible="{Binding IsMoreTab}" Content="{Binding More}">
+            <ContentControl.ContentTemplate>
+              <DataTemplate><v:MoreView /></DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
           <!-- The fifth destination exists only on a device that watches a CodeyBox fleet; see ShellTab. -->
-          <Panel IsVisible="{Binding IsCodeyBoxTab}">
-            <v:CodeyBoxView DataContext="{Binding CodeyBox}" />
-          </Panel>
+          <ContentControl IsVisible="{Binding IsCodeyBoxTab}" Content="{Binding CodeyBox}">
+            <ContentControl.ContentTemplate>
+              <DataTemplate><v:CodeyBoxView /></DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
         </Panel>
 
         <!-- The detail pane: the open session or fleet item beside its list, on a window with two panes. -->
