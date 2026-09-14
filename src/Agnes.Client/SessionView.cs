@@ -23,6 +23,27 @@ public sealed class SessionView
     /// <summary>Highest applied sequence; the cursor to resume from on reconnect.</summary>
     public long LastSequence { get; private set; }
 
+    /// <summary>How many events a durable view keeps in memory once its history has been consumed.</summary>
+    public const int RetainedTail = 500;
+
+    /// <summary>
+    /// True when every event this view applies is also written to a durable local cache, so the list
+    /// here is a convenience rather than the only copy. A consumer that has read the history — a
+    /// transcript built from it — may then <see cref="TrimTo"/> the tail, and the view keeps itself to
+    /// <see cref="RetainedTail"/> events from then on. Set by the connection, which knows whether it
+    /// has a cache; false by default, so a view without one behaves as it always did.
+    /// </summary>
+    public bool HistoryIsDurable { get; set; }
+
+    /// <summary>The oldest sequence still held in <see cref="Events"/>; differs from <see cref="FirstSequence"/>
+    /// once the head of a durable view has been trimmed away.</summary>
+    public long HeldFrom
+    {
+        get { lock (_gate) { return _events.Count == 0 ? 0 : _events[0].Sequence; } }
+    }
+
+    private bool _trimmed;
+
     /// <summary>The oldest sequence loaded, or 0 when nothing is. Greater than 1 means the view started
     /// part-way through the log — a tail-first subscription — and older history can still be fetched.</summary>
     public long FirstSequence { get; private set; }
@@ -116,13 +137,43 @@ public sealed class SessionView
         {
             return false;
         }
-        if (_events.Count == 0)
+        if (_events.Count == 0 && FirstSequence == 0)
         {
             FirstSequence = @event.Sequence;
         }
         _events.Add(@event);
         LastSequence = @event.Sequence;
+
+        // Once a durable view has been trimmed, it stays a tail: a session that streams all day must not
+        // grow back to the whole log it was relieved of.
+        if (_trimmed && _events.Count > RetainedTail * 2)
+        {
+            _events.RemoveRange(0, _events.Count - RetainedTail);
+        }
         return true;
+    }
+
+    /// <summary>
+    /// Drops all but the last <paramref name="keep"/> events from memory. Only a durable view obliges —
+    /// the events are on disk and can be read back through the connection's cache — and only a consumer
+    /// that has finished with the history should ask: the log of a long session is the bulk of what an
+    /// open tab costs, and once the transcript is built from it nothing reads it again. Returns how many
+    /// were released.
+    /// </summary>
+    public int TrimTo(int keep = RetainedTail)
+    {
+        lock (_gate)
+        {
+            if (!HistoryIsDurable || _events.Count <= keep)
+            {
+                return 0;
+            }
+
+            var drop = _events.Count - Math.Max(0, keep);
+            _events.RemoveRange(0, drop);
+            _trimmed = true;
+            return drop;
+        }
     }
 
     /// <summary>

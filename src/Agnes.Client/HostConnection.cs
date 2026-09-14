@@ -259,6 +259,9 @@ public sealed class HostConnection : IAgnesHost
         var view = new SessionView(sessionId);
         if (_replay is { } replay)
         {
+            // Every event the view applies also lands in the cache, so the view may let its history go
+            // once whoever built from it says so (SessionView.TrimTo).
+            view.HistoryIsDurable = true;
             view.LiveApplied += (previous, @event) => replay.RecordLive(sessionId, previous, @event);
         }
         return view;

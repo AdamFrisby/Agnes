@@ -299,6 +299,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // standing rule covers is answered here, rather than sixteen dead ones being answered above.
         AutoAnswerPendingPermission();
 
+        // The transcript is built; nothing here reads the raw history again. A view whose events are also
+        // on disk lets them go — a long session's log was most of what its open tab weighed.
+        _view.TrimTo();
+
         _view.EventAppended += OnEvent;
         _host.StateChanged += OnHostStateChanged;
         _host.ReadStateChanged += OnReadStateChanged;

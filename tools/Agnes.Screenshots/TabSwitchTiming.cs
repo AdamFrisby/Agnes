@@ -98,6 +98,7 @@ public static class TabSwitchTiming
         window.Show();
         MainWindowViewModel.ApplyTheme("Dark");
         vm.Showcase.Dismiss();
+        var heapBefore = Heap();
         var opened = Stopwatch.StartNew();
         vm.RestoreAsync();
 
@@ -107,6 +108,8 @@ public static class TabSwitchTiming
             && docs.All(d => d.Session is not null && d.Session.Items.Count > 0), 180_000);
         Program.Settle(1500);
         Console.WriteLine($"all sessions open after {opened.Elapsed.TotalSeconds:0.0} s");
+        var heapAfter = Heap();
+        Console.WriteLine($"managed heap: {heapBefore / 1048576.0:0} MB before the tabs → {heapAfter / 1048576.0:0} MB with them open (+{(heapAfter - heapBefore) / 1048576.0:0} MB); working set {Environment.WorkingSet / 1048576.0:0} MB");
         foreach (var d in docs)
         {
             var s = d.Session!;
@@ -248,6 +251,15 @@ public static class TabSwitchTiming
 
         window.Close();
         cache.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    /// <summary>The managed heap after a full, compacting collection — what the tabs actually hold.</summary>
+    private static long Heap()
+    {
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+        return GC.GetTotalMemory(forceFullCollection: true);
     }
 
     /// <summary>What the visuals of the active tab are: by control type, by region, and how many of them
