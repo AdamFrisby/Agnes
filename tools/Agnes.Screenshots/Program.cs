@@ -41,6 +41,16 @@ public static class Program
             return;
         }
 
+        // Timing mode (--switch-timing) measures a tab switch between this desktop's real sessions; see TabSwitchTiming.
+        if (TabSwitchTiming.TryParse(args) is { } timing)
+        {
+            _outDir = timing.OutDir;
+            Directory.CreateDirectory(_outDir);
+            using var timingSession = HeadlessUnitTestSession.StartNew(typeof(HeadlessApp));
+            timingSession.Dispatch(() => TabSwitchTiming.Run(timing), CancellationToken.None).GetAwaiter().GetResult();
+            return;
+        }
+
         // Settings mode (--settings <category>) renders one Settings page over the simulator; see SettingsCapture.
         if (SettingsCapture.TryParse(args) is { } settings)
         {
