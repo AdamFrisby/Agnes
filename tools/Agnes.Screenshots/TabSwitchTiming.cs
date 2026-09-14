@@ -37,6 +37,14 @@ public static class TabSwitchTiming
         /// <summary>Keep switching for this many seconds after the measured rounds, so a sampler outside
         /// the process (dotnet-stack) can catch the UI thread in the act.</summary>
         public int LoopSeconds { get; init; }
+
+        /// <summary>Force the hot host down to this many attached views before the rounds and the loop, so
+        /// every switch is a warm re-attach (1) rather than a visibility flip — the cost to profile next.</summary>
+        public int? Capacity { get; init; }
+
+        /// <summary>Also forget each document's view in the recycler before activating it, so every switch is
+        /// a cold rebuild.</summary>
+        public bool Cold { get; init; }
         public int Width { get; init; } = 1700;
         public int Height { get; init; } = 1000;
     }
@@ -59,6 +67,8 @@ public static class TabSwitchTiming
             OutDir = Value("--out") ?? Path.Combine(Directory.GetCurrentDirectory(), "screenshots", "timing"),
             Rounds = int.TryParse(Value("--rounds"), out var r) ? r : 4,
             LoopSeconds = int.TryParse(Value("--loop"), out var l) ? l : 0,
+            Capacity = int.TryParse(Value("--capacity"), out var c) ? c : null,
+            Cold = args.Contains("--cold", StringComparer.Ordinal),
         };
     }
 
@@ -109,6 +119,21 @@ public static class TabSwitchTiming
             return;
         }
 
+        var hotHost = window.GetVisualDescendants().OfType<HotDocumentHost>().FirstOrDefault();
+        if (options.Capacity is { } cap && hotHost is not null)
+        {
+            hotHost.Capacity = cap;
+            Console.WriteLine($"hot host capacity set to {cap}");
+        }
+        var recycler = Avalonia.Application.Current?.Resources.TryGetResource("DockRecycler", null, out var r) == true ? r as PerItemControlRecycling : null;
+        void Chill(SessionDocument doc)
+        {
+            if (options.Cold)
+            {
+                recycler?.Forget(doc);
+            }
+        }
+
         for (var round = 0; round < options.Rounds; round++)
         {
             foreach (var target in docs)
@@ -118,6 +143,7 @@ public static class TabSwitchTiming
                     continue;
                 }
 
+                Chill(target);
                 var sw = Stopwatch.StartNew();
                 vm.ActivateSessionCommand.Execute(target);
                 var activate = sw.Elapsed;
@@ -211,7 +237,9 @@ public static class TabSwitchTiming
             var n = 0;
             while (DateTime.UtcNow < until)
             {
-                vm.ActivateSessionCommand.Execute(docs[n++ % docs.Count]);
+                var next = docs[n++ % docs.Count];
+                Chill(next);
+                vm.ActivateSessionCommand.Execute(next);
                 Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
                 window.UpdateLayout();
             }

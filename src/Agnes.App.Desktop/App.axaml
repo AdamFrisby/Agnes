@@ -18,6 +18,7 @@
                  control-resource overrides that put stock controls on the same palette. Consumers bind
                  DynamicResource so a theme switch applies live. -->
             <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/DockDocuments.axaml" />
                 <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Tokens.axaml" />
                 <!-- The ported Spacegray flavours: colour sets keyed by their own theme variants. -->
                 <ResourceInclude Source="avares://Agnes.App.Desktop/Themes/Spacegray.axaml" />
@@ -28,6 +29,8 @@
             <!-- One shared dock content recycler (see the DockControl style below); the factory evicts a
                  document's cached view when its tab closes, so views don't accumulate. -->
             <app:PerItemControlRecycling x:Key="DockRecycler" />
+            <!-- How many document views stay attached and hidden for an instant switch; see HotDocumentHost. -->
+            <x:Int32 x:Key="HotDocumentCapacity">8</x:Int32>
         </ResourceDictionary>
     </Application.Resources>
 
@@ -107,6 +110,11 @@
              DockControl, including floated HostWindows. -->
         <Style Selector="dc|DockControl">
             <Setter Property="(cr:ControlRecyclingDataTemplate.ControlRecycling)" Value="{StaticResource DockRecycler}" />
+        </Style>
+        <!-- The document dock keeps its recently shown tabs attached (Themes/DockDocuments.axaml): a switch
+             among them is a visibility flip, not a re-attach of a thousand-visual view. -->
+        <Style Selector="dc|DocumentControl">
+            <Setter Property="Template" Value="{StaticResource AgnesDocumentControlTemplate}" />
         </Style>
         <!-- Markdown rendering (Markdown.Avalonia) defaults its monospace font to Consolas — absent on
              Linux/macOS and fatal to glyph creation. Point both surfaces at the app's embedded mono face
