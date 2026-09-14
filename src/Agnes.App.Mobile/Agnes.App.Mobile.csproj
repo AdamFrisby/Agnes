@@ -43,14 +43,15 @@
     <RunAOTCompilation>false</RunAOTCompilation>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <!--
-      Marshal methods (Release default) pre-bind each Java-callable wrapper's native methods, and they
-      are emitted by the linker. With the linker off they were emitted by nothing, so the APK's wrappers
-      declared native methods that nothing implemented and that no longer self-registered, and it died on
-      launch with `UnsatisfiedLinkError: No implementation found for ... n_onCreate()` before any of our
-      code ran. The linker is on again above, so that particular hole is closed — left off until a
-      trimmed build has been proven on a device, then re-evaluated on its own.
+      Marshal methods pre-bind each Java-callable wrapper's native methods instead of registering them
+      one by one at startup. They are *emitted by the linker*: with AndroidLinkMode=None they were
+      emitted by nothing, so the wrappers declared native methods that nothing implemented and that no
+      longer self-registered, and the packaged app died on launch with
+      `UnsatisfiedLinkError: No implementation found for ... n_onCreate()` before any of our code ran.
+      That was a symptom of the linker being off, not of marshal methods; with it on they work, and this
+      is the Release default anyway.
     -->
-    <AndroidEnableMarshalMethods>false</AndroidEnableMarshalMethods>
+    <AndroidEnableMarshalMethods>true</AndroidEnableMarshalMethods>
   </PropertyGroup>
 
   <ItemGroup>
