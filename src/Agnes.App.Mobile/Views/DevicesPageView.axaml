@@ -30,19 +30,21 @@
                 <StackPanel Spacing="10">
                   <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,10,0">
-                      <StackPanel Orientation="Horizontal" Spacing="7">
-                        <TextBlock Text="{Binding Name}" Classes="strong" VerticalAlignment="Center" />
+                      <!-- A WrapPanel, not a horizontal StackPanel: on a phone the name plus two pills is
+                           wider than the column, and a StackPanel ran the pills under the Revoke button. -->
+                      <WrapPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding Name}" Classes="strong" VerticalAlignment="Center" Margin="0,0,7,4" />
                         <!-- The role, as a plain pill. Not one of the status tints: those already mean
                              needs-you / running / failed, and a role is none of those. -->
-                        <Border Name="RoleChip" Classes="pill"><TextBlock Text="{Binding RoleChip}" /></Border>
-                        <Border Classes="pill accent" IsVisible="{Binding IsCurrentDevice}">
+                        <Border Name="RoleChip" Classes="pill" Margin="0,0,7,4"><TextBlock Text="{Binding RoleChip}" /></Border>
+                        <Border Classes="pill accent" Margin="0,0,7,4" IsVisible="{Binding IsCurrentDevice}">
                           <TextBlock Text="this device" />
                         </Border>
-                      </StackPanel>
+                      </WrapPanel>
                       <TextBlock Classes="caption" Text="{Binding Admission}" IsVisible="{Binding Admission, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                       <TextBlock Classes="caption" Text="{Binding LastSeen}" />
                     </StackPanel>
-                    <Button Grid.Column="1" Theme="{StaticResource DangerButton}" MinHeight="38"
+                    <Button Grid.Column="1" Theme="{StaticResource DangerButton}" MinHeight="38" VerticalAlignment="Top"
                             Padding="14,0" Content="Revoke"
                             Command="{Binding $parent[UserControl].DataContext.RevokeCommand}"
                             CommandParameter="{Binding}" />

@@ -349,6 +349,38 @@ not the null backend, because the display surface's job is to decode a JPEG and 
 `IsHitTestVisible` is set per sheet in `Present()`, which only runs on a *change* — so the initial
 state has to be set in the constructor, or it silently eats every tap on the app.
 
+**Pairing a typed address on a self-signed host learns the certificate first.** A scanned QR carries the
+host's fingerprint; a typed `https://` address carries nothing, so the first request used to fail on trust
+and the screen said "can't reach that address" about a host that was right there. `ConnectPageViewModel`
+now reads the certificate the host presents (`HostFingerprint.ProbeAsync`), shows the SHA-256 grouped for
+comparison with the host's log, probes and pairs through a client pinned to it, and saves that pin. A
+host this device already pinned that presents a different key is refused outright.
+
+**The typed pairing code closes when the host's first device pairs.** That is the host's rule (see
+`security.md`); the phone learns it from `/auth/methods` (`AuthMethods.PairingCodeOpen`) and replaces the
+code field with the two ways that still work — ask for approval from a paired device, or scan a QR from
+one. A 401 from `/pair` carries the host's own sentence, and that is what the screen shows.
+
+**Sessions attach tail-first.** Every card used to subscribe from sequence zero; one live session held
+338,000 events (169 MB), and the tablet spent minutes downloading it — for every card, since the list
+attached them all. A card now attaches only when opened, from the last `SessionsViewModel.TailWindow`
+events (the head comes from `SessionSummary.HeadSequence`, kept on `SavedSession`), and the page offers
+"Load everything" (`IAgnesHost.LoadHistoryAsync` → `SessionView.Prepend`, then a rebuilt view model). A
+card that was never opened shows what the host last said the session was doing, not "Reattaching".
+
+**A page pushed before its subscription lands must be told.** `SessionPageViewModel.Adopt` existed and
+nothing called it, so the page sat on "Reattaching…" until Retry. `SessionsViewModel.AttachAsync` now
+adopts the session into any open page for that entry.
+
+## Iterating on a real device
+
+With USB debugging on, `adb` is enough: publish the APK (`dotnet publish … -f net10.0-android`), `adb
+install -r`, `adb exec-out screencap -p > shot.png`, `adb shell input tap X Y` / `input text` to drive,
+`adb logcat --pid=$(adb shell pidof -s dev.agnes.app)` for the app's own log. To check the phone form
+factor on a tablet, `adb shell wm size 720x1560; wm density 280` gives a 411×891 dp display (the app
+reads dp, so an over-large density on a small pixel size makes everything giant); `wm size reset; wm
+density reset` restores it. uiautomator dumps are empty for Avalonia — read screenshots instead.
+
 ## Building it
 
 Needs the `android` workload, a JDK 17+, and the Android SDK (API 36 platform + build-tools):
