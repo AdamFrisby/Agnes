@@ -1509,7 +1509,7 @@
                                             <TextBlock Text="APPROVALS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                         </StackPanel>
                                     </Button>
-                                    <ItemsControl ItemsSource="{Binding Approvals}" IsVisible="{Binding ApprovalsExpanded}">
+                                    <ItemsControl ItemsSource="{Binding VisibleApprovals}" IsVisible="{Binding ApprovalsExpanded}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,3">
@@ -1525,6 +1525,10 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    <Button Content="{Binding MoreApprovalsLabel}" Command="{Binding ShowAllApprovalsCommand}"
+                                            IsVisible="{Binding HasMoreApprovals}" HorizontalAlignment="Left" Cursor="Hand"
+                                            Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
+                                            Padding="6,3" FontSize="11" />
                                 </StackPanel>
 
                                 <!-- MCP CALLS: forwarded host MCP tools a sandboxed agent invoked -->
@@ -1539,7 +1543,7 @@
                                             <TextBlock Text="MCP CALLS" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                         </StackPanel>
                                     </Button>
-                                    <ItemsControl ItemsSource="{Binding McpCalls}" IsVisible="{Binding McpCallsExpanded}">
+                                    <ItemsControl ItemsSource="{Binding VisibleMcpCalls}" IsVisible="{Binding McpCallsExpanded}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,3">
@@ -1551,6 +1555,10 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    <Button Content="{Binding MoreMcpCallsLabel}" Command="{Binding ShowAllMcpCallsCommand}"
+                                            IsVisible="{Binding HasMoreMcpCalls}" HorizontalAlignment="Left" Cursor="Hand"
+                                            Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
+                                            Padding="6,3" FontSize="11" />
                                 </StackPanel>
 
                                 <!-- CREDENTIALS: brokered git-credential grants — collapsible, and capped to the

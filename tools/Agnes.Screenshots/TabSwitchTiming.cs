@@ -319,6 +319,22 @@ public static class TabSwitchTiming
             }
         }
 
+        // Hidden subtrees, by their roots: an element that is not shown whose parent is. These are built and
+        // styled for nothing until they show, so the biggest are the candidates for lazy construction.
+        Console.WriteLine("--- hidden roots (largest first)");
+        var hiddenRoots = all.OfType<Control>()
+            .Where(c => !c.IsEffectivelyVisible && c.GetVisualParent() is Control parent && parent.IsEffectivelyVisible)
+            .Select(c => (c, count: 1 + c.GetVisualDescendants().Count()))
+            .OrderByDescending(t => t.count)
+            .Take(14);
+        foreach (var (c, count) in hiddenRoots)
+        {
+            var chain = string.Join(" < ", c.GetVisualAncestors().OfType<Control>().TakeWhile(a => !ReferenceEquals(a, view))
+                .Where(a => !string.IsNullOrEmpty(a.Name)).Select(a => a.Name).Take(3));
+            var dc = c.DataContext?.GetType().Name;
+            Console.WriteLine($"{count,7:N0}  {c.GetType().Name,-16} '{c.Name}' classes=[{string.Join(' ', c.Classes.Where(k => !k.StartsWith(':')))}] dc={dc} in [{chain}]");
+        }
+
         // The named element with the most descendants of its own, at any depth: what to look at first.
         Console.WriteLine("--- heaviest named elements (own descendants)");
         var named = all.OfType<Control>().Where(c => !string.IsNullOrEmpty(c.Name))

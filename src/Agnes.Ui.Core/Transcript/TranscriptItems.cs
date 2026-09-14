@@ -301,9 +301,9 @@ public sealed class PlanItemView : TranscriptItem
     /// <summary>How many entries the panel lists at once. A plan is read from the top — what is next —
     /// so the cap keeps the head; one live session carried 171 open entries, more than a panel can show
     /// or a person act on, and every one of them was a built control.</summary>
-    public const int PageLimit = 60;
+    public const int PageLimit = 30;
 
-    /// <summary>"First 60 of 171" when the list is cut; empty when it is whole.</summary>
+    /// <summary>"First 30 of 171" when the list is cut; empty when it is whole.</summary>
     public string OverflowNote
     {
         get

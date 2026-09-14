@@ -53,7 +53,7 @@ public class PanelCapsTests
 
         Assert.Equal(PlanItemView.PageLimit, plan.VisibleEntries.Count);
         Assert.Equal("step 1", plan.VisibleEntries[0].Content);
-        Assert.Equal("First 60 of 171", plan.OverflowNote);
+        Assert.Equal("First 30 of 171", plan.OverflowNote);
 
         plan.Entries = entries.Take(10).ToList();
         Assert.Equal(10, plan.VisibleEntries.Count);

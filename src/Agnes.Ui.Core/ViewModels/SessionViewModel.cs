@@ -136,6 +136,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         ToggleAgentsCommand = new RelayCommand(() => AgentsExpanded = !AgentsExpanded);
         ShowAllAgentsCommand = new RelayCommand(() => ShowAllAgents = true);
         ShowAllFilesCommand = new RelayCommand(() => ShowAllFiles = true);
+        ShowAllApprovalsCommand = new RelayCommand(() => ShowAllApprovals = true);
+        ShowAllMcpCallsCommand = new RelayCommand(() => ShowAllMcpCalls = true);
         ShowAllCredentialsCommand = new RelayCommand(() => ShowAllCredentials = true);
         CompactCommand = new RelayCommand(() => SendControl("/compact"));
         ClearContextCommand = new RelayCommand(() => SendControl("/clear"));
@@ -1133,7 +1135,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool HasTools => ToolActivity.Count > 0;
 
     // ---- left-panel collapse + the tools "show more" cap ----
-    private const int ToolDisplayLimit = 50;
+    /// <summary>How many tool calls the panel lists before "show all". Twenty, not fifty: a person reads the
+    /// last few, and every row is a built control on a tab that must attach in a blink.</summary>
+    public const int ToolDisplayLimit = 20;
 
     private bool _showAllTools;
     public bool ShowAllTools
@@ -1158,7 +1162,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool FilesExpanded { get => _filesExpanded; set => SetProperty(ref _filesExpanded, value); }
 
     /// <summary>How many modified files the panel lists before "show all": the most recently touched.</summary>
-    public const int FileDisplayLimit = 50;
+    public const int FileDisplayLimit = 20;
 
     /// <summary>How many "show all" reveals — a page, and the note says so. One live session had touched
     /// 549 files; a list that long is built by the layout, not read by a person.</summary>
@@ -1214,6 +1218,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public System.Windows.Input.ICommand ToggleAgentsCommand { get; }
     public System.Windows.Input.ICommand ShowAllAgentsCommand { get; }
     public System.Windows.Input.ICommand ShowAllFilesCommand { get; }
+    public System.Windows.Input.ICommand ShowAllApprovalsCommand { get; }
+    public System.Windows.Input.ICommand ShowAllMcpCallsCommand { get; }
     public System.Windows.Input.ICommand ShowAllCredentialsCommand { get; }
 
     /// <summary>Ask the agent to compact / clear its context. Sent as a control command the agent
@@ -1253,6 +1259,45 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     private bool _mcpCallsExpanded = true;
     public bool McpCallsExpanded { get => _mcpCallsExpanded; set => SetProperty(ref _mcpCallsExpanded, value); }
+
+    /// <summary>How many approvals and MCP calls the panel lists before "show all" — the newest.</summary>
+    public const int AuditDisplayLimit = 20;
+
+    private bool _showAllApprovals;
+    public bool ShowAllApprovals
+    {
+        get => _showAllApprovals;
+        set { if (SetProperty(ref _showAllApprovals, value)) { RaiseAudit(); } }
+    }
+
+    private bool _showAllMcpCalls;
+    public bool ShowAllMcpCalls
+    {
+        get => _showAllMcpCalls;
+        set { if (SetProperty(ref _showAllMcpCalls, value)) { RaiseAudit(); } }
+    }
+
+    /// <summary>Approvals are kept newest-first, so the cap keeps the head.</summary>
+    public IEnumerable<PermissionAuditEntry> VisibleApprovals
+        => ShowAllApprovals || Approvals.Count <= AuditDisplayLimit ? Approvals : Approvals.Take(AuditDisplayLimit);
+
+    public IEnumerable<McpCallEntry> VisibleMcpCalls
+        => ShowAllMcpCalls || McpCalls.Count <= AuditDisplayLimit ? McpCalls : McpCalls.Take(AuditDisplayLimit);
+
+    public bool HasMoreApprovals => !ShowAllApprovals && Approvals.Count > AuditDisplayLimit;
+    public bool HasMoreMcpCalls => !ShowAllMcpCalls && McpCalls.Count > AuditDisplayLimit;
+    public string MoreApprovalsLabel => $"Show all {Approvals.Count}";
+    public string MoreMcpCallsLabel => $"Show all {McpCalls.Count}";
+
+    private void RaiseAudit()
+    {
+        OnPropertyChanged(nameof(VisibleApprovals));
+        OnPropertyChanged(nameof(VisibleMcpCalls));
+        OnPropertyChanged(nameof(HasMoreApprovals));
+        OnPropertyChanged(nameof(HasMoreMcpCalls));
+        OnPropertyChanged(nameof(MoreApprovalsLabel));
+        OnPropertyChanged(nameof(MoreMcpCallsLabel));
+    }
 
     private bool _reviewCommentsExpanded = true;
     public bool ReviewCommentsExpanded { get => _reviewCommentsExpanded; set => SetProperty(ref _reviewCommentsExpanded, value); }
@@ -2379,6 +2424,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 var title = _permissionTitles.TryGetValue(rr.RequestId, out var t) ? t : "Permission";
                 Approvals.Insert(0, new PermissionAuditEntry(title, rr.Outcome, rr.OptionId, @event.Timestamp));
                 OnPropertyChanged(nameof(HasApprovals));
+                RaiseAudit();
                 RaisePanels();
                 break;
 
@@ -2465,6 +2511,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case McpToolCallEvent mcp:
                 McpCalls.Insert(0, new McpCallEntry(mcp.Server, mcp.Tool, @event.Timestamp));
                 OnPropertyChanged(nameof(HasMcpCalls));
+                RaiseAudit();
                 RaisePanels();
                 break;
 
