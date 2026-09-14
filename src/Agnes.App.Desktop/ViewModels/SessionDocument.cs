@@ -903,6 +903,21 @@ public sealed partial class SessionDocument : Document, ITraySession
     [ObservableProperty]
     private bool _isSleeping;
 
+    /// <summary>True from the moment a session is asked for until its transcript is attached — the tab
+    /// body shows <see cref="LoadingText"/> instead of nothing.</summary>
+    [ObservableProperty]
+    private bool _isLoadingSession;
+
+    [ObservableProperty]
+    private string _loadingText = "Loading the session…";
+
+    /// <summary>Marks the tab as loading, with what it is doing.</summary>
+    public void BeginLoading(string what)
+    {
+        LoadingText = what;
+        IsLoadingSession = true;
+    }
+
     /// <summary>
     /// Releases the session this tab holds — the view model, the transcript, the event view — keeping only
     /// what names it: the descriptor, the title, the host. The tab stays in the strip and comes back from
@@ -928,6 +943,7 @@ public sealed partial class SessionDocument : Document, ITraySession
     public void AttachSession(SessionViewModel session)
     {
         IsSleeping = false;
+        IsLoadingSession = false;
         Session = session;
         Stage = TabStage.Live;
         StatusText = "Connected";

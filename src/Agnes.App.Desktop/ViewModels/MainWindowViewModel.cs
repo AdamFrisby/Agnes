@@ -2567,6 +2567,29 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         return session;
     }
 
+    /// <summary>
+    /// Builds a session's view model off the UI thread. Constructing one replays the whole event log into
+    /// a transcript, which for a long session is most of a second the window would otherwise spend frozen
+    /// after the click that opened it; the view model is plain state until it is attached, and its live
+    /// events are buffered while it builds, so nothing needs the UI thread until the hand-over.
+    /// </summary>
+    private Task<SessionViewModel> BuildSessionAsync(IAgnesHost host, SessionView view, string title, SessionDocument? loading = null)
+    {
+        var count = view.Events.Count;
+        _dispatcher.Post(() => loading?.BeginLoading(count > 1_000
+            ? $"Building the transcript from {count:N0} events…"
+            : "Opening the session…"));
+        var bus = EnsureClientPlugins().EventBus;
+        var receivedFiles = ReceivedFiles;
+        return Task.Run(() =>
+        {
+            var session = new SessionViewModel(host, view, _dispatcher, title, _prompts, _policy, bus, receivedFiles);
+            session.NotificationRaised += n => _dispatcher.Post(() => Surface(n));
+            _ = bus.DispatchAsync(new SessionTabOpenedEvent(view.SessionId)); // observe-only
+            return session;
+        });
+    }
+
     private void Surface(AppNotification notification)
     {
         // The user is already looking — don't toast a completion. Blockers/errors always show.
@@ -3630,6 +3653,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var info = await doc.Host.OpenSessionAsync(adapterId, workingDirectory, skipPermissions: skipPermissions, mcpApproval: McpApproval, gitCredentialMode: gitCredentialMode, useSandbox: useSandbox, modelId: modelId, graphical: graphical);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             var title = ProjectTitle(info.WorkingDirectory, displayName);
+            var session = await BuildSessionAsync(doc.Host!, view, title, doc);
             _dispatcher.Post(() =>
             {
                 if (startCts.IsCancellationRequested)
@@ -3646,7 +3670,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 // Set the folder-derived base title BEFORE attaching, so if the session already carries an
                 // agent title (replayed from the snapshot) AttachSession's title wins instead of being clobbered.
                 doc.Title = title;
-                doc.AttachSession(CreateSession(doc.Host!, view, title));
+                doc.AttachSession(session);
                 doc.Descriptor = new SessionDescriptor(
                     doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, adapterId, title);
                 SaveState();
@@ -3728,11 +3752,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var info = await doc.Host.AttachExternalSessionAsync(external.AdapterId, external.ExternalId);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
             var title = ProjectTitle(info.WorkingDirectory, "Watching");
+            var session = await BuildSessionAsync(doc.Host!, view, title, doc);
             _dispatcher.Post(() =>
             {
                 doc.AgentName = external.AdapterId;
                 doc.Title = title;
-                doc.AttachSession(CreateSession(doc.Host!, view, title));
+                doc.AttachSession(session);
                 doc.Descriptor = new SessionDescriptor(
                     doc.HostName, doc.Host!.HostUrl, doc.HostToken, info.SessionId, external.AdapterId, title);
                 SaveState();
@@ -3775,12 +3800,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         {
             var view = await doc.Host.SubscribeAsync(row.SessionId);
             var title = row.Summary.Title is { Length: > 0 } named ? named : ProjectTitle(row.WorkingDirectory, row.AdapterId);
+            var session = await BuildSessionAsync(doc.Host!, view, title, doc);
             _dispatcher.Post(() =>
             {
                 doc.AgentName = row.AdapterId;
                 doc.WorkingDirectory = row.WorkingDirectory;
                 doc.Title = title;
-                doc.AttachSession(CreateSession(doc.Host!, view, title));
+                doc.AttachSession(session);
                 doc.Descriptor = new SessionDescriptor(
                     doc.HostName, doc.Host!.HostUrl, doc.HostToken, row.SessionId, row.AdapterId, title);
                 doc.HostSessions.MarkOpen(row.SessionId);
@@ -4127,7 +4153,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     {
         try
         {
-            _dispatcher.Post(() => doc.StatusText = "Reconnecting…");
+            _dispatcher.Post(() => { doc.StatusText = "Reconnecting…"; doc.BeginLoading("Loading the session…"); });
             // Reconnect pins the same certificate the host was added with; a host that starts serving a
             // different one fails rather than being trusted, the way a changed SSH host key does.
             var host = await _connector.ConnectAsync(
@@ -4139,15 +4165,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             WireStatus(doc, host);
 
             var view = await host.SubscribeAsync(descriptor.SessionId);
+            var session = await BuildSessionAsync(host, view, descriptor.Title, doc);
             _dispatcher.Post(() =>
             {
-                doc.AttachSession(CreateSession(host, view, descriptor.Title));
+                doc.AttachSession(session);
                 doc.Descriptor = descriptor;
             });
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => doc.StatusText = "Reconnect failed: " + ex.Message);
+            _dispatcher.Post(() => { doc.StatusText = "Reconnect failed: " + ex.Message; doc.IsLoadingSession = false; });
         }
     }
 
@@ -4437,9 +4464,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
             // Same session id → a second live client view of the same conversation.
             var view = await doc.Host.SubscribeAsync(descriptor.SessionId);
+            var session = await BuildSessionAsync(doc.Host!, view, copy.Title!, copy);
             _dispatcher.Post(() =>
             {
-                copy.AttachSession(CreateSession(doc.Host!, view, copy.Title!));
+                copy.AttachSession(session);
                 copy.Descriptor = descriptor with { Title = copy.Title! };
                 SaveState();
             });
@@ -4643,6 +4671,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             // tab and any error keeps the dialog open for a retry.
             var info = await doc.Host.ForkSessionAsync(descriptor.SessionId, target, prompt.CopySandbox && prompt.CanCopySandbox);
             var view = await doc.Host.SubscribeAsync(info.SessionId);
+            var session = await BuildSessionAsync(doc.Host!, view, fork.Title!, fork);
             _dispatcher.Post(() =>
             {
                 ApplyTags(fork, doc.Tags.ToList());
@@ -4651,7 +4680,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 fork.HostToken = doc.HostToken;
                 fork.HostFingerprint = doc.HostFingerprint;
                 WireStatus(fork, doc.Host);
-                fork.AttachSession(CreateSession(doc.Host!, view, fork.Title!));
+                fork.AttachSession(session);
                 fork.Descriptor = descriptor with { SessionId = info.SessionId, Title = fork.Title! };
                 ForkPrompt = null;
                 SaveState();

@@ -235,8 +235,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         ShareSharedFileCommand = new AsyncRelayCommand<SharedFileItem>(
             item => UseSharedFileAsync(item, (f, ct) => _receivedFiles.ShareAsync(f, ct), "share"),
             _ => _receivedFiles.CanShare);
-        AnswerQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = AnswerQuestionAsync(item); });
-        DismissQuestionCommand = new RelayCommand<QuestionItem>(item => { _ = DismissQuestionAsync(item); });
+        AnswerQuestionCommand = new AsyncRelayCommand<QuestionItem>(AnswerQuestionAsync);
+        DismissQuestionCommand = new AsyncRelayCommand<QuestionItem>(DismissQuestionAsync);
 
         _mainAgentNode = new AgentNode(null, title, isMain: true, SelectAgent) { IsSelected = true };
         AgentTree.Add(_mainAgentNode);
@@ -283,10 +283,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // a desktop notification — must not fire for something that happened hours ago. Replaying without
         // this guard re-answered every still-open request on every reconnect: one host's log had 218
         // discarded responses against a session that had only ever asked 17 times.
+        // Listen before reading the history, so nothing that arrives while the transcript is built is
+        // lost: until the build is done a live event is only buffered (OnEvent), and the buffer is drained
+        // after it, skipping what the history already covered. This is what lets a head build the view
+        // model on a background thread and hand a finished transcript to the UI.
+        _view.EventAppended += OnEvent;
+        var replayed = _view.Events;
         _replaying = true;
         try
         {
-            foreach (var @event in _view.Events)
+            foreach (var @event in replayed)
             {
                 Apply(@event);
             }
@@ -295,6 +301,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             _replaying = false;
         }
+        var lastReplayed = replayed.Count > 0 ? replayed[^1].Sequence : 0;
 
         // Now decide once, on what is *still* open after the whole history is in — a live request that a
         // standing rule covers is answered here, rather than sixteen dead ones being answered above.
@@ -304,7 +311,26 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // on disk lets them go — a long session's log was most of what its open tab weighed.
         _view.TrimTo();
 
-        _view.EventAppended += OnEvent;
+        List<SessionEvent> late;
+        lock (_lateGate)
+        {
+            late = _late!;
+            _late = null;
+        }
+        if (late.Count > 0)
+        {
+            _dispatcher.Post(() =>
+            {
+                foreach (var @event in late)
+                {
+                    if (@event.Sequence > lastReplayed)
+                    {
+                        Apply(@event);
+                    }
+                }
+            });
+        }
+
         _host.StateChanged += OnHostStateChanged;
         _host.ReadStateChanged += OnReadStateChanged;
         UpdateBanner();
@@ -1095,19 +1121,23 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public System.Windows.Input.ICommand AnswerQuestionCommand { get; }
     public System.Windows.Input.ICommand DismissQuestionCommand { get; }
 
-    private async Task AnswerQuestionAsync(QuestionItem? item)
-    {
-        if (item is not null)
-        {
-            await _host.AnswerQuestionAsync(SessionId, item.RequestId, item.BuildAnswers());
-        }
-    }
+    private Task AnswerQuestionAsync(QuestionItem? item)
+        => item is null ? Task.CompletedTask : SubmitQuestionAsync(item, item.BuildAnswers());
 
-    private async Task DismissQuestionAsync(QuestionItem? item)
+    private Task DismissQuestionAsync(QuestionItem? item)
+        => item is null ? Task.CompletedTask : SubmitQuestionAsync(item, []);
+
+    /// <summary>The card says it is sending while the host is asked; the answer's own event resolves it.</summary>
+    private async Task SubmitQuestionAsync(QuestionItem item, IReadOnlyList<QuestionAnswer> answers)
     {
-        if (item is not null)
+        _dispatcher.Post(() => item.IsSubmitting = true);
+        try
         {
-            await _host.AnswerQuestionAsync(SessionId, item.RequestId, []);
+            await _host.AnswerQuestionAsync(SessionId, item.RequestId, answers);
+        }
+        finally
+        {
+            _dispatcher.Post(() => item.IsSubmitting = false);
         }
     }
 
@@ -2144,7 +2174,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private async Task CommitAsync()
+    private Task CommitAsync() => GitOp("Committing…", () => CommitAsyncCore());
+
+    private async Task CommitAsyncCore()
     {
         var message = CommitMessage;
         if (string.IsNullOrWhiteSpace(message))
@@ -2160,7 +2192,34 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private void ReportGit(string message, bool failed)
         => _dispatcher.Post(() => { GitOpMessage = message; GitOpFailed = failed; });
 
-    private async Task StashAsync()
+    private string _gitBusy = string.Empty;
+
+    /// <summary>What git is doing right now — "Pushing…" — or empty. A greyed button is thin feedback for
+    /// a push that takes ten seconds; this is the sentence beside it.</summary>
+    public string GitBusy
+    {
+        get => _gitBusy;
+        private set { if (SetProperty(ref _gitBusy, value)) { OnPropertyChanged(nameof(HasGitBusy)); } }
+    }
+
+    public bool HasGitBusy => GitBusy.Length > 0;
+
+    private async Task GitOp(string verb, Func<Task> op)
+    {
+        _dispatcher.Post(() => GitBusy = verb);
+        try
+        {
+            await op();
+        }
+        finally
+        {
+            _dispatcher.Post(() => GitBusy = string.Empty);
+        }
+    }
+
+    private Task StashAsync() => GitOp("Stashing…", () => StashAsyncCore());
+
+    private async Task StashAsyncCore()
     {
         var stash = await _host.GitStashAsync(SessionId);
         _dispatcher.Post(() =>
@@ -2172,7 +2231,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         await RefreshGitAsync();
     }
 
-    private async Task PopStashAsync()
+    private Task PopStashAsync() => GitOp("Restoring the stash…", () => PopStashAsyncCore());
+
+    private async Task PopStashAsyncCore()
     {
         if (_lastStash is null)
         {
@@ -2192,7 +2253,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         await RefreshGitAsync();
     }
 
-    private async Task SwitchBranchAsync()
+    private Task SwitchBranchAsync() => GitOp("Switching branch…", () => SwitchBranchAsyncCore());
+
+    private async Task SwitchBranchAsyncCore()
     {
         var branch = TargetBranch.Trim();
         if (branch.Length == 0)
@@ -2213,7 +2276,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         await RefreshGitAsync();
     }
 
-    private async Task PullAsync()
+    private Task PullAsync() => GitOp("Pulling…", () => PullAsyncCore());
+
+    private async Task PullAsyncCore()
     {
         var result = await _host.GitPullAsync(SessionId);
         // A non-fast-forwardable remote is refused server-side; surface it as a clear, actionable error.
@@ -2224,14 +2289,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         await RefreshGitAsync();
     }
 
-    private async Task PushAsync(bool publishBranch)
+    private Task PushAsync(bool publishBranch) => GitOp("Pushing…", () => PushAsyncCore(publishBranch));
+
+    private async Task PushAsyncCore(bool publishBranch)
     {
         var result = await _host.GitPushAsync(SessionId, publishBranch);
         ReportGit(result.Message, !result.Success);
         await RefreshGitAsync();
     }
 
-    private async Task RefreshPullRequestsAsync()
+    private Task RefreshPullRequestsAsync() => GitOp("Listing pull requests…", () => RefreshPullRequestsAsyncCore());
+
+    private async Task RefreshPullRequestsAsyncCore()
     {
         var prs = await _host.ListPullRequestsAsync(SessionId);
         _dispatcher.Post(() =>
@@ -2250,7 +2319,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         });
     }
 
-    private async Task CheckoutPullRequestAsync(PullRequestInfo pullRequest)
+    private Task CheckoutPullRequestAsync(PullRequestInfo pullRequest) => GitOp("Checking out the pull request…", () => CheckoutPullRequestAsyncCore(pullRequest));
+
+    private async Task CheckoutPullRequestAsyncCore(PullRequestInfo pullRequest)
     {
         var result = await _host.CheckoutPullRequestAsync(SessionId, pullRequest.Id);
         ReportGit(result.Message, !result.Success);
@@ -2377,7 +2448,23 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         UpdateBanner();
     }
 
-    private void OnEvent(SessionEvent @event) => _dispatcher.Post(() => Apply(@event));
+    // Live events that arrive while the constructor is still replaying history; null once it is done.
+    private readonly object _lateGate = new();
+    private List<SessionEvent>? _late = [];
+
+    private void OnEvent(SessionEvent @event)
+    {
+        lock (_lateGate)
+        {
+            if (_late is not null)
+            {
+                _late.Add(@event);
+                return;
+            }
+        }
+
+        _dispatcher.Post(() => Apply(@event));
+    }
 
     /// <summary>Upper bound on rows kept in the raw event-log inspector — the tail is what matters, and an
     /// unbounded list is a slow memory leak in a long-running session (the view virtualizes either way).</summary>

@@ -524,6 +524,15 @@ public sealed class QuestionItem : TranscriptItem
     public string RequestId { get; }
     public IReadOnlyList<QuestionView> Questions { get; }
 
+    private bool _isSubmitting;
+
+    /// <summary>True while an answer is on its way to the host; the card's buttons stand down and it says so.</summary>
+    public bool IsSubmitting
+    {
+        get => _isSubmitting;
+        set => SetProperty(ref _isSubmitting, value);
+    }
+
     public bool Resolved
     {
         get => _resolved;
