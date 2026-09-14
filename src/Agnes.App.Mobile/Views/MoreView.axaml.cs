@@ -5,5 +5,9 @@ namespace Agnes.App.Mobile.Views;
 
 public partial class MoreView : UserControl
 {
-    public MoreView() => AvaloniaXamlLoader.Load(this);
+    public MoreView()
+    {
+        Agnes.App.Mobile.Services.StartupTrace.MarkOnce("tabview.built MoreView");
+        AvaloniaXamlLoader.Load(this);
+    }
 }

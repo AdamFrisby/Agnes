@@ -41,11 +41,32 @@
     <!-- ===== list ===== -->
     <Panel Grid.Row="1">
 
-      <ScrollViewer>
-        <!-- On a wide screen with no session open beside it, the list keeps a readable measure rather than
-             stretching each card across the whole width; with two panes the pane itself is the measure. -->
-        <ItemsControl ItemsSource="{Binding All}" Margin="12,0,12,110" MaxWidth="760" HorizontalAlignment="Stretch">
-          <ItemsControl.ItemTemplate>
+      <!--
+        The scroller lives inside the ItemsControl rather than around it, which is what lets the panel
+        virtualize: wrapped from outside, the list is measured with infinite height and every card is
+        built whether or not anyone can see it. Fifteen saved sessions were fifteen full card trees
+        before the first frame; now it is the four that fit, and the rest as you scroll to them.
+      -->
+      <ItemsControl ItemsSource="{Binding All}">
+        <ItemsControl.Template>
+          <ControlTemplate>
+            <ScrollViewer>
+              <!-- On a wide screen with no session open beside it, the list keeps a readable measure rather
+                   than stretching each card across the whole width; with two panes the pane itself is the
+                   measure. -->
+              <!-- ItemsPanel has to be handed down explicitly: a presenter that is not given one uses
+                   its own default StackPanel, and the VirtualizingStackPanel below is quietly ignored. -->
+              <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}"
+                              Margin="12,0,12,110" MaxWidth="760" HorizontalAlignment="Stretch" />
+            </ScrollViewer>
+          </ControlTemplate>
+        </ItemsControl.Template>
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:SessionEntry">
               <Button Theme="{StaticResource CardButton}" Margin="0,0,0,10"
                       Command="{Binding $parent[UserControl].DataContext.OpenCommand}"
@@ -116,9 +137,8 @@
                 </Grid>
               </Button>
             </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
 
       <!-- ===== empty state =====
            Teaches the one thing that has to be true for the app to work: a host runs the agents. -->

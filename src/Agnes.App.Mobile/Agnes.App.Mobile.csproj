@@ -32,6 +32,14 @@
     -->
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     <!--
+      Shrink the Java side too. Without this nothing shrinks it at all: classes.dex ships every class of
+      every AndroidX package a transitive reference dragged in, and an Avalonia app draws its own UI and
+      uses almost none of them. R8 is the supported tool and the keep rules come from the SDK's generated
+      proguard_xamarin.cfg plus each binding's own, which is what keeps the Java-callable wrappers and
+      anything reached only over JNI.
+    -->
+    <AndroidLinkTool>r8</AndroidLinkTool>
+    <!--
       One ABI in a shipped build. arm64 is every current Android phone; x86_64 exists for emulators and
       doubles the APK for a device that will never load it. Debug keeps both so an emulator still works.
     -->
@@ -59,6 +67,15 @@
       is the Release default anyway.
     -->
     <AndroidEnableMarshalMethods>true</AndroidEnableMarshalMethods>
+  </PropertyGroup>
+
+  <!--
+    Launch instrumentation, off unless asked for: `-p:AgnesStartupTrace=true` defines the symbol that
+    un-deletes StartupTrace's call sites (they are [Conditional], so without it they are not compiled at
+    all and cost nothing). See Services/StartupTrace.cs for how to read the result.
+  -->
+  <PropertyGroup Condition="'$(AgnesStartupTrace)' == 'true'">
+    <DefineConstants>$(DefineConstants);AGNES_STARTUP_TRACE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

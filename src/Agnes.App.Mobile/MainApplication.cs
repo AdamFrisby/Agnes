@@ -37,7 +37,13 @@ public sealed class MainApplication : AvaloniaAndroidApplication<App>
     /// </summary>
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
+        Agnes.App.Mobile.Services.StartupTrace.Mark("application.customizeAppBuilder");
         AndroidHost.Attach(this);
+
+        // The launch reads four small JSON files, and the first of them pays for the whole reflection-based
+        // serializer. Start that on a background thread here, where there is a second and a half of
+        // platform start-up to hide it behind.
+        Agnes.App.Mobile.Services.LocalState.Prewarm();
         return base.CustomizeAppBuilder(builder).LogToTrace();
     }
 }

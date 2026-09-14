@@ -127,8 +127,10 @@ public sealed partial class HostLink : ObservableObject
         {
             // The pin learned at pairing is what authenticates a self-signed host, on every reconnect and
             // not just the first one.
+            StartupTrace.Mark($"host.connect.start {Saved.Url}");
             var host = await _connector.ConnectAsync(Saved.Url, Saved.Token, Saved.Fingerprint)
                 .ConfigureAwait(false);
+            StartupTrace.Mark($"host.connect.done {Saved.Url}");
             host.StateChanged += s => _dispatcher.Post(() => State = s);
             _dispatcher.Post(() =>
             {

@@ -123,9 +123,22 @@ public sealed partial class SessionsViewModel : ObservableObject
     /// </summary>
     public async Task RestoreAsync()
     {
+        await ListAsync().ConfigureAwait(false);
+        await ReattachAllAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The half of a restore that produces the screen: this device's own remembered sessions, its hosts
+    /// connected, and whatever else those hosts are running merged in. Cheap, and everything a launch
+    /// needs before it can show the list.
+    /// </summary>
+    public async Task ListAsync()
+    {
         _shell.Dispatcher.Post(() => IsRestoring = true);
 
+        StartupTrace.Mark("restore: reading mobile-sessions.json");
         var saved = SessionRegistry.Load();
+        StartupTrace.Mark($"restore: read {saved.Count} saved sessions");
         _shell.Dispatcher.Post(() =>
         {
             All.Clear();
@@ -140,14 +153,31 @@ public sealed partial class SessionsViewModel : ObservableObject
             RaiseSummary();
         });
 
+        StartupTrace.Mark("restore: connecting hosts");
         await _hosts.ConnectAllAsync().ConfigureAwait(false);
+        StartupTrace.Mark("restore: hosts connected");
         await DiscoverAsync().ConfigureAwait(false);
+        StartupTrace.Mark("sessions.listed.host (the host's catalogue is in the list)");
         _shell.Dispatcher.Post(RaiseSummary);
+    }
 
-        // Reattach in parallel — each is an independent snapshot+tail, and a phone waking up wants them
-        // all back at once, not serially.
+    /// <summary>
+    /// The expensive half: a snapshot and a live tail for every session in the list.
+    ///
+    /// <para>Separate from <see cref="ListAsync"/> because of what it costs. Fifteen sessions each replay
+    /// a snapshot and build a transcript, and every one of them posts its results to the UI thread — which
+    /// on a tablet is enough to hold the app's own first layout off for a second and a half. The list is
+    /// already complete and correct before any of this runs, so a head with a frame to get on screen runs
+    /// it after that frame (see <see cref="ShellViewModel.StartAsync"/>). The end state is the same either
+    /// way; only the order changed.</para>
+    /// </summary>
+    public async Task ReattachAllAsync()
+    {
+        // In parallel — each is an independent snapshot+tail, and a phone waking up wants them all back
+        // at once, not serially.
         await Task.WhenAll(All.ToList().Select(AttachAsync)).ConfigureAwait(false);
 
+        StartupTrace.Mark("restore: every session reattached");
         _shell.Dispatcher.Post(() =>
         {
             IsRestoring = false;
