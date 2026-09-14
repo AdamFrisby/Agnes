@@ -5,6 +5,7 @@ using Agnes.App.Desktop.Persistence;
 using Agnes.App.Desktop.ViewModels;
 using Agnes.Client.Cache;
 using Agnes.Ui.Core.Onboarding;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -195,6 +196,14 @@ public static class TabSwitchTiming
             }
         }
 
+        foreach (var doc in docs)
+        {
+            vm.ActivateSessionCommand.Execute(doc);
+            Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
+            window.UpdateLayout();
+            DumpTree(window, doc);
+        }
+
         if (options.LoopSeconds > 0)
         {
             Console.WriteLine($"looping switches for {options.LoopSeconds} s (pid {Environment.ProcessId}) — sample with: dotnet-stack report -p {Environment.ProcessId}");
@@ -211,5 +220,69 @@ public static class TabSwitchTiming
 
         window.Close();
         cache.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    /// <summary>What the visuals of the active tab are: by control type, by region, and how many of them
+    /// are hidden — the anatomy behind "a simple design that takes a second to attach".</summary>
+    private static void DumpTree(Window window, SessionDocument active)
+    {
+        var view = window.GetVisualDescendants().OfType<Agnes.App.Desktop.Views.SessionTabView>()
+            .FirstOrDefault(v => ReferenceEquals(v.DataContext, active));
+        if (view is null)
+        {
+            Console.WriteLine("(no view for " + active.Title + ")");
+            return;
+        }
+
+        var all = view.GetVisualDescendants().OfType<Visual>().ToList();
+        var hidden = all.Count(v => !v.IsEffectivelyVisible);
+        var inList = view.GetVisualDescendants().OfType<ListBox>().Where(l => l.Name == "Transcript")
+            .SelectMany(l => l.GetVisualDescendants()).Count();
+        Console.WriteLine($"=== {active.Title}: {all.Count:N0} visuals; {hidden:N0} not effectively visible; {inList:N0} inside the transcript list");
+
+        Console.WriteLine("--- by type");
+        foreach (var g in all.GroupBy(v => v.GetType().Name).OrderByDescending(g => g.Count()).Take(28))
+        {
+            Console.WriteLine($"{g.Count(),7:N0}  {g.Key}");
+        }
+
+        // By region: the nearest named ancestor that is a direct-ish child of the tab, so the counts say
+        // "the left panel", "the composer", "the transcript", "a hidden sheet".
+        Console.WriteLine("--- by named region (nearest named ancestor)");
+        var byRegion = new Dictionary<string, (int total, int hidden)>();
+        foreach (var v in all)
+        {
+            var region = v.GetSelfAndVisualAncestors().OfType<Control>()
+                .TakeWhile(c => !ReferenceEquals(c, view))
+                .LastOrDefault(c => !string.IsNullOrEmpty(c.Name))?.Name ?? "(unnamed root children)";
+            var t = byRegion.GetValueOrDefault(region);
+            byRegion[region] = (t.total + 1, t.hidden + (v.IsEffectivelyVisible ? 0 : 1));
+        }
+        foreach (var kv in byRegion.OrderByDescending(kv => kv.Value.total).Take(30))
+        {
+            Console.WriteLine($"{kv.Value.total,7:N0}  ({kv.Value.hidden,6:N0} hidden)  {kv.Key}");
+        }
+
+        // The item hosts carrying the bulk: which ItemsControl, bound to what, how many items, shown or not.
+        Console.WriteLine("--- heaviest item hosts");
+        foreach (var host in all.OfType<ItemsControl>().Select(c => (c, count: c.GetVisualDescendants().Count()))
+                     .OrderByDescending(t => t.count).Take(8))
+        {
+            var c = host.c;
+            var first = c.Items.Cast<object?>().FirstOrDefault();
+            var chain = string.Join(" < ", c.GetVisualAncestors().OfType<Control>().TakeWhile(a => !ReferenceEquals(a, view))
+                .Where(a => !string.IsNullOrEmpty(a.Name)).Select(a => a.Name).Take(4));
+            Console.WriteLine($"{host.count,7:N0}  {c.GetType().Name,-12} name='{c.Name}' items={c.ItemCount:N0} of {first?.GetType().Name ?? "?"} visible={c.IsEffectivelyVisible} dc={c.DataContext?.GetType().Name} in [{chain}]");
+        }
+
+        // The named element with the most descendants of its own, at any depth: what to look at first.
+        Console.WriteLine("--- heaviest named elements (own descendants)");
+        var named = all.OfType<Control>().Where(c => !string.IsNullOrEmpty(c.Name))
+            .Select(c => (c.Name, c.GetType().Name, count: c.GetVisualDescendants().Count(), c.IsEffectivelyVisible))
+            .OrderByDescending(t => t.count).Take(30);
+        foreach (var (name, type, count, visible) in named)
+        {
+            Console.WriteLine($"{count,7:N0}  {type,-22} {name}{(visible ? string.Empty : "   [hidden]")}");
+        }
     }
 }

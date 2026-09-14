@@ -1230,6 +1230,8 @@
                                                 IsVisible="{Binding Plan.HasHidden}" HorizontalAlignment="Left" Cursor="Hand"
                                                 Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
                                                 Padding="6,3" FontSize="11" />
+                                        <TextBlock Text="{Binding Plan.OverflowNote}" IsVisible="{Binding Plan.OverflowNote, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                                                   Foreground="{DynamicResource FgDim}" FontSize="11" Margin="6,0,0,0" />
                                         <ItemsControl ItemsSource="{Binding Plan.VisibleEntries}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
@@ -1313,7 +1315,7 @@
                                             <TextBlock Text="FILES MODIFIED" Foreground="{DynamicResource FgDim}" FontSize="11" FontWeight="SemiBold" />
                                         </StackPanel>
                                     </Button>
-                                    <ItemsControl ItemsSource="{Binding ModifiedFiles}" IsVisible="{Binding FilesExpanded}">
+                                    <ItemsControl ItemsSource="{Binding VisibleModifiedFiles}" IsVisible="{Binding FilesExpanded}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <!-- A horizontal StackPanel measures its children with infinite
@@ -1336,6 +1338,12 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    <Button Content="{Binding MoreFilesLabel}" Command="{Binding ShowAllFilesCommand}"
+                                            IsVisible="{Binding HasMoreFiles}" HorizontalAlignment="Left" Cursor="Hand"
+                                            Background="Transparent" Foreground="{DynamicResource Accent}" BorderThickness="0"
+                                            Padding="6,3" FontSize="11" />
+                                    <TextBlock Text="{Binding FilesNote}" IsVisible="{Binding FilesNote, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                                               Foreground="{DynamicResource FgDim}" FontSize="11" Margin="6,0,0,0" />
                                 </StackPanel>
 
                                 <!-- REVIEW COMMENTS: project-scoped file+line feedback, grouped by file -->

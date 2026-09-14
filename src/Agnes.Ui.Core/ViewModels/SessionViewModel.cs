@@ -135,6 +135,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         ToggleReviewCommentsCommand = new RelayCommand(() => ReviewCommentsExpanded = !ReviewCommentsExpanded);
         ToggleAgentsCommand = new RelayCommand(() => AgentsExpanded = !AgentsExpanded);
         ShowAllAgentsCommand = new RelayCommand(() => ShowAllAgents = true);
+        ShowAllFilesCommand = new RelayCommand(() => ShowAllFiles = true);
         ShowAllCredentialsCommand = new RelayCommand(() => ShowAllCredentials = true);
         CompactCommand = new RelayCommand(() => SendControl("/compact"));
         ClearContextCommand = new RelayCommand(() => SendControl("/clear"));
@@ -1156,6 +1157,44 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _filesExpanded = true;
     public bool FilesExpanded { get => _filesExpanded; set => SetProperty(ref _filesExpanded, value); }
 
+    /// <summary>How many modified files the panel lists before "show all": the most recently touched.</summary>
+    public const int FileDisplayLimit = 50;
+
+    /// <summary>How many "show all" reveals — a page, and the note says so. One live session had touched
+    /// 549 files; a list that long is built by the layout, not read by a person.</summary>
+    public const int FilePageLimit = 200;
+
+    private bool _showAllFiles;
+    public bool ShowAllFiles
+    {
+        get => _showAllFiles;
+        set { if (SetProperty(ref _showAllFiles, value)) { RaiseFiles(); } }
+    }
+
+    /// <summary>The files to list — the newest <see cref="FileDisplayLimit"/> until "show all", then a page.</summary>
+    public IEnumerable<ToolEntry> VisibleModifiedFiles
+    {
+        get
+        {
+            var limit = ShowAllFiles ? FilePageLimit : FileDisplayLimit;
+            return ModifiedFiles.Count <= limit ? ModifiedFiles : ModifiedFiles.Skip(ModifiedFiles.Count - limit);
+        }
+    }
+
+    public bool HasMoreFiles => !ShowAllFiles && ModifiedFiles.Count > FileDisplayLimit;
+    public string MoreFilesLabel => $"Show all {ModifiedFiles.Count}";
+
+    /// <summary>"Latest 200 of 549" when "show all" is still a page; empty otherwise.</summary>
+    public string FilesNote => ShowAllFiles && ModifiedFiles.Count > FilePageLimit ? $"Latest {FilePageLimit} of {ModifiedFiles.Count}" : string.Empty;
+
+    private void RaiseFiles()
+    {
+        OnPropertyChanged(nameof(VisibleModifiedFiles));
+        OnPropertyChanged(nameof(HasMoreFiles));
+        OnPropertyChanged(nameof(MoreFilesLabel));
+        OnPropertyChanged(nameof(FilesNote));
+    }
+
     private bool _toolsListExpanded = true;
     public bool ToolsListExpanded { get => _toolsListExpanded; set => SetProperty(ref _toolsListExpanded, value); }
 
@@ -1174,6 +1213,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public System.Windows.Input.ICommand ToggleReviewCommentsCommand { get; }
     public System.Windows.Input.ICommand ToggleAgentsCommand { get; }
     public System.Windows.Input.ICommand ShowAllAgentsCommand { get; }
+    public System.Windows.Input.ICommand ShowAllFilesCommand { get; }
     public System.Windows.Input.ICommand ShowAllCredentialsCommand { get; }
 
     /// <summary>Ask the agent to compact / clear its context. Sent as a control command the agent
@@ -2823,6 +2863,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     {
         OnPropertyChanged(nameof(HasFiles));
         OnPropertyChanged(nameof(HasTools));
+        RaiseFiles();
         OnPropertyChanged(nameof(HasSidebarContent));
         OnPropertyChanged(nameof(ShowLeftPanel));
         RaiseActivity();

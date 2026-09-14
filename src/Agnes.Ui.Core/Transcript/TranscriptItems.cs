@@ -296,7 +296,22 @@ public sealed class PlanItemView : TranscriptItem
     /// sentence you want, and hiding X leaves Y without a place in the sequence.</para>
     /// </summary>
     public IReadOnlyList<PlanEntryView> VisibleEntries =>
-        (_showAll ? Entries : Entries.Skip(HiddenCount)).Select(PlanEntryView.Of).ToList();
+        (_showAll ? Entries : Entries.Skip(HiddenCount)).Take(PageLimit).Select(PlanEntryView.Of).ToList();
+
+    /// <summary>How many entries the panel lists at once. A plan is read from the top — what is next —
+    /// so the cap keeps the head; one live session carried 171 open entries, more than a panel can show
+    /// or a person act on, and every one of them was a built control.</summary>
+    public const int PageLimit = 60;
+
+    /// <summary>"First 60 of 171" when the list is cut; empty when it is whole.</summary>
+    public string OverflowNote
+    {
+        get
+        {
+            var total = _showAll ? Entries.Count : Entries.Count - HiddenCount;
+            return total > PageLimit ? $"First {PageLimit} of {total}" : string.Empty;
+        }
+    }
 
     /// <summary>Every entry, folded or not — what the transcript's own plan card shows.</summary>
     public IReadOnlyList<PlanEntryView> EntryViews => Entries.Select(PlanEntryView.Of).ToList();
@@ -343,6 +358,7 @@ public sealed class PlanItemView : TranscriptItem
     private void RaiseVisible()
     {
         OnPropertyChanged(nameof(VisibleEntries));
+        OnPropertyChanged(nameof(OverflowNote));
         OnPropertyChanged(nameof(EntryViews));
         OnPropertyChanged(nameof(HiddenCount));
         OnPropertyChanged(nameof(HasHidden));
