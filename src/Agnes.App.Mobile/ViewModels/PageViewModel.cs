@@ -27,4 +27,8 @@ public abstract partial class PageViewModel : ObservableObject
     /// <summary>Gives the page first refusal on the back gesture (e.g. to close an inline search field).
     /// Returning true means the page handled it and should not be popped.</summary>
     public virtual bool OnBackRequested() => false;
+
+    /// <summary>A page that is the detail of a list — a session, a fleet item — and so, when the window
+    /// has two panes, opens beside the list rather than over it.</summary>
+    public virtual bool IsDetail => false;
 }

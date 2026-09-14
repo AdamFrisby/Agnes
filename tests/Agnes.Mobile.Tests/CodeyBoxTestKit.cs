@@ -120,6 +120,8 @@ internal sealed class StubShell : IAppShell
     public MobileSettings Settings { get; } = new();
 
     public HostBook Hosts { get; } = new(new MobileConnector(), ImmediateDispatcher.Instance);
+
+    public WindowLayout Layout { get; } = new();
 }
 
 /// <summary>Shapes every CodeyBox test needs, so each one says what it means in a line.</summary>

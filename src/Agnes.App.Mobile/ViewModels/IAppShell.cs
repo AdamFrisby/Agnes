@@ -76,4 +76,7 @@ public interface IAppShell
     MobileSettings Settings { get; }
 
     HostBook Hosts { get; }
+
+    /// <summary>The window's size and the layout decisions derived from it.</summary>
+    WindowLayout Layout { get; }
 }

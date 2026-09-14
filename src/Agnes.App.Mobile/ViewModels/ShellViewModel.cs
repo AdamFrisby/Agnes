@@ -100,6 +100,13 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         // the render tests need these screens without an orchestrator behind them, and returning null
         // there means "configured, but nothing to talk to" — which is exactly a canned fleet.
         CodeyBox = new CodeyBoxViewModel(this, clientFactory: codeyBoxClient);
+        Layout.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(WindowLayout.TwoPane))
+            {
+                OnLayoutChanged();
+            }
+        };
         CodeyBox.ConfigurationChanged += () => Dispatcher.Post(() =>
         {
             OnPropertyChanged(nameof(HasCodeyBox));
@@ -216,6 +223,67 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     /// <summary>Pages stacked over the tabs; the last one is what's on screen.</summary>
     public ObservableCollection<PageViewModel> Stack { get; } = [];
 
+    // ---- the window ----
+
+    /// <summary>How wide, how tall, and everything the views decide from that. Fed by the shell view.</summary>
+    public WindowLayout Layout { get; } = new();
+
+    // ---- the detail pane ----
+    //
+    // With two panes, a detail page (a session, a fleet item) opens beside the list rather than over it:
+    // the list stays, the rail stays, and switching sessions is one tap. The page is the same view model
+    // either way; only where it is shown changes, and a resize moves it between the two without losing it.
+
+    /// <summary>What the detail pane holds; the stack is what the phone's single pane holds.</summary>
+    public ObservableCollection<PageViewModel> DetailStack { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsDetailShown))]
+    private PageViewModel? _detail;
+
+    public bool IsDetailShown => Detail is not null;
+
+    private void ShowDetail(PageViewModel page)
+    {
+        Detail?.OnDisappearing();
+        DetailStack.Clear();
+        DetailStack.Add(page);
+        Detail = page;
+        page.OnAppearing();
+    }
+
+    private void CloseDetail()
+    {
+        if (Detail is not { } page)
+        {
+            return;
+        }
+
+        Detail = null;
+        DetailStack.Clear();
+        page.OnDisappearing();
+    }
+
+    /// <summary>A fold, a rotation: the detail moves to wherever a detail now lives, and stays open.</summary>
+    private void OnLayoutChanged()
+    {
+        if (!Layout.TwoPane && Detail is { } detail)
+        {
+            Detail = null;
+            DetailStack.Clear();
+            Stack.Add(detail);
+            CurrentPage = detail;
+        }
+        else if (Layout.TwoPane && CurrentPage is { IsDetail: true } top)
+        {
+            Stack.Remove(top);
+            CurrentPage = Stack.Count > 0 ? Stack[^1] : null;
+            DetailStack.Clear();
+            DetailStack.Add(top);
+            Detail = top;
+        }
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowTabs))]
     private PageViewModel? _currentPage;
@@ -229,6 +297,12 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
 
     public void Push(PageViewModel page)
     {
+        if (Layout.TwoPane && page.IsDetail && Stack.Count == 0)
+        {
+            ShowDetail(page);
+            return;
+        }
+
         CurrentPage?.OnDisappearing();
         Stack.Add(page);
         CurrentPage = page;
@@ -239,6 +313,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
     {
         if (Stack.Count == 0)
         {
+            CloseDetail();
             return;
         }
 
@@ -256,6 +331,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         {
             Pop();
         }
+        CloseDetail();
     }
 
     /// <summary>
@@ -278,6 +354,12 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         if (Stack.Count > 0)
         {
             Pop();
+            return true;
+        }
+
+        if (Detail is not null)
+        {
+            CloseDetail();
             return true;
         }
 

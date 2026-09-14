@@ -307,6 +307,8 @@ public sealed partial class CodeyBoxItemPageViewModel : PageViewModel
 
     public override string Title => Item.Title;
 
+    public override bool IsDetail => true;
+
     public override string? Subtitle => Item.State;
 
     [ObservableProperty]

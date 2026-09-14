@@ -29,6 +29,14 @@ public partial class SheetHost : UserControl
     public static readonly StyledProperty<SheetViewModel?> SheetProperty =
         AvaloniaProperty.Register<SheetHost, SheetViewModel?>(nameof(Sheet));
 
+    /// <summary>Present sheets as a panel from the right edge, full height, beside the content — for a
+    /// window with width to spare (see WindowLayout.SideSheets). Off, a sheet rises from the bottom.</summary>
+    public static readonly StyledProperty<bool> SideProperty =
+        AvaloniaProperty.Register<SheetHost, bool>(nameof(Side));
+
+    /// <summary>The side panel's width. Wider than a phone's sheet is tall is no use to anyone.</summary>
+    private const double SideWidth = 420;
+
     private Border _panel = null!;
     private Border _scrim = null!;
     private Control _grabber = null!;
@@ -73,6 +81,37 @@ public partial class SheetHost : UserControl
         set => SetValue(SheetProperty, value);
     }
 
+    public bool Side
+    {
+        get => GetValue(SideProperty);
+        set => SetValue(SideProperty, value);
+    }
+
+    private void ApplySide()
+    {
+        if (Side)
+        {
+            _panel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
+            _panel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+            _panel.Width = SideWidth;
+            _panel.MaxHeight = double.PositiveInfinity;
+            _panel.CornerRadius = new CornerRadius(0);
+            _panel.BorderThickness = new Thickness(1, 0, 0, 0);
+        }
+        else
+        {
+            _panel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Bottom;
+            _panel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+            _panel.Width = double.NaN;
+            _panel.CornerRadius = this.TryFindResource("RadiusXl", out var r) && r is CornerRadius radius ? radius : new CornerRadius(20, 20, 0, 0);
+            _panel.BorderThickness = new Thickness(1, 1, 1, 0);
+            if (Sheet is { } sheet && Bounds.Height > 0)
+            {
+                _panel.MaxHeight = Bounds.Height * sheet.HeightFraction;
+            }
+        }
+    }
+
     /// <summary>Raised when the user dismissed the sheet by gesture or button.</summary>
     public event EventHandler? Dismissed;
 
@@ -82,6 +121,14 @@ public partial class SheetHost : UserControl
         if (change.Property == SheetProperty)
         {
             Present(change.GetNewValue<SheetViewModel?>());
+        }
+        else if (change.Property == SideProperty)
+        {
+            ApplySide();
+            if (Sheet is not null)
+            {
+                SetOffset(0, animate: false);
+            }
         }
     }
 
@@ -104,7 +151,7 @@ public partial class SheetHost : UserControl
         {
             _scrim.Opacity = 0;
             _scrim.IsHitTestVisible = false;
-            SetOffset(_panel.Bounds.Height > 0 ? _panel.Bounds.Height : 800);
+            SetOffset(Side ? SideWidth : _panel.Bounds.Height > 0 ? _panel.Bounds.Height : 800);
             // Let the slide-out finish before the panel leaves the tree.
             DispatcherTimer.RunOnce(() =>
             {
@@ -117,10 +164,10 @@ public partial class SheetHost : UserControl
         }
 
         _panel.IsVisible = true;
-        _panel.MaxHeight = Bounds.Height > 0 ? Bounds.Height * sheet.HeightFraction : double.PositiveInfinity;
+        ApplySide();
 
         // Start off-screen without animating, then release to 0 on the next frame so the transition runs.
-        SetOffset(Bounds.Height > 0 ? Bounds.Height : 800, animate: false);
+        SetOffset(Side ? SideWidth : Bounds.Height > 0 ? Bounds.Height : 800, animate: false);
         Dispatcher.UIThread.Post(() =>
         {
             _scrim.IsHitTestVisible = true;
@@ -132,7 +179,7 @@ public partial class SheetHost : UserControl
     protected override Size ArrangeOverride(Size finalSize)
     {
         var result = base.ArrangeOverride(finalSize);
-        if (Sheet is { } sheet && finalSize.Height > 0)
+        if (!Side && Sheet is { } sheet && finalSize.Height > 0)
         {
             _panel.MaxHeight = finalSize.Height * sheet.HeightFraction;
         }
@@ -149,7 +196,8 @@ public partial class SheetHost : UserControl
             _panel.Transitions = null;
         }
 
-        _panel.RenderTransform = TransformOperations.Parse($"translateY({_offset.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px)");
+        var px = _offset.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        _panel.RenderTransform = TransformOperations.Parse(Side ? $"translateX({px}px)" : $"translateY({px}px)");
 
         if (!animate)
         {

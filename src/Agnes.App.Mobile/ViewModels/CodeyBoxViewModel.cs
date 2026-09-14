@@ -117,6 +117,11 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
         Apply(CodeyBoxConfig.Load());
     }
 
+    /// <summary>The window, for the grids that get more columns with more width.</summary>
+
+    public WindowLayout Layout => _shell.Layout;
+
+
     // ---- configuration ----------------------------------------------------------------------------
 
     [ObservableProperty]

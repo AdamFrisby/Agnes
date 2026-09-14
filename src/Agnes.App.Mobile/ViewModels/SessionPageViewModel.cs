@@ -167,6 +167,8 @@ public sealed partial class SessionPageViewModel : PageViewModel
 
     public override string Title => Entry.Title;
 
+    public override bool IsDetail => true;
+
     public override string? Subtitle => $"{Entry.HostName} · {Entry.AgentName}";
 
 
