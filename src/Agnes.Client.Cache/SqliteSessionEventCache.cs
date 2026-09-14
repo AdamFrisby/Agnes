@@ -19,7 +19,9 @@ namespace Agnes.Client.Cache;
 /// that commits once per batch rather than once per event. A read queued behind writes sees them, because
 /// the queue is the order.</para>
 /// <para>The file is opened in WAL mode with <c>synchronous=NORMAL</c>: a power cut can lose the last
-/// batch, never corrupt the file — and a lost batch is merely a few events to fetch again.</para>
+/// batch, never corrupt the file — and a lost batch is merely a few events to fetch again. The WAL is
+/// capped at 64 MB after a checkpoint and folded back on close, because a first open of a long session
+/// writes its whole log in one transaction.</para>
 /// </remarks>
 public sealed class SqliteSessionEventCache : ISessionEventCache, IAsyncDisposable
 {
@@ -64,6 +66,7 @@ public sealed class SqliteSessionEventCache : ISessionEventCache, IAsyncDisposab
             setup.CommandText = """
                 PRAGMA journal_mode=WAL;
                 PRAGMA synchronous=NORMAL;
+                PRAGMA journal_size_limit=67108864;
                 CREATE TABLE IF NOT EXISTS ranges(
                     host TEXT NOT NULL, session TEXT NOT NULL,
                     floor INTEGER NOT NULL, head INTEGER NOT NULL,
@@ -291,6 +294,19 @@ public sealed class SqliteSessionEventCache : ISessionEventCache, IAsyncDisposab
     {
         _ops.Writer.TryComplete();
         await _pump.ConfigureAwait(false);
+        try
+        {
+            // A first open of a long session writes its whole log in one transaction, which the automatic
+            // checkpoint cannot fold back until the next commit; fold it now so the WAL does not sit beside
+            // the file at the size of the largest session until the next run.
+            using var checkpoint = _db.CreateCommand();
+            checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE)";
+            checkpoint.ExecuteNonQuery();
+        }
+        catch (Exception)
+        {
+            // Purely housekeeping; the next open checkpoints on its own.
+        }
         await _db.DisposeAsync().ConfigureAwait(false);
     }
 }
