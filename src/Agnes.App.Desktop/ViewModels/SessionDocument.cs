@@ -918,6 +918,7 @@ public sealed partial class SessionDocument : Document, ITraySession
 
         IsSleeping = true;
         Session = null;
+        _watchedDisplay = null;
         StatusText = "Sleeping — activate to reload";
         _ = session.DisposeAsync();
         OnPropertyChanged(nameof(IsUnread));

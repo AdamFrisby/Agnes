@@ -45,6 +45,13 @@ public static class TabSwitchTiming
         /// <summary>Also forget each document's view in the recycler before activating it, so every switch is
         /// a cold rebuild.</summary>
         public bool Cold { get; init; }
+
+        /// <summary>Bisection aids for a leak: run without client plugins, or without the event cache.</summary>
+        public bool NoPlugins { get; init; }
+        public bool NoCache { get; init; }
+
+        /// <summary>Write a full process dump right after the sleep (for --roots), to this path.</summary>
+        public string? DumpPath { get; init; }
         public int Width { get; init; } = 1700;
         public int Height { get; init; } = 1000;
     }
@@ -69,6 +76,9 @@ public static class TabSwitchTiming
             LoopSeconds = int.TryParse(Value("--loop"), out var l) ? l : 0,
             Capacity = int.TryParse(Value("--capacity"), out var c) ? c : null,
             Cold = args.Contains("--cold", StringComparer.Ordinal),
+            NoPlugins = args.Contains("--no-plugins", StringComparer.Ordinal),
+            NoCache = args.Contains("--no-cache", StringComparer.Ordinal),
+            DumpPath = Value("--dump"),
         };
     }
 
@@ -86,14 +96,18 @@ public static class TabSwitchTiming
         new SessionStateStore(statePath).Save(tabs);
         Console.WriteLine($"{tabs.Count} session tab(s): {string.Join(", ", tabs.Select(t => t.Title))}");
 
-        var cache = SqliteSessionEventCache.Open(Path.Combine(appData, "cache", "events.db"));
+        var cache = options.NoCache ? null : SqliteSessionEventCache.Open(Path.Combine(appData, "cache", "events.db"));
+        var emptyPlugins = Path.Combine(options.OutDir, "no-plugins");
+        Directory.CreateDirectory(emptyPlugins);
         var vm = new MainWindowViewModel(
             new RoutingConnector(Path.Combine(Directory.GetCurrentDirectory(), "recordings"), eventCache: cache),
             new AvaloniaDispatcher(),
             new SessionStateStore(statePath),
             new HostRegistryStore(hostsPath),
             onboarding: new InMemoryOnboardingStore(new OnboardingState(WizardCompleted: true)),
+            clientPluginDirectory: options.NoPlugins ? emptyPlugins : null,
             eventCache: cache);
+        Console.WriteLine($"plugins: {(options.NoPlugins ? "none" : "the desktop's")} · cache: {(cache is null ? "off" : "on")}");
         var window = new MainWindow { DataContext = vm, Width = options.Width, Height = options.Height };
         window.Show();
         MainWindowViewModel.ApplyTheme("Dark");
@@ -110,11 +124,7 @@ public static class TabSwitchTiming
         Console.WriteLine($"all sessions open after {opened.Elapsed.TotalSeconds:0.0} s");
         var heapAfter = Heap();
         Console.WriteLine($"managed heap: {heapBefore / 1048576.0:0} MB before the tabs → {heapAfter / 1048576.0:0} MB with them open (+{(heapAfter - heapBefore) / 1048576.0:0} MB); working set {Environment.WorkingSet / 1048576.0:0} MB");
-        foreach (var d in docs)
-        {
-            var s = d.Session!;
-            Console.WriteLine($"  {d.Title}: {s.Items.Count:N0} transcript items ; subagents={s.HasSubagents}; display items={(s.DisplayItems as System.Collections.ICollection)?.Count.ToString("N0") ?? "projected"}");
-        }
+        Summarize(docs);
 
         if (docs.Count < 2)
         {
@@ -237,12 +247,20 @@ public static class TabSwitchTiming
         if (docs.Count >= 2)
         {
             var background = docs.First(d => !ReferenceEquals(d, dock.ActiveDockable));
+            // A real sleep comes half an hour after the open; give the open's own host calls (models, prompt
+            // templates, git status) a moment to land so what is measured is the sleep, not the open.
+            Program.Settle(4000);
             var heapAwake = Heap();
             vm.SleepAfter = TimeSpan.FromMinutes(1);
+            var (weakSession, weakView) = WeakHandles(window, background);
             var slept = vm.SweepIdleTabs(DateTime.UtcNow.AddHours(1));
             Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
             var heapAsleep = Heap();
-            Console.WriteLine($"sleep: {slept} tab(s) slept ({background.Title}); heap {heapAwake / 1048576.0:0} MB → {heapAsleep / 1048576.0:0} MB (−{(heapAwake - heapAsleep) / 1048576.0:0} MB)");
+            Console.WriteLine($"sleep: {slept} tab(s) slept ({background.Title}); heap {heapAwake / 1048576.0:0} MB → {heapAsleep / 1048576.0:0} MB (−{(heapAwake - heapAsleep) / 1048576.0:0} MB); still alive: session={weakSession.IsAlive} view={weakView.IsAlive}");
+            if (options.DumpPath is { Length: > 0 } dumpPath && weakSession.IsAlive)
+            {
+                HeapDump.WriteSelf(dumpPath);
+            }
 
             var sw = Stopwatch.StartNew();
             vm.ActivateSessionCommand.Execute(background);
@@ -270,7 +288,28 @@ public static class TabSwitchTiming
         }
 
         window.Close();
-        cache.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        if (cache is not null)
+        {
+            cache.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    // In its own frame on purpose: a Debug-built method keeps every local alive until it returns, and a
+    // local that names a session would keep the session alive through the sleep measured below.
+    private static void Summarize(List<SessionDocument> docs)
+    {
+        foreach (var d in docs)
+        {
+            var s = d.Session!;
+            Console.WriteLine($"  {d.Title}: {s.Items.Count:N0} transcript items ; subagents={s.HasSubagents}; display items={(s.DisplayItems as System.Collections.ICollection)?.Count.ToString("N0") ?? "projected"}");
+        }
+    }
+
+    // Weak handles on what sleeping should release, taken in their own frame so no local keeps them alive.
+    private static (WeakReference session, WeakReference view) WeakHandles(Window window, SessionDocument doc)
+    {
+        var view = window.GetVisualDescendants().OfType<Agnes.App.Desktop.Views.SessionTabView>().FirstOrDefault(v => ReferenceEquals(v.DataContext, doc));
+        return (new WeakReference(doc.Session!), new WeakReference(view!));
     }
 
     /// <summary>The managed heap after a full, compacting collection — what the tabs actually hold.</summary>

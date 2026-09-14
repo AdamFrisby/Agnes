@@ -41,6 +41,19 @@ public static class Program
             return;
         }
 
+        if (HeapDump.TryParseReferrers(args) is { } referrers)
+        {
+            HeapDump.Referrers(referrers.dump, referrers.type);
+            return;
+        }
+
+        // Heap roots (--roots <dump> <type>): GC root paths to a type's instances in a dump; see HeapDump.
+        if (HeapDump.TryParseRoots(args) is { } roots)
+        {
+            HeapDump.Roots(roots.dump, roots.type);
+            return;
+        }
+
         // Row bench (--row-bench N): what one transcript row costs to build and lay out; see RowBench.
         if (RowBench.TryParse(args) is { } rows)
         {

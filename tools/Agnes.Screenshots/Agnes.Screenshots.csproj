@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Agnes.App.Desktop\Agnes.App.Desktop.csproj" />
+    <!-- Heap analysis for the timing harness (the roots mode): who still holds a slept session. Dev tool only. -->
+    <PackageReference Include="Microsoft.Diagnostics.Runtime" Version="2.2.332302" />
     <ProjectReference Include="..\..\src\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
   </ItemGroup>

@@ -2450,7 +2450,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 }
 
                 DrainQueue();
-                _ = RefreshGitAsync(); // changes likely landed this turn
+                if (!_replaying)
+                {
+                    // Live only: the constructor refreshes once after a replay. One refresh per replayed
+                    // turn asked the host for sixty-one git statuses on open and kept this view model
+                    // alive in sixty-one pending calls after its tab had been put to sleep.
+                    _ = RefreshGitAsync(); // changes likely landed this turn
+                }
                 break;
 
             case TurnEndedEvent:
