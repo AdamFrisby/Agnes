@@ -34,8 +34,7 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:FleetHostChoice">
                 <Button Theme="{StaticResource RowButton}" Padding="12,12"
-                        Command="{Binding $parent[ItemsControl].((vm:CodeyBoxSetupPageViewModel)DataContext).UseHostCommand}"
-                        CommandParameter="{Binding}" IsEnabled="{Binding OffersFleet}">
+                        Command="{Binding UseCommand}">
                   <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Grid.Column="0" Spacing="2">
                       <TextBlock Text="{Binding Name}" />

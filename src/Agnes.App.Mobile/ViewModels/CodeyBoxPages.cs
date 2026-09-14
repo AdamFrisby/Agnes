@@ -33,7 +33,6 @@ public sealed partial class CodeyBoxSetupPageViewModel : PageViewModel
         TestCommand = new AsyncRelayCommand(TestAsync, () => CanSave);
         SaveCommand = new RelayCommand(Save, () => CanSave);
         ForgetCommand = new RelayCommand(Forget);
-        UseHostCommand = new AsyncRelayCommand<FleetHostChoice>(UseHostAsync);
         _ = LoadHostsAsync();
     }
 
@@ -54,8 +53,6 @@ public sealed partial class CodeyBoxSetupPageViewModel : PageViewModel
         : string.Empty;
 
     public bool IsViaHost => _codeybox.Config.ViaHost;
-
-    public IAsyncRelayCommand<FleetHostChoice> UseHostCommand { get; }
 
     private async Task LoadHostsAsync()
     {
@@ -78,7 +75,7 @@ public sealed partial class CodeyBoxSetupPageViewModel : PageViewModel
                 detail = CodeyBoxViewModel.Explain(ex);
             }
 
-            var choice = new FleetHostChoice(link, offers, detail);
+            var choice = new FleetHostChoice(link, offers, detail, UseHostAsync);
             _shell.Dispatcher.Post(() =>
             {
                 Hosts.Add(choice);
@@ -256,10 +253,24 @@ public sealed partial class CodeyBoxSetupPageViewModel : PageViewModel
 /// a question are <c>POST /workitems/{id}/answer</c> and <c>POST /workitems/{id}/dismiss-question</c>.
 /// A choice this API cannot carry out is not on the card.</para>
 /// </remarks>
-/// <summary>A paired host as the setup page offers it: whether it has a fleet to forward to, and why not.</summary>
-public sealed record FleetHostChoice(HostLink Link, bool OffersFleet, string Detail)
+/// <summary>A paired host as the setup page offers it: whether it has a fleet to forward to, and why not.
+/// Carries its own command so the row needs no reach up the tree — a typed cast in a binding path resolves
+/// at runtime, and on the phone it did not.</summary>
+public sealed class FleetHostChoice
 {
+    public FleetHostChoice(HostLink link, bool offersFleet, string detail, Func<FleetHostChoice, Task> use)
+    {
+        Link = link;
+        OffersFleet = offersFleet;
+        Detail = detail;
+        UseCommand = new AsyncRelayCommand(() => use(this), () => OffersFleet);
+    }
+
+    public HostLink Link { get; }
+    public bool OffersFleet { get; }
+    public string Detail { get; }
     public string Name => Link.Name;
+    public IAsyncRelayCommand UseCommand { get; }
 }
 
 public sealed partial class CodeyBoxItemPageViewModel : PageViewModel

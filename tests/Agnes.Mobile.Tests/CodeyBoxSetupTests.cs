@@ -1,3 +1,4 @@
+using Avalonia.VisualTree;
 using Agnes.Ui.Core;
 using Agnes.App.Mobile.Services;
 using Agnes.App.Mobile.ViewModels;
@@ -224,11 +225,12 @@ public sealed class CodeyBoxSetupTests : IDisposable
 [Collection(AvaloniaCollection.Name)]
 public sealed class CodeyBoxViaHostTests : IDisposable
 {
+    private readonly AvaloniaSession _avalonia;
     private readonly string _state = Path.Combine(Path.GetTempPath(), "agnes-codeybox-via-" + Guid.NewGuid().ToString("n"));
 
     public CodeyBoxViaHostTests(AvaloniaSession avalonia)
     {
-        _ = avalonia;
+        _avalonia = avalonia;
         JsonStore.UseDirectory(_state);
     }
 
@@ -281,7 +283,23 @@ public sealed class CodeyBoxViaHostTests : IDisposable
         Assert.Equal(DemoHost.Saved.Name, choice.Name);
         // The demo host advertises no fleet, so its row says so and cannot be chosen.
         Assert.False(choice.OffersFleet);
+        Assert.False(choice.UseCommand.CanExecute(null));
         Assert.Equal("No fleet configured on this host", choice.Detail);
         Assert.False(page.IsViaHost);
+
+        // And the row itself builds: the template must not need anything the phone's XAML runtime cannot
+        // resolve (the first version reached the page's command through a typed cast in the binding path,
+        // which threw on the device and only there).
+        await _avalonia.Run(() =>
+        {
+            var view = new Agnes.App.Mobile.Views.CodeyBoxSetupPageView { DataContext = page };
+            var window = new Avalonia.Controls.Window { Width = 411, Height = 891, Content = view };
+            window.Show();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            Assert.Contains(view.GetVisualDescendants().OfType<Avalonia.Controls.TextBlock>(),
+                t => t.Text == "No fleet configured on this host");
+            window.Close();
+        });
     }
 }
