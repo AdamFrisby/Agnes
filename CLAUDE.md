@@ -41,7 +41,7 @@ dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-desktop       #
 dotnet build src/Agnes.App/Agnes.App/Agnes.App.csproj -f net10.0-browserwasm   # web (needs wasm-tools)
 ```
 
-Run the host directly for manual testing: `dotnet run --project src/Agnes.Host` (logs a pairing code; configure agent launch commands in `appsettings.json`). Screenshots of the UI are generated offline against a simulated host via `dotnet run --project tools/Agnes.Screenshots`. `tools/Agnes.Record` records a live/sandboxed agent session to a `recordings/*.json` fixture.
+Run the host directly for manual testing: `dotnet run --project src/Agnes.Host` (logs a pairing code; configure agent launch commands in `appsettings.json`). Screenshots of the UI are generated offline against a simulated host via `dotnet run --project tools/Agnes.Screenshots`; the same tool times a tab switch against the desktop's real tabs (`-- --switch-timing`, with `--capacity`/`--cold`/`--dump`/`--roots`) and one transcript row (`-- --row-bench`) — see `docs/architecture.md` § Where the time goes. `tools/Agnes.Record` records a live/sandboxed agent session to a `recordings/*.json` fixture.
 
 Package distributable native builds with `./build.sh` / `./build.ps1` (outputs to git-ignored `builds/`); see the script headers for target flags (`linux windows mac android web`, `--client-only`).
 

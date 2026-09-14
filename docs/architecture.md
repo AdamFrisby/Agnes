@@ -138,6 +138,37 @@ Every `session/update` from an agent is normalized to a `SessionEvent` and **app
   [agent-status.md](agent-status.md) — the status is what lets a list of twenty sessions say what each agent
   is doing without opening any of them.
 
+## Where the time goes on a switch, and where the memory goes on a tab
+
+A session tab is a big subtree, and the two Avalonia heads pay for it in different places. What was
+measured (with `tools/Agnes.Screenshots -- --switch-timing`, which restores the desktop's real tabs
+headlessly and times a switch phase by phase, and `--row-bench`, which times one transcript row) and what
+now holds:
+
+- **A switch is a visibility flip, not a re-attach.** Dock's stock document template swaps one presenter's
+  content on every activation, and re-attaching a tab view makes Avalonia re-apply styles and re-evaluate
+  every inherited property and binding in it — 1.2–1.9 s for a session tab. `HotDocumentHost`
+  (`Themes/DockDocuments.axaml`) keeps the last eight activated tabs attached and hidden: 3–18 ms. The
+  Android head's `PageStackHost` does the same for its navigation stack.
+- **A tab is bounded, however long the session.** The side-panel lists cap what they build (twenty
+  rows, "show all" for a page), a background subagent that was never reported on stops counting as
+  running when the turn ends, and a plan shows its head. One live tab went from 8,582 visuals to 1,069.
+- **A transcript row builds once per plugin set, not once per row.** Every markdown viewer shares one
+  plugin set; the fence plugin finds the viewer it renders for through an ambient host. A row: 30 ms →
+  11–15 ms, the rest being text measurement.
+- **Three tiers of tab.** Hot (attached, hidden), warm (detached, view kept by the recycler), cold (a
+  tab left alone for thirty minutes lets its session go and comes back from the local event cache when
+  activated — `AGNES_TAB_SLEEP_MINUTES`, zero disables). A tab mid-turn or waiting on the person never
+  sleeps.
+- **Events are on disk, not in every tab.** A cache-backed `SessionView` keeps the last five hundred
+  events once the transcript is built (`Agnes.Client.Cache` holds the rest): two open tabs went from
+  345 MB to 173 MB of managed heap. What remains is the transcript itself.
+- **A replay asks the host for nothing per turn.** Replaying history fires no git refresh per replayed
+  turn end (one live session had sent sixty-one on every open); waking a slept tab is 2.5 s where it was 12.
+
+The harness can also dump the process at the moment a tab sleeps and, with ClrMD, print the GC roots or
+referrers of any type in the dump (`--dump`, `--roots`, `--referrers`) — how the last of those was found.
+
 ## Security model (v1)
 
 - Host exposes a **TLS** listener.
