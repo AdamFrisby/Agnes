@@ -264,12 +264,46 @@ public static class TabSwitchTiming
 
             var sw = Stopwatch.StartNew();
             vm.ActivateSessionCommand.Execute(background);
-            Program.Pump(() => background.Session is not null && background.Session.Items.Count > 0, 120_000);
+            // Pump by hand so the longest single stretch the UI thread was busy — the freeze a person
+            // would feel — is measured, not just the wall clock.
+            var longestStall = TimeSpan.Zero;
+            while (!(background.Session is not null && background.Session.Items.Count > 0) && sw.Elapsed < TimeSpan.FromSeconds(120))
+            {
+                var tick = Stopwatch.StartNew();
+                Dispatcher.UIThread.RunJobs();
+                if (tick.Elapsed > longestStall)
+                {
+                    longestStall = tick.Elapsed;
+                }
+                Thread.Sleep(5);
+            }
             var reloaded = sw.Elapsed;
+            Console.WriteLine($"wake: longest UI-thread stall {longestStall.TotalMilliseconds:0} ms");
             Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
             window.UpdateLayout();
             Console.WriteLine($"wake: {background.Title} back with {background.Session!.Items.Count:N0} items in {reloaded.TotalMilliseconds:0} ms; shown after {sw.ElapsedMilliseconds} ms; heap {Heap() / 1048576.0:0} MB");
         }
+
+        // Clicks that rebuild something big on the UI thread: how long each one freezes the window.
+        Console.WriteLine("--- click stalls (UI thread busy after the click)");
+        foreach (var doc in docs)
+        {
+            vm.ActivateSessionCommand.Execute(doc);
+            Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
+            window.UpdateLayout();
+            var session = doc.Session!;
+            Stall($"{doc.Title}: Show all {session.AgentRows.Count - 1} agents", () => session.ShowAllAgents = true, window);
+            Stall($"{doc.Title}: Show all {session.ModifiedFiles.Count} files", () => session.ShowAllFiles = true, window);
+            Stall($"{doc.Title}: Show all {session.ToolActivity.Count} tools", () => session.ShowAllTools = true, window);
+            if (session.HasSubagents)
+            {
+                var first = session.AgentRows.FirstOrDefault(a => !a.IsMain);
+                Stall($"{doc.Title}: select a subagent (filters {session.Items.Count:N0} items)", () => first?.SelectCommand.Execute(null), window);
+                Stall($"{doc.Title}: back to the main agent", () => session.AgentRows[0].SelectCommand.Execute(null), window);
+            }
+        }
+        Stall("switch theme to Light with every hot tab attached", () => MainWindowViewModel.ApplyTheme("Light"), window);
+        Stall("switch theme back to Dark", () => MainWindowViewModel.ApplyTheme("Dark"), window);
 
         if (options.LoopSeconds > 0)
         {
@@ -292,6 +326,17 @@ public static class TabSwitchTiming
         {
             cache.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
+    }
+
+    private static void Stall(string label, Action click, Window window)
+    {
+        var sw = Stopwatch.StartNew();
+        click();
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
+        window.UpdateLayout();
+        Console.WriteLine($"{sw.ElapsedMilliseconds,6} ms  {label}");
     }
 
     // In its own frame on purpose: a Debug-built method keeps every local alive until it returns, and a

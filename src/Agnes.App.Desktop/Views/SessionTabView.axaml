@@ -1444,6 +1444,8 @@
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
+                                        <TextBlock Text="{Binding ToolsNote}" IsVisible="{Binding ToolsNote, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                                                   Foreground="{DynamicResource FgDim}" FontSize="11" Margin="6,0,0,0" />
                                         <!-- Only the most recent 50 render until asked for the rest. -->
                                         <Button Content="{Binding MoreToolsLabel}" Command="{Binding ShowAllToolsCommand}"
                                                 IsVisible="{Binding HasMoreTools}" HorizontalAlignment="Left" Cursor="Hand"

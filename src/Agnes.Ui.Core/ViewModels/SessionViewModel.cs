@@ -147,6 +147,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             OnPropertyChanged(nameof(VisibleToolActivity));
             OnPropertyChanged(nameof(HasMoreTools));
+            OnPropertyChanged(nameof(ToolsNote));
             OnPropertyChanged(nameof(MoreToolsLabel));
         };
         // Credentials show only the past hour until "show all"; keep the view + label in sync.
@@ -1143,21 +1144,33 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// last few, and every row is a built control on a tab that must attach in a blink.</summary>
     public const int ToolDisplayLimit = 20;
 
+    /// <summary>How many tool calls "show all" reveals — a page. One live session had 18,436; building a
+    /// row for each froze the window for thirteen seconds after the click.</summary>
+    public const int ToolPageLimit = 200;
+
     private bool _showAllTools;
     public bool ShowAllTools
     {
         get => _showAllTools;
-        set { if (SetProperty(ref _showAllTools, value)) { OnPropertyChanged(nameof(VisibleToolActivity)); OnPropertyChanged(nameof(HasMoreTools)); } }
+        set { if (SetProperty(ref _showAllTools, value)) { OnPropertyChanged(nameof(VisibleToolActivity)); OnPropertyChanged(nameof(HasMoreTools)); OnPropertyChanged(nameof(ToolsNote)); } }
     }
 
-    /// <summary>The tool calls to show — the most recent <see cref="ToolDisplayLimit"/> until "show all".</summary>
+    /// <summary>The tool calls to show — the most recent <see cref="ToolDisplayLimit"/> until "show all", then
+    /// the most recent <see cref="ToolPageLimit"/>.</summary>
     public IEnumerable<ToolEntry> VisibleToolActivity
-        => ShowAllTools || ToolActivity.Count <= ToolDisplayLimit
-            ? ToolActivity
-            : ToolActivity.Skip(ToolActivity.Count - ToolDisplayLimit);
+    {
+        get
+        {
+            var limit = ShowAllTools ? ToolPageLimit : ToolDisplayLimit;
+            return ToolActivity.Count <= limit ? ToolActivity : ToolActivity.Skip(ToolActivity.Count - limit);
+        }
+    }
 
     public bool HasMoreTools => !ShowAllTools && ToolActivity.Count > ToolDisplayLimit;
     public string MoreToolsLabel => $"Show all {ToolActivity.Count}";
+
+    /// <summary>"Latest 200 of 18,436" when "show all" is still a page; empty otherwise.</summary>
+    public string ToolsNote => ShowAllTools && ToolActivity.Count > ToolPageLimit ? $"Latest {ToolPageLimit} of {ToolActivity.Count:N0}" : string.Empty;
 
     private bool _planExpanded = true;
     public bool PlanExpanded { get => _planExpanded; set => SetProperty(ref _planExpanded, value); }

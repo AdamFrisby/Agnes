@@ -46,6 +46,24 @@ public class PanelCapsTests
     }
 
     [Fact]
+    public void Show_all_tools_is_a_page_not_the_whole_history()
+    {
+        var (vm, view) = Open();
+        for (var i = 0; i < 1_000; i++)
+        {
+            view.Apply(new ToolCallEvent($"tc{i}", $"Run step {i}", ToolKind.Execute, ToolCallStatus.Completed, []) { Sequence = i + 1 });
+        }
+
+        Assert.Equal(SessionViewModel.ToolDisplayLimit, vm.VisibleToolActivity.Count());
+        Assert.True(vm.HasMoreTools);
+
+        vm.ShowAllTools = true;
+        Assert.Equal(SessionViewModel.ToolPageLimit, vm.VisibleToolActivity.Count());
+        Assert.Equal("Latest 200 of 1,000", vm.ToolsNote);
+        Assert.EndsWith("step 999", vm.VisibleToolActivity.Last().Name);
+    }
+
+    [Fact]
     public void A_plan_shows_its_head_and_says_how_much_more_there_is()
     {
         var entries = Enumerable.Range(1, 171).Select(i => new PlanEntry($"step {i}", "pending", "medium")).ToList();
