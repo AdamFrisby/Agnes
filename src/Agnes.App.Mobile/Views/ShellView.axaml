@@ -152,10 +152,13 @@
     </Grid>
 
     <!-- ================= pushed page ================= -->
-    <ContentControl Name="PageHost"
-                    Content="{Binding CurrentPage}"
-                    Background="{DynamicResource Bg}"
-                    IsVisible="{Binding CurrentPage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+    <!-- Every page on the stack stays built and attached behind the one on top (see PageStackHost), so
+         popping back to a session is a visibility flip rather than a rebuild of its whole view. -->
+    <c:PageStackHost Name="PageHost"
+                     Pages="{Binding Stack}"
+                     Current="{Binding CurrentPage}"
+                     Background="{DynamicResource Bg}"
+                     IsVisible="{Binding CurrentPage, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
     <!-- ================= sheet ================= -->
     <c:SheetHost Name="Sheets" Sheet="{Binding CurrentSheet}" />

@@ -7,7 +7,7 @@
   <ScrollViewer>
     <StackPanel Margin="12,10,12,24">
 
-      <ItemsControl ItemsSource="{Binding Session.ModifiedFiles}">
+      <ItemsControl ItemsSource="{Binding Session.VisibleModifiedFiles}">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <Button Theme="{StaticResource RowButton}" Padding="10,12"
