@@ -316,6 +316,33 @@ Both approver surfaces show the digits *next to the buttons*, because approving 
 is the one way to use this mechanism and get nothing from it. Declining is the same size and distance
 as approving: "I wasn't expecting this" should be the cheap answer.
 
+## The fleet proxy (`/fleet`)
+
+A phone cannot reach a CodeyBox orchestrator that listens on loopback beside the host, so the host
+forwards for it — but not as a reverse proxy. `Agnes.Host/Fleet/FleetRoutes.cs` is a **route table**:
+every orchestrator route the Agnes apps have a control for is mapped by hand, and nothing else under
+`/fleet` exists (a 404 with a sentence, before the orchestrator hears of it). The bound holds against the
+orchestrator growing: a new endpoint with security characteristics nobody has assessed is not reachable
+through a paired device until someone adds it to the table, on purpose, with a control that uses it.
+
+What the table enforces, per route:
+
+- **Path.** Assembled by the host from vetted parts; an item id is `[A-Za-z0-9._-]{1,80}`, never a path.
+- **Query.** Forwarded only where the route names the keys it takes (`quota/history`: `agent`, `from`,
+  `limit`); everything else is dropped, including the hub's token parameter.
+- **Body.** Read into a typed record and re-serialised. The ceiling patch carries one integer field;
+  `{"auditMaxIterations":30,"prompt":"…"}` reaches the orchestrator as `{"auditMaxIterations":30}`, and a
+  body without the field is refused rather than forwarded as an empty patch.
+- **Who.** A read takes any paired device. A write — retry, replay, promote, cancel, answer, dismiss,
+  raise a ceiling — takes an **Owner**, the same line the host draws for its own configuration.
+- **Credentials.** The device token never leaves the host; the orchestrator sees the host's own key,
+  from `Agnes:Fleet:*` or the orchestrator's config file. Nothing about the orchestrator's key reaches a
+  phone.
+
+Streams are not proxied: the phone polls. The desktop plugin's wider surface (suggestions, releases, test
+cases, prompt edits, supervision) is not proxied either; the desktop runs beside the orchestrator and reads
+it directly. `tests/Agnes.Integration.Tests/FleetProxyTests.cs` pins each of these properties.
+
 ## The plaintext MCP listeners (`/mcp-agnes`)
 
 Agnes offers its **own** MCP tools (`send_user_file`, `arm_goal`, …) back to the agents it runs. Two extra

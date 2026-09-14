@@ -33,11 +33,100 @@ public sealed partial class CodeyBoxSetupPageViewModel : PageViewModel
         TestCommand = new AsyncRelayCommand(TestAsync, () => CanSave);
         SaveCommand = new RelayCommand(Save, () => CanSave);
         ForgetCommand = new RelayCommand(Forget);
+        UseHostCommand = new AsyncRelayCommand<FleetHostChoice>(UseHostAsync);
+        _ = LoadHostsAsync();
     }
 
     public override string Title => "CodeyBox";
 
     public override string? Subtitle => "The orchestrator this phone watches";
+
+    // ---- through a paired host: the way that needs no address and no key on the phone ----
+
+    /// <summary>The paired hosts, each with whether it offers the fleet. Filled shortly after the page opens.</summary>
+    public ObservableCollection<FleetHostChoice> Hosts { get; } = [];
+
+    public bool HasHosts => Hosts.Count > 0;
+
+    /// <summary>The host the fleet currently goes through, or empty when it goes direct or nowhere.</summary>
+    public string ViaHostName => _codeybox.Config.ViaHost
+        ? _shell.Hosts.Find(_codeybox.Config.HostUrl)?.Name ?? _codeybox.Config.HostUrl
+        : string.Empty;
+
+    public bool IsViaHost => _codeybox.Config.ViaHost;
+
+    public IAsyncRelayCommand<FleetHostChoice> UseHostCommand { get; }
+
+    private async Task LoadHostsAsync()
+    {
+        foreach (var link in _shell.Hosts.Links.ToList())
+        {
+            var offers = false;
+            var detail = "Not connected";
+            try
+            {
+                var host = await link.ConnectAsync().ConfigureAwait(true);
+                if (host is not null)
+                {
+                    var caps = await host.GetCapabilitiesAsync().ConfigureAwait(true);
+                    offers = caps.Any(c => c.Id == Agnes.Protocol.HostCapabilityIds.Fleet && c.Available);
+                    detail = offers ? "Offers the fleet" : "No fleet configured on this host";
+                }
+            }
+            catch (Exception ex)
+            {
+                detail = CodeyBoxViewModel.Explain(ex);
+            }
+
+            var choice = new FleetHostChoice(link, offers, detail);
+            _shell.Dispatcher.Post(() =>
+            {
+                Hosts.Add(choice);
+                OnPropertyChanged(nameof(HasHosts));
+            });
+        }
+    }
+
+    /// <summary>Probes the fleet through the host, and only on an answer saves it as the way in.</summary>
+    private async Task UseHostAsync(FleetHostChoice? choice)
+    {
+        if (choice is null)
+        {
+            return;
+        }
+
+        IsTesting = true;
+        Status = string.Empty;
+        try
+        {
+            var config = new CodeyBoxConfig(HostUrl: choice.Link.Url);
+            await using var probe = _codeybox.Probe(config);
+            var queue = probe is null ? null : await probe.GetQueueStatusAsync().ConfigureAwait(true);
+            if (queue is null)
+            {
+                StatusIsGood = false;
+                Status = $"{choice.Link.Name} answered, but not with a queue. Is a fleet configured on that host?";
+                return;
+            }
+
+            _codeybox.Save(config);
+            OnPropertyChanged(nameof(IsConfigured));
+            OnPropertyChanged(nameof(IsViaHost));
+            OnPropertyChanged(nameof(ViaHostName));
+            _shell.Haptics.Tick();
+            _shell.Toast($"CodeyBox through {choice.Link.Name}", ToastKind.Success);
+            _shell.Pop();
+        }
+        catch (Exception ex)
+        {
+            StatusIsGood = false;
+            Status = CodeyBoxViewModel.Explain(ex);
+        }
+        finally
+        {
+            IsTesting = false;
+        }
+    }
 
     /// <summary>What the address field suggests. CodeyBox has no discovery and no QR: it is a port on a
     /// machine on your LAN, and the phone has to be told which.</summary>
@@ -144,6 +233,8 @@ public sealed partial class CodeyBoxSetupPageViewModel : PageViewModel
         Status = string.Empty;
         _codeybox.Save(new CodeyBoxConfig());
         OnPropertyChanged(nameof(IsConfigured));
+        OnPropertyChanged(nameof(IsViaHost));
+        OnPropertyChanged(nameof(ViaHostName));
         _shell.Toast("CodeyBox forgotten", ToastKind.Warning);
         _shell.Pop();
     }
@@ -165,6 +256,12 @@ public sealed partial class CodeyBoxSetupPageViewModel : PageViewModel
 /// a question are <c>POST /workitems/{id}/answer</c> and <c>POST /workitems/{id}/dismiss-question</c>.
 /// A choice this API cannot carry out is not on the card.</para>
 /// </remarks>
+/// <summary>A paired host as the setup page offers it: whether it has a fleet to forward to, and why not.</summary>
+public sealed record FleetHostChoice(HostLink Link, bool OffersFleet, string Detail)
+{
+    public string Name => Link.Name;
+}
+
 public sealed partial class CodeyBoxItemPageViewModel : PageViewModel
 {
     private readonly IAppShell _shell;

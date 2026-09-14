@@ -6,6 +6,7 @@ using Agnes.Host.Channels;
 using Agnes.Agents.ClaudeCode;
 using Agnes.Agents.OpenCode;
 using Agnes.Host.Events;
+using Agnes.Host.Fleet;
 using Agnes.Host.Hosting;
 using Agnes.Host.Sessions;
 using Agnes.Protocol;
@@ -567,6 +568,9 @@ builder.Services.AddSingleton<IEventStore>(sp =>
 // ---- event spine (see .ideas/00d-event-spine-and-ui-extensibility.md) ----
 // One host bus. Plugin event bindings are applied to it via the merger below, so a plugin can observe or
 // intercept/cancel host actions (e.g. veto a prompt); unbinding happens on plugin disable/uninstall.
+// The fleet surface: a bounded set of orchestrator routes behind the device token; see Fleet/FleetRoutes.cs.
+builder.Services.AddSingleton(new Agnes.Host.Fleet.FleetProxy(Agnes.Host.Fleet.FleetOptions.From(builder.Configuration)));
+
 builder.Services.AddSingleton<Agnes.Abstractions.Events.IEventBus>(sp =>
     new Agnes.Abstractions.Events.EventBus(ex =>
         sp.GetRequiredService<ILoggerFactory>().CreateLogger("Agnes.Events").LogError(ex, "An event observer threw.")));
@@ -1981,6 +1985,8 @@ app.MapPost("/pair/request", (PairApprovalRequest request, PairingApprovals appr
 // What's waiting for a human, for an already-paired device to show and act on.
 app.MapGet("/pair/pending", (HttpContext ctx, PairingApprovals approvals) =>
     Authorized(ctx, tokens) ? Results.Ok(approvals.Pending()) : Results.Unauthorized());
+
+app.MapFleet();
 
 app.MapPost("/pair/approve/{requestId}", async (HttpContext ctx, PairingApprovals approvals, string requestId) =>
 {

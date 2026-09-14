@@ -22,6 +22,7 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly ClientCapabilityStore _clientCaps;
     private readonly ReviewCommentStore _reviewComments;
     private readonly Git.CheckoutManager _checkouts;
+    private readonly Fleet.FleetProxy _fleet;
     private readonly IPluginRegistry<IMemoryIndexProvider> _memoryIndexes;
     private readonly BugReportRouter _bugReports;
     private readonly PromptLibrary _prompts;
@@ -40,8 +41,9 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
     private readonly Sharing.PublicViewerTracker _publicViewers;
     private readonly Sharing.SessionAccessDecider _decider;
 
-    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, Sessions.SessionGoalManager goals, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.CollaboratorService collaborators, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers, Git.CheckoutManager checkouts, Sharing.SessionAccessDecider decider)
+    public AgnesHub(SessionManager sessions, ScheduledTaskManager schedule, Sessions.SessionGoalManager goals, HostIdentity identity, DeviceRegistry tokens, PluginManagementService plugins, ClientCapabilityStore clientCaps, ReviewCommentStore reviewComments, IPluginRegistry<IMemoryIndexProvider> memoryIndexes, BugReportRouter bugReports, PromptLibrary prompts, LaunchProfileStore launchProfiles, SkillLibrary skills, IPluginRegistry<IPromptRegistryProvider> skillRegistries, AttentionRequestService attention, QuotaService quota, Notifications.PushRegistrationStore pushRegistrations, Notifications.ActiveSessionViewTracker views, IPluginRegistry<INotificationChannel> channels, Social.CollaboratorService collaborators, Sharing.SessionSharingService sharing, Sharing.SessionAccessAuthorizer access, Sharing.PublicLinkStore publicLinks, Sharing.PublicViewerTracker publicViewers, Git.CheckoutManager checkouts, Sharing.SessionAccessDecider decider, Fleet.FleetProxy fleet)
     {
+        _fleet = fleet;
         _checkouts = checkouts;
         _collaborators = collaborators;
         _sharing = sharing;
@@ -137,6 +139,8 @@ public sealed class AgnesHub : Hub<IAgnesClient>, IAgnesServer
         // Transcript search is only usable when an index is configured (a durable SQLite store); without one
         // a search returns empty, so a client can simply hide the screen. Fail-open.
         caps.Add(new HostCapability(HostCapabilityIds.MemorySearch, _memoryIndexes.All.Count > 0, FailClosed: false));
+        // The fleet proxy exists only where an orchestrator is configured; a phone without it offers direct setup.
+        caps.Add(new HostCapability(HostCapabilityIds.Fleet, _fleet.IsConfigured, FailClosed: false));
         return caps;
     }
 

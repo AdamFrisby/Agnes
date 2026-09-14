@@ -71,7 +71,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAppShell
         Action<string>? clearNotification = null,
         IReceivedFileHandler? receivedFiles = null,
         Func<bool>? isMeteredNetwork = null,
-        Func<Agnes.Plugins.CodeyBox.CodeyBoxOptions, Agnes.Plugins.CodeyBox.CodeyBoxClient?>? codeyBoxClient = null)
+        Func<Agnes.App.Mobile.Services.CodeyBoxEndpoint, Agnes.Plugins.CodeyBox.CodeyBoxClient?>? codeyBoxClient = null)
     {
         _connector = connector;
         Dispatcher = dispatcher;

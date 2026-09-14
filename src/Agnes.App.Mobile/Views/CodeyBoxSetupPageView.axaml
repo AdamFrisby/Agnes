@@ -20,7 +20,39 @@
       <StackPanel Margin="16,14,16,28" Spacing="14">
 
         <TextBlock Classes="dim" TextWrapping="Wrap" LineHeight="21"
-                   Text="CodeyBox runs on your own machine and is reached over your network, so this phone needs its address and an API key. Both come from the machine it runs on — the key is the one in ~/.config/codeybox/config.json." />
+                   Text="The simplest way in is through a paired Agnes host that runs beside CodeyBox: the host forwards just the fleet screens this app has, with this phone's own pairing, and no orchestrator key ever reaches the phone." />
+
+        <Border Classes="inset" IsVisible="{Binding IsViaHost}" Background="{DynamicResource SuccessSoft}">
+          <TextBlock TextWrapping="Wrap" FontSize="{StaticResource TextSm}" LineHeight="20">
+            <Run Text="Going through " /><Run Text="{Binding ViaHostName}" FontWeight="SemiBold" /><Run Text="." />
+          </TextBlock>
+        </Border>
+
+        <StackPanel Spacing="6" IsVisible="{Binding HasHosts}">
+          <TextBlock Classes="section" Text="THROUGH A PAIRED HOST" />
+          <ItemsControl ItemsSource="{Binding Hosts}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:FleetHostChoice">
+                <Button Theme="{StaticResource RowButton}" Padding="12,12"
+                        Command="{Binding $parent[ItemsControl].((vm:CodeyBoxSetupPageViewModel)DataContext).UseHostCommand}"
+                        CommandParameter="{Binding}" IsEnabled="{Binding OffersFleet}">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                      <TextBlock Text="{Binding Name}" />
+                      <TextBlock Text="{Binding Detail}" Classes="caption" />
+                    </StackPanel>
+                    <c:Icon Grid.Column="1" Data="{StaticResource IconChevronRight}" Size="16"
+                            Stroke="{DynamicResource TextMuted}" VerticalAlignment="Center" IsVisible="{Binding OffersFleet}" />
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <TextBlock Classes="section" Text="OR DIRECTLY (ADVANCED)" />
+        <TextBlock Classes="dim" TextWrapping="Wrap" LineHeight="21"
+                   Text="If CodeyBox listens on your network, this phone can reach it by address with an API key. Both come from the machine it runs on — the key is the one in ~/.config/codeybox/config.json." />
 
         <StackPanel Spacing="6">
           <TextBlock Classes="section" Text="ADDRESS" />

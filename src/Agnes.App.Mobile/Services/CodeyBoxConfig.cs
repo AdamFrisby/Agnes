@@ -21,8 +21,13 @@ namespace Agnes.App.Mobile.Services;
 /// fields are filled in the app must look exactly as it did before this existed — no tab, no inbox rows,
 /// no requests.</para>
 /// </remarks>
-public sealed record CodeyBoxConfig(string BaseUrl = "", string ApiKey = "")
+public sealed record CodeyBoxConfig(string BaseUrl = "", string ApiKey = "", string HostUrl = "")
 {
+    /// <summary>The fleet is reached through a paired Agnes host's bounded proxy (<c>/fleet</c>), with the
+    /// device's own pairing — no address to type, no orchestrator key on the phone. The way a phone should
+    /// reach an orchestrator that listens on loopback beside its host.</summary>
+    public bool ViaHost => !string.IsNullOrWhiteSpace(HostUrl);
+
     private const string File = "codeybox.json";
 
     /// <summary>
@@ -34,12 +39,30 @@ public sealed record CodeyBoxConfig(string BaseUrl = "", string ApiKey = "")
 
     /// <summary>Both halves present. A URL with no key reaches an orchestrator that answers 401 to
     /// everything, which on screen is indistinguishable from a broken one.</summary>
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(BaseUrl) && !string.IsNullOrWhiteSpace(ApiKey);
+    public bool IsConfigured => ViaHost || (!string.IsNullOrWhiteSpace(BaseUrl) && !string.IsNullOrWhiteSpace(ApiKey));
 
     /// <summary>The address as the client wants it: no trailing slash, since it appends its own.</summary>
     public string NormalizedUrl => BaseUrl.Trim().TrimEnd('/');
 
     public CodeyBoxOptions ToOptions() => new(NormalizedUrl, ApiKey.Trim());
+
+    /// <summary>
+    /// Where the client should point: through the named host's proxy with that host's pairing and
+    /// certificate pin, or straight at the orchestrator. Null when nothing is configured, or when the
+    /// named host is no longer paired.
+    /// </summary>
+    public CodeyBoxEndpoint? Resolve(HostBook hosts)
+    {
+        if (!ViaHost)
+        {
+            return IsConfigured ? new CodeyBoxEndpoint(ToOptions(), Fingerprint: null) : null;
+        }
+
+        var link = hosts.Find(HostUrl);
+        return link is null
+            ? null
+            : new CodeyBoxEndpoint(new CodeyBoxOptions(link.Url.TrimEnd('/') + "/fleet", link.Saved.Token), link.Saved.Fingerprint);
+    }
 
     public static CodeyBoxConfig Load() => JsonStore.Load(File, new CodeyBoxConfig());
 
@@ -103,3 +126,7 @@ public sealed record CodeyBoxConfig(string BaseUrl = "", string ApiKey = "")
         return ip.IsIPv6LinkLocal || (ip.GetAddressBytes()[0] & 0xFE) == 0xFC;
     }
 }
+
+/// <summary>An orchestrator client's destination: the base address and bearer, plus the certificate pin
+/// when the destination is an Agnes host authenticated the way its hub connection is.</summary>
+public sealed record CodeyBoxEndpoint(CodeyBoxOptions Options, string? Fingerprint);

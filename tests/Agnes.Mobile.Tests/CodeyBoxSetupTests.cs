@@ -1,3 +1,4 @@
+using Agnes.Ui.Core;
 using Agnes.App.Mobile.Services;
 using Agnes.App.Mobile.ViewModels;
 using Agnes.Plugins.CodeyBox;
@@ -212,5 +213,75 @@ public sealed class CodeyBoxSetupTests : IDisposable
 
             shell.SelectTab(ShellTab.Sessions);
         });
+    }
+}
+
+/// <summary>
+/// The way a phone should reach an orchestrator that listens on loopback beside its host: through the
+/// host's bounded fleet proxy, with the phone's own pairing and the host's certificate pin, and no
+/// orchestrator key on the phone at all.
+/// </summary>
+[Collection(AvaloniaCollection.Name)]
+public sealed class CodeyBoxViaHostTests : IDisposable
+{
+    private readonly string _state = Path.Combine(Path.GetTempPath(), "agnes-codeybox-via-" + Guid.NewGuid().ToString("n"));
+
+    public CodeyBoxViaHostTests(AvaloniaSession avalonia)
+    {
+        _ = avalonia;
+        JsonStore.UseDirectory(_state);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_state, recursive: true); } catch { /* best-effort */ }
+    }
+
+    [Fact]
+    public void A_fleet_through_a_host_borrows_that_hosts_pairing_and_pin()
+    {
+        var hosts = new HostBook(new MobileConnector(), ImmediateDispatcher.Instance);
+        hosts.Add(new SavedHost("Workshop", "https://10.0.0.188:5081", "device-token", "01f9d489aa"));
+
+        var config = new CodeyBoxConfig(HostUrl: "https://10.0.0.188:5081");
+        Assert.True(config.ViaHost);
+        Assert.True(config.IsConfigured);
+
+        var endpoint = config.Resolve(hosts);
+        Assert.NotNull(endpoint);
+        Assert.Equal("https://10.0.0.188:5081/fleet", endpoint!.Options.BaseUrl);
+        Assert.Equal("device-token", endpoint.Options.ApiKey);
+        Assert.Equal("01f9d489aa", endpoint.Fingerprint);
+
+        // A host that is no longer paired is no way in; the tab stays gated rather than pointing at nothing.
+        Assert.Null(new CodeyBoxConfig(HostUrl: "https://gone.example").Resolve(hosts));
+
+        // Direct stays what it was, with nothing to pin.
+        var direct = new CodeyBoxConfig("http://10.0.0.188:5836", "k").Resolve(hosts);
+        Assert.Equal("http://10.0.0.188:5836", direct!.Options.BaseUrl);
+        Assert.Null(direct.Fingerprint);
+    }
+
+    [Fact]
+    public async Task The_setup_page_offers_each_paired_host_and_says_whether_it_has_a_fleet()
+    {
+        var shell = new StubShell();
+        shell.Hosts.Add(DemoHost.Saved);
+        var fleet = new CodeyBoxViewModel(shell, clientFactory: _ => null);
+
+        var page = new CodeyBoxSetupPageViewModel(shell, fleet);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (page.Hosts.Count == 0)
+        {
+            cts.Token.ThrowIfCancellationRequested();
+            await Task.Delay(20, cts.Token);
+        }
+
+        var choice = Assert.Single(page.Hosts);
+        Assert.Equal(DemoHost.Saved.Name, choice.Name);
+        // The demo host advertises no fleet, so its row says so and cannot be chosen.
+        Assert.False(choice.OffersFleet);
+        Assert.Equal("No fleet configured on this host", choice.Detail);
+        Assert.False(page.IsViaHost);
     }
 }

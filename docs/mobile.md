@@ -217,14 +217,22 @@ described above, which is what almost every device will have. Five equal targets
 each, comfortably over the 48 dp floor, and the bottom bar is a `UniformGrid` so it re-divides rather than
 pushing a tab off the edge.
 
-**Setup is two fields, because a phone cannot read the config file.** The desktop plugin resolves CodeyBox
-the way CodeyBox's own CLI does — the environment, then `~/.config/codeybox/config.json` — so a machine
-already set up for `codeybox` needs no second configuration. A phone is not that machine: it reaches the
-orchestrator across the LAN, by address, over plain `http`, and Android has no `~/.config` to read. So the
-address and the key are typed once and kept beside the app's other device-local state (`JsonStore`), like a
-paired host's token. **Test** hits `/queue/status` and says what came back, because the two ways this goes
-wrong — an address that is not on this network, a key the orchestrator refuses — otherwise produce the same
-blank screen. CodeyBox is not an Agnes host: it has no TLS listener and no certificate to pin, so it takes
+**Setup is a paired host, because the orchestrator listens on loopback.** CodeyBox binds `127.0.0.1`
+beside the Agnes host that runs on the same machine, so nothing off that machine can reach it — a phone
+least of all. The way in is the host's **bounded fleet proxy**: More › CodeyBox lists the paired hosts
+that advertise the `fleet` capability, choosing one probes `/fleet/queue/status` through it and saves the
+host as the way in (`CodeyBoxConfig.HostUrl`). The phone then reaches the fleet with its own pairing — the
+device token as bearer, the host's certificate pin on the connection (`AndroidCodeyBoxTransport`) — and
+no orchestrator key ever lands on the phone. What the proxy forwards is exactly the routes these screens
+have a control for, each mapped by hand on the host (`Agnes.Host/Fleet/FleetRoutes.cs`); reads take any
+paired device, the decision card's writes take an Owner, and any route the orchestrator grows that the
+apps have no control for is a 404 until someone adds it on purpose. See `docs/security.md`.
+
+**Direct is the advanced way.** If CodeyBox does listen on the network, the address and key can still be
+typed and are kept beside the app's other device-local state (`JsonStore`), like a paired host's token.
+**Test** hits `/queue/status` and says what came back, because the two ways this goes wrong — an address
+that is not on this network, a key the orchestrator refuses — otherwise produce the same blank screen.
+CodeyBox is not an Agnes host: it has no TLS listener and no certificate to pin, so a direct client takes
 its own `HttpClient` rather than `AgnesHttp.For(pin)` (see the note on `CodeyBoxClient`).
 
 **Three segments, because a fleet is asked three questions.**

@@ -55,7 +55,7 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
     /// choice makes. Returning null is allowed and means "there is no orchestrator behind this" — which
     /// is what lets a screen be photographed from canned models with nothing at the other end.
     /// </remarks>
-    private readonly Func<CodeyBoxOptions, CodeyBoxClient?> _clientFactory;
+    private readonly Func<CodeyBoxEndpoint, CodeyBoxClient?> _clientFactory;
 
     private CodeyBoxClient? _client;
     private OverviewGather? _gather;
@@ -83,11 +83,11 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
     public CodeyBoxViewModel(
         IAppShell shell,
         Func<IWallClock?>? clock = null,
-        Func<CodeyBoxOptions, CodeyBoxClient?>? clientFactory = null)
+        Func<CodeyBoxEndpoint, CodeyBoxClient?>? clientFactory = null)
     {
         _shell = shell;
         _clock = clock ?? (() => null);
-        _clientFactory = clientFactory ?? (options => new CodeyBoxClient(options));
+        _clientFactory = clientFactory ?? (endpoint => new CodeyBoxClient(endpoint.Options));
 
         NowWorking = new NowWorkingViewModel(
             () => _board,
@@ -155,9 +155,9 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
         NeedsYouChanged?.Invoke();
 
         Config = config;
-        if (config.IsConfigured)
+        if (config.Resolve(_shell.Hosts) is { } endpoint)
         {
-            _client = _clientFactory(config.ToOptions());
+            _client = _clientFactory(endpoint);
             _gather = _client is null ? null : new OverviewGather(_client, new OverviewHistory(CodeyBoxConfig.HistoryPath));
         }
 
@@ -310,7 +310,8 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
     /// Test button probes with. Goes through the same factory the live client does, so a harness or a
     /// test that has replaced the transport gets it here too.
     /// </summary>
-    internal CodeyBoxClient? Probe(CodeyBoxConfig config) => _clientFactory(config.ToOptions());
+    internal CodeyBoxClient? Probe(CodeyBoxConfig config)
+        => config.Resolve(_shell.Hosts) is { } endpoint ? _clientFactory(endpoint) : null;
 
     /// <summary>The audit-iteration budget an item was measured against, from its project. The work item
     /// does not carry one on this deployment, which is why the decision card takes it as an argument.</summary>

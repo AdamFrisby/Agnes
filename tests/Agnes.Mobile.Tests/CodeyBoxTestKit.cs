@@ -150,7 +150,7 @@ internal static class Fleet
             shell,
             clientFactory: handler is null
                 ? _ => null
-                : options => new CodeyBoxClient(options, handler));
+                : endpoint => new CodeyBoxClient(endpoint.Options, handler));
         return (shell, fleet);
     }
 
@@ -162,7 +162,7 @@ internal static class Fleet
             new MobileConnector(), new MobileDispatcher(), new MobileSettings(), "CodeyBox test",
             codeyBoxClient: handler is null
                 ? _ => null
-                : options => new CodeyBoxClient(options, handler));
+                : endpoint => new CodeyBoxClient(endpoint.Options, handler));
         shell.CodeyBox.Apply(CodeyBoxConfig.Load());
         return shell;
     }

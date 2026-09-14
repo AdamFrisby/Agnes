@@ -357,6 +357,7 @@ adapter follows from it.
 | `DisplayName` | Host name shown to clients (defaults to the machine name). |
 | `PairingToken` | Optional fixed bootstrap token (headless). |
 | `Auth:Pairing:Enabled` | Turn the pairing-code bootstrap off (default on) — e.g. GitHub-only. |
+| `Fleet:{Enabled,BaseUrl,ApiKey,ConfigPath}` | The bounded CodeyBox proxy under `/fleet` (see `docs/security.md` § The fleet proxy). Configured from `BaseUrl`+`ApiKey`, else from the orchestrator's own `ConfigPath` (default `~/.config/codeybox/config.json`); absent both, the host advertises no fleet. `Enabled=false` turns it off. |
 | `Auth:GitHub:{Enabled,ClientId,AllowedUsers,AllowedOrgs}` | GitHub-SSO sign-in + allowlist (see above). |
 | `Auth:Keypair:{Enabled,AuthorizedKeysFile}` | Keypair (authorized_keys) sign-in (see above). |
 | `Auth:Oidc:{Enabled,Issuer,Audience,JwksUri,ClientId,ClientSecret,RedirectUri}` | Native OIDC sign-in; Google is configured through this standard flow. |

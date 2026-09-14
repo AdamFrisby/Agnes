@@ -438,6 +438,10 @@ public static class HostCapabilityIds
     /// <summary>At least one <c>IAgentAdapter</c> is registered — without this, no session can open.</summary>
     public const string AgentAdapter = "agent-adapter";
 
+    /// <summary>The host forwards a bounded set of fleet (CodeyBox orchestrator) routes under <c>/fleet</c>,
+    /// authenticated by the device token. A client without it asks the orchestrator directly, if it can.</summary>
+    public const string Fleet = "fleet";
+
     /// <summary>An <c>ISandboxProvider</c> is configured. Absence degrades gracefully: sessions just
     /// run on the host instead of in a per-session VM.</summary>
     public const string SandboxProvider = "sandbox-provider";

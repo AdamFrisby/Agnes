@@ -28,8 +28,12 @@ namespace Agnes.App.Mobile.Services;
 internal static class AndroidCodeyBoxTransport
 {
     /// <summary>The client factory the shell hands to the fleet's view model.</summary>
-    internal static CodeyBoxClient Create(CodeyBoxOptions options)
-        => CodeyBoxConfig.IsPrivateCleartext(options.BaseUrl)
-            ? new CodeyBoxClient(options, new SocketsHttpHandler())
-            : new CodeyBoxClient(options);
+    internal static CodeyBoxClient Create(CodeyBoxEndpoint endpoint)
+        => endpoint switch
+        {
+            // Through a paired host: the same pin the hub connection trusts, or nothing to pin on plain http.
+            { Fingerprint: { Length: > 0 } pin } => new CodeyBoxClient(endpoint.Options, Agnes.Client.PinnedTls.CreateHandler(pin)),
+            { Options.BaseUrl: var url } when CodeyBoxConfig.IsPrivateCleartext(url) => new CodeyBoxClient(endpoint.Options, new SocketsHttpHandler()),
+            _ => new CodeyBoxClient(endpoint.Options),
+        };
 }
