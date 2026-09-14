@@ -30,6 +30,7 @@ public sealed class CodeyBoxClient : IAsyncDisposable
 
     private readonly CodeyBoxOptions _options;
     private readonly HttpClient _http;
+    private readonly HttpMessageHandler? _handler;
 
     private HubConnection? _hub;
     private string? _following;
@@ -37,6 +38,7 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     public CodeyBoxClient(CodeyBoxOptions options, HttpMessageHandler? handler = null)
     {
         _options = options;
+        _handler = handler;
         // disposeHandler: false for an injected one. A handler handed in belongs to whoever handed it in
         // — a harness or a test commonly points several clients at the same recorder — and the default
         // would let the first client disposed take the other clients' transport with it.
@@ -54,7 +56,12 @@ public sealed class CodeyBoxClient : IAsyncDisposable
     /// base address and key, and because a feed reader must not share the pooled request client — it
     /// holds one connection open indefinitely.
     /// </summary>
-    internal CodeyBoxEventStream CreateEventStream() => new(_options);
+    internal CodeyBoxEventStream CreateEventStream()
+        // The feed must reach the orchestrator the way the requests do: through the handler this client was
+        // given — the certificate pin on a paired host, the cleartext handler on a private address. A bare
+        // HttpClient here reached a self-signed host with the platform's trust store and failed its
+        // handshake on every attempt while the polled screens beside it worked.
+        => new(_options, _handler is null ? null : () => new HttpClient(_handler, disposeHandler: false));
 
     public async Task<IReadOnlyList<QuotaProbe>> GetQuotaProbesAsync(CancellationToken cancellationToken = default)
         => (await Get<QuotaReport>("quota", cancellationToken).ConfigureAwait(false))?.Probes ?? [];
