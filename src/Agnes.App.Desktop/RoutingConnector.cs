@@ -29,11 +29,17 @@ public sealed class RoutingConnector : IAgnesConnector
 #if DEBUG
     private readonly SimulatedConnector _simulated = new();
 #endif
-    private readonly SignalRConnector _real = new();
+    private readonly SignalRConnector _real;
     private readonly RecordedConnector _recorded;
 
-    public RoutingConnector(string recordingsDirectory, double recordingSpeed = 1.0)
-        => _recorded = new RecordedConnector(recordingsDirectory, recordingSpeed);
+    /// <param name="eventCache">The durable event cache real hosts replay from, or null to fetch every
+    /// subscribe in full. Only the SignalR connector gets it: the simulated and recorded hosts are
+    /// in-process and have nothing to save.</param>
+    public RoutingConnector(string recordingsDirectory, double recordingSpeed = 1.0, ISessionEventCache? eventCache = null)
+    {
+        _recorded = new RecordedConnector(recordingsDirectory, recordingSpeed);
+        _real = new SignalRConnector(new AgnesClient(eventCache));
+    }
 
     private static bool IsSimulated(string hostUrl) => hostUrl.StartsWith("sim:", StringComparison.OrdinalIgnoreCase);
 

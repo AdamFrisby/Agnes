@@ -11,6 +11,14 @@ namespace Agnes.Client;
 public sealed class AgnesClient : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, HostConnection> _hosts = new();
+    private readonly ISessionEventCache? _cache;
+
+    /// <param name="cache">A durable local copy of session events shared by every pooled host, or null to
+    /// fetch every subscribe in full from the host.</param>
+    public AgnesClient(ISessionEventCache? cache = null) => _cache = cache;
+
+    /// <summary>The event cache the pool's connections replay from, if any.</summary>
+    public ISessionEventCache? EventCache => _cache;
 
     // One gate per host key so concurrent AddHostAsync calls for the SAME host are serialized. Without this,
     // two callers racing (e.g. restoring two tabs on one host at startup) could each see the other's
@@ -76,7 +84,7 @@ public sealed class AgnesClient : IAsyncDisposable
                 await existing.DisposeAsync().ConfigureAwait(false);
             }
 
-            var connection = new HostConnection(hostUrl, token, configureHttp, pinnedFingerprint);
+            var connection = new HostConnection(hostUrl, token, configureHttp, pinnedFingerprint, _cache);
             _hosts[key] = connection;
             await connection.ConnectAsync(cancellationToken).ConfigureAwait(false);
             return connection;

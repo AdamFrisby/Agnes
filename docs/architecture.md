@@ -102,6 +102,19 @@ ASP.NET Core daemon:
 ### `Agnes.Client`
 Reusable, frontend-agnostic client library: a **connection pool across multiple hosts**, session subscription, snapshot+tail replay, automatic reconnection, and a device-token store.
 
+### `Agnes.Client.Cache`
+A durable, client-side copy of session events (`ISessionEventCache`, implemented over SQLite), which a head
+opts into by handing one to its `AgnesClient`. The log is append-only and a sequence never changes meaning,
+so what a client fetched once it can keep: a subscribe is answered from disk up to the cached head, the host
+is asked for events after `head − 1`, and the first event it returns — the cached head itself, same kind,
+same timestamp — is the proof the two logs are the same before the cached part is trusted. A host whose log
+was reset fails that probe (or reports a lower head) and the session's cache is dropped and refetched.
+Live events are recorded as the view applies them, each with the sequence it followed, so the cached range
+extends without assuming sequences are dense. The cache can never break a subscribe: any failure in it falls
+back to the plain host request. A session with a few hundred thousand events costs a hundred-plus megabytes
+over the wire without this, and a delta with it. Kept out of `Agnes.Client` so heads that cannot carry a
+native SQLite are untouched; it is the same two packages, at the same versions, as the host's event store.
+
 ### `Agnes.Ui.Core` + `Agnes.App`
 Uno Platform UI. `Agnes.Ui.Core` holds shared view models and reusable render components for each `SessionEvent` kind (message stream, tool-call card, diff viewer, plan view, permission prompt, and a terminal-view control for fallback). `Agnes.App` composes **two genuinely distinct shells** from that core:
 - **Desktop shell** — sidebar of hosts→agents, multi-pane, keyboard-driven (Windows / macOS / Linux-KDE / large-screen WASM).
@@ -116,6 +129,7 @@ Every `session/update` from an agent is normalized to a `SessionEvent` and **app
 - **Scrollback** — the log *is* the history; nothing is bound to a screen buffer.
 - **Multi-client consistency** — a joining client requests `since = cursor`; the host replies with a snapshot up to `head` then streams the live tail. Every client converges on the same ordered log.
 - **Reconnect** — a dropped client resumes from its last acknowledged sequence number with no lost or duplicated events.
+- **Local caching** — because a sequence, once assigned, never changes meaning, a client can keep the events it has fetched and ask only for the delta next time (`Agnes.Client.Cache`, above).
 - **Fallback** — raw PTY output is carried as its own `SessionEvent` kind, interleaved in order.
 - **Host-originated facts ride the same log** — a notice, a title, a brokered git credential, a file the
   agent sent the user (`FileSharedEvent`), and the agent's own one-line status (`AgentStatusEvent`) are

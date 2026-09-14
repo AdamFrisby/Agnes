@@ -40,6 +40,14 @@ public sealed class SessionView
     /// <summary>Raised (outside the lock) for each newly applied event.</summary>
     public event Action<SessionEvent>? EventAppended;
 
+    /// <summary>
+    /// Raised for each event that arrived live — pushed by the hub rather than read from a snapshot — with
+    /// the sequence the view held just before it. The pair says exactly which stretch of the log the event
+    /// answers for, which is what a durable cache needs to extend its range without assuming sequences are
+    /// dense. Snapshot events are not raised here: whoever fetched the snapshot knows its bounds already.
+    /// </summary>
+    public event Action<long, SessionEvent>? LiveApplied;
+
     /// <summary>Session metadata from the snapshot (modes, adapter, …), once applied.</summary>
     public SessionInfo? Info { get; private set; }
 
@@ -47,6 +55,7 @@ public sealed class SessionView
     {
         Info = snapshot.Session;
         List<SessionEvent> toRaise = [];
+        List<(long Previous, SessionEvent Event)> live = [];
         lock (_gate)
         {
             foreach (var @event in snapshot.Events)
@@ -60,9 +69,11 @@ public sealed class SessionView
             _snapshotApplied = true;
             foreach (var buffered in _pending.OrderBy(e => e.Sequence))
             {
+                var previous = LastSequence;
                 if (AppendLocked(buffered))
                 {
                     toRaise.Add(buffered);
+                    live.Add((previous, buffered));
                 }
             }
 
@@ -70,11 +81,16 @@ public sealed class SessionView
         }
 
         Raise(toRaise);
+        foreach (var (previous, @event) in live)
+        {
+            LiveApplied?.Invoke(previous, @event);
+        }
     }
 
     public void Apply(SessionEvent @event)
     {
         bool appended;
+        long previous;
         lock (_gate)
         {
             if (!_snapshotApplied)
@@ -83,12 +99,14 @@ public sealed class SessionView
                 return;
             }
 
+            previous = LastSequence;
             appended = AppendLocked(@event);
         }
 
         if (appended)
         {
             EventAppended?.Invoke(@event);
+            LiveApplied?.Invoke(previous, @event);
         }
     }
 

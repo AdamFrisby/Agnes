@@ -79,6 +79,7 @@ Every `session/update` from an agent's ACP stream is normalized into a `SessionE
 | `Agnes.Registries.McpRegistry` | MCP-catalogue plugin (`IMcpCatalogProvider`) over the official registry at `registry.modelcontextprotocol.io`. |
 | `Agnes.Host` | ASP.NET Core daemon: plugin loader, `SessionManager`, event-sourced SQLite store, `PtyManager` fallback, SignalR hub, device-pairing/GitHub/keypair auth, scheduled tasks. |
 | `Agnes.Client` | Frontend-agnostic client library: connection pool across multiple hosts, snapshot+tail replay, auto-reconnect, device-token store. |
+| `Agnes.Client.Cache` | Client-side durable event cache (`ISessionEventCache` over SQLite): a subscribe replays from disk and fetches only the delta, after a one-event probe proves the host's log is the cached one. Opt-in per head via `new AgnesClient(cache)`; the desktop uses it, at `%APPDATA%/Agnes/cache/events.db` (`AGNES_EVENT_CACHE=off` disables). |
 | `Agnes.Client.Simulation` | In-memory simulated host/agent for offline UI development and screenshots. |
 | `Agnes.Recording` | Support for recording real/sandboxed sessions to replayable JSON fixtures (used by `tools/Agnes.Record` and `RecordedHost` test fixtures). |
 | `Agnes.Sandbox` / `Agnes.Sandbox.Incus` | Optional per-session VM sandboxing: credential broker, Incus provider. See `docs/sandbox-live-testing.md`. |

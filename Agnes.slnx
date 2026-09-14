@@ -13,6 +13,7 @@
     <Project Path="src/Agnes.App.Mobile/Agnes.App.Mobile.csproj" />
     <Project Path="src/Agnes.Client.Simulation/Agnes.Client.Simulation.csproj" />
     <Project Path="src/Agnes.Client/Agnes.Client.csproj" />
+    <Project Path="src/Agnes.Client.Cache/Agnes.Client.Cache.csproj" />
     <Project Path="src/Agnes.Cli/Agnes.Cli.csproj" />
     <Project Path="src/Agnes.Host/Agnes.Host.csproj" />
     <Project Path="src/Agnes.Protocol/Agnes.Protocol.csproj" />
@@ -31,6 +32,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Agnes.Acp.Tests/Agnes.Acp.Tests.csproj" />
     <Project Path="tests/Agnes.Cli.Tests/Agnes.Cli.Tests.csproj" />
+    <Project Path="tests/Agnes.Client.Tests/Agnes.Client.Tests.csproj" />
     <Project Path="tests/Agnes.Agents.Native.Tests/Agnes.Agents.Native.Tests.csproj" />
     <Project Path="tests/Agnes.Agents.Codex.Tests/Agnes.Agents.Codex.Tests.csproj" />
     <Project Path="tests/Agnes.Agents.Antigravity.Tests/Agnes.Agents.Antigravity.Tests.csproj" />

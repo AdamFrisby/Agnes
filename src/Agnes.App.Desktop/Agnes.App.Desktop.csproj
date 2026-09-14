@@ -47,6 +47,7 @@
     <ProjectReference Include="..\Agnes.Abstractions\Agnes.Abstractions.csproj" />
     <ProjectReference Include="..\Agnes.Protocol\Agnes.Protocol.csproj" />
     <ProjectReference Include="..\Agnes.Client\Agnes.Client.csproj" />
+    <ProjectReference Include="..\Agnes.Client.Cache\Agnes.Client.Cache.csproj" />
     <ProjectReference Include="..\Agnes.Client.Simulation\Agnes.Client.Simulation.csproj" />
     <ProjectReference Include="..\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
   </ItemGroup>

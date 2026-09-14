@@ -3,6 +3,7 @@ using Agnes.App.Desktop.Keymaps;
 using Agnes.App.Desktop.ViewModels;
 using Agnes.App.Desktop.Views;
 using Agnes.Client;
+using Agnes.Client.Cache;
 using Agnes.Client.Simulation;
 using Avalonia;
 using Avalonia.Controls;
@@ -53,6 +54,32 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// The local copy of session events every real host replays from, at <c>%APPDATA%/Agnes/cache/events.db</c>
+    /// (or <c>AGNES_EVENT_CACHE</c>; the value <c>off</c> disables it). A cache that cannot be opened — a
+    /// read-only profile, a missing native SQLite — costs nothing but the caching: the app runs without one.
+    /// </summary>
+    private static ISessionEventCache? OpenEventCache()
+    {
+        var configured = Environment.GetEnvironmentVariable("AGNES_EVENT_CACHE");
+        if (string.Equals(configured, "off", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(configured)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "cache", "events.db")
+                : configured;
+            return SqliteSessionEventCache.Open(path);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -60,7 +87,7 @@ public partial class App : Application
             // Routing connector: sim:// simulated, rec:// recorded playback, http(s):// SignalR.
             var recordingsDir = Environment.GetEnvironmentVariable("AGNES_RECORDINGS")
                 ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "recordings");
-            IAgnesConnector connector = new RoutingConnector(recordingsDir);
+            IAgnesConnector connector = new RoutingConnector(recordingsDir, eventCache: OpenEventCache());
             var settingsStore = new SettingsStore();
             _keymap = KeymapService.CreateDefault(settingsStore.FilePath);
             var viewModel = new MainWindowViewModel(

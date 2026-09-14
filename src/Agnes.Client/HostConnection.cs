@@ -15,6 +15,7 @@ public sealed class HostConnection : IAgnesHost
 {
     private readonly HubConnection _hub;
     private readonly ConcurrentDictionary<string, SessionView> _views = new();
+    private readonly CachedReplay? _replay;
 
     // Kept because the display channel dials its own socket and has to present the same device token the hub
     // did; SignalR baked it into the hub URL and does not hand it back.
@@ -26,11 +27,17 @@ public sealed class HostConnection : IAgnesHost
     /// OS trust store — which is what makes a self-signed host on a LAN work with no CA and no installed
     /// certificate. Null keeps the previous behaviour exactly, so every existing caller is unaffected.
     /// </param>
+    /// <param name="cache">
+    /// A durable local copy of session events. With one, a subscribe replays what it can from disk and asks
+    /// the host only for the rest (see <see cref="CachedReplay"/>); without one every subscribe fetches
+    /// the whole requested range, as it always did.
+    /// </param>
     public HostConnection(
         string hostUrl,
         string token,
         Action<HttpConnectionOptions>? configureHttp = null,
-        string? pinnedFingerprint = null)
+        string? pinnedFingerprint = null,
+        ISessionEventCache? cache = null)
     {
         HostUrl = hostUrl.TrimEnd('/');
         PinnedFingerprint = string.IsNullOrWhiteSpace(pinnedFingerprint) ? null : pinnedFingerprint;
@@ -53,6 +60,8 @@ public sealed class HostConnection : IAgnesHost
         {
             HostId = HostUrl;
         }
+
+        _replay = cache is null ? null : new CachedReplay(cache, HostId);
 
         // Pin the host certificate on a direct HTTPS address. A relay address already pins inside its own
         // transport, and there is nothing to pin on http:// or on the in-memory test transport.
@@ -116,12 +125,21 @@ public sealed class HostConnection : IAgnesHost
             RaiseState(AgnesConnectionState.Connected);
             foreach (var view in _views.Values)
             {
-                var snapshot = await _hub.InvokeAsync<SessionSnapshot>(
-                    nameof(IAgnesServer.Subscribe), view.SessionId, view.LastSequence);
+                var snapshot = await FetchAsync(view.SessionId, view.LastSequence).ConfigureAwait(false);
                 view.ApplySnapshot(snapshot);
             }
         };
     }
+
+    /// <summary>Raised after a subscribe or history load with how much came from the local cache.</summary>
+    public event Action<ReplayReport>? Replayed
+    {
+        add { if (_replay is not null) { _replay.Replayed += value; } }
+        remove { if (_replay is not null) { _replay.Replayed -= value; } }
+    }
+
+    /// <summary>Whether this connection replays from a local event cache.</summary>
+    public bool HasEventCache => _replay is not null;
 
     public string HostUrl { get; }
 
@@ -211,8 +229,8 @@ public sealed class HostConnection : IAgnesHost
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>
     public async Task<SessionView> SubscribeAsync(string sessionId, long since = 0)
     {
-        var view = _views.GetOrAdd(sessionId, id => new SessionView(id));
-        var snapshot = await _hub.InvokeAsync<SessionSnapshot>(nameof(IAgnesServer.Subscribe), sessionId, since);
+        var view = _views.GetOrAdd(sessionId, NewView);
+        var snapshot = await FetchAsync(sessionId, since).ConfigureAwait(false);
         view.ApplySnapshot(snapshot);
         return view;
     }
@@ -221,10 +239,28 @@ public sealed class HostConnection : IAgnesHost
     {
         // The same hub call a subscribe makes — the group join is idempotent — but the answer is split:
         // what precedes the view goes in front of it, anything newer than its tail is appended as usual.
-        var view = _views.GetOrAdd(sessionId, id => new SessionView(id));
-        var snapshot = await _hub.InvokeAsync<SessionSnapshot>(nameof(IAgnesServer.Subscribe), sessionId, sinceSequence);
+        var view = _views.GetOrAdd(sessionId, NewView);
+        var snapshot = await FetchAsync(sessionId, sinceSequence).ConfigureAwait(false);
         view.Prepend(snapshot.Events);
         view.ApplySnapshot(snapshot);
+        return view;
+    }
+
+    /// <summary>The hub's <c>Subscribe</c> — which also joins the session's group, so every path that needs
+    /// events goes through it at least once — behind the cache when there is one.</summary>
+    private Task<SessionSnapshot> FetchAsync(string sessionId, long since)
+    {
+        Task<SessionSnapshot> FromHub(long s) => _hub.InvokeAsync<SessionSnapshot>(nameof(IAgnesServer.Subscribe), sessionId, s);
+        return _replay is null ? FromHub(since) : _replay.FetchAsync(sessionId, since, FromHub);
+    }
+
+    private SessionView NewView(string sessionId)
+    {
+        var view = new SessionView(sessionId);
+        if (_replay is { } replay)
+        {
+            view.LiveApplied += (previous, @event) => replay.RecordLive(sessionId, previous, @event);
+        }
         return view;
     }
 

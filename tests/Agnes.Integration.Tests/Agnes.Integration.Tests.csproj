@@ -27,6 +27,8 @@
     <ProjectReference Include="..\..\src\Agnes.Protocol\Agnes.Protocol.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Host\Agnes.Host.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Client\Agnes.Client.csproj" />
+    <!-- The client-side event cache, proven over the real hub: what it stores must be what the wire carried. -->
+    <ProjectReference Include="..\..\src\Agnes.Client.Cache\Agnes.Client.Cache.csproj" />
     <ProjectReference Include="..\..\src\Agnes.Ui.Core\Agnes.Ui.Core.csproj" />
     <!-- LiveGraphicalDisplayProbe drives the real Incus backend; it is inert without a live Incus. -->
     <ProjectReference Include="..\..\src\Agnes.Sandbox.Incus\Agnes.Sandbox.Incus.csproj" />
