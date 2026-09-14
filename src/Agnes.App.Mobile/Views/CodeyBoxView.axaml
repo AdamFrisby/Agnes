@@ -181,8 +181,12 @@
                     <TextBlock Grid.Row="0" Grid.Column="1" Classes="title" Text="{Binding Title}"
                                TextTrimming="CharacterEllipsis" MaxLines="1" />
 
+                    <!-- Sky for in motion, not the sessions list's mint: mint means done, and the motion
+                         dot beside it is already drawn sky by the plugin's own control. A dot and a chip
+                         on the same row disagreeing about what a colour means is how the colours stop
+                         meaning anything. -->
                     <Border Grid.Row="0" Grid.Column="2" Classes="pill" Margin="8,0,0,0"
-                            Classes.running="{Binding IsWorking}"
+                            Classes.info="{Binding IsWorking}"
                             Classes.needs="{Binding IsAttention}"
                             Classes.error="{Binding IsError}">
                       <TextBlock Text="{Binding StateWord}" />
@@ -324,7 +328,7 @@
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
                         <Border Classes="pill"
-                                Classes.running="{Binding IsWorking}"
+                                Classes.info="{Binding IsWorking}"
                                 Classes.needs="{Binding IsAttention}"
                                 Classes.error="{Binding IsFailed}">
                           <TextBlock Text="{Binding Phase}" />

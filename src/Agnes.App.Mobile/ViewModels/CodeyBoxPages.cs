@@ -25,8 +25,10 @@ public sealed partial class CodeyBoxSetupPageViewModel : PageViewModel
     {
         _shell = shell;
         _codeybox = codeybox;
-        Address = codeybox.Config.BaseUrl;
-        ApiKey = codeybox.Config.ApiKey;
+        // The fields, not the properties: the generated setters raise OnAddressChanged, which re-evaluates
+        // the two commands below — and at this point they do not exist yet.
+        _address = codeybox.Config.BaseUrl;
+        _apiKey = codeybox.Config.ApiKey;
 
         TestCommand = new AsyncRelayCommand(TestAsync, () => CanSave);
         SaveCommand = new RelayCommand(Save, () => CanSave);
@@ -95,7 +97,14 @@ public sealed partial class CodeyBoxSetupPageViewModel : PageViewModel
         try
         {
             var config = new CodeyBoxConfig(Address, ApiKey);
-            await using var probe = new CodeyBoxClient(config.ToOptions());
+            await using var probe = _codeybox.Probe(config);
+            if (probe is null)
+            {
+                StatusIsGood = false;
+                Status = "This build can't reach a CodeyBox.";
+                return;
+            }
+
             var queue = await probe.GetQueueStatusAsync().ConfigureAwait(true);
             StatusIsGood = queue is not null;
             Status = queue switch

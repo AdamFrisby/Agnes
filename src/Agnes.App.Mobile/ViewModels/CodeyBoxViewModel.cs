@@ -305,6 +305,13 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
     /// through this rather than building a second client with a second copy of the key.</summary>
     internal CodeyBoxClient? Client => _client;
 
+    /// <summary>
+    /// A throwaway client for an address and key that have not been saved yet — what More › CodeyBox's
+    /// Test button probes with. Goes through the same factory the live client does, so a harness or a
+    /// test that has replaced the transport gets it here too.
+    /// </summary>
+    internal CodeyBoxClient? Probe(CodeyBoxConfig config) => _clientFactory(config.ToOptions());
+
     /// <summary>The audit-iteration budget an item was measured against, from its project. The work item
     /// does not carry one on this deployment, which is why the decision card takes it as an argument.</summary>
     internal int CeilingOf(WorkItemRow item)
@@ -538,7 +545,7 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
     /// The two failures that actually happen are "wrong address" (the LAN address changed, or the phone is
     /// on mobile data) and "wrong key". A raw <c>HttpRequestException</c> says neither.
     /// </remarks>
-    internal static string Explain(Exception ex) => ex switch
+    public static string Explain(Exception ex) => ex switch
     {
         HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden } =>
             "CodeyBox refused the API key. Check it in More › CodeyBox.",
@@ -549,7 +556,7 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
 
     /// <summary>The runway the queue segment draws, from a gather. Pure, and off the UI thread in the
     /// live path.</summary>
-    internal static Board Runway(GatheredOverview gathered)
+    public static Board Runway(GatheredOverview gathered)
     {
         ArgumentNullException.ThrowIfNull(gathered);
         var busy = gathered.Concurrency?.CurrentlyRunningTotal ?? 0;
@@ -566,10 +573,15 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
     /// <see cref="GatheredOverview"/> and get the real screens with no orchestrator behind them. The live
     /// path calls the same code with the real one.
     /// </remarks>
-    public void Show(GatheredOverview gathered)
+    /// <param name="board">
+    /// The runway to draw, when the caller already has one. The live path never passes it — it is built
+    /// from the gather — but a render test that wants the canonical hard queue (a 32-step chain, sixteen
+    /// rows all waiting on the same thing) has a <see cref="Board"/> and not the items behind it.
+    /// </param>
+    public void Show(GatheredOverview gathered, Board? board = null)
     {
-        var board = Runway(gathered);
-        Apply(gathered, board, BuildSections(board));
+        var runway = board ?? Runway(gathered);
+        Apply(gathered, runway, BuildSections(runway));
     }
 
     private void Apply(GatheredOverview gathered, Board board, IReadOnlyList<CodeyBoxQueueSection> sections)
@@ -600,7 +612,7 @@ public sealed partial class CodeyBoxViewModel : ObservableObject, IDisposable
     /// day. Pure — it is a function of the board, which is what lets a test assert the shape without a
     /// network.
     /// </summary>
-    internal static IReadOnlyList<CodeyBoxQueueSection> BuildSections(Board board)
+    public static IReadOnlyList<CodeyBoxQueueSection> BuildSections(Board board)
     {
         ArgumentNullException.ThrowIfNull(board);
 

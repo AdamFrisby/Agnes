@@ -48,6 +48,9 @@ Everything in the design follows from that list.
 | **Search** | What was ever said. Open sessions searched locally as you type; the host's full-text index over every recorded session on submit. |
 | **More** | Hosts and pairing, appearance, notifications, prompts, paired devices. |
 
+A **fifth** appears on a device that watches a CodeyBox fleet, and only there — see
+[CodeyBox: the fifth destination](#codeybox-the-fifth-destination).
+
 **One back gesture**, handled in one place (`ShellViewModel.GoBack`): close the sheet → let the page
 handle it → pop the page → return to the first tab → let Android leave the app. The app is a single
 activity, so this is the only back semantics that exists.
@@ -194,6 +197,100 @@ you chose to look.
 **No terminal.** The desktop head embeds a VT terminal; a phone does not get one. A 40-column terminal
 behind a soft keyboard is worse than useless, and the things you'd use it for are covered by the git
 sheet and the tool timeline.
+
+---
+
+## CodeyBox: the fifth destination
+
+CodeyBox is the operator's own multi-agent orchestrator — a queue of work items that agents pick up, audit
+in a loop, and land. The desktop drives it through the `Agnes.Plugins.CodeyBox` client plugin. The phone
+gets its own surface, because the one thing that screen is for at arm's length is the one thing a phone is
+best at: **an item has parked on a question and is waiting for a person**.
+
+**A fifth tab, and only for a device that has one.** The four destinations above are four *jobs*, and a
+fleet of autonomous agents is a fifth: it is not a session, it has its own three-segment page stack and its
+own item pages, and a row at the top of Sessions would put every visit two taps deep, pop back into a list
+it has nothing to do with, and spend the top of the one screen whose whole value is being readable at a
+glance. So it is a tab — present only once More › CodeyBox has both an address and a key. Until then there
+is no tab, no inbox section and no request of any kind; the app is byte-for-byte the four-destination app
+described above, which is what almost every device will have. Five equal targets across 411 dp is 82 dp
+each, comfortably over the 48 dp floor, and the bottom bar is a `UniformGrid` so it re-divides rather than
+pushing a tab off the edge.
+
+**Setup is two fields, because a phone cannot read the config file.** The desktop plugin resolves CodeyBox
+the way CodeyBox's own CLI does — the environment, then `~/.config/codeybox/config.json` — so a machine
+already set up for `codeybox` needs no second configuration. A phone is not that machine: it reaches the
+orchestrator across the LAN, by address, over plain `http`, and Android has no `~/.config` to read. So the
+address and the key are typed once and kept beside the app's other device-local state (`JsonStore`), like a
+paired host's token. **Test** hits `/queue/status` and says what came back, because the two ways this goes
+wrong — an address that is not on this network, a key the orchestrator refuses — otherwise produce the same
+blank screen. CodeyBox is not an Agnes host: it has no TLS listener and no certificate to pin, so it takes
+its own `HttpClient` rather than `AgnesHttp.For(pin)` (see the note on `CodeyBoxClient`).
+
+**Three segments, because a fleet is asked three questions.**
+
+| Segment | Answers |
+| --- | --- |
+| **Overview** | Should I do anything? The generated sentence naming the current constraint, six vitals as a two-column grid with sparklines and control bands, the rows that need a look, the folded groups that need a slot rather than a look, quota burn-downs, and the cumulative flow last. |
+| **Now working** | What is it doing this second? One card per busy dispatch slot — agent, phase, a ticking elapsed, and the last three lines the agent actually printed — plus the headline figures, the orchestrator's own feed, and a heartbeat of events per minute. |
+| **Queue** | What is in the pipeline, in the order the orchestrator will pick it: Now, Next, one section per waiting reason, one per landed day. |
+
+**The item is a page, not a pane.** Tapping any row pushes a full screen that leads with the **decision
+card** when there is one — `Decision.For` is a pure function of the row and its open questions, the same one
+the desktop card uses, handed this head's own commands. Its choices are full-width buttons with their
+consequence written under each; the destructive one wears the danger hue and **arms before it fires**, the
+same two-step More › Devices uses for its prune, because a phone has no hover and no undo. The evidence —
+the question verbatim, the failure message in full — is never truncated, and "Show output" / "Show diff" /
+"Show timeline" open sheets rather than copying a view's content into the card.
+
+**It is also in the Inbox**, which is the whole point. Items waiting on a person appear there across the
+whole fleet, *below* the Agnes approvals: an Agnes approval is an agent stopped mid-turn in a session you
+started, and if only one can be above the fold it is the one costing a live turn. A question is answerable
+from the row (a sheet that keeps the question above the reply box); a failure is not — deciding what to do
+about one needs the evidence, so that row opens the card instead of offering a guess.
+
+**It runs only while it is on screen.** The change feed (SSE) and the wall's timers start when the tab is
+entered and stop when it is left, and **calm is on by default** — calm keeps every live update and removes
+every flash, pulse and count-up, which on a 33 ms frame timer is the difference between a screen you can
+leave open and one that warms the phone in your hand. The gather behind the Overview is a dozen reads plus
+one audit history per live item, so the feed only marks it dirty and it re-gathers at most every four
+seconds, with a one-minute floor so the clock-driven figures do not rot. The Inbox's read is separate and
+deliberately cheap (one list plus one per parked item), because "something needs you" must not depend on
+the fleet tab being open.
+
+### What is shared with the desktop, and what is not
+
+Shared, and not copied: `CodeyBoxClient`, `OverviewGather`, `OverviewModel`, `BoardModel`, `Decision`,
+`NowWorkingViewModel`, `QuotaHistoryMap`, and the small drawn controls (`Sparkline`, `BurnDown`,
+`QuotaGauge`, `TraceGlyph`, `MotionDot`, `StepDot`, `ChainStrip`, `FlowChart`, `Heartbeat`). None of them
+know what a window is. The **gather** in particular was lifted out of the desktop's section view model into
+`OverviewGather` precisely so the second head could not end up with a second copy of the rules that keep it
+affordable — a trace refetched only when its item's `UpdatedAt` moved, a week of quota series re-read at
+most once a minute.
+
+Not shared: the plugin's `Views/*.axaml`. They are laid out for a 660–1200 px pane and they ask for the
+desktop head's role names. The phone's screens are its own.
+
+Two consequences worth knowing:
+
+- **The drawn controls look their colours up by name.** `ThemedDrawing` cannot use `DynamicResource` — a
+  control that renders itself has no property to bind — so it asks for `Fg`, `FgDim`, `FgFaint`, `Line`,
+  `Panel`/`PanelAlt` and the `Status*` hues, which are the *desktop's* vocabulary. `Themes/DrawingRoles.axaml`
+  aliases them onto this head's (`Text`, `TextDim`, `TextMuted`, `Border`, `Surface1`/`Surface2`, and
+  `Info`/`Warning`/`Success`/`Danger`) rather than teaching eight controls about two naming schemes. Those
+  aliases restate their colours, because a `ResourceDictionary` entry cannot be a reference to another
+  entry — so `CodeyBoxRoleAliasTests` asserts every pair resolves to the same colour in both variants.
+- **Sky, not mint, for in motion.** This head's session cards call a running session mint; the fleet's
+  vocabulary is the desktop's — sky in motion, mint landed — and the motion dot beside a row is drawn by the
+  plugin's own control. So the fleet's chips use the `info` pill, because a dot and a chip on the same row
+  disagreeing about what a colour means is how the colours stop meaning anything.
+
+**The one rule for a live orchestrator: reads only.** Everything the screens do on arrival is `GET`. The
+mutations are wired to the exact endpoints the desktop uses — retry `POST /workitems/{id}/retry`,
+raise-the-ceiling that retry *then* `PATCH /workitems/{id}` (the patch is refused on a terminal item and
+`AuditFailed` is terminal), replay `POST …/replay`, promote `POST …/promote`, cancel `DELETE /workitems/{id}`,
+answer `POST …/answer`, dismiss `POST …/dismiss-question` with the reason the orchestrator requires — and
+they are tested against a recording handler, never against a running fleet.
 
 ---
 
@@ -411,6 +508,12 @@ run time. It drives the simulated host through the real event pipeline, so the c
 actually does. It's part of `Agnes.Core.slnf`, so CI compiles the phone UI on every run, and
 `tests/Agnes.Mobile.Tests` covers the shell's navigation, the session list and the card projections
 against it.
+
+The CodeyBox screens are captured there too (`14-fleet-*`). The fleet they draw is
+`tools/Agnes.MobilePreview/FakeFleet.cs` — a work-item list run through the *real* `OverviewModel`,
+`BoardModel` and `QuotaHistoryMap`, because the only CodeyBox on the machine is the operator's own and a
+screenshot run must not touch it. `tests/Agnes.Mobile.Tests/CodeyBoxRenderTests` shoots the same screens
+from the plugin's canned samples at 411×891 and at 800×1340, which is the tablet they were verified on.
 
 The graphical sandbox is verified there too. The simulated host has no display, so the harness supplies
 its own — `tools/Agnes.MobilePreview/FakeDisplayHost.cs` is an `IAgnesHost` that can do exactly one thing
