@@ -38,6 +38,23 @@ public sealed class PairingHardeningTests
     }
 
     [Fact]
+    public void The_registry_says_when_the_code_has_closed_and_the_probe_carries_it()
+    {
+        var registry = NewRegistry();
+        Assert.True(registry.CodeOpen);
+        Assert.Equal("true", new PairingAuthMethodProvider(registry).ClientMetadata["codeOpen"]);
+
+        Assert.NotNull(registry.TryPair(registry.PairingCode, "first"));
+
+        Assert.False(registry.CodeOpen);
+        Assert.Equal("false", new PairingAuthMethodProvider(registry).ClientMetadata["codeOpen"]);
+        // Kept open on purpose: still open after the first device.
+        var open = NewRegistry(allowCodeAfterFirstDevice: true);
+        Assert.NotNull(open.TryPair(open.PairingCode, "first"));
+        Assert.True(open.CodeOpen);
+    }
+
+    [Fact]
     public void An_operator_can_deliberately_keep_the_code_open()
     {
         var registry = NewRegistry(allowCodeAfterFirstDevice: true);

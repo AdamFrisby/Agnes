@@ -39,7 +39,12 @@ public sealed class PairingAuthMethodProvider(DeviceRegistry devices) : IAuthMet
     public string MethodId => "pairing";
     public string DisplayName => "Pairing code";
     public bool IsEnabled => devices.PairingEnabled;
-    public IReadOnlyDictionary<string, string> ClientMetadata => new Dictionary<string, string>();
+
+    /// <summary><c>codeOpen</c>: whether the typed code is still accepted. The method stays enabled either
+    /// way — a QR grant travels through the same endpoint — but a client should only offer a code field
+    /// while the host would take a code.</summary>
+    public IReadOnlyDictionary<string, string> ClientMetadata =>
+        new Dictionary<string, string> { ["codeOpen"] = devices.CodeOpen ? "true" : "false" };
 
     // Scan/enter a short code the already-trusted host shows — the canonical "add this device" flow.
     public AuthFlowKind Kind => AuthFlowKind.NewDevice;

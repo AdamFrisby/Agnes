@@ -217,6 +217,17 @@ public sealed class HostConnection : IAgnesHost
         return view;
     }
 
+    public async Task<SessionView> LoadHistoryAsync(string sessionId, long sinceSequence)
+    {
+        // The same hub call a subscribe makes — the group join is idempotent — but the answer is split:
+        // what precedes the view goes in front of it, anything newer than its tail is appended as usual.
+        var view = _views.GetOrAdd(sessionId, id => new SessionView(id));
+        var snapshot = await _hub.InvokeAsync<SessionSnapshot>(nameof(IAgnesServer.Subscribe), sessionId, sinceSequence);
+        view.Prepend(snapshot.Events);
+        view.ApplySnapshot(snapshot);
+        return view;
+    }
+
     public Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content)
         => _hub.InvokeAsync(nameof(IAgnesServer.Prompt), new PromptRequest(sessionId, content));
 

@@ -2423,9 +2423,17 @@ else
 
 // Print the enabled bootstrap methods so a new device knows how to connect. (Tokens are per-device and
 // never logged; the GitHub client id is a public OAuth id.)
-if (tokens.PairingEnabled)
+if (tokens.PairingEnabled && tokens.CodeOpen)
 {
     app.Logger.LogInformation("Agnes pairing code: {Code}  — enter this on a new client to pair it.", tokens.PairingCode);
+}
+else if (tokens.PairingEnabled)
+{
+    // The code exists but would be refused; printing it teaches the wrong first step.
+    app.Logger.LogInformation(
+        "Typed pairing code is closed: this host already has a paired device. A new device joins by scanning a QR grant "
+        + "from a paired client, by asking for approval from one, or by GitHub/keypair where enabled "
+        + "(Agnes:Auth:Pairing:AllowCodeAfterFirstDevice=true reopens the code).");
 }
 
 // The fingerprint of the certificate this host serves, printed the way sshd's host key can be inspected.

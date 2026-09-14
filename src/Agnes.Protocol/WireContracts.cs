@@ -308,7 +308,8 @@ public sealed record AuthMethods(
     bool Oidc = false,
     string? OidcIssuer = null,
     bool Mtls = false,
-    IReadOnlyList<AuthMethodDescriptor>? Flows = null);
+    IReadOnlyList<AuthMethodDescriptor>? Flows = null,
+    bool PairingCodeOpen = true);
 
 /// <summary>Per-method detail advertised in <see cref="AuthMethods.Flows"/>: the stable method id, a
 /// human-friendly label, and which real-world <see cref="AuthFlowKind"/> bucket the method belongs to.</summary>

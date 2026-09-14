@@ -201,38 +201,74 @@ public sealed partial class SessionsViewModel : ObservableObject
                 continue;
             }
 
-            var known = All.Select(e => e.SessionId).ToHashSet(StringComparer.Ordinal);
+            var known = All.ToDictionary(e => e.SessionId, StringComparer.Ordinal);
             var added = remote
-                .Where(r => !known.Contains(r.SessionId) && !dismissed.Contains(r.SessionId))
+                .Where(r => !known.ContainsKey(r.SessionId) && !dismissed.Contains(r.SessionId))
                 .Select(r => new SavedSession(
                     link.Name, link.Url, link.Saved.Token, r.SessionId, r.AdapterId,
-                    string.IsNullOrWhiteSpace(r.Title)
-                        ? (string.IsNullOrWhiteSpace(r.WorkingDirectory) ? r.SessionId : r.WorkingDirectory)
-                        : r.Title!,
+                    TitleFor(r),
                     r.WorkingDirectory,
                     HasDisplay: r.HasDisplay,
                     LatestStatus: r.LatestStatus,
-                    LatestStatusAt: r.LatestStatusAt))
+                    LatestStatusAt: r.LatestStatusAt,
+                    HeadSequence: r.HeadSequence,
+                    RunState: r.State.ToString()))
                 .ToList();
-
-            if (added.Count == 0)
+            // Sessions already on the list learn where their log now ends and what they are doing, so a
+            // card that was never opened still reads right and an open tap can take the tail.
+            var refreshed = remote.Where(r => known.ContainsKey(r.SessionId)).ToList();
+            if (added.Count == 0 && refreshed.Count == 0)
             {
                 continue;
             }
-
             _shell.Dispatcher.Post(() =>
             {
                 foreach (var saved in added)
                 {
-                    var row = new SessionEntry(saved, link) { IsLoading = true };
+                    // Not loading: nothing is being fetched for a card until it is opened, and a pill that
+                    // said "Reattaching" for a session nobody had tapped was a lie the whole list told.
+                    var row = new SessionEntry(saved, link);
                     row.Changed += _ => Resort();
                     All.Add(row);
                 }
-
+                foreach (var r in refreshed)
+                {
+                    known[r.SessionId].Refresh(r.HeadSequence, r.State.ToString(), r.LatestStatus, r.LatestStatusAt);
+                }
                 Persist(); // remember what we found, so the next cold start is instant
                 Resort();
             });
         }
+    }
+
+    /// <summary>
+    /// How much of a session's log a phone takes when it attaches. A few hundred events is the last few
+    /// turns in full; the whole log of a long fleet session was 338,000 events and 169 MB of JSON, which
+    /// the tablet this was found on spent minutes downloading and never finished parsing. Older history
+    /// is one tap away (<see cref="LoadFullHistoryAsync"/>), and the host holds it either way.
+    /// </summary>
+    public const long TailWindow = 400;
+
+    /// <summary>The sequence to subscribe from for a log whose head is <paramref name="headSequence"/>:
+    /// the last <see cref="TailWindow"/> events, or everything when the log is short or its head unknown.</summary>
+    public static long TailSince(long headSequence)
+        => headSequence > TailWindow ? headSequence - TailWindow : 0;
+
+    /// <summary>"dawn2", not "/home/adam/Projects/dawn2": the agent's own title when it has one, else
+    /// the project folder's name — which is what the desktop's tab shows for the same session.</summary>
+    public static string TitleFor(SessionSummary summary)
+    {
+        if (!string.IsNullOrWhiteSpace(summary.Title))
+        {
+            return summary.Title!;
+        }
+        if (string.IsNullOrWhiteSpace(summary.WorkingDirectory))
+        {
+            return summary.SessionId;
+        }
+        var trimmed = summary.WorkingDirectory.TrimEnd('/', '\\');
+        var slash = trimmed.LastIndexOfAny(['/', '\\']);
+        return slash >= 0 && slash < trimmed.Length - 1 ? trimmed[(slash + 1)..] : trimmed;
     }
 
     private async Task AttachAsync(SessionEntry entry)
@@ -241,9 +277,7 @@ public sealed partial class SessionsViewModel : ObservableObject
         {
             return;
         }
-
         _shell.Dispatcher.Post(() => { entry.IsLoading = true; entry.Error = null; entry.RaiseAll(); });
-
         var host = await entry.Host.ConnectAsync().ConfigureAwait(false);
         if (host is null)
         {
@@ -255,15 +289,32 @@ public sealed partial class SessionsViewModel : ObservableObject
             });
             return;
         }
-
         try
         {
-            var view = await host.SubscribeAsync(entry.SessionId).ConfigureAwait(false);
+            // Tail first. The head comes from the last listing; a record saved before heads were kept asks
+            // the host once rather than falling back to the whole log.
+            var head = entry.Saved.HeadSequence;
+            if (head == 0)
+            {
+                try
+                {
+                    head = (await host.ListSessionsAsync().ConfigureAwait(false))
+                        .FirstOrDefault(s => s.SessionId == entry.SessionId)?.HeadSequence ?? 0;
+                }
+                catch
+                {
+                    head = 0;
+                }
+            }
+            var since = TailSince(head);
+            var view = await host.SubscribeAsync(entry.SessionId, since).ConfigureAwait(false);
             _shell.Dispatcher.Post(() =>
             {
                 var session = CreateSession(host, view, entry.Saved.Title);
+                entry.LoadedFrom = view.FirstSequence;
                 entry.Attach(session);
                 WireTitle(entry, session);
+                AdoptIntoOpenPage(entry, session);
                 Resort();
             });
         }
@@ -275,6 +326,55 @@ public sealed partial class SessionsViewModel : ObservableObject
                 entry.Error = ex.Message;
                 entry.RaiseAll();
             });
+        }
+    }
+
+    /// <summary>A page pushed before its subscription landed sat on "Reattaching…" for good: nothing told
+    /// it. The page for this entry, if it is open, takes the session now.</summary>
+    private void AdoptIntoOpenPage(SessionEntry entry, SessionViewModel session)
+    {
+        if (_shell is ShellViewModel shell)
+        {
+            foreach (var page in shell.Stack.OfType<SessionPageViewModel>().Where(p => ReferenceEquals(p.Entry, entry)))
+            {
+                page.Adopt(session);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fetches the rest of a tail-first session's log and rebuilds the transcript over all of it. The
+    /// view model is rebuilt rather than patched: everything it derives — the transcript, the open tool
+    /// calls, the files touched — is a fold over the events in order, and the new events come first.
+    /// </summary>
+    public async Task LoadFullHistoryAsync(SessionEntry entry)
+    {
+        if (entry.Session is not { } current || entry.Host.Host is not { } host || !entry.HasEarlierHistory || entry.IsLoadingHistory)
+        {
+            return;
+        }
+        _shell.Dispatcher.Post(() => { entry.IsLoadingHistory = true; entry.RaiseAll(); });
+        try
+        {
+            var view = await host.LoadHistoryAsync(entry.SessionId, 0).ConfigureAwait(false);
+            var fresh = CreateSession(host, view, entry.Saved.Title);
+            await current.DisposeAsync().ConfigureAwait(false);
+            _shell.Dispatcher.Post(() =>
+            {
+                entry.LoadedFrom = view.FirstSequence;
+                entry.Attach(fresh);
+                WireTitle(entry, fresh);
+                AdoptIntoOpenPage(entry, fresh);
+                Resort();
+            });
+        }
+        catch (Exception ex)
+        {
+            _shell.Dispatcher.Post(() => { entry.Error = ex.Message; entry.RaiseAll(); });
+        }
+        finally
+        {
+            _shell.Dispatcher.Post(() => { entry.IsLoadingHistory = false; entry.RaiseAll(); });
         }
     }
 

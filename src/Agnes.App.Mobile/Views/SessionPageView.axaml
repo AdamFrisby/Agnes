@@ -244,6 +244,17 @@
       </Button>
 
       <Panel Grid.Row="2" IsVisible="{Binding IsTranscriptSegment}">
+      <!-- A tail-first subscription says so, at the top where the missing history would be, with the
+           one action that fetches it. Pinned above the scroller, not inside it: it must not scroll away. -->
+      <Border VerticalAlignment="Top" ZIndex="2" Background="{DynamicResource InfoSoft}"
+              Padding="14,8" IsVisible="{Binding HasEarlierHistory}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Text="{Binding HistoryNote}" FontSize="{StaticResource TextSm}"
+                     Foreground="{DynamicResource Text}" TextWrapping="Wrap" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Theme="{StaticResource ChipButton}" Content="Load everything" Margin="10,0,0,0"
+                  Command="{Binding LoadFullHistoryCommand}" IsVisible="{Binding !IsLoadingHistory}" />
+        </Grid>
+      </Border>
       <!-- MaxWidth pinned to the viewport, and the inset moved to the item list's margin: the transcript
            is measured with an unbounded width (a scroller's content always is), and the markdown engine
            sizes itself to its longest line rather than wrapping. Clamping here is what makes every reply

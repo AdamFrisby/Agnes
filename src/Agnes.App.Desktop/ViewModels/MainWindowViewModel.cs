@@ -3327,6 +3327,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             : null;
         var pairingFailed = false;
         var justPaired = false;
+        string? refusal = null;
         if (!string.IsNullOrEmpty(codeOrToken))
         {
             try
@@ -3336,9 +3337,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 token = (await Agnes.Client.DevicePairing.PairAsync(url, codeOrToken, deviceName, pinnedHttp)).Token;
                 justPaired = true;
             }
-            catch
+            catch (Agnes.Client.PairingRefusedException refused)
             {
                 pairingFailed = true; // fall back to trying the entry as a direct token below.
+                refusal = refused.Message; // the host's own reason: a closed code is not a wrong code.
+            }
+            catch
+            {
+                pairingFailed = true;
             }
         }
 
@@ -3352,8 +3358,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
         else if (pairingFailed)
         {
-            _dispatcher.Post(() => doc.StatusText =
-                "Pairing failed — the code may be wrong or expired. Get a fresh code from the host, or paste a host token.");
+            _dispatcher.Post(() => doc.StatusText = refusal is { Length: > 0 }
+                ? "Pairing failed — " + refusal
+                : "Pairing failed — the code may be wrong or expired. Get a fresh code from the host, or paste a host token.");
         }
         // else: SelectHostAsync already left a clear "couldn't reach …" message.
     }

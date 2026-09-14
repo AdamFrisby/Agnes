@@ -47,7 +47,10 @@ public static class DevicePairing
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new PairingRefusedException(response.StatusCode, response.StatusCode switch
+                // The host says why in the body ("the typed code is closed — scan a QR from a paired device, or
+                // ask one to approve this device"); that sentence beats any guess made from the status code.
+                var said = await ReadErrorAsync(response, cancellationToken).ConfigureAwait(false);
+                throw new PairingRefusedException(response.StatusCode, said ?? response.StatusCode switch
                 {
                     HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
                         "The host rejected that pairing code.",
@@ -66,6 +69,21 @@ public static class DevicePairing
             {
                 client.Dispose();
             }
+        }
+    }
+
+    private sealed record ErrorBody(string? Error);
+
+    private static async Task<string?> ReadErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var body = await response.Content.ReadFromJsonAsync<ErrorBody>(cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(body?.Error) ? null : body.Error.Trim();
+        }
+        catch (Exception)
+        {
+            return null; // not JSON, or not ours
         }
     }
 }

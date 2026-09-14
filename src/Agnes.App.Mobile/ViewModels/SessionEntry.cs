@@ -57,6 +57,31 @@ public sealed partial class SessionEntry : ObservableObject
     [ObservableProperty]
     private bool _isLoading;
 
+    /// <summary>The sequence this entry's subscription started at: 0 is the whole log, anything above
+    /// means the phone took the tail and the rest can be fetched with "Load everything".</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasEarlierHistory))]
+    private long _loadedFrom;
+
+    public bool HasEarlierHistory => LoadedFrom > 1;
+
+    [ObservableProperty]
+    private bool _isLoadingHistory;
+
+    /// <summary>Takes a fresher listing of the same session from its host: the log's head and its state,
+    /// without touching what this device chose (title, pin).</summary>
+    public void Refresh(long headSequence, string? runState, string? latestStatus, DateTimeOffset? latestStatusAt)
+    {
+        Saved = Saved with
+        {
+            HeadSequence = headSequence,
+            RunState = runState,
+            LatestStatus = latestStatus ?? Saved.LatestStatus,
+            LatestStatusAt = latestStatusAt ?? Saved.LatestStatusAt,
+        };
+        RaiseAll();
+    }
+
     /// <summary>Why the session couldn't be reattached, if it couldn't.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]
@@ -70,7 +95,11 @@ public sealed partial class SessionEntry : ObservableObject
     // ---- what the card shows ----
 
     /// <summary>The agent's own name for the conversation once it has produced one, else the folder.</summary>
-    public string Title => Session?.HasAgentTitle == true ? Session.AgentTitle! : Saved.Title;
+    public string Title => Session?.HasAgentTitle == true
+        ? Session.AgentTitle!
+        // A saved title that is a path is an older record that fell back to the working directory; the
+        // project's own name is the leaf, which is what the desktop's tab says too.
+        : Saved.Title.Contains('/') || Saved.Title.Contains('\\') ? LeafOf(Saved.Title) : Saved.Title;
 
     /// <summary>The working folder's leaf name — what a developer actually calls the project. Derived
     /// from the folder, never the title: the agent renames the conversation, and deriving from the title
@@ -111,7 +140,9 @@ public sealed partial class SessionEntry : ObservableObject
 
             if (Session is null)
             {
-                return IsLoading ? "Reattaching" : Host.StateText;
+                // Not attached is the normal state of a card that has not been opened; it says what the
+                // host last said the session was doing, not that something is being waited for.
+                return IsLoading ? "Attaching" : RunStateWord ?? Host.StateText;
             }
 
             return Session.PendingPermission is not null ? "Needs approval"
@@ -127,7 +158,7 @@ public sealed partial class SessionEntry : ObservableObject
         {
             if (Session is null)
             {
-                return Error ?? "Tap to reattach";
+                return Error ?? Saved.LatestStatus ?? "Tap to open";
             }
 
             var last = Session.Items.OfType<MessageBubbleItem>().LastOrDefault(m => !m.IsThought);
@@ -292,6 +323,15 @@ public sealed partial class SessionEntry : ObservableObject
 
     /// <summary>Raised whenever anything the list sorts on may have changed.</summary>
     public event Action<SessionEntry>? Changed;
+
+    /// <summary>The host's word for the session's state, from the listing, in the card's vocabulary.</summary>
+    public string? RunStateWord => Saved.RunState switch
+    {
+        null or "" => null,
+        "Running" => "Running",
+        var s when s.Contains("Need", StringComparison.Ordinal) || s.Contains("Block", StringComparison.Ordinal) => "Needs you",
+        _ => "Idle",
+    };
 
     private static string LeafOf(string path)
     {

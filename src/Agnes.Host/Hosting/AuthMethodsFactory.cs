@@ -12,6 +12,7 @@ public static class AuthMethodsFactory
 {
     public static AuthMethods Build(IPluginRegistry<IAuthMethodProvider> methods)
     {
+        var pairing = methods.Find("pairing");
         var github = methods.Find("github");
         var oidc = methods.Find("oidc");
         var mtls = methods.Find("mtls");
@@ -23,13 +24,14 @@ public static class AuthMethodsFactory
             .ToArray();
 
         return new AuthMethods(
-            Pairing: methods.Find("pairing")?.IsEnabled ?? false,
+            Pairing: pairing?.IsEnabled ?? false,
             GitHub: github?.IsEnabled ?? false,
             GitHubClientId: (github?.IsEnabled ?? false) ? github!.ClientMetadata.GetValueOrDefault("clientId") : null,
             Keypair: methods.Find("keypair")?.IsEnabled ?? false,
             Oidc: oidc?.IsEnabled ?? false,
             OidcIssuer: (oidc?.IsEnabled ?? false) ? oidc!.ClientMetadata.GetValueOrDefault("issuer") : null,
             Mtls: mtls?.IsEnabled ?? false,
-            Flows: flows);
+            Flows: flows,
+            PairingCodeOpen: !string.Equals(pairing?.ClientMetadata.GetValueOrDefault("codeOpen"), "false", StringComparison.Ordinal));
     }
 }

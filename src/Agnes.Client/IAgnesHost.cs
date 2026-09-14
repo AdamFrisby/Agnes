@@ -143,6 +143,14 @@ public interface IAgnesHost : IAsyncDisposable
     /// <summary>Subscribes to a session, returning a live view seeded from a snapshot.</summary>
     Task<SessionView> SubscribeAsync(string sessionId, long since = 0);
 
+    /// <summary>
+    /// Fetches events from <paramref name="sinceSequence"/> up to what the view already holds and prepends
+    /// them. A client that subscribed tail-first (see <see cref="SubscribeAsync"/> with a non-zero
+    /// <c>since</c>) uses this to reach back; the default is a plain subscribe, which is all a host that
+    /// serves the whole log at once needs.
+    /// </summary>
+    Task<SessionView> LoadHistoryAsync(string sessionId, long sinceSequence) => SubscribeAsync(sessionId, sinceSequence);
+
     Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content);
 
     // ---- CLI-fallback terminal (platform/03) ----

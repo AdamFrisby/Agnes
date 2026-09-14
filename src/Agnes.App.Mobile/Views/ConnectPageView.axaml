@@ -74,6 +74,16 @@
           </StackPanel>
         </Border>
 
+        <!-- The typed code closed itself when the host's first device paired. This block stands where the
+             code field would have been, so the person is told the rule instead of failing against it. -->
+        <Border Classes="inset" IsVisible="{Binding ShowCodeClosed}" Padding="12,10">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="section" Text="PAIRING CODE" />
+            <TextBlock Classes="muted" TextWrapping="Wrap"
+                       Text="This host already has a paired device, so its typed code is closed. Ask for approval below and accept it on a device that is already paired, or scan a pairing QR from that device's session menu." />
+          </StackPanel>
+        </Border>
+
         <!-- ===== pairing code ===== -->
         <StackPanel Spacing="10" IsVisible="{Binding ShowPairing}">
           <TextBlock Classes="section" Text="PAIRING CODE" />

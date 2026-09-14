@@ -23,6 +23,14 @@ public sealed class SessionView
     /// <summary>Highest applied sequence; the cursor to resume from on reconnect.</summary>
     public long LastSequence { get; private set; }
 
+    /// <summary>The oldest sequence loaded, or 0 when nothing is. Greater than 1 means the view started
+    /// part-way through the log — a tail-first subscription — and older history can still be fetched.</summary>
+    public long FirstSequence { get; private set; }
+
+    /// <summary>Raised after <see cref="Prepend"/> inserted older events; a consumer rebuilds from
+    /// <see cref="Events"/>, since the new events precede everything it has already rendered.</summary>
+    public event Action? HistoryPrepended;
+
     /// <summary>Snapshot of applied events in order.</summary>
     public IReadOnlyList<SessionEvent> Events
     {
@@ -90,10 +98,42 @@ public sealed class SessionView
         {
             return false;
         }
-
+        if (_events.Count == 0)
+        {
+            FirstSequence = @event.Sequence;
+        }
         _events.Add(@event);
         LastSequence = @event.Sequence;
         return true;
+    }
+
+    /// <summary>
+    /// Inserts events older than anything loaded, in order, and says so. Anything at or past
+    /// <see cref="FirstSequence"/> is ignored — it is either already here or belongs to <see cref="Apply"/>.
+    /// </summary>
+    public int Prepend(IEnumerable<SessionEvent> older)
+    {
+        List<SessionEvent> added;
+        lock (_gate)
+        {
+            var first = _events.Count == 0 ? long.MaxValue : _events[0].Sequence;
+            added = older.Where(e => e.Sequence < first)
+                .GroupBy(e => e.Sequence).Select(g => g.First())
+                .OrderBy(e => e.Sequence)
+                .ToList();
+            if (added.Count == 0)
+            {
+                return 0;
+            }
+            _events.InsertRange(0, added);
+            FirstSequence = _events[0].Sequence;
+            if (LastSequence == 0)
+            {
+                LastSequence = _events[^1].Sequence;
+            }
+        }
+        HistoryPrepended?.Invoke();
+        return added.Count;
     }
 
     private void Raise(List<SessionEvent> events)

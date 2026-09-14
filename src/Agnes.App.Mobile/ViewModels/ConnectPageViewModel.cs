@@ -78,7 +78,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
         _address = prefillUrl ?? "https://";
         _code = prefillCode ?? string.Empty;
 
-        PairCommand = new AsyncRelayCommand(PairAsync, () => CanSignIn && Code.Trim().Length > 0);
+        PairCommand = new AsyncRelayCommand(PairAsync, () => CanSignIn && PairingCodeOpen && Code.Trim().Length > 0);
         GitHubCommand = new AsyncRelayCommand(GitHubAsync, () => CanSignIn);
         KeyCommand = new AsyncRelayCommand(KeyAsync, () => CanSignIn);
         CopyKeyCommand = new RelayCommand(() => _shell.CopyToClipboard(PublicKeyLine, "Public key"));
@@ -167,7 +167,15 @@ public sealed partial class ConnectPageViewModel : PageViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowPairing))]
+    [NotifyPropertyChangedFor(nameof(ShowCodeClosed))]
     private bool _supportsPairing = true;
+
+    /// <summary>Whether the host would take a typed code right now. It closes once a device is paired;
+    /// after that the phone must not offer a field whose only outcome is a refusal.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowPairing))]
+    [NotifyPropertyChangedFor(nameof(ShowCodeClosed))]
+    private bool _pairingCodeOpen = true;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowGitHub))]
@@ -227,6 +235,7 @@ public sealed partial class ConnectPageViewModel : PageViewModel
                 };
                 ReachDetail = probe.Error ?? string.Empty;
                 SupportsPairing = probe.Methods.Pairing;
+                PairingCodeOpen = probe.Methods.PairingCodeOpen;
                 SupportsGitHub = probe.Methods.GitHub;
                 SupportsKeypair = probe.Methods.Keypair;
                 _gitHubClientId = probe.Methods.GitHubClientId;
@@ -372,7 +381,11 @@ public sealed partial class ConnectPageViewModel : PageViewModel
 
     /// <summary>Each sign-in method shows only once a host has answered *and* advertised it. Before
     /// that the screen offers nothing to fill in, because nothing would work.</summary>
-    public bool ShowPairing => ShowSignIn && SupportsPairing;
+    public bool ShowPairing => ShowSignIn && SupportsPairing && PairingCodeOpen;
+
+    /// <summary>The host takes grants and approvals but no typed code any more: say so where the code
+    /// field would have been, and point at the two ways that work.</summary>
+    public bool ShowCodeClosed => ShowSignIn && SupportsPairing && !PairingCodeOpen;
 
     public bool ShowGitHub => ShowSignIn && SupportsGitHub;
 
@@ -581,10 +594,9 @@ public sealed partial class ConnectPageViewModel : PageViewModel
             // try it as a token, and if that fails too, say what actually happened.
             if (!await FinishAsync(url, entry).ConfigureAwait(false))
             {
-                Report("The host rejected that code. It's single-use and rotates after a few bad tries — "
-                    + "take the current one from the host's log.", error: true, busy: false);
+                // The host's own sentence when it gave one — it knows whether the code was wrong or closed.
+                Report(refused.Message, error: true, busy: false);
             }
-
             return;
         }
         catch (PairingRefusedException refused)

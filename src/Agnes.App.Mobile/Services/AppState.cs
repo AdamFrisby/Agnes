@@ -71,7 +71,12 @@ public sealed record SavedSession(
     // reason the title is: the sessions list is read at a glance, and a card that says nothing until
     // the host answers is a card that says nothing in the moment it is actually looked at.
     string? LatestStatus = null,
-    DateTimeOffset? LatestStatusAt = null);
+    DateTimeOffset? LatestStatusAt = null,
+    // Where the host's log for this session ended when it was last listed, and what the host said it was
+    // doing. The head is what lets a phone subscribe to the tail of a 300,000-event session instead of
+    // all of it; the state is what the card says before (or without) attaching.
+    long HeadSequence = 0,
+    string? RunState = null);
 
 /// <summary>
 /// Sessions this device was told to stop showing. Discovery lists what the <b>host</b> has, so without

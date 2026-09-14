@@ -64,6 +64,16 @@ public sealed partial class SessionPageViewModel : PageViewModel
         StopCommand = new RelayCommand(Stop);
         DictateCommand = new AsyncRelayCommand(DictateAsync);
         RetryCommand = new RelayCommand(Retry);
+        LoadFullHistoryCommand = new AsyncRelayCommand(() => _sessions.LoadFullHistoryAsync(Entry));
+        Entry.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(SessionEntry.LoadedFrom) or nameof(SessionEntry.IsLoadingHistory))
+            {
+                OnPropertyChanged(nameof(HasEarlierHistory));
+                OnPropertyChanged(nameof(IsLoadingHistory));
+                OnPropertyChanged(nameof(HistoryNote));
+            }
+        };
         AllowCommand = new RelayCommand(() => Respond(allow: true));
         DenyCommand = new RelayCommand(() => Respond(allow: false));
         RespondWithCommand = new RelayCommand<PermissionOption>(RespondWith);
@@ -170,6 +180,14 @@ public sealed partial class SessionPageViewModel : PageViewModel
     public IRelayCommand StopCommand { get; }
     public IAsyncRelayCommand DictateCommand { get; }
     public IRelayCommand RetryCommand { get; }
+
+    /// <summary>Fetch the part of the log the tail-first subscription left on the host.</summary>
+    public IAsyncRelayCommand LoadFullHistoryCommand { get; }
+    public bool HasEarlierHistory => Entry.HasEarlierHistory;
+    public bool IsLoadingHistory => Entry.IsLoadingHistory;
+    public string HistoryNote => IsLoadingHistory
+        ? "Loading the whole conversation… a long one takes a while."
+        : "Showing the latest part of a long conversation.";
     public IRelayCommand AllowCommand { get; }
     public IRelayCommand DenyCommand { get; }
     public IRelayCommand<PermissionOption> RespondWithCommand { get; }

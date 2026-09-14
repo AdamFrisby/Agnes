@@ -80,6 +80,12 @@ public sealed class DeviceRegistry
     /// <summary>Whether the pairing-code bootstrap is enabled (may be off in favour of GitHub SSO / keypair).</summary>
     public bool PairingEnabled => _pairingEnabled;
 
+    /// <summary>Whether the typed pairing code would be accepted right now. It closes the moment the first
+    /// device pairs unless the operator kept it open (<c>Agnes:Auth:Pairing:AllowCodeAfterFirstDevice</c>);
+    /// grants and approvals are unaffected. Advertised to clients so a phone does not offer a code field
+    /// that can only be refused.</summary>
+    public bool CodeOpen => _pairingEnabled && (_allowCodeAfterFirstDevice || !HasPairedDevice);
+
     /// <summary>
     /// Mints (or re-issues) a durable per-device token for a caller that authenticated by some other means
     /// (GitHub SSO, keypair, an approval, …). <paramref name="subject"/> records who/what it belongs to for the
@@ -271,7 +277,19 @@ public sealed class DeviceRegistry
             // A pairing code is single-use: rotate it so the same code can't pair a second device.
             PairingCode = GeneratePairingCode();
             Save();
-            _logger?.LogInformation("Paired device {Name} ({Id}); new pairing code: {Code}", result.DeviceName, result.DeviceId, PairingCode);
+            if (CodeOpen)
+            {
+                _logger?.LogInformation("Paired device {Name} ({Id}); new pairing code: {Code}", result.DeviceName, result.DeviceId, PairingCode);
+            }
+            else
+            {
+                // The rotated code is not usable now, so it is not printed: a code in the log that the host
+                // refuses is how an operator ends up typing it into three devices.
+                _logger?.LogInformation(
+                    "Paired device {Name} ({Id}). The typed pairing code is now closed: the next device joins by a QR grant "
+                    + "or an approval from a paired device (Agnes:Auth:Pairing:AllowCodeAfterFirstDevice reopens the code).",
+                    result.DeviceName, result.DeviceId);
+            }
             return result;
         }
     }
