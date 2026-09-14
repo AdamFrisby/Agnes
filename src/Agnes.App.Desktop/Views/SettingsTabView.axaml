@@ -819,6 +819,48 @@
                         </Grid>
                     </StackPanel>
 
+                    <!-- LOCAL CACHE (this device's copy of session events) -->
+                    <StackPanel IsVisible="{Binding CatCache}">
+                        <StackPanel DataContext="{Binding EventCache}" Spacing="12">
+                            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Local cache" />
+                                <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                                              Description="Every session you open is kept on this device, so the next open reads it from disk and asks the host only for what arrived since. A long session that took a minute to download opens in a second or two."
+                                              Security="The cache holds the session content you have already seen, in this user profile's application data. Clearing it removes that copy; the host keeps the log." />
+                                <Button Grid.Column="3" Content="Clear all" Command="{Binding ClearCommand}" Classes="chip" Padding="10,4" FontSize="12" />
+                                <Button Grid.Column="4" Margin="6,0,0,0" Content="Refresh" Command="{Binding RefreshCommand}" Classes="seg" />
+                            </Grid>
+
+                            <TextBlock IsVisible="{Binding !IsAvailable}" TextWrapping="Wrap" Foreground="{DynamicResource FgDim}" FontSize="12"
+                                       Text="This build is running without a cache: either AGNES_EVENT_CACHE is off, or the cache file could not be opened. Every open fetches the whole session from the host." />
+
+                            <StackPanel IsVisible="{Binding IsAvailable}" Spacing="8">
+                                <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource Fg}" FontSize="13" />
+                                <TextBlock Text="{Binding Path}" Foreground="{DynamicResource FgFaint}" FontSize="11" FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                <ItemsControl ItemsSource="{Binding Entries}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                    CornerRadius="10" Padding="12,8" Margin="0,0,0,6">
+                                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                                    <StackPanel Grid.Column="0" Spacing="2">
+                                                        <TextBlock Text="{Binding SessionId}" Foreground="{DynamicResource Fg}" FontSize="12" FontFamily="{StaticResource MonoFont}" />
+                                                        <TextBlock Foreground="{DynamicResource FgDim}" FontSize="11">
+                                                            <Run Text="{Binding Host}" /><Run Text=" · " /><Run Text="{Binding RangeText}" />
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding SizeText}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" Margin="12,0" />
+                                                    <Button Grid.Column="2" Classes="chip" Content="Forget" Padding="10,4" FontSize="12"
+                                                            Command="{Binding ForgetCommand}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+
                     <!-- PLUGINS (NuGet-packaged extensions on the host) -->
                     <StackPanel IsVisible="{Binding CatPlugins}">
                         <StackPanel DataContext="{Binding Plugins}" Spacing="12">

@@ -98,8 +98,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         IOnboardingStore? onboarding = null,
         KeymapService? keymap = null,
         string? clientPluginDirectory = null,
-        IEnumerable<IClientPluginModule>? clientPluginModules = null)
+        IEnumerable<IClientPluginModule>? clientPluginModules = null,
+        ISessionEventCache? eventCache = null)
     {
+        EventCache = new EventCacheViewModel(eventCache, dispatcher);
         _clientPluginModules = clientPluginModules;
         _clientPluginDirectory = clientPluginDirectory;
         _connector = connector;
@@ -224,6 +226,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         [
             // This device (client-global)
             new SettingsCategoryVm("appearance", "Appearance", Symbol.PaintBrush, "theme dark light system ui scale zoom accessibility reduce motion font family installed chat size density"),
+            new SettingsCategoryVm("cache", "Local cache", Symbol.Database, "cache local offline events history sqlite disk storage size clear forget replay download"),
             new SettingsCategoryVm("keymap", "Keymap", Symbol.Keyboard, KeymapSearchKeywords),
             // The connected host
             new SettingsCategoryVm("github", "GitHub accounts", Symbol.BranchFork, "github git push credential token connect app scope repo installation secret account"),
@@ -304,6 +307,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     /// <summary>The plugin-management surface for the active host (Browse / install / configure / enable).</summary>
     public PluginManagementViewModel Plugins { get; }
+
+    /// <summary>The local event cache page under Settings › Local cache.</summary>
+    public EventCacheViewModel EventCache { get; }
 
     /// <summary>Host-backed transcript search across every recorded session (the Search tab).</summary>
     public MemorySearchViewModel MemorySearch { get; }
@@ -1026,6 +1032,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     [ObservableProperty] private string _settingsCategory = "appearance";
 
     public bool CatAppearance => SettingsCategory == "appearance";
+    public bool CatCache => SettingsCategory == "cache";
     public bool CatKeymap => SettingsCategory == "keymap";
     public bool CatGitHub => SettingsCategory == "github";
     public bool CatDevices => SettingsCategory == "devices";
@@ -1052,6 +1059,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
 
         OnPropertyChanged(nameof(CatAppearance));
+        OnPropertyChanged(nameof(CatCache));
+        if (value == "cache")
+        {
+            _ = EventCache.RefreshAsync();
+        }
         OnPropertyChanged(nameof(CatKeymap));
         OnPropertyChanged(nameof(CatGitHub));
         OnPropertyChanged(nameof(CatDevices));

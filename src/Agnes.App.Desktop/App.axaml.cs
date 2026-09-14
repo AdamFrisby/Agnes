@@ -87,12 +87,13 @@ public partial class App : Application
             // Routing connector: sim:// simulated, rec:// recorded playback, http(s):// SignalR.
             var recordingsDir = Environment.GetEnvironmentVariable("AGNES_RECORDINGS")
                 ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agnes", "recordings");
-            IAgnesConnector connector = new RoutingConnector(recordingsDir, eventCache: OpenEventCache());
+            var eventCache = OpenEventCache();
+            IAgnesConnector connector = new RoutingConnector(recordingsDir, eventCache: eventCache);
             var settingsStore = new SettingsStore();
             _keymap = KeymapService.CreateDefault(settingsStore.FilePath);
             var viewModel = new MainWindowViewModel(
                 connector, new AvaloniaDispatcher(), new SessionStateStore(), new HostRegistryStore(),
-                settingsStore: settingsStore, keymap: _keymap);
+                settingsStore: settingsStore, keymap: _keymap, eventCache: eventCache);
 
             MainWindowViewModel.ApplyTheme(viewModel.Theme); // System / Light / Dark from settings
             MainWindowViewModel.ApplyFont(viewModel.FontFamily);

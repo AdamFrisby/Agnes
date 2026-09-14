@@ -45,6 +45,26 @@ public interface ISessionEventCache
     Task ForgetAsync(string hostId, string sessionId, CancellationToken cancellationToken = default);
 }
 
+/// <summary>One session's entry in a cache: whose it is, what stretch is held, and how much it weighs.</summary>
+public sealed record SessionEventCacheEntry(string HostId, string SessionId, CachedRange Range, long Bytes);
+
+/// <summary>
+/// A cache that can say what it holds and be emptied — the operator's side of it. Separate from
+/// <see cref="ISessionEventCache"/> because the replay needs none of this and a settings page needs
+/// nothing else.
+/// </summary>
+public interface IInspectableSessionEventCache : ISessionEventCache
+{
+    /// <summary>Where the cache lives, for the page that shows it.</summary>
+    string Path { get; }
+
+    /// <summary>Every session held, with its range and size in bytes.</summary>
+    Task<IReadOnlyList<SessionEventCacheEntry>> ListAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Drops everything for every host. The next open of each session fetches it in full again.</summary>
+    Task ClearAsync(CancellationToken cancellationToken = default);
+}
+
 /// <summary>What a replay served from where; raised for diagnostics and the odd status line.</summary>
 public sealed record ReplayReport(string SessionId, long Since, int FromCache, int FromHost, bool Invalidated);
 

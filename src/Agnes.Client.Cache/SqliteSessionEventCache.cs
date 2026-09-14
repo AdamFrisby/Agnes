@@ -23,7 +23,7 @@ namespace Agnes.Client.Cache;
 /// capped at 64 MB after a checkpoint and folded back on close, because a first open of a long session
 /// writes its whole log in one transaction.</para>
 /// </remarks>
-public sealed class SqliteSessionEventCache : ISessionEventCache, IAsyncDisposable
+public sealed class SqliteSessionEventCache : IInspectableSessionEventCache, IAsyncDisposable
 {
     private const int BatchLimit = 512;
 
@@ -172,25 +172,29 @@ public sealed class SqliteSessionEventCache : ISessionEventCache, IAsyncDisposab
             return null;
         }, cancellationToken);
 
-    /// <summary>One session's entry in the cache: whose it is, what stretch is held, and how much it weighs.</summary>
-    public sealed record Entry(string HostId, string SessionId, CachedRange Range, long Bytes);
-
-    /// <summary>Every session held, with its range — for a settings page that shows what the cache holds.</summary>
-    public Task<IReadOnlyList<Entry>> ListAsync(CancellationToken cancellationToken = default)
-        => RunAsync<IReadOnlyList<Entry>>((db, tx) =>
+    public Task<IReadOnlyList<SessionEventCacheEntry>> ListAsync(CancellationToken cancellationToken = default)
+        => RunAsync<IReadOnlyList<SessionEventCacheEntry>>((db, tx) =>
         {
             using var cmd = Command(db, tx, """
                 SELECT r.host, r.session, r.floor, r.head, r.head_kind, r.head_at,
                        (SELECT COALESCE(SUM(LENGTH(body)), 0) FROM events e WHERE e.host=r.host AND e.session=r.session)
                 FROM ranges r ORDER BY r.host, r.session
                 """);
-            var rows = new List<Entry>();
+            var rows = new List<SessionEventCacheEntry>();
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
-                rows.Add(new Entry(reader.GetString(0), reader.GetString(1), RangeFrom(reader, 2), reader.GetInt64(6)));
+                rows.Add(new SessionEventCacheEntry(reader.GetString(0), reader.GetString(1), RangeFrom(reader, 2), reader.GetInt64(6)));
             }
             return rows;
+        }, cancellationToken);
+
+    public Task ClearAsync(CancellationToken cancellationToken = default)
+        => RunAsync<object?>((db, tx) =>
+        {
+            using var cmd = Command(db, tx, "DELETE FROM events; DELETE FROM ranges");
+            cmd.ExecuteNonQuery();
+            return null;
         }, cancellationToken);
 
     private static CachedRange? ReadRange(SqliteConnection db, SqliteTransaction tx, string hostId, string sessionId)

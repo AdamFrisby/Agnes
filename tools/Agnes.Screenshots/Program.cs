@@ -41,6 +41,17 @@ public static class Program
             return;
         }
 
+        // Settings mode (--settings <category>) renders one Settings page over the simulator; see SettingsCapture.
+        if (SettingsCapture.TryParse(args) is { } settings)
+        {
+            _outDir = settings.OutDir;
+            Directory.CreateDirectory(_outDir);
+            using var settingsSession = HeadlessUnitTestSession.StartNew(typeof(HeadlessApp));
+            settingsSession.Dispatch(() => SettingsCapture.Run(settings), CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"Done. Screenshots in {_outDir}");
+            return;
+        }
+
         if (LiveCapture.TryParse(args) is { } live)
         {
             _outDir = live.OutDir;
