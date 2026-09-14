@@ -57,6 +57,29 @@ public sealed class HotDocumentHost : Panel
         ActiveProperty.Changed.AddClassHandler<HotDocumentHost>((host, _) => host.Show(host.Active));
         ItemsSourceProperty.Changed.AddClassHandler<HotDocumentHost>((host, e) => host.Observe(e.NewValue as IEnumerable));
         CapacityProperty.Changed.AddClassHandler<HotDocumentHost>((host, _) => host.Trim());
+        RecyclingProperty.Changed.AddClassHandler<HotDocumentHost>((host, e) => host.Follow(e.OldValue as PerItemControlRecycling, e.NewValue as PerItemControlRecycling));
+    }
+
+    /// <summary>A document whose view the recycler forgot — closed, or put to sleep — leaves here as well,
+    /// active or not; the next activation builds it afresh.</summary>
+    private void Follow(PerItemControlRecycling? old, PerItemControlRecycling? recycler)
+    {
+        if (old is not null)
+        {
+            old.Forgotten -= OnForgotten;
+        }
+        if (recycler is not null)
+        {
+            recycler.Forgotten += OnForgotten;
+        }
+    }
+
+    private void OnForgotten(object data)
+    {
+        if (data is IDockable dockable && _children.ContainsKey(dockable))
+        {
+            Evict(dockable);
+        }
     }
 
     /// <summary>The dock's visible documents; a document that leaves the list leaves this host.</summary>

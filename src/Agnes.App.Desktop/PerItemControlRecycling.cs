@@ -62,8 +62,17 @@ public sealed class PerItemControlRecycling : IControlRecycling
         return built;
     }
 
-    /// <summary>Drops a cached view (call when a dockable is closed, so it doesn't leak).</summary>
-    public void Forget(object data) => _cache.Remove(data);
+    /// <summary>Raised when a document's view is dropped, so whatever is still showing it lets go too.</summary>
+    public event Action<object>? Forgotten;
+
+    /// <summary>Drops a cached view (call when a dockable is closed or put to sleep, so it doesn't leak).</summary>
+    public void Forget(object data)
+    {
+        if (_cache.Remove(data))
+        {
+            Forgotten?.Invoke(data);
+        }
+    }
 
     public void Clear() => _cache.Clear();
 }

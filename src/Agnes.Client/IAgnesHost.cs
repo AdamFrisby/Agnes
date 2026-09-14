@@ -151,6 +151,13 @@ public interface IAgnesHost : IAsyncDisposable
     /// </summary>
     Task<SessionView> LoadHistoryAsync(string sessionId, long sinceSequence) => SubscribeAsync(sessionId, sinceSequence);
 
+    /// <summary>
+    /// Leaves a session: no more live events for it, and whatever the connection held for it is released.
+    /// A later <see cref="SubscribeAsync"/> starts a fresh view. The default does nothing, which is right
+    /// for a host that holds nothing per subscriber.
+    /// </summary>
+    Task UnsubscribeAsync(string sessionId) => Task.CompletedTask;
+
     Task PromptAsync(string sessionId, IReadOnlyList<ContentBlock> content);
 
     // ---- CLI-fallback terminal (platform/03) ----

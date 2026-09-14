@@ -233,6 +233,26 @@ public static class TabSwitchTiming
             DumpTree(window, doc);
         }
 
+        // The cold tier, live: put the background tab to sleep, weigh what that gave back, wake it and time it.
+        if (docs.Count >= 2)
+        {
+            var background = docs.First(d => !ReferenceEquals(d, dock.ActiveDockable));
+            var heapAwake = Heap();
+            vm.SleepAfter = TimeSpan.FromMinutes(1);
+            var slept = vm.SweepIdleTabs(DateTime.UtcNow.AddHours(1));
+            Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
+            var heapAsleep = Heap();
+            Console.WriteLine($"sleep: {slept} tab(s) slept ({background.Title}); heap {heapAwake / 1048576.0:0} MB → {heapAsleep / 1048576.0:0} MB (−{(heapAwake - heapAsleep) / 1048576.0:0} MB)");
+
+            var sw = Stopwatch.StartNew();
+            vm.ActivateSessionCommand.Execute(background);
+            Program.Pump(() => background.Session is not null && background.Session.Items.Count > 0, 120_000);
+            var reloaded = sw.Elapsed;
+            Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
+            window.UpdateLayout();
+            Console.WriteLine($"wake: {background.Title} back with {background.Session!.Items.Count:N0} items in {reloaded.TotalMilliseconds:0} ms; shown after {sw.ElapsedMilliseconds} ms; heap {Heap() / 1048576.0:0} MB");
+        }
+
         if (options.LoopSeconds > 0)
         {
             Console.WriteLine($"looping switches for {options.LoopSeconds} s (pid {Environment.ProcessId}) — sample with: dotnet-stack report -p {Environment.ProcessId}");

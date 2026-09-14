@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Collections.ObjectModel;
 using Agnes.Abstractions.Events;
 using Agnes.App.Desktop.Persistence;
@@ -282,6 +283,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                 doc.Session?.SetActive(ReferenceEquals(doc, active));
             }
 
+            if (active is not null)
+            {
+                active.LastActivatedAt = _now();
+                if (active.IsSleeping)
+                {
+                    _ = WakeAsync(active);
+                }
+            }
+
             // Client navigation: a plugin can track which session the user is viewing (observe-only).
             if (active is { Session.SessionId: { } sid })
             {
@@ -290,6 +300,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         };
 
         Plugins = new PluginManagementViewModel(ActiveHost, _dispatcher);
+        StartSleepSweep();
 
         MemorySearch = new MemorySearchViewModel(ActiveHost, _dispatcher);
         MemorySearch.OpenRequested += OpenMemoryResult;
@@ -2721,6 +2732,78 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     // All open session documents, across the main window and any detached windows.
     private IEnumerable<SessionDocument> AllDocuments()
         => OpenTabs().Concat(((IRootDock)Layout).Windows?.SelectMany(w => DocumentsIn(w.Layout)) ?? []);
+
+    // ---- the cold tier: tabs nobody has looked at for a while let their session go ----
+    //
+    // An open tab holds its transcript and a view; a hundred of them hold a hundred. The hot host keeps
+    // the last few views attached, the recycler keeps the rest built, and this is the third tier: a tab
+    // left alone for SleepAfter releases the lot and keeps only its descriptor, coming back from the
+    // local event cache when it is next activated. A tab whose agent is mid-turn, or is waiting on the
+    // person, never sleeps — it is doing the one thing a tab exists for.
+
+    /// <summary>How long a tab may go unactivated before it sleeps. <c>AGNES_TAB_SLEEP_MINUTES</c> overrides;
+    /// zero disables.</summary>
+    public TimeSpan SleepAfter { get; set; } = DefaultSleepAfter();
+
+    private static TimeSpan DefaultSleepAfter()
+        => int.TryParse(Environment.GetEnvironmentVariable("AGNES_TAB_SLEEP_MINUTES"), out var minutes) && minutes >= 0
+            ? TimeSpan.FromMinutes(minutes)
+            : TimeSpan.FromMinutes(30);
+
+    private readonly Func<DateTimeOffset> _now = () => DateTimeOffset.UtcNow;
+    private Timer? _sleepSweep;
+
+    /// <summary>Puts to sleep every tab that qualifies at <paramref name="now"/>; returns how many did.</summary>
+    public int SweepIdleTabs(DateTimeOffset now)
+    {
+        if (SleepAfter <= TimeSpan.Zero)
+        {
+            return 0;
+        }
+
+        var active = _factory.DocumentDock?.ActiveDockable;
+        var slept = 0;
+        foreach (var doc in AllDocuments().ToList())
+        {
+            if (ReferenceEquals(doc, active) || doc.Session is not { } session || doc.Descriptor is null
+                || session.IsTurnActive || session.NeedsAttention
+                || now - doc.LastActivatedAt < SleepAfter)
+            {
+                continue;
+            }
+
+            var host = doc.Host;
+            var sessionId = session.SessionId;
+            doc.Sleep();
+            ForgetView(doc);
+            if (host is not null)
+            {
+                _ = host.UnsubscribeAsync(sessionId);
+            }
+            slept++;
+        }
+
+        return slept;
+    }
+
+    /// <summary>Reloads a sleeping tab's session — the same path a restored tab takes, which with a local
+    /// event cache is a disk read and a delta.</summary>
+    public Task WakeAsync(SessionDocument doc)
+        => doc.IsSleeping && doc.Descriptor is { } descriptor ? ReconnectAsync(doc, descriptor) : Task.CompletedTask;
+
+    private static void ForgetView(SessionDocument doc)
+    {
+        if (Avalonia.Application.Current?.Resources.TryGetResource("DockRecycler", null, out var r) == true
+            && r is PerItemControlRecycling recycler)
+        {
+            recycler.Forget(doc);
+        }
+    }
+
+    private void StartSleepSweep()
+    {
+        _sleepSweep ??= new Timer(_ => _dispatcher.Post(() => SweepIdleTabs(_now())), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+    }
 
     private bool IsFloating(SessionDocument doc)
         => (((IRootDock)Layout).Windows ?? []).Any(w => DocumentsIn(w.Layout).Contains(doc));

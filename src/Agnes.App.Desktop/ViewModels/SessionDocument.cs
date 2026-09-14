@@ -897,8 +897,36 @@ public sealed partial class SessionDocument : Document, ITraySession
         RaiseScreenFlags();
     }
 
+    /// <summary>When this tab was last brought to the front (or opened). What the idle sweep reads.</summary>
+    public DateTimeOffset LastActivatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    [ObservableProperty]
+    private bool _isSleeping;
+
+    /// <summary>
+    /// Releases the session this tab holds — the view model, the transcript, the event view — keeping only
+    /// what names it: the descriptor, the title, the host. The tab stays in the strip and comes back from
+    /// the local cache when activated (see the window's idle sweep). Only a tab with a descriptor can
+    /// sleep, because that is what it wakes from.
+    /// </summary>
+    public void Sleep()
+    {
+        if (Session is not { } session || Descriptor is null)
+        {
+            return;
+        }
+
+        IsSleeping = true;
+        Session = null;
+        StatusText = "Sleeping — activate to reload";
+        _ = session.DisposeAsync();
+        OnPropertyChanged(nameof(IsUnread));
+        OnPropertyChanged(nameof(NeedsAttention));
+    }
+
     public void AttachSession(SessionViewModel session)
     {
+        IsSleeping = false;
         Session = session;
         Stage = TabStage.Live;
         StatusText = "Connected";

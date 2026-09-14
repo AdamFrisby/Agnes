@@ -493,6 +493,15 @@ public sealed class HostConnection : IAgnesHost
     public Task DeleteSandboxAsync(string sessionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.DeleteSandbox), sessionId);
 
+    public async Task UnsubscribeAsync(string sessionId)
+    {
+        _views.TryRemove(sessionId, out _);
+        if (_hub.State == HubConnectionState.Connected)
+        {
+            await _hub.InvokeAsync(nameof(IAgnesServer.Unsubscribe), sessionId).ConfigureAwait(false);
+        }
+    }
+
     public Task StopSessionAsync(string sessionId)
         => _hub.InvokeAsync(nameof(IAgnesServer.StopSession), sessionId);
 
