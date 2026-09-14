@@ -183,9 +183,21 @@ public sealed class HostBook
 
     /// <summary>Watches a link for a role the host stated, so the answer survives the next launch and the
     /// explanation can be on screen before the round trip that confirms it.</summary>
+    /// <summary>Raised when the set of hosts changes or any host's connection state does — what a
+    /// summary such as "1 of 1 online" has to re-read on. It used to be computed once, so More said
+    /// "0 of 1 online" beside a host that was serving sessions.</summary>
+    public event Action? Changed;
+
     private HostLink Track(HostLink link)
     {
         link.RoleChanged += _ => Persist();
+        link.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(HostLink.State) or nameof(HostLink.Name))
+            {
+                Changed?.Invoke();
+            }
+        };
         return link;
     }
 
@@ -209,6 +221,7 @@ public sealed class HostBook
         var link = Track(new HostLink(saved, _connector, _dispatcher));
         _links.Add(link);
         Persist();
+        Changed?.Invoke();
         return link;
     }
 
@@ -222,6 +235,7 @@ public sealed class HostBook
 
         _links.Remove(link);
         Persist();
+        Changed?.Invoke();
         _ = _connector.RemoveAsync(link.Url);
     }
 

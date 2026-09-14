@@ -26,6 +26,8 @@ public sealed partial class MoreViewModel : ObservableObject
         PromptsCommand = new RelayCommand(() => _shell.Push(new PromptsPageViewModel(_shell)));
         DevicesCommand = new RelayCommand(() => _shell.Push(new DevicesPageViewModel(_shell)));
         AboutCommand = new RelayCommand(() => _shell.Push(new AboutPageViewModel(_shell)));
+        // The host line is live: it re-reads when a host connects, drops, is added or removed.
+        _shell.Hosts.Changed += () => _shell.Dispatcher.Post(Refresh);
     }
 
     public IRelayCommand HostsCommand { get; }
