@@ -158,6 +158,22 @@ public sealed class DeviceRoleEndpointTests
         Assert.Equal(DeviceRole.Member, admittedByDefault.Role);
     }
 
+    [Fact]
+    public async Task A_role_typed_by_name_reads_as_that_role_on_both_endpoints()
+    {
+        using var factory = new HostFactory();
+        using var http = factory.CreateClient();
+        var (owner, member) = await OwnerAndMemberAsync(factory, http);
+
+        // {"role":"Owner"} from an operator's curl used to admit a Member without a word.
+        var admitted = await ApproveAsync(http, owner.Token, DeviceRole.Owner, byName: true);
+        Assert.Equal(DeviceRole.Owner, admitted.Role);
+
+        // And the same body on the role endpoint used to be a 400.
+        Assert.Equal(HttpStatusCode.OK, await SetRoleAsync(http, owner.Token, member.DeviceId, DeviceRole.Owner, byName: true));
+        Assert.Equal(DeviceRole.Owner, (await GetAsync<DeviceInfo>(http, "/devices/me", member.Token))!.Role);
+    }
+
     // ---- what a Member can actually do ----
 
     [Fact]
@@ -244,7 +260,7 @@ public sealed class DeviceRoleEndpointTests
     }
 
     /// <summary>Runs one full approval and returns the device the host admitted, as it sees itself.</summary>
-    private static async Task<DeviceInfo> ApproveAsync(HttpClient http, string approverToken, DeviceRole? role)
+    private static async Task<DeviceInfo> ApproveAsync(HttpClient http, string approverToken, DeviceRole? role, bool byName = false)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var pending = await PairingApproval.RequestAsync(
@@ -254,7 +270,9 @@ public sealed class DeviceRoleEndpointTests
         approve.Headers.Authorization = new AuthenticationHeaderValue("Bearer", approverToken);
         if (role is { } requested)
         {
-            approve.Content = JsonContent.Create(new PairApprovalDecision(requested));
+            approve.Content = byName
+                ? new StringContent($$"""{"role":"{{requested}}"}""", System.Text.Encoding.UTF8, "application/json")
+                : JsonContent.Create(new PairApprovalDecision(requested));
         }
 
         (await http.SendAsync(approve)).EnsureSuccessStatusCode();
@@ -280,11 +298,13 @@ public sealed class DeviceRoleEndpointTests
         return await http.SendAsync(request);
     }
 
-    private static async Task<HttpStatusCode> SetRoleAsync(HttpClient http, string token, string deviceId, DeviceRole role)
+    private static async Task<HttpStatusCode> SetRoleAsync(HttpClient http, string token, string deviceId, DeviceRole role, bool byName = false)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"/devices/{deviceId}/role")
         {
-            Content = JsonContent.Create(new DeviceRoleRequest(role)),
+            Content = byName
+                ? new StringContent($$"""{"role":"{{role}}"}""", System.Text.Encoding.UTF8, "application/json")
+                : JsonContent.Create(new DeviceRoleRequest(role)),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await http.SendAsync(request);

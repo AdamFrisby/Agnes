@@ -282,12 +282,43 @@ public enum DeviceRole
     Owner,
 }
 
+/// <summary>
+/// Reads a <see cref="DeviceRole"/> from either its number or its name, and writes the number.
+/// </summary>
+/// <remarks>
+/// The two bodies that carry a role inward are typed by hand as often as by a client — an operator
+/// promoting a phone with <c>curl</c> writes <c>{"role":"Owner"}</c>, and the natural reading of that is
+/// not "a Member, silently" (what a lenient default produced) or a 400 (what model binding produced).
+/// Output stays numeric so every client that has ever read these records keeps reading them.
+/// </remarks>
+public sealed class DeviceRoleReadConverter : System.Text.Json.Serialization.JsonConverter<DeviceRole>
+{
+    public override DeviceRole Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+    {
+        if (reader.TokenType == System.Text.Json.JsonTokenType.Number && reader.TryGetInt32(out var number))
+        {
+            return (DeviceRole)number;
+        }
+        if (reader.TokenType == System.Text.Json.JsonTokenType.String
+            && Enum.TryParse<DeviceRole>(reader.GetString(), ignoreCase: true, out var named))
+        {
+            return named;
+        }
+        throw new System.Text.Json.JsonException("A device role is 0/1 or Member/Owner.");
+    }
+
+    public override void Write(System.Text.Json.Utf8JsonWriter writer, DeviceRole value, System.Text.Json.JsonSerializerOptions options)
+        => writer.WriteNumberValue((int)value);
+}
+
 /// <summary>Body of <c>POST /pair/approve/{requestId}</c>: the role the approver admits the device with.
 /// Only an Owner may grant <see cref="DeviceRole.Owner"/>; anything else is admitted as a Member.</summary>
-public sealed record PairApprovalDecision(DeviceRole Role = DeviceRole.Member);
+public sealed record PairApprovalDecision(
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(DeviceRoleReadConverter))] DeviceRole Role = DeviceRole.Member);
 
 /// <summary>Body of <c>PUT /devices/{id}/role</c> (Owner only).</summary>
-public sealed record DeviceRoleRequest(DeviceRole Role);
+public sealed record DeviceRoleRequest(
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(DeviceRoleReadConverter))] DeviceRole Role);
 
 /// <summary>Body of <c>POST /devices/prune</c> (Owner only): remove devices not seen for this many days
 /// (never the caller's own device, never the last Owner).</summary>
