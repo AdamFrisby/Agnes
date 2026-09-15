@@ -1,22 +1,17 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
-             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.AppearancePage">
-    <!-- APPEARANCE (this device) -->
-    <StackPanel Spacing="12">
-        <TextBlock Classes="sectionTitle" Text="Appearance" />
-        <TextBlock Classes="scopeNote" Text="These apply to this app on this device." />
+    <!-- APPEARANCE (this device): a theme, the type, and motion — three sections, each a glance. -->
+    <StackPanel Spacing="16">
+        <ctl:SettingsPageHeader Title="Appearance" Scope="This device"
+                                Purpose="How this app looks on this device. Nothing here reaches the host or your other devices." />
 
-        <StackPanel Spacing="6">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Classes="fieldLabel" Text="Theme" VerticalAlignment="Center" />
-                <ctl:InfoHint Description="The app's colour scheme. System follows your OS light/dark setting; everything else pins it. The Spacegray flavours are ports of the Sublime Text theme (MIT) — see Themes/Spacegray.axaml for the credit." />
-            </StackPanel>
-            <!-- One row per theme in ThemeCatalog, so adding a theme never touches this view. -->
+        <ctl:SettingsSection Title="Theme"
+                             Description="System follows your OS light and dark setting; everything else pins one."
+                             Hint="The Spacegray flavours are ports of the Sublime Text theme (MIT) — see Themes/Spacegray.axaml for the credit. A theme is a colour list; adding one never touches this page.">
+            <!-- One chip per theme in ThemeCatalog, so adding a theme never touches this view. -->
             <ItemsControl ItemsSource="{Binding Themes}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
@@ -30,52 +25,59 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-        </StackPanel>
+        </ctl:SettingsSection>
 
-        <StackPanel Spacing="6">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Classes="fieldLabel" Text="Interface font" VerticalAlignment="Center" />
-                <ctl:InfoHint Description="Enter the exact name of any installed font family. Leave it blank for the Agnes default (Manrope). Code and terminal text keep the dedicated monospace font." />
-            </StackPanel>
-            <Grid ColumnDefinitions="280,Auto,Auto" ColumnSpacing="6" HorizontalAlignment="Left">
-                <TextBox Grid.Column="0" Text="{Binding FontFamilyInput, Mode=TwoWay}"
-                         Watermark="Default (Manrope)" Padding="9,5"
-                         AutomationProperties.Name="Interface font family">
-                    <TextBox.KeyBindings>
-                        <KeyBinding Gesture="Enter" Command="{Binding ApplyFontFamilyCommand}" />
-                    </TextBox.KeyBindings>
-                </TextBox>
-                <Button Grid.Column="1" Content="Apply" Command="{Binding ApplyFontFamilyCommand}" Classes="seg" />
-                <Button Grid.Column="2" Content="Default" Command="{Binding UseDefaultFontCommand}" Classes="seg" />
-            </Grid>
-        </StackPanel>
+        <ctl:SettingsSection Title="Text"
+                             Description="The interface font and size, and the size of chat text.">
+            <StackPanel Spacing="14">
+                <StackPanel Spacing="5">
+                    <TextBlock Classes="fieldLabel" Text="Interface font" />
+                    <Grid ColumnDefinitions="280,Auto,Auto" ColumnSpacing="6" HorizontalAlignment="Left">
+                        <TextBox Grid.Column="0" Text="{Binding FontFamilyInput, Mode=TwoWay}"
+                                 Watermark="Default (Manrope)" Padding="9,5"
+                                 AutomationProperties.Name="Interface font family">
+                            <TextBox.KeyBindings>
+                                <KeyBinding Gesture="Enter" Command="{Binding ApplyFontFamilyCommand}" />
+                            </TextBox.KeyBindings>
+                        </TextBox>
+                        <Button Grid.Column="1" Content="Apply" Command="{Binding ApplyFontFamilyCommand}" Classes="seg" />
+                        <Button Grid.Column="2" Content="Default" Command="{Binding UseDefaultFontCommand}" Classes="seg" />
+                    </Grid>
+                    <TextBlock Classes="help" Text="The exact name of any installed font family. Code and terminal text keep the monospace font." />
+                </StackPanel>
 
-        <StackPanel Spacing="6">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Classes="fieldLabel" Text="UI scale" VerticalAlignment="Center" />
-                <ctl:InfoHint Description="Scales the interface with the text so controls and spacing remain proportional." />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <Button Content="Small" Command="{Binding SetScaleCommand}" CommandParameter="small" Classes.on="{Binding IsScaleSmall}" Classes="seg" />
-                <Button Content="Default" Command="{Binding SetScaleCommand}" CommandParameter="default" Classes.on="{Binding IsScaleDefault}" Classes="seg" />
-                <Button Content="Large" Command="{Binding SetScaleCommand}" CommandParameter="large" Classes.on="{Binding IsScaleLarge}" Classes="seg" />
-            </StackPanel>
-        </StackPanel>
+                <StackPanel Spacing="5">
+                    <TextBlock Classes="fieldLabel" Text="Interface size" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Content="Small" Command="{Binding SetScaleCommand}" CommandParameter="small" Classes.on="{Binding IsScaleSmall}" Classes="seg" />
+                        <Button Content="Default" Command="{Binding SetScaleCommand}" CommandParameter="default" Classes.on="{Binding IsScaleDefault}" Classes="seg" />
+                        <Button Content="Large" Command="{Binding SetScaleCommand}" CommandParameter="large" Classes.on="{Binding IsScaleLarge}" Classes="seg" />
+                    </StackPanel>
+                    <TextBlock Classes="help" Text="Scales controls and spacing with the text, so everything stays in proportion." />
+                </StackPanel>
 
-        <StackPanel Spacing="6">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Classes="fieldLabel" Text="Chat font size" VerticalAlignment="Center" />
-                <ctl:InfoHint Description="Shared by every chat. Use the configurable Increase/Decrease chat font size commands (Cmd+Plus and Cmd+Minus by default on macOS) while a chat is focused." />
+                <StackPanel Spacing="5">
+                    <TextBlock Classes="fieldLabel" Text="Chat text size" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Classes="icon" Command="{Binding DecreaseChatFontScaleCommand}" ToolTip.Tip="Smaller" AutomationProperties.Name="Smaller chat text">
+                            <ic:SymbolIcon Symbol="Subtract" />
+                        </Button>
+                        <TextBlock Text="{Binding ChatFontScaleText}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" MinWidth="44" TextAlignment="Center" />
+                        <Button Classes="icon" Command="{Binding IncreaseChatFontScaleCommand}" ToolTip.Tip="Larger" AutomationProperties.Name="Larger chat text">
+                            <ic:SymbolIcon Symbol="Add" />
+                        </Button>
+                        <Button Content="Reset" Command="{Binding ResetChatFontScaleCommand}" Classes="chip" Padding="10,4" FontSize="12" Margin="6,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Classes="help" Text="Shared by every chat. The same keys work while a chat is focused (Ctrl and plus or minus, by default)." />
+                </StackPanel>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="{Binding ChatFontScaleText}" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" MinWidth="38" />
-                <Button Content="Reset" Command="{Binding ResetChatFontScaleCommand}" Classes="seg" />
-            </StackPanel>
-        </StackPanel>
+        </ctl:SettingsSection>
 
-        <StackPanel Orientation="Horizontal" Spacing="6">
-            <CheckBox IsChecked="{Binding ReducedMotion, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Reduce motion" />
-            <ctl:InfoHint Description="Minimises non-essential animation. Helpful for motion sensitivity or lower-powered displays." />
-        </StackPanel>
+        <ctl:SettingsSection Title="Motion">
+            <StackPanel Spacing="4">
+                <CheckBox IsChecked="{Binding ReducedMotion, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Reduce motion" />
+                <TextBlock Classes="help" Margin="28,0,0,0" Text="Keeps animation to the essential. For motion sensitivity, or a display that struggles." />
+            </StackPanel>
+        </ctl:SettingsSection>
     </StackPanel>
 </UserControl>

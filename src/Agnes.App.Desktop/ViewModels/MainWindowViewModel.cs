@@ -1638,7 +1638,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                     foreach (var a in accounts.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)) { GitHubAccounts.Add(a); }
                 }
 
-                ProjectsStatus = list.Count == 0 ? "No projects yet — open a session in a repo and it becomes one." : $"{list.Count} project(s) on {ActiveHostName}.";
+                ProjectsStatus = list.Count switch
+                {
+                    0 => "No projects yet — open a session in a repository and it becomes one.",
+                    1 => $"One project on {ActiveHostName}.",
+                    var n => $"{n} projects on {ActiveHostName}.",
+                };
                 if (list.Count > 0) { SelectProject(list.FirstOrDefault(p => p.Id == SelectedProject?.Id) ?? list[0]); }
             });
         }
@@ -1671,6 +1676,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
            && ProjGitMode == p.Defaults.GitCredentialMode
            && ProjSkipPermissions == p.Defaults.SkipPermissions
            && ProjMcpApproval == p.Defaults.McpApproval
+           && ProjGraphical == p.Defaults.Graphical
            && ProjAccount == (p.CredentialAccount ?? string.Empty)
            && ProjRepo == (p.Repo ?? string.Empty)
            && ProjectMcp.Select(m => m.Id).SequenceEqual(p.McpServers.Select(m => m.Id), StringComparer.Ordinal)
@@ -1714,6 +1720,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ProjGitMode = project.Defaults.GitCredentialMode;
         ProjSkipPermissions = project.Defaults.SkipPermissions;
         ProjMcpApproval = project.Defaults.McpApproval;
+        ProjGraphical = project.Defaults.Graphical;
         ProjAccount = project.CredentialAccount ?? string.Empty;
         ProjRepo = project.Repo ?? string.Empty;
         ProjectMcp.Clear();
@@ -1743,7 +1750,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             McpServers = ProjectMcp.ToArray(),
             CredentialAccount = string.IsNullOrWhiteSpace(ProjAccount) ? null : ProjAccount,
             Repo = string.IsNullOrWhiteSpace(ProjRepo) ? null : ProjRepo.Trim(),
-            Defaults = new ProjectDefaultsDto(ProjSkipPermissions, ProjGitMode, ProjMcpApproval),
+            Defaults = new ProjectDefaultsDto(ProjSkipPermissions, ProjGitMode, ProjMcpApproval, ProjGraphical),
             SandboxCpu = PositiveOrNull(ProjCpu),
             SandboxMemoryGiB = PositiveOrNull(ProjMemoryGiB),
             SandboxDiskGiB = PositiveOrNull(ProjDiskGiB),

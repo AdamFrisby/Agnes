@@ -1,50 +1,61 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
-             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.CachePage">
-    <!-- LOCAL CACHE (this device's copy of session events) -->
-    <StackPanel>
-        <StackPanel DataContext="{Binding EventCache}" Spacing="12">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
-                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Local cache" />
-                <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
-                              Description="Every session you open is kept on this device, so the next open reads it from disk and asks the host only for what arrived since. A long session that took a minute to download opens in a second or two."
-                              Security="The cache holds the session content you have already seen, in this user profile's application data. Clearing it removes that copy; the host keeps the log." />
-                <Button Grid.Column="3" Content="Clear all" Command="{Binding ClearCommand}" Classes="chip" Padding="10,4" FontSize="12" />
-                <Button Grid.Column="4" Margin="6,0,0,0" Content="Refresh" Command="{Binding RefreshCommand}" Classes="seg" />
-            </Grid>
+    <!-- LOCAL CACHE (this device's copy of session events). -->
+    <StackPanel Spacing="16" DataContext="{Binding EventCache}">
+        <ctl:SettingsPageHeader Title="Local cache" Scope="This device"
+                                Purpose="Every session you open is kept on this device, so the next open reads it from disk and asks the host only for what arrived since.">
+            <ctl:SettingsPageHeader.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="danger" Content="Clear all" Padding="10,4" FontSize="12" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                            Command="{Binding ClearCommand}" IsVisible="{Binding IsAvailable}"
+                            ToolTip.Tip="Removes this device's copy of every session. The host keeps the log; the next open downloads it again." />
+                    <Button Classes="icon" Command="{Binding RefreshCommand}" ToolTip.Tip="Refresh">
+                        <ic:SymbolIcon Symbol="ArrowSync" />
+                    </Button>
+                </StackPanel>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-            <TextBlock IsVisible="{Binding !IsAvailable}" TextWrapping="Wrap" Foreground="{DynamicResource FgDim}" FontSize="12"
-                       Text="This build is running without a cache: either AGNES_EVENT_CACHE is off, or the cache file could not be opened. Every open fetches the whole session from the host." />
-
-            <StackPanel IsVisible="{Binding IsAvailable}" Spacing="8">
-                <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource Fg}" FontSize="13" />
-                <TextBlock Text="{Binding Path}" Foreground="{DynamicResource FgFaint}" FontSize="11" FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
-                <ItemsControl ItemsSource="{Binding Entries}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                    CornerRadius="10" Padding="12,8" Margin="0,0,0,6">
-                                <Grid ColumnDefinitions="*,Auto,Auto">
-                                    <StackPanel Grid.Column="0" Spacing="2">
-                                        <TextBlock Text="{Binding SessionId}" Foreground="{DynamicResource Fg}" FontSize="12" FontFamily="{StaticResource MonoFont}" />
-                                        <TextBlock Foreground="{DynamicResource FgDim}" FontSize="11">
-                                            <Run Text="{Binding Host}" /><Run Text=" · " /><Run Text="{Binding RangeText}" />
-                                        </TextBlock>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="{Binding SizeText}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" Margin="12,0" />
-                                    <Button Grid.Column="2" Classes="chip" Content="Forget" Padding="10,4" FontSize="12"
-                                            Command="{Binding ForgetCommand}" />
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
+        <StackPanel Spacing="3">
+            <TextBlock Classes="status" Text="{Binding Summary}" IsVisible="{Binding IsAvailable}" />
+            <TextBlock Classes="meta mono" Text="{Binding Path}" IsVisible="{Binding IsAvailable}" />
         </StackPanel>
+
+        <ctl:SettingsSection Title="No cache on this device" Classes="error" IsVisible="{Binding !IsAvailable}"
+                             Description="Either AGNES_EVENT_CACHE is off, or the cache file could not be opened. Every open fetches the whole session from the host." />
+
+        <ctl:SettingsSection Title="Cached sessions" IsVisible="{Binding IsAvailable}"
+                             Hint="A cached session opens from disk and asks the host only for the events after the last one it has. Forgetting one removes this device's copy; the host keeps the log."
+                             Security="The cache holds session content you have already seen, in this user profile's application data.">
+            <StackPanel>
+                <Border Classes="rows flat" IsVisible="{Binding HasEntries}">
+                    <ItemsControl ItemsSource="{Binding Entries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="row" Padding="0,8">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                                        <ic:SymbolIcon Grid.Column="0" Symbol="Database" FontSize="16" Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" Margin="2,0,2,0" />
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding SessionId}" Classes="rowTitle" FontFamily="{DynamicResource MonoFont}" FontSize="12" />
+                                            <TextBlock Classes="meta">
+                                                <Run Text="{Binding Host}" /><Run Text=" · " /><Run Text="{Binding RangeText}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding SizeText}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" Margin="8,0" />
+                                        <Button Grid.Column="3" Classes="chip" Content="Forget" Padding="10,4" FontSize="12" Command="{Binding ForgetCommand}"
+                                                ToolTip.Tip="Remove this device's copy; the next open downloads it again" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+                <ctl:EmptyState Symbol="Database" Title="Nothing cached yet" IsVisible="{Binding !HasEntries}"
+                                Text="Open a session and its history is kept here for the next time." />
+            </StackPanel>
+        </ctl:SettingsSection>
     </StackPanel>
 </UserControl>

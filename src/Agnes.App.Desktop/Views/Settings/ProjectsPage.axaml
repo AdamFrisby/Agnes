@@ -4,212 +4,271 @@
              xmlns:sys="using:System"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
-             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.ProjectsPage">
-    <!-- PROJECTS (per-repo, on the host) -->
-    <StackPanel Spacing="12">
-        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Projects" />
-            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
-                          Description="A project bundles what a session gets — its sandbox contents, MCP servers, GitHub account and defaults — keyed by the repo. A session in a repo uses that repo's project (auto-created the first time), so different repos get entirely different setups on the same host."
-                          Security="Projects and their sandbox images live on the host. Anything you add to a project's sandbox becomes available to that project's sandboxed agents." />
-            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadProjectsCommand}" Classes="seg" />
-        </Grid>
-        <TextBlock Text="{Binding ProjectsStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+    <!-- PROJECTS (per-repo, on the host). The use cases: change one project's VM size; see which project
+         has a device attached; give one project an MCP server; know whether the edit is saved. So the
+         editor's header carries the project's name, an "Unsaved changes" tag and Save — always in view —
+         and the settings below are grouped by what they are. -->
+    <StackPanel Spacing="16">
+        <ctl:SettingsPageHeader Title="Projects" Scope="{Binding ActiveHostName}"
+                                Purpose="Per-repository settings a session inherits: its sandbox image, VM size, devices, MCP servers, GitHub account and defaults. A session in a repository uses that repository's project, created the first time it is seen.">
+            <ctl:SettingsPageHeader.Actions>
+                <Button Classes="icon" Command="{Binding LoadProjectsCommand}" ToolTip.Tip="Refresh">
+                    <ic:SymbolIcon Symbol="ArrowSync" />
+                </Button>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-        <Grid ColumnDefinitions="240,*" ColumnSpacing="16">
-            <!-- Project list -->
-            <Border Grid.Column="0" Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="6" VerticalAlignment="Top">
-                <ItemsControl ItemsSource="{Binding Projects}">
+        <TextBlock Classes="status" Text="{Binding ProjectsStatus}" />
+
+        <Grid ColumnDefinitions="260,*" ColumnSpacing="16">
+            <!-- The list: one row per project, the open one marked. Switching away from unsaved edits asks
+                 for a second click (the status line says so) rather than dropping them. -->
+            <Border Grid.Column="0" Classes="rows" Padding="6" VerticalAlignment="Top">
+                <ItemsControl ItemsSource="{Binding ProjectRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Button Classes="navitem" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                    Command="{Binding $parent[ItemsControl].DataContext.SelectProjectCommand}" CommandParameter="{Binding}">
-                                <StackPanel Spacing="1">
-                                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="13" />
-                                    <TextBlock Text="{Binding RepoKey}" Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
+                            <Button Classes="navitem" Classes.on="{Binding IsSelected}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Padding="10,8" Command="{Binding $parent[ItemsControl].DataContext.SelectProjectCommand}" CommandParameter="{Binding Project}">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+                                    <ic:SymbolIcon Grid.Column="0" Symbol="Folder" FontSize="16" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{Binding Name}" FontSize="13" VerticalAlignment="Center" />
+                                            <Border Classes="tag" IsVisible="{Binding IsDefault}">
+                                                <TextBlock Text="fallback" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding RepoKey}" Classes="meta mono" IsVisible="{Binding !IsDefault}" />
+                                        <TextBlock Text="every other repository" Classes="meta" IsVisible="{Binding IsDefault}" />
+                                    </StackPanel>
+                                </Grid>
                             </Button>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </Border>
 
-            <!-- Project editor -->
-            <StackPanel Grid.Column="1" Spacing="12" IsVisible="{Binding HasSelectedProject}">
-                <StackPanel Spacing="4">
-                    <TextBlock Classes="fieldLabel" Text="Name" />
-                    <TextBox Text="{Binding ProjName, Mode=TwoWay}" FontSize="13" Padding="8,5" CornerRadius="6" />
-                </StackPanel>
-
-                <Border Height="1" Background="{DynamicResource Line}" />
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="Sandbox" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
-                    <ctl:InfoHint Description="What this project's VM image contains. Saving rebuilds it (a few minutes); sessions in this repo launch from it." />
-                </StackPanel>
-                <CheckBox IsChecked="{Binding ProjNode, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Install node + npm" />
-                <StackPanel Spacing="4">
-                    <TextBlock Classes="fieldLabel" Text="apt packages" />
-                    <TextBox Text="{Binding ProjApt, Mode=TwoWay}" Watermark="git ripgrep cargo…" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                </StackPanel>
-                <StackPanel Spacing="4">
-                    <TextBlock Classes="fieldLabel" Text="npm globals" />
-                    <TextBox Text="{Binding ProjNpm, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                </StackPanel>
-                <StackPanel Spacing="4">
-                    <TextBlock Classes="fieldLabel" Text="pip packages" />
-                    <TextBox Text="{Binding ProjPip, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                </StackPanel>
-
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock Classes="fieldLabel" Text="VM resources" VerticalAlignment="Center" />
-                    <ctl:InfoHint Description="Per-project sandbox VM size. Leave blank to inherit the host's default (2 CPU / 12 GiB RAM / 16 GiB disk). Applies to newly launched sessions." />
-                </StackPanel>
-                <Grid ColumnDefinitions="*,*,*" Margin="0,0,0,0">
-                    <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,4,0">
-                        <TextBlock Classes="fieldLabel" Text="CPUs" />
-                        <TextBox Text="{Binding ProjCpu, Mode=TwoWay}" Watermark="default" FontSize="12" Padding="8,5" CornerRadius="6" />
+            <!-- The editor -->
+            <StackPanel Grid.Column="1" Spacing="14" IsVisible="{Binding HasSelectedProject}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding SelectedProject.Name}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
+                            <Border Classes="tag attention" IsVisible="{Binding IsProjectDirty}">
+                                <TextBlock Text="Unsaved changes" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding SelectedProjectSubtitle}" Classes="meta" />
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Spacing="4" Margin="2,0,2,0">
-                        <TextBlock Classes="fieldLabel" Text="RAM (GiB)" />
-                        <TextBox Text="{Binding ProjMemoryGiB, Mode=TwoWay}" Watermark="default" FontSize="12" Padding="8,5" CornerRadius="6" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="2" Spacing="4" Margin="4,0,0,0">
-                        <TextBlock Classes="fieldLabel" Text="Disk (GiB)" />
-                        <TextBox Text="{Binding ProjDiskGiB, Mode=TwoWay}" Watermark="default" FontSize="12" Padding="8,5" CornerRadius="6" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <ProgressBar IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center" IsVisible="{Binding IsSavingProject}"
+                                     Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                        <Button Content="Save project" Classes="primary" Command="{Binding SaveProjectCommand}" IsEnabled="{Binding !IsSavingProject}"
+                                ToolTip.Tip="Saving rebuilds this project's sandbox image, which takes a few minutes" />
                     </StackPanel>
                 </Grid>
 
-                <!-- USB passthrough: host devices handed raw to this project's VMs -->
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock Classes="fieldLabel" Text="USB devices" VerticalAlignment="Center" />
-                    <ctl:InfoHint Description="Host USB devices passed through to this project's sandbox VMs — a phone on adb, a board on a serial port. The guest sees the real device; the host loses it while a session holds it. Applies to sessions opened after saving."
-                                  Security="The agent gets everything the device allows: adb can install, wipe app data and sideload. Only devices you would hand to the agent. The host operator must also allow passthrough (Agnes:Security:AllowUsbPassthrough); a fork of a session never inherits a device." />
-                </StackPanel>
-                <ItemsControl ItemsSource="{Binding ProjectUsb}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
-                                <ic:SymbolIcon Grid.Column="0" Symbol="UsbPlug" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource FgDim}" />
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Label, TargetNullValue=USB device}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                    <TextBlock Text="{Binding Ids}" Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}" />
-                                </StackPanel>
-                                <Button Classes="danger" Grid.Column="2" Content="Remove" FontSize="11" Padding="9,3"
-                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                        Command="{Binding $parent[ItemsControl].DataContext.RemoveProjectUsbCommand}" CommandParameter="{Binding}" />
+                <ctl:SettingsSection Title="Project">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="fieldLabel" Text="Name" />
+                        <TextBox Text="{Binding ProjName, Mode=TwoWay}" FontSize="13" Padding="8,5" CornerRadius="6" />
+                    </StackPanel>
+                </ctl:SettingsSection>
+
+                <ctl:SettingsSection Title="Sandbox image"
+                                     Description="What this project's VM image contains. Saving rebuilds it; sessions in this repository launch from it."
+                                     Hint="The image is baked once per project from the base image plus what you list here, so a session starts with its tools already installed rather than installing them every time."
+                                     Security="Anything you add here becomes available to this project's sandboxed agents.">
+                    <StackPanel Spacing="10">
+                        <CheckBox IsChecked="{Binding ProjNode, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Install Node.js and npm" />
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                            <StackPanel Grid.Column="0" Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="apt packages" />
+                                <TextBox Text="{Binding ProjApt, Mode=TwoWay}" Watermark="git ripgrep cargo" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="npm globals" />
+                                <TextBox Text="{Binding ProjNpm, Mode=TwoWay}" Watermark="typescript" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="pip packages" />
+                                <TextBox Text="{Binding ProjPip, Mode=TwoWay}" Watermark="ruff" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Classes="help" Text="Space-separated. Installed into the image when the project is saved." />
+                    </StackPanel>
+                </ctl:SettingsSection>
+
+                <ctl:SettingsSection Title="Virtual machine"
+                                     Description="The size of this project's sandbox VM, and any host USB devices it gets."
+                                     Hint="Leave a size blank to inherit the host's default (2 CPUs, 12 GiB RAM, 16 GiB disk). Sizes apply to sessions opened after saving. A USB device is passed through raw: the guest sees the real device and the host loses it while a session holds it."
+                                     Security="An agent with a device gets everything the device allows — adb can install, wipe app data and sideload. Attach only devices you would hand the agent. The host operator must also allow passthrough (Agnes:Security:AllowUsbPassthrough); a fork of a session never inherits a device.">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                            <StackPanel Grid.Column="0" Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="CPUs" />
+                                <TextBox Text="{Binding ProjCpu, Mode=TwoWay}" Watermark="host default" FontSize="12" Padding="8,5" CornerRadius="6" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="RAM (GiB)" />
+                                <TextBox Text="{Binding ProjMemoryGiB, Mode=TwoWay}" Watermark="host default" FontSize="12" Padding="8,5" CornerRadius="6" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="4">
+                                <TextBlock Classes="fieldLabel" Text="Disk (GiB)" />
+                                <TextBox Text="{Binding ProjDiskGiB, Mode=TwoWay}" Watermark="host default" FontSize="12" Padding="8,5" CornerRadius="6" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="fieldLabel" Text="USB devices" />
+                            <Border Classes="rows flat">
+                                <ItemsControl ItemsSource="{Binding ProjectUsb}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Classes="row" Padding="0,7">
+                                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                    <ic:SymbolIcon Grid.Column="0" Symbol="UsbPlug" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource FgDim}" Margin="2,0,2,0" />
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                                        <TextBlock Text="{Binding Label, TargetNullValue=USB device}" Classes="rowTitle" />
+                                                        <TextBlock Text="{Binding Ids}" Classes="meta mono" />
+                                                    </StackPanel>
+                                                    <Button Classes="danger" Grid.Column="2" Content="Remove" FontSize="11" Padding="9,3"
+                                                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.RemoveProjectUsbCommand}" CommandParameter="{Binding}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <ComboBox Grid.Column="0" ItemsSource="{Binding HostUsbDevices}" SelectedItem="{Binding SelectedHostUsb, Mode=TwoWay}"
+                                          PlaceholderText="A device plugged into the host…" HorizontalAlignment="Stretch" FontSize="12">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{Binding Label}" FontSize="12" />
+                                                <TextBlock Text="{Binding Id}" FontSize="11" Foreground="{DynamicResource FgFaint}" FontFamily="{DynamicResource MonoFont}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Kind}" FontSize="10" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <Button Grid.Column="1" Classes="icon" Command="{Binding LoadHostUsbCommand}" ToolTip.Tip="List the devices plugged into the host">
+                                    <ic:SymbolIcon Symbol="ArrowSync" />
+                                </Button>
+                                <Button Grid.Column="2" Content="Add device" Command="{Binding AddProjectUsbCommand}" Classes="seg" FontSize="12" />
                             </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="9">
-                    <StackPanel Spacing="6">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                            <ComboBox Grid.Column="0" ItemsSource="{Binding HostUsbDevices}" SelectedItem="{Binding SelectedHostUsb, Mode=TwoWay}"
-                                      PlaceholderText="Devices plugged into the host…" HorizontalAlignment="Stretch" FontSize="12">
-                                <ComboBox.ItemTemplate>
+                            <TextBox Text="{Binding NewUsbId, Mode=TwoWay}" Watermark="Or type vendor:product, e.g. 0e8d:201c — add /serial to pin one unit"
+                                     FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                            <TextBlock Text="{Binding HostUsbStatus}" Classes="help"
+                                       IsVisible="{Binding HostUsbStatus, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                    </StackPanel>
+                </ctl:SettingsSection>
+
+                <ctl:SettingsSection Title="MCP servers"
+                                     Description="Servers only this project's sessions get, on top of the host's own list."
+                                     Hint="A host-run server is proxied into the sandbox through the audited forward; a sandbox-run server runs inside the VM. Changes apply on the next session start.">
+                    <StackPanel Spacing="8">
+                        <Border Classes="rows flat">
+                            <ItemsControl ItemsSource="{Binding ProjectMcp}">
+                                <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Text="{Binding Label}" FontSize="12" />
-                                            <TextBlock Text="{Binding Id}" FontSize="11" Foreground="{DynamicResource FgFaint}" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding Kind}" FontSize="10" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
-                                        </StackPanel>
+                                        <Border Classes="row" Padding="0,7">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                <ic:SymbolIcon Grid.Column="0" Symbol="PlugDisconnected" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource FgDim}" Margin="2,0,2,0" />
+                                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" Classes="rowTitle" />
+                                                    <TextBlock Classes="meta">
+                                                        <Run Text="{Binding Transport}" /><Run Text=" · runs at " /><Run Text="{Binding RunAt}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <Button Classes="danger" Grid.Column="2" Content="Remove" FontSize="11" Padding="9,3"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.RemoveProjectMcpCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
                                     </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <Button Grid.Column="1" Classes="chip" Padding="8,4" Command="{Binding LoadHostUsbCommand}" ToolTip.Tip="List the devices plugged into the host">
-                                <ic:SymbolIcon Symbol="ArrowSync" FontSize="14" />
-                            </Button>
-                        </Grid>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                            <TextBox Grid.Column="0" Text="{Binding NewUsbId, Mode=TwoWay}" Watermark="or type vendor:product, e.g. 0e8d:201c (add /serial to pin one unit)"
-                                     FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                            <Button Grid.Column="1" Content="Add device" Command="{Binding AddProjectUsbCommand}" Classes="seg" FontSize="12" />
-                        </Grid>
-                        <TextBlock Text="{Binding HostUsbStatus}" Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap"
-                                   IsVisible="{Binding HostUsbStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                    </StackPanel>
-                </Border>
-
-                <Border Height="1" Background="{DynamicResource Line}" />
-                <TextBlock Text="MCP servers" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-                <ItemsControl ItemsSource="{Binding ProjectMcp}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,2">
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                    <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
-                                        <Run Text="{Binding Transport}" /><Run Text=" · run at " /><Run Text="{Binding RunAt}" />
-                                    </TextBlock>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                        <TextBlock Text="No project-only servers. Sessions still get the host's MCP servers." Classes="help"
+                                   IsVisible="{Binding !HasProjectMcp}" />
+                        <Expander Header="Add a server" Padding="0,8,0,0">
+                            <StackPanel Spacing="8">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="fieldLabel" Text="Name" />
+                                    <TextBox Text="{Binding NewMcpName, Mode=TwoWay}" Watermark="playwright" FontSize="12" Padding="8,5" CornerRadius="6" />
                                 </StackPanel>
-                                <Button Classes="danger" Grid.Column="1" Content="Remove" FontSize="11" Padding="9,3"
-                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                        Command="{Binding $parent[ItemsControl].DataContext.RemoveProjectMcpCommand}" CommandParameter="{Binding}" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="9">
-                    <StackPanel Spacing="6">
-                        <TextBox Text="{Binding NewMcpName, Mode=TwoWay}" Watermark="Server name" FontSize="12" Padding="8,5" CornerRadius="6" />
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Classes="fieldLabel" Text="Run at" VerticalAlignment="Center" />
-                            <Button Content="Host" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="host" Classes.on="{Binding NewMcpRunAtHost}" Classes="seg" />
-                            <Button Content="Sandbox" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="sandbox" Classes.on="{Binding NewMcpRunAtSandbox}" Classes="seg" />
-                            <TextBlock Classes="fieldLabel" Text="Transport" VerticalAlignment="Center" Margin="8,0,0,0" />
-                            <Button Content="stdio" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="stdio" Classes.on="{Binding NewMcpIsStdio}" Classes="seg" />
-                            <Button Content="http" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="http" Classes.on="{Binding NewMcpIsHttp}" Classes="seg" />
-                        </StackPanel>
-                        <StackPanel Spacing="6" IsVisible="{Binding NewMcpIsStdio}">
-                            <TextBox Text="{Binding NewMcpCommand, Mode=TwoWay}" Watermark="command (e.g. npx)" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                            <TextBox Text="{Binding NewMcpArgs, Mode=TwoWay}" Watermark="args (space-separated)" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                        </StackPanel>
-                        <TextBox IsVisible="{Binding NewMcpIsHttp}" Text="{Binding NewMcpUrl, Mode=TwoWay}" Watermark="https://server/mcp" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                        <Button Content="Add server" Command="{Binding AddProjectMcpCommand}" HorizontalAlignment="Left" Classes="seg" />
+                                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+                                    <TextBlock Grid.Column="0" Classes="fieldLabel" Text="Runs at" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="Host" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="host" Classes.on="{Binding NewMcpRunAtHost}" Classes="seg" />
+                                    <Button Grid.Column="2" Content="Sandbox" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="sandbox" Classes.on="{Binding NewMcpRunAtSandbox}" Classes="seg" />
+                                    <TextBlock Grid.Column="3" Classes="fieldLabel" Text="Transport" VerticalAlignment="Center" Margin="10,0,0,0" />
+                                    <Button Grid.Column="4" Content="stdio" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="stdio" Classes.on="{Binding NewMcpIsStdio}" Classes="seg" />
+                                    <Button Grid.Column="5" Content="http" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="http" Classes.on="{Binding NewMcpIsHttp}" Classes="seg" />
+                                </Grid>
+                                <Grid ColumnDefinitions="*,2*" ColumnSpacing="8" IsVisible="{Binding NewMcpIsStdio}">
+                                    <StackPanel Grid.Column="0" Spacing="4">
+                                        <TextBlock Classes="fieldLabel" Text="Command" />
+                                        <TextBox Text="{Binding NewMcpCommand, Mode=TwoWay}" Watermark="npx" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="4">
+                                        <TextBlock Classes="fieldLabel" Text="Arguments" />
+                                        <TextBox Text="{Binding NewMcpArgs, Mode=TwoWay}" Watermark="-y @playwright/mcp@latest" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel Spacing="4" IsVisible="{Binding NewMcpIsHttp}">
+                                    <TextBlock Classes="fieldLabel" Text="URL" />
+                                    <TextBox Text="{Binding NewMcpUrl, Mode=TwoWay}" Watermark="https://server/mcp" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                                </StackPanel>
+                                <Button Content="Add server" Command="{Binding AddProjectMcpCommand}" HorizontalAlignment="Left" Classes="seg" />
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
-                </Border>
+                </ctl:SettingsSection>
 
-                <Border Height="1" Background="{DynamicResource Line}" />
-                <TextBlock Text="GitHub" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
-                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="fieldLabel" Text="Account" VerticalAlignment="Center" />
-                    <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding GitHubAccounts}" SelectedItem="{Binding ProjAccount, Mode=TwoWay}" MinWidth="180" HorizontalAlignment="Left" />
-                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="fieldLabel" Text="Access" VerticalAlignment="Center" />
-                    <ComboBox Grid.Row="1" Grid.Column="1" SelectedItem="{Binding ProjGitMode, Mode=TwoWay}" MinWidth="140" HorizontalAlignment="Left"
-                              ToolTip.Tip="Off: no credentials. Ask: approve each repository once. Trust: allow every repo without asking.">
-                        <sys:String>Off</sys:String>
-                        <sys:String>Ask</sys:String>
-                        <sys:String>Trust</sys:String>
-                    </ComboBox>
-                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="fieldLabel" Text="Checkout repo" VerticalAlignment="Top" Margin="0,6,0,0" />
-                    <StackPanel Grid.Row="2" Grid.Column="1" Spacing="2">
-                        <TextBox Text="{Binding ProjRepo, Mode=TwoWay}" Watermark="owner/repo or https://github.com/owner/repo (optional)"
-                                 FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" MinWidth="300" HorizontalAlignment="Left" />
-                        <TextBlock Text="Auto-cloned into the working directory before the agent launches (needs an account with access)."
-                                   Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap" MaxWidth="360" HorizontalAlignment="Left" />
+                <ctl:SettingsSection Title="GitHub"
+                                     Description="Which linked account this project pushes as, and what it checks out."
+                                     Hint="Access decides whether a sandboxed agent may push at all: Off gives it no credentials, Ask approves each repository once, Trust allows every repository the account can reach.">
+                    <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="fieldLabel" Text="Account" VerticalAlignment="Center" />
+                        <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding GitHubAccounts}" SelectedItem="{Binding ProjAccount, Mode=TwoWay}"
+                                  MinWidth="220" HorizontalAlignment="Left" PlaceholderText="The host's default account" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="fieldLabel" Text="Access" VerticalAlignment="Center" />
+                        <ComboBox Grid.Row="1" Grid.Column="1" SelectedItem="{Binding ProjGitMode, Mode=TwoWay}" MinWidth="140" HorizontalAlignment="Left">
+                            <sys:String>Off</sys:String>
+                            <sys:String>Ask</sys:String>
+                            <sys:String>Trust</sys:String>
+                        </ComboBox>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="fieldLabel" Text="Checkout" VerticalAlignment="Top" Margin="0,7,0,0" />
+                        <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4">
+                            <TextBox Text="{Binding ProjRepo, Mode=TwoWay}" Watermark="owner/repo or https://github.com/owner/repo — optional"
+                                     FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                            <TextBlock Classes="help" Text="Cloned into the working directory before the agent launches, when the directory is empty. Needs an account with access." />
+                        </StackPanel>
+                    </Grid>
+                </ctl:SettingsSection>
+
+                <ctl:SettingsSection Title="Defaults for new sessions"
+                                     Description="How a session in this repository opens unless you say otherwise at the time.">
+                    <StackPanel Spacing="10">
+                        <Grid ColumnDefinitions="130,*">
+                            <TextBlock Grid.Column="0" Classes="fieldLabel" Text="MCP tools" VerticalAlignment="Center" />
+                            <ComboBox Grid.Column="1" SelectedItem="{Binding ProjMcpApproval, Mode=TwoWay}" MinWidth="140" HorizontalAlignment="Left"
+                                      ToolTip.Tip="Ask: approve each MCP tool call. Trust: let them run.">
+                                <sys:String>Ask</sys:String>
+                                <sys:String>Trust</sys:String>
+                            </ComboBox>
+                        </Grid>
+                        <CheckBox IsChecked="{Binding ProjSkipPermissions, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Autonomous by default"
+                                  ToolTip.Tip="The agent runs without asking permission for each tool call. Confined to a sandbox unless the host allows otherwise." />
+                        <CheckBox IsChecked="{Binding ProjGraphical, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Graphical sandbox by default"
+                                  ToolTip.Tip="Open sessions in a VM with a screen the agent can see and drive. Only where the host allows graphical sandboxes." />
                     </StackPanel>
-                </Grid>
-
-                <Border Height="1" Background="{DynamicResource Line}" />
-                <TextBlock Text="Defaults for new sessions" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto" RowSpacing="8">
-                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="fieldLabel" Text="MCP tools" VerticalAlignment="Center" />
-                    <ComboBox Grid.Row="0" Grid.Column="1" SelectedItem="{Binding ProjMcpApproval, Mode=TwoWay}" MinWidth="140" HorizontalAlignment="Left">
-                        <sys:String>Ask</sys:String>
-                        <sys:String>Trust</sys:String>
-                    </ComboBox>
-                    <CheckBox Grid.Row="1" Grid.Column="1" IsChecked="{Binding ProjSkipPermissions, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Autonomous by default" />
-                </Grid>
-
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <Button Content="Save project" Command="{Binding SaveProjectCommand}"
-                            HorizontalAlignment="Left" Classes="seg" IsEnabled="{Binding !IsSavingProject}" />
-                    <ProgressBar IsIndeterminate="True" Width="90" Height="4" VerticalAlignment="Center"
-                                 IsVisible="{Binding IsSavingProject}"
-                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
-                </StackPanel>
-
+                </ctl:SettingsSection>
             </StackPanel>
         </Grid>
     </StackPanel>
