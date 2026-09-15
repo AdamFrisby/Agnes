@@ -623,7 +623,12 @@ public sealed record ProjectDto(
 
 /// <summary>A USB device a project hands to its sandboxes: vendor/product id (four lowercase hex digits
 /// each), the serial when two identical units must be told apart, and the label the picker showed.</summary>
-public sealed record UsbDeviceDto(string VendorId, string ProductId, string? Serial = null, string? Label = null);
+public sealed record UsbDeviceDto(string VendorId, string ProductId, string? Serial = null, string? Label = null)
+{
+    /// <summary>"0e8d:201c", or "0e8d:201c · HA20HAXW" with a serial — the second line under the label.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Ids => Serial is { Length: > 0 } s ? $"{VendorId}:{ProductId} · {s}" : $"{VendorId}:{ProductId}";
+}
 
 /// <summary>A USB device present on the host right now (<c>GET /sandbox/usb-devices</c>), for the picker.
 /// <paramref name="Classes"/> are the interface classes ("Mass Storage", "Human Interface Device") so a person
@@ -638,7 +643,12 @@ public sealed record HostUsbDeviceDto(
     IReadOnlyList<string> Classes)
 {
     /// <summary>"0e8d:201c" — the ids as lsusb prints them.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public string Id => $"{VendorId}:{ProductId}";
+
+    /// <summary>The first interface class ("Mass Storage"), or blank — one word for the picker row.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Kind => Classes.Count > 0 ? Classes[0] : string.Empty;
 }
 
 /// <summary>

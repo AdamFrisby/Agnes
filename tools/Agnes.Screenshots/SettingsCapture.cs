@@ -1,4 +1,5 @@
 using Agnes.Abstractions;
+using Agnes.Protocol;
 using Agnes.App.Desktop;
 using Agnes.App.Desktop.Persistence;
 using Agnes.App.Desktop.ViewModels;
@@ -90,12 +91,34 @@ public static class SettingsCapture
 
         vm.OpenSettingsCommand.Execute(null);
         vm.SettingsCategory = options.Category;
+        if (string.Equals(options.Category, "projects", StringComparison.OrdinalIgnoreCase))
+        {
+            SeedProject(vm);
+        }
         Program.Settle(1200);
         Console.WriteLine("settings open");
         Program.Capture(window, $"settings-{options.Category.ToLowerInvariant()}.png");
         Console.WriteLine("captured");
         window.Close();
         cache.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    /// <summary>The simulator has no projects, so the editor would be blank: one project with a device
+    /// list and a host inventory, the way the page looks on a real host with a phone plugged in.</summary>
+    private static void SeedProject(MainWindowViewModel vm)
+    {
+        var project = new ProjectDto(
+            "p-agnes", "Agnes", "github.com/AdamFrisby/Agnes",
+            new SandboxImageDto("images:ubuntu/24.04/cloud", "agnes-baseline", true, ["git", "ripgrep"], [], [], []),
+            [], null, new ProjectDefaultsDto(), null,
+            UsbDevices: [new UsbDeviceDto("0e8d", "201c", null, "MediaTek Inc. Lenovo Tab M9")]);
+        vm.Projects.Add(project);
+        vm.SelectProjectCommand.Execute(project);
+        vm.HostUsbDevices.Add(new HostUsbDeviceDto("0e8d", "201c", "MediaTek Inc. Lenovo Tab M9", null, 7, 6, ["Vendor Specific Class"]));
+        vm.HostUsbDevices.Add(new HostUsbDeviceDto("0403", "6001", "FTDI FT232 Serial (UART)", "FT1234", 3, 4, ["Vendor Specific Class"]));
+        vm.HostUsbDevices.Add(new HostUsbDeviceDto("1b1c", "1b08", "Corsair K95W Gaming Keyboard", null, 1, 14, ["Human Interface Device"]));
+        vm.HostUsbStatus = "3 devices on Local (sandboxed).";
+        vm.ProjectsStatus = "1 project(s) on Local (sandboxed).";
     }
 
     private static async Task Seed(SqliteSessionEventCache cache)
