@@ -148,18 +148,24 @@ public static class SettingsCapture
     /// list and a host inventory, the way the page looks on a real host with a phone plugged in.</summary>
     private static void SeedProject(MainWindowViewModel vm)
     {
+        var image = new SandboxImageDto("images:ubuntu/24.04/cloud", "agnes-baseline", true, ["git", "ripgrep"], [], [], []);
+        vm.Projects.Add(new ProjectDto("p-default", "Default", "", image, [], null, new ProjectDefaultsDto()));
         var project = new ProjectDto(
-            "p-agnes", "Agnes", "github.com/AdamFrisby/Agnes",
-            new SandboxImageDto("images:ubuntu/24.04/cloud", "agnes-baseline", true, ["git", "ripgrep"], [], [], []),
-            [], null, new ProjectDefaultsDto(), null,
+            "p-agnes", "Agnes", "github.com/AdamFrisby/Agnes", image,
+            [new McpServerInfo("m1", "playwright", "sandbox", true, "stdio", "npx", ["-y", "@playwright/mcp@latest"], new Dictionary<string, string>(), null, null)],
+            null, new ProjectDefaultsDto(), null,
+            SandboxDiskGiB: 40,
             UsbDevices: [new UsbDeviceDto("0e8d", "201c", null, "MediaTek Inc. Lenovo Tab M9")]);
         vm.Projects.Add(project);
+        vm.Projects.Add(new ProjectDto("p-dawn2", "Dawn2", "github.com/AdamFrisby/Dawn2", image, [], null, new ProjectDefaultsDto()));
         vm.SelectProjectCommand.Execute(project);
+        // One edit in flight, so the shot shows the "Unsaved changes" tag the editor's header carries.
+        vm.ProjDiskGiB = "48";
         vm.HostUsbDevices.Add(new HostUsbDeviceDto("0e8d", "201c", "MediaTek Inc. Lenovo Tab M9", null, 7, 6, ["Vendor Specific Class"]));
         vm.HostUsbDevices.Add(new HostUsbDeviceDto("0403", "6001", "FTDI FT232 Serial (UART)", "FT1234", 3, 4, ["Vendor Specific Class"]));
         vm.HostUsbDevices.Add(new HostUsbDeviceDto("1b1c", "1b08", "Corsair K95W Gaming Keyboard", null, 1, 14, ["Human Interface Device"]));
         vm.HostUsbStatus = "3 devices on Local (sandboxed).";
-        vm.ProjectsStatus = "1 project(s) on Local (sandboxed).";
+        vm.ProjectsStatus = "3 projects on Local (sandboxed).";
     }
 
     private static async Task Seed(SqliteSessionEventCache cache)

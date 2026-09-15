@@ -1,61 +1,101 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
-             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.KeymapPage">
-    <StackPanel Spacing="12">
-        <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Keymap" />
-            <Button Grid.Column="1" Content="Edit" Command="{Binding EditKeymapCommand}" Classes="seg" />
-        </Grid>
-        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Text="{Binding KeymapPath}" FontFamily="{StaticResource MonoFont}" />
-        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Text="{Binding KeymapStatus}" />
-        <Border Background="{DynamicResource DangerSoft}" BorderBrush="{DynamicResource Danger}" BorderThickness="1"
-                CornerRadius="7" Padding="9,6" IsVisible="{Binding HasKeymapDiagnostic}">
-            <TextBlock Text="{Binding KeymapDiagnostic}" Foreground="{DynamicResource Danger}" TextWrapping="Wrap"
-                       FontFamily="{StaticResource MonoFont}" FontSize="11" />
-        </Border>
+    <!-- KEYMAP (this device). The question is "what is the key for X?", so every row is a key cap and a
+         sentence; the ids are there for the file, in the faint mono of things one copies. -->
+    <UserControl.Styles>
+        <!-- A key cap: a tag in the mono font, so a chord reads like the keys on a keyboard. -->
+        <Style Selector="Border.keycap">
+            <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineStrong}" />
+            <Setter Property="BorderThickness" Value="1,1,1,2" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="7,2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.keycap > TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+        </Style>
+        <Style Selector="Border.keycap.unassigned">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Border.keycap.unassigned > TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+        </Style>
+    </UserControl.Styles>
+    <StackPanel Spacing="16">
+        <ctl:SettingsPageHeader Title="Keymap" Scope="This device"
+                                Purpose="Every shortcut in the app, and the file that overrides them. Edit the file and the change applies as you save it.">
+            <ctl:SettingsPageHeader.Actions>
+                <Button Content="Edit keymap file" Classes="seg" Command="{Binding EditKeymapCommand}"
+                        ToolTip.Tip="Opens the override file in your editor, creating an empty one the first time" />
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-        <TextBlock Text="Nothing matches that search." Foreground="{DynamicResource FgFaint}" FontSize="11"
-                   IsVisible="{Binding !HasKeymapMatches}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{Binding KeymapPath}" Classes="meta mono" VerticalAlignment="Center" />
+            <TextBlock Text="·" Classes="meta" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding KeymapStatus}" Classes="meta" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <ctl:SettingsSection Title="The keymap file has a problem" Classes="error" IsVisible="{Binding HasKeymapDiagnostic}"
+                             Description="The packaged defaults are in effect until it parses.">
+            <TextBlock Text="{Binding KeymapDiagnostic}" Foreground="{DynamicResource StatusError}" TextWrapping="Wrap"
+                       FontFamily="{DynamicResource MonoFont}" FontSize="11" />
+        </ctl:SettingsSection>
+
+        <TextBlock Text="Nothing matches that search." Classes="status" IsVisible="{Binding !HasKeymapMatches}" />
 
         <ItemsControl ItemsSource="{Binding KeymapGroups}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Spacing="14" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <StackPanel Spacing="4" Margin="0,0,0,12">
-                        <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-                        <ItemsControl ItemsSource="{Binding Commands}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
-                                            BorderThickness="1" CornerRadius="7" Padding="8,6" Margin="0,3"
-                                            ClipToBounds="True">
-                                        <Grid ColumnDefinitions="120,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10">
-                                            <TextBlock Grid.Column="0" Grid.RowSpan="3" Text="{Binding Gesture}"
-                                                       Foreground="{DynamicResource Fg}" FontSize="11"
-                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap"
-                                                       VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="1" Grid.Row="0" Text="{Binding Description}"
-                                                       Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding CommandId}"
-                                                       Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="1" Grid.Row="2" Text="{Binding Context}"
-                                                       Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
-                                            <Button Grid.Column="2" Grid.RowSpan="3" Content="Copy JSON" Classes="chip"
-                                                    IsEnabled="{Binding CanCopyJson}" Click="OnCopyKeymapJson"
-                                                    VerticalAlignment="Center" Padding="8,4" FontSize="10"
-                                                    ToolTip.Tip="Copy this effective keybinding as a JSON rule" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
+                    <ctl:SettingsSection Title="{Binding Title}">
+                        <Border Classes="rows flat">
+                            <ItemsControl ItemsSource="{Binding Commands}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Classes="row" Padding="0,7">
+                                            <Grid ColumnDefinitions="230,*,Auto,Auto" ColumnSpacing="12">
+                                                <ItemsControl Grid.Column="0" ItemsSource="{Binding Gestures}" VerticalAlignment="Center">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Classes="keycap" Margin="0,2,6,2"
+                                                                    Classes.unassigned="{Binding $parent[ItemsControl].DataContext.IsUnassigned}">
+                                                                <TextBlock Text="{Binding}" />
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Description}" Classes="rowTitle" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding CommandId}" Classes="meta mono" />
+                                                </StackPanel>
+                                                <Border Grid.Column="2" Classes="tag" ToolTip.Tip="Where the shortcut applies">
+                                                    <TextBlock Text="{Binding Context}" />
+                                                </Border>
+                                                <Button Grid.Column="3" Classes="icon" Padding="5" IsEnabled="{Binding CanCopyJson}" Click="OnCopyKeymapJson"
+                                                        ToolTip.Tip="Copy as a JSON rule, to paste into the keymap file">
+                                                    <ic:SymbolIcon Symbol="Copy" FontSize="13" />
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </ctl:SettingsSection>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>

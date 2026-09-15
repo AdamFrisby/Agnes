@@ -36,6 +36,9 @@ public sealed partial class EventCacheViewModel : ObservableObject
 
     public ObservableCollection<EventCacheEntryVm> Entries { get; } = [];
 
+    /// <summary>Whether there is anything to list — the empty state shows otherwise.</summary>
+    public bool HasEntries => Entries.Count > 0;
+
     [ObservableProperty] private string _summary = "No cache.";
 
     public IAsyncRelayCommand RefreshCommand { get; }
@@ -66,6 +69,7 @@ public sealed partial class EventCacheViewModel : ObservableObject
             {
                 Entries.Add(new EventCacheEntryVm(entry, ForgetAsync));
             }
+            OnPropertyChanged(nameof(HasEntries));
             var bytes = entries.Sum(e => e.Bytes);
             Summary = entries.Count == 0
                 ? "Nothing cached yet. Sessions are cached as you open them."
