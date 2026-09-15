@@ -1,72 +1,82 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
-             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.BugReportPage">
-    <!-- REPORT A BUG (files a GitHub issue on the host, or falls back to the public flow) -->
-    <StackPanel>
-        <StackPanel DataContext="{Binding BugReport}" Spacing="12">
-            <Grid ColumnDefinitions="Auto,Auto,*">
-                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Report a bug" />
-                <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
-                              Description="Describe what went wrong. This files an issue on the project's GitHub, or — if this host has a GitHub token — first checks for likely duplicates you can comment on instead. If the host can't be reached, a prefilled issue opens in your browser."
-                              Security="Only the text you enter here is sent. No host logs or diagnostic data are attached (that owner-only capability isn't enabled)." />
-            </Grid>
+    <!-- REPORT A BUG. Files an issue on the project's GitHub through the host when it can (and looks for
+         duplicates first), or opens a prefilled issue in the browser when it cannot. -->
+    <StackPanel DataContext="{Binding BugReport}" Spacing="16">
+        <ctl:SettingsPageHeader Title="Report a bug"
+                                Purpose="Tell the maintainer what went wrong. This files an issue on the project's GitHub through the connected host; if the host cannot, a prefilled issue opens in your browser instead." />
 
-            <StackPanel Spacing="4">
-                <TextBlock Classes="fieldLabel" Text="Title" />
-                <TextBox Text="{Binding Title, Mode=TwoWay}" Watermark="A short summary of the problem" FontSize="13" Padding="8,5" CornerRadius="6" />
-            </StackPanel>
-            <StackPanel Spacing="4">
-                <TextBlock Classes="fieldLabel" Text="Summary" />
-                <TextBox Text="{Binding Summary, Mode=TwoWay}" Watermark="What happened?" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" FontSize="13" Padding="8,5" CornerRadius="6" />
-            </StackPanel>
-            <StackPanel Spacing="4">
-                <TextBlock Classes="fieldLabel" Text="Current behavior (optional)" />
-                <TextBox Text="{Binding CurrentBehavior, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" FontSize="13" Padding="8,5" CornerRadius="6" />
-            </StackPanel>
-            <StackPanel Spacing="4">
-                <TextBlock Classes="fieldLabel" Text="Expected behavior (optional)" />
-                <TextBox Text="{Binding ExpectedBehavior, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" FontSize="13" Padding="8,5" CornerRadius="6" />
-            </StackPanel>
+        <TextBlock Classes="status" Text="{Binding Status}" />
 
-            <!-- Owner-only, opt-in host-log attachment. Shown only when the host tells us this
-                 caller is the authorized owner AND the operator enabled the capability. Off by
-                 default; the host re-checks authorization before it attaches anything. -->
-            <StackPanel Spacing="3" IsVisible="{Binding CanAttachDiagnostics}">
-                <CheckBox Content="Attach host diagnostics (owner only)" IsChecked="{Binding AttachDiagnostics, Mode=TwoWay}" />
-                <TextBlock Classes="fieldLabel" TextWrapping="Wrap"
-                           Text="Includes recent host log lines, runtime/OS and adapter info, and recent error telemetry from this host. Sensitive — only attach when you're comfortable sharing it with the maintainer." />
-            </StackPanel>
+        <ctl:SettingsSection Title="What happened"
+                             Hint="A title and a summary are enough. The two optional fields help when the problem is a difference between what the app did and what you expected."
+                             Security="Only the text you enter here is sent. No host logs or diagnostic data are attached unless you tick the box below, which the host offers only to its owner.">
+            <StackPanel Spacing="10">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="fieldLabel" Text="Title" />
+                    <TextBox Text="{Binding Title, Mode=TwoWay}" Watermark="A short summary of the problem" FontSize="13" Padding="8,5" CornerRadius="6" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="fieldLabel" Text="Summary" />
+                    <TextBox Text="{Binding Summary, Mode=TwoWay}" Watermark="What happened, and what you were doing when it did" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" FontSize="13" Padding="8,5" CornerRadius="6" />
+                </StackPanel>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock Classes="fieldLabel" Text="What the app did (optional)" />
+                        <TextBox Text="{Binding CurrentBehavior, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" FontSize="13" Padding="8,5" CornerRadius="6" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Classes="fieldLabel" Text="What you expected (optional)" />
+                        <TextBox Text="{Binding ExpectedBehavior, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" FontSize="13" Padding="8,5" CornerRadius="6" />
+                    </StackPanel>
+                </Grid>
 
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <Button Content="Submit report" Command="{Binding SubmitCommand}" HorizontalAlignment="Left" Classes="seg" IsEnabled="{Binding !IsBusy}" />
-                <ProgressBar IsIndeterminate="True" Width="90" Height="4" VerticalAlignment="Center"
-                             IsVisible="{Binding IsBusy}"
-                             Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
-            </StackPanel>
+                <!-- Owner-only, opt-in host-log attachment. Shown only when the host says this caller is the
+                     owner AND the operator enabled the capability; the host re-checks before it attaches. -->
+                <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                        CornerRadius="{DynamicResource RadiusMd}" Padding="12,8" IsVisible="{Binding CanAttachDiagnostics}">
+                    <StackPanel Spacing="2">
+                        <CheckBox Content="Attach host diagnostics (owner only)" IsChecked="{Binding AttachDiagnostics, Mode=TwoWay}" />
+                        <TextBlock Classes="help" Margin="28,0,0,0"
+                                   Text="Recent host log lines, runtime and OS details, adapter versions and recent error telemetry. Sensitive — attach only when you are comfortable sharing it with the maintainer." />
+                    </StackPanel>
+                </Border>
 
-            <!-- Likely-duplicate issues: comment on one instead of filing a new report -->
-            <StackPanel Spacing="6" IsVisible="{Binding HasDuplicates}">
-                <TextBlock Text="Possibly related open issues" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="10" Margin="0,4,0,0">
+                    <Button Grid.Column="0" Content="Submit report" Command="{Binding SubmitCommand}" Classes="primary" IsEnabled="{Binding !IsBusy}" />
+                    <ProgressBar Grid.Column="1" IsIndeterminate="True" Width="90" Height="4" VerticalAlignment="Center"
+                                 IsVisible="{Binding IsBusy}"
+                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                    <TextBlock Grid.Column="2" Classes="help" VerticalAlignment="Center" Text="Sends the text above and nothing else." />
+                </Grid>
+            </StackPanel>
+        </ctl:SettingsSection>
+
+        <!-- Likely duplicates: comment on one instead of filing a new report. -->
+        <ctl:SettingsSection Title="Possibly the same issue" Classes="attention" IsVisible="{Binding HasDuplicates}"
+                             Description="These open issues look like yours. Commenting on one keeps the discussion in one place.">
+            <Border Classes="rows flat">
                 <ItemsControl ItemsSource="{Binding Duplicates}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,3">
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Number, StringFormat='#{0}'}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-                                </StackPanel>
-                                <Button Grid.Column="1" Content="Comment instead" FontSize="11" Padding="9,3" Classes="seg"
-                                        Command="{Binding $parent[ItemsControl].DataContext.OpenDuplicateCommand}" CommandParameter="{Binding}" />
-                            </Grid>
+                            <Border Classes="row" Padding="0,8">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                    <ic:SymbolIcon Grid.Column="0" Symbol="Bug" FontSize="16" Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" Margin="2,0,2,0" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="{Binding Title}" Classes="rowTitle" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Classes="meta mono"><Run Text="#" /><Run Text="{Binding Number}" /></TextBlock>
+                                    </StackPanel>
+                                    <Button Grid.Column="2" Content="Comment instead" FontSize="11" Padding="9,3" Classes="seg"
+                                            Command="{Binding $parent[ItemsControl].DataContext.OpenDuplicateCommand}" CommandParameter="{Binding}" />
+                                </Grid>
+                            </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </StackPanel>
-        </StackPanel>
+            </Border>
+        </ctl:SettingsSection>
     </StackPanel>
 </UserControl>

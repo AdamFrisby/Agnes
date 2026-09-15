@@ -131,6 +131,17 @@ public sealed class McpPresetRowVm
     public string ActionLabel => IsInstalled ? "Installed" : "Install";
 
     public bool CanInstall => !IsInstalled;
+
+    /// <summary>One line on what the server gives an agent — the curated four are known by name; anything
+    /// else says where it runs.</summary>
+    public string Blurb => Name.ToLowerInvariant() switch
+    {
+        "playwright" => "Drive a real browser: open pages, click, fill forms and read what is on screen.",
+        "context7" => "Current documentation for a library, pulled in as the agent needs it.",
+        "sequential thinking" => "A scratchpad for working through a problem step by step before answering.",
+        "github" => "Issues, pull requests and repositories through the GitHub API.",
+        _ => string.Equals(Preset.Transport, "http", StringComparison.OrdinalIgnoreCase) ? "A hosted server." : "Runs locally when a session starts.",
+    };
 }
 
 /// <summary>

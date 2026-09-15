@@ -1,103 +1,103 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
-             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.LocalModelsPage">
-    <StackPanel x:Name="LocalModelsPanel" Spacing="12">
-        <Grid ColumnDefinitions="Auto,Auto,*">
-            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Local models" />
-            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
-                          Description="Run sessions against your own hardware instead of GitHub's models. Point this at any OpenAI-compatible server — Ollama, vLLM, Lemonade, LM Studio, Foundry Local — and the GitHub Copilot agent uses it. Applies to new sessions; a running session keeps the model it started with."
-                          Security="The endpoint and key are stored on the host, not on this device, and the key is never sent back to a client. With 'no GitHub access' on, the agent reaches nothing but your endpoint." />
-        </Grid>
-        <TextBlock Classes="scopeNote">
-            <Run Text="Configured on the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
-        </TextBlock>
+    <!-- LOCAL MODELS (host). Copilot's BYOK mode points it at any OpenAI-compatible endpoint; the two
+         compatibility switches are not preferences but the difference between a local model working and
+         not starting at all — see docs/local-models.md. The status lives at the top: whether sessions are
+         on your server or GitHub's is the first thing to know, not the last. -->
+    <StackPanel x:Name="LocalModelsPanel" Spacing="16">
+        <ctl:SettingsPageHeader Title="Local models" Scope="{Binding ActiveHostName}"
+                                Purpose="Run sessions against your own OpenAI-compatible server instead of GitHub's models — Ollama, vLLM, LM Studio, Foundry Local. Applies to new sessions; a running one keeps the model it started with.">
+            <!-- Save lives up here: the form is three cards long, and a Save only at the bottom is a Save
+                 nobody sees on a 900-pixel window. -->
+            <ctl:SettingsPageHeader.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <ProgressBar IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
+                                 IsVisible="{Binding LocalProviderBusy}"
+                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                    <Button Content="Use GitHub's models" Classes="seg" Command="{Binding ClearLocalProviderCommand}" IsEnabled="{Binding !LocalProviderBusy}"
+                            ToolTip.Tip="Forget the server below; new sessions go back to GitHub's models" />
+                    <Button Content="Save" Classes="primary" Command="{Binding SaveLocalProviderCommand}" IsEnabled="{Binding !LocalProviderBusy}" />
+                </StackPanel>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-        <StackPanel Spacing="4">
-            <TextBlock Text="Endpoint" Classes="fieldLabel" />
-            <TextBox Text="{Binding LocalProviderUrl, Mode=TwoWay}"
-                     Watermark="http://10.0.0.36:13305/v1" />
-            <TextBlock Classes="scopeNote"
-                       Text="With or without the trailing /v1 — either works." />
-        </StackPanel>
+        <TextBlock Classes="status" Text="{Binding LocalProviderStatus}" />
 
-        <StackPanel Spacing="4">
-            <TextBlock Text="API key" Classes="fieldLabel" />
-            <TextBox Text="{Binding LocalProviderKey, Mode=TwoWay}" PasswordChar="•"
-                     Watermark="Leave blank if the server needs none" />
-            <!-- The host never returns the key, so the form cannot show it. Saying a key is
-                 stored is the difference between an empty field meaning "none" and "unchanged". -->
-            <TextBlock Classes="scopeNote" IsVisible="{Binding LocalProviderHasKey}"
-                       Text="A key is stored on the host. Leave this blank to keep it." />
-        </StackPanel>
-
-        <StackPanel Spacing="6">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="Model" Classes="fieldLabel" VerticalAlignment="Center" />
-                <Button Content="Fetch models" Classes="seg"
-                        Command="{Binding FetchLocalModelsCommand}"
-                        IsEnabled="{Binding !LocalProviderBusy}" />
+        <ctl:SettingsSection Title="Server"
+                             Hint="Point this at any OpenAI-compatible server and the GitHub Copilot agent uses it for inference."
+                             Security="The endpoint and key are stored on the host, not on this device, and the key is never sent back to a client. With 'no GitHub access' on, the agent reaches nothing but your endpoint.">
+            <StackPanel Spacing="10">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Endpoint" Classes="fieldLabel" />
+                    <TextBox Text="{Binding LocalProviderUrl, Mode=TwoWay}" Watermark="http://10.0.0.36:13305/v1" FontFamily="{DynamicResource MonoFont}" FontSize="12" />
+                    <TextBlock Classes="help" Text="With or without the trailing /v1 — either works." />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="API key" Classes="fieldLabel" />
+                    <TextBox Text="{Binding LocalProviderKey, Mode=TwoWay}" PasswordChar="•" Watermark="Leave blank if the server needs none" />
+                    <!-- The host never returns the key, so the form cannot show it. Saying a key is stored is
+                         the difference between an empty field meaning "none" and "unchanged". -->
+                    <TextBlock Classes="help" IsVisible="{Binding LocalProviderHasKey}" Text="A key is stored on the host. Leave this blank to keep it." />
+                </StackPanel>
             </StackPanel>
-            <TextBox Text="{Binding LocalProviderWireModel, Mode=TwoWay}"
-                     Watermark="The model name your server uses" />
-            <!-- Populated by Fetch, so a model is picked rather than typed from memory. -->
-            <ComboBox ItemsSource="{Binding LocalProviderModels}"
-                      SelectedValue="{Binding LocalProviderWireModel, Mode=TwoWay}"
-                      SelectedValueBinding="{Binding Id}"
-                      DisplayMemberBinding="{Binding DisplayName}"
-                      HorizontalAlignment="Stretch"
-                      IsVisible="{Binding HasLocalProviderModels}"
-                      PlaceholderText="Pick one of the models found" />
-        </StackPanel>
+        </ctl:SettingsSection>
 
-        <StackPanel Spacing="4">
-            <TextBlock Text="Behaves like" Classes="fieldLabel" />
-            <ComboBox ItemsSource="{Binding LocalProviderModelIds}"
-                      SelectedItem="{Binding LocalProviderModelId, Mode=TwoWay}"
-                      HorizontalAlignment="Stretch"
-                      PlaceholderText="Leave unset to use the model name" />
-            <!-- Not cosmetic: this id selects prompting strategy, token limits, and the
-                 reasoning-effort value sent to the server. An unrecognised id makes Copilot
-                 send "max", which strict servers reject outright. -->
-            <TextBlock Classes="scopeNote" TextWrapping="Wrap"
-                       Text="Which well-known model the agent should treat yours as — it sets the prompting strategy and token limits. If your server rejects requests mentioning reasoning effort, choose gpt-5.4." />
-        </StackPanel>
+        <ctl:SettingsSection Title="Model" Description="Which model the server should run, and which well-known model the agent should treat it as.">
+            <StackPanel Spacing="10">
+                <StackPanel Spacing="4">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="Model name" Classes="fieldLabel" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="Fetch models" Classes="chip" FontSize="11" Padding="10,3"
+                                Command="{Binding FetchLocalModelsCommand}" IsEnabled="{Binding !LocalProviderBusy}"
+                                ToolTip.Tip="Ask the endpoint what it serves, so a model is picked rather than typed from memory" />
+                    </Grid>
+                    <TextBox Text="{Binding LocalProviderWireModel, Mode=TwoWay}" Watermark="The model name your server uses" FontFamily="{DynamicResource MonoFont}" FontSize="12" />
+                    <ComboBox ItemsSource="{Binding LocalProviderModels}"
+                              SelectedValue="{Binding LocalProviderWireModel, Mode=TwoWay}"
+                              SelectedValueBinding="{Binding Id}"
+                              DisplayMemberBinding="{Binding DisplayName}"
+                              HorizontalAlignment="Stretch"
+                              IsVisible="{Binding HasLocalProviderModels}"
+                              PlaceholderText="Pick one of the models found" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Behaves like" Classes="fieldLabel" />
+                    <ComboBox ItemsSource="{Binding LocalProviderModelIds}"
+                              SelectedItem="{Binding LocalProviderModelId, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch"
+                              PlaceholderText="Leave unset to use the model name" />
+                    <!-- Not cosmetic: this id selects prompting strategy, token limits, and the reasoning-effort
+                         value sent to the server. An unrecognised id makes Copilot send "max", which strict
+                         servers reject outright. -->
+                    <TextBlock Classes="help" Text="Sets the prompting strategy and token limits. If your server rejects requests that mention reasoning effort, choose gpt-5.4." />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Reasoning effort" Classes="fieldLabel" />
+                    <ComboBox ItemsSource="{Binding LocalProviderEfforts}"
+                              SelectedItem="{Binding LocalProviderEffort, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch"
+                              PlaceholderText="Let Copilot decide" />
+                    <TextBlock Classes="help" Text="Leave blank unless your server complains about it. If it rejects requests that mention reasoning effort, pick medium." />
+                </StackPanel>
+            </StackPanel>
+        </ctl:SettingsSection>
 
-        <StackPanel Spacing="4">
-            <TextBlock Text="Reasoning effort" Classes="fieldLabel" />
-            <ComboBox ItemsSource="{Binding LocalProviderEfforts}"
-                      SelectedItem="{Binding LocalProviderEffort, Mode=TwoWay}"
-                      HorizontalAlignment="Stretch"
-                      PlaceholderText="Let Copilot decide" />
-            <!-- The direct control over what strict servers reject. Copilot decides for
-                 itself only when it recognises the model; for one it does not, it decides
-                 "max", and some servers refuse that outright. -->
-            <TextBlock Classes="scopeNote" TextWrapping="Wrap"
-                       Text="Leave blank unless your server complains about it. If it rejects requests mentioning reasoning effort, pick medium." />
-        </StackPanel>
-
-        <CheckBox IsChecked="{Binding LocalProviderOffline, Mode=TwoWay}"
-                  Content="No GitHub access at all (recommended)" />
-        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Margin="24,-6,0,0"
-                   Text="Turns off GitHub sign-in, telemetry, web tools, the GitHub MCP server and auto-update. Without this the agent still reaches GitHub for everything except inference." />
-
-        <CheckBox IsChecked="{Binding LocalProviderExcludeApplyPatch, Mode=TwoWay}"
-                  Content="Withhold the apply_patch tool (recommended)" />
-        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Margin="24,-6,0,0"
-                   Text="Copilot offers apply_patch in a form most self-hosted servers cannot parse, and they reject the whole request rather than ignoring it. Leave this on unless your server handles custom grammar tools." />
-
-        <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="Save" Classes="accent" Command="{Binding SaveLocalProviderCommand}"
-                    IsEnabled="{Binding !LocalProviderBusy}" />
-            <Button Content="Use GitHub's models" Classes="seg"
-                    Command="{Binding ClearLocalProviderCommand}"
-                    IsEnabled="{Binding !LocalProviderBusy}" />
-        </StackPanel>
-
-        <TextBlock Text="{Binding LocalProviderStatus}" Classes="scopeNote" TextWrapping="Wrap" />
+        <ctl:SettingsSection Title="Compatibility" Description="Two switches most self-hosted servers need. Both are on by recommendation.">
+            <StackPanel Spacing="10">
+                <StackPanel Spacing="2">
+                    <CheckBox IsChecked="{Binding LocalProviderOffline, Mode=TwoWay}" Content="No GitHub access at all (recommended)" />
+                    <TextBlock Classes="help" Margin="28,0,0,0"
+                               Text="Turns off GitHub sign-in, telemetry, web tools, the GitHub MCP server and auto-update. Without this the agent still reaches GitHub for everything except inference." />
+                </StackPanel>
+                <StackPanel Spacing="2">
+                    <CheckBox IsChecked="{Binding LocalProviderExcludeApplyPatch, Mode=TwoWay}" Content="Withhold the apply_patch tool (recommended)" />
+                    <TextBlock Classes="help" Margin="28,0,0,0"
+                               Text="Copilot offers apply_patch in a form most self-hosted servers cannot parse, and they reject the whole request rather than ignoring it. Leave this on unless your server handles custom grammar tools." />
+                </StackPanel>
+            </StackPanel>
+        </ctl:SettingsSection>
     </StackPanel>
 </UserControl>

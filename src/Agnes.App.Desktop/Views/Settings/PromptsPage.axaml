@@ -1,188 +1,218 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
              xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.PromptsPage">
-    <!-- Prompts: saved reusable prompts + slash-token templates that expand them -->
-    <StackPanel>
-        <StackPanel DataContext="{Binding PromptLibrary}" Spacing="14">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Prompts" />
-                <Button Grid.Column="2" Content="Refresh" Command="{Binding RefreshCommand}" Classes="seg" />
-            </Grid>
-            <TextBlock Classes="scopeNote"
-                       Text="Save prompts you retype, then bind a slash token (e.g. /review) that inserts one in the composer — or inserts and sends it." />
-
-            <!-- Prompt editor. One set of fields serves both "new" and "edit", so which one it's
-                 doing is stated above Save — otherwise Save silently overwrites whatever you last
-                 clicked Edit on. -->
-            <StackPanel Spacing="6">
+    <!-- PROMPTS (host library). Three things, each its own section: the prompts you saved, the slash
+         tokens that expand them in the composer, and the skill bundles installed from a registry. -->
+    <StackPanel DataContext="{Binding PromptLibrary}" Spacing="16">
+        <ctl:SettingsPageHeader Title="Prompts"
+                                Purpose="Prompts you would otherwise retype, saved on the host. Bind a slash token to one and it drops into the composer as you type — or sends itself.">
+            <ctl:SettingsPageHeader.Actions>
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="{Binding EditorHeading}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" />
-                    <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
-                            BorderThickness="1" VerticalAlignment="Center" IsVisible="{Binding IsEditingExistingPrompt}">
-                        <TextBlock Text="Save replaces it" FontSize="10" Foreground="{DynamicResource FgDim}" />
+                    <Button Classes="primary" Content="New prompt" Command="{Binding NewPromptCommand}" IsVisible="{Binding IsEditingExistingPrompt}" />
+                    <Button Classes="icon" Command="{Binding RefreshCommand}" ToolTip.Tip="Refresh">
+                        <ic:SymbolIcon Symbol="ArrowSync" />
+                    </Button>
+                </StackPanel>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
+
+        <TextBlock Classes="status" Text="{Binding Status}" />
+
+        <!-- 1. Saved prompts. The preview line is what tells two similarly-named prompts apart; the tokens
+             say how each is invoked without a trip to the templates section. -->
+        <ctl:SettingsSection Title="Saved prompts"
+                             Hint="A prompt marked as a system-prompt addition is prepended to every new session's system prompt at open, rather than inserted per message.">
+            <StackPanel>
+                <Border Classes="rows flat" IsVisible="{Binding HasPrompts}">
+                    <ItemsControl ItemsSource="{Binding PromptRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="row" Padding="0,9">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                                        <ic:SymbolIcon Grid.Column="0" Symbol="DocumentText" FontSize="17" Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" Margin="2,0,4,0" />
+                                        <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <TextBlock Text="{Binding Title}" Classes="rowTitle" />
+                                                <Border Classes="tag on" IsVisible="{Binding HasTokens}" ToolTip.Tip="Type this in the composer to insert the prompt">
+                                                    <TextBlock Text="{Binding TokensLabel}" FontFamily="{DynamicResource MonoFont}" />
+                                                </Border>
+                                                <Border Classes="tag" IsVisible="{Binding IsSystemPromptAddition}"
+                                                        ToolTip.Tip="Prepended to a session's system prompt at open, rather than inserted per message.">
+                                                    <TextBlock Text="system prompt" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Preview}" Classes="meta" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Content="Edit" Classes="seg" FontSize="11" Padding="9,3" VerticalAlignment="Center"
+                                                Command="{Binding $parent[ItemsControl].DataContext.EditPromptCommand}" CommandParameter="{Binding Prompt}" />
+                                        <Button Grid.Column="3" Content="Delete" Classes="danger" FontSize="11" Padding="9,3" VerticalAlignment="Center"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                Command="{Binding $parent[ItemsControl].DataContext.DeletePromptCommand}" CommandParameter="{Binding Prompt}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+                <ctl:EmptyState Symbol="DocumentText" Title="No saved prompts yet" IsVisible="{Binding !HasPrompts}"
+                                Text="Save a prompt you keep retyping below. Bind a slash token to it and typing /review in the composer inserts it." />
+            </StackPanel>
+        </ctl:SettingsSection>
+
+        <!-- The editor. One set of fields serves both "new" and "edit", so which one it is doing is the
+             card's title — otherwise Save silently overwrites whatever you last clicked Edit on. -->
+        <ctl:SettingsSection Title="{Binding EditorHeading}">
+            <ctl:SettingsSection.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Classes="tag attention" IsVisible="{Binding IsEditingExistingPrompt}">
+                        <TextBlock Text="Save replaces it" />
+                    </Border>
+                    <Button Content="Cancel edit" Classes="chip" FontSize="11" Padding="10,3" Command="{Binding CancelEditCommand}" IsVisible="{Binding IsEditingExistingPrompt}" />
+                </StackPanel>
+            </ctl:SettingsSection.Actions>
+            <StackPanel Spacing="10">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="fieldLabel" Text="Title" />
+                    <TextBox Text="{Binding PromptTitle, Mode=TwoWay}" Watermark="Security review" FontSize="12" Padding="8,5" CornerRadius="6" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="fieldLabel" Text="Prompt" />
+                    <TextBox Text="{Binding PromptBody, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90"
+                             Watermark="Review this diff for security issues…" FontSize="12" Padding="8,5" CornerRadius="6" />
+                    <TextBlock Classes="help" Text="Markdown is fine; it goes to the agent as written." />
+                </StackPanel>
+                <StackPanel Spacing="2">
+                    <CheckBox IsChecked="{Binding PromptIsSystemAddition, Mode=TwoWay}" Content="Use as a system-prompt addition" FontSize="12" />
+                    <TextBlock Classes="help" Margin="28,0,0,0" Text="Prepended to every new session's system prompt at open, together with the other additions, instead of being inserted per message." />
+                </StackPanel>
+                <Button Content="{Binding SaveLabel}" Command="{Binding SavePromptCommand}" Classes="primary" HorizontalAlignment="Left" />
+            </StackPanel>
+        </ctl:SettingsSection>
+
+        <!-- 2. Slash tokens. -->
+        <ctl:SettingsSection Title="Slash templates" Description="A token you type in the composer, and the prompt it expands to.">
+            <StackPanel Spacing="10">
+                <Border Classes="rows flat" IsVisible="{Binding HasTemplates}">
+                    <ItemsControl ItemsSource="{Binding Templates}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="row" Padding="0,8">
+                                    <Grid ColumnDefinitions="110,*,Auto" ColumnSpacing="8">
+                                        <TextBlock Grid.Column="0" Text="{Binding SlashLabel}" Foreground="{DynamicResource AccentText}"
+                                                   FontFamily="{DynamicResource MonoFont}" FontSize="12" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                            <ic:SymbolIcon Symbol="ArrowRight" FontSize="12" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding TargetLabel}" Classes="rowTitle" IsVisible="{Binding !IsBroken}" />
+                                            <Border Classes="tag error" IsVisible="{Binding IsBroken}" ToolTip.Tip="The prompt this token pointed at was deleted.">
+                                                <TextBlock Text="{Binding TargetLabel}" />
+                                            </Border>
+                                            <Border Classes="tag done" IsVisible="{Binding SendImmediately}" ToolTip.Tip="Inserts the prompt and sends it in one go.">
+                                                <TextBlock Text="sends" />
+                                            </Border>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Content="Delete" Classes="danger" FontSize="11" Padding="9,3" VerticalAlignment="Center"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                Command="{Binding $parent[ItemsControl].DataContext.DeleteTemplateCommand}" CommandParameter="{Binding}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+                <ctl:EmptyState Symbol="SlashForward" Title="No slash templates yet" IsVisible="{Binding !HasTemplates}"
+                                Text="Bind a token to a saved prompt below. Typing it in the composer inserts the prompt; with Send on, it sends it too." />
+                <Grid ColumnDefinitions="140,*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Grid.Column="0" Text="{Binding TemplateToken, Mode=TwoWay}" Watermark="/review" FontSize="12" Padding="8,5" CornerRadius="6"
+                             FontFamily="{DynamicResource MonoFont}" />
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding Prompts}" SelectedValue="{Binding TemplatePromptId, Mode=TwoWay}"
+                              SelectedValueBinding="{Binding Id}" HorizontalAlignment="Stretch" FontSize="12" PlaceholderText="Inserts this prompt">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Title}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <CheckBox Grid.Column="2" IsChecked="{Binding TemplateSendImmediately, Mode=TwoWay}" Content="Send" FontSize="12" VerticalAlignment="Center"
+                              ToolTip.Tip="Insert the prompt and send it in one go" />
+                    <Button Grid.Column="3" Content="Save template" Command="{Binding SaveTemplateCommand}" Classes="seg" />
+                </Grid>
+            </StackPanel>
+        </ctl:SettingsSection>
+
+        <!-- 3. Skills. Installing is the point — a delete-only list of skills you cannot acquire is a dead
+             end — so every registry the host offers is searched from here, and the registry that could not
+             answer is named without hiding the ones that did. -->
+        <ctl:SettingsSection Title="Skills"
+                             Hint="A skill is a SKILL.md plus its supporting files, installed from a registry the host offers and managed as one unit. Agents pick skills up by name when a task calls for one.">
+            <StackPanel Spacing="10">
+                <Border Classes="rows flat" IsVisible="{Binding HasSkills}">
+                    <ItemsControl ItemsSource="{Binding Skills}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="row" Padding="0,8">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                        <ic:SymbolIcon Grid.Column="0" Symbol="Book" FontSize="16" Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" Margin="2,0,4,0" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                            <TextBlock Text="{Binding Title}" Classes="rowTitle" />
+                                            <TextBlock Classes="meta"><Run Text="{Binding SupportingFiles.Count}" /><Run Text=" supporting files" /></TextBlock>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Content="Delete" Classes="danger" FontSize="11" Padding="9,3" VerticalAlignment="Center"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                Command="{Binding $parent[ItemsControl].DataContext.DeleteSkillCommand}" CommandParameter="{Binding}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+                <TextBlock Classes="help" Text="No skills installed yet. Search a registry below and install one." IsVisible="{Binding !HasSkills}" />
+
+                <Border Height="1" Background="{DynamicResource Line}" IsVisible="{Binding HasSkillRegistries}" />
+                <StackPanel Spacing="8" IsVisible="{Binding HasSkillRegistries}">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <TextBox Grid.Column="0" Text="{Binding SkillQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
+                                 Watermark="Search every skill registry — pdf, terraform, code review…"
+                                 km:KeymapBinder.Context="SettingsSkillSearchFocus">
+                            <TextBox.KeyBindings>
+                                <KeyBinding Gesture="Enter" Command="{Binding BrowseRegistryCommand}" />
+                            </TextBox.KeyBindings>
+                        </TextBox>
+                        <Button Grid.Column="1" Content="Search" Command="{Binding BrowseRegistryCommand}" Classes="seg" />
+                        <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
+                                     IsVisible="{Binding IsSearchingSkills}"
+                                     Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                    </Grid>
+                    <TextBlock Classes="status" Text="{Binding SkillStatus}" />
+                    <TextBlock Classes="status error" Text="{Binding SkillFailure}" IsVisible="{Binding HasSkillFailure}" />
+                    <Border Classes="rows flat" IsVisible="{Binding HasRegistrySkills}">
+                        <ItemsControl ItemsSource="{Binding RegistrySkills}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Classes="row" Padding="0,9">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                            <StackPanel Grid.Column="0" Spacing="3">
+                                                <TextBlock Text="{Binding Title}" Classes="rowTitle" />
+                                                <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                                           TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                <!-- Publisher, popularity and source: a public index holds many skills of one
+                                                     name, and this is how you tell them apart. -->
+                                                <TextBlock Text="{Binding Provenance}" Classes="meta" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" VerticalAlignment="Center" FontSize="11" Padding="10,3"
+                                                    IsEnabled="{Binding CanInstall}"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.InstallSkillCommand}" CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </Border>
                 </StackPanel>
-                <TextBlock Classes="fieldLabel" Text="Title" />
-                <TextBox Text="{Binding PromptTitle, Mode=TwoWay}" Watermark="e.g. Security review" FontSize="12" Padding="8,5" CornerRadius="6" />
-                <TextBlock Classes="fieldLabel" Text="Prompt body" />
-                <TextBox Text="{Binding PromptBody, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"
-                         Watermark="Review this diff for security issues…" FontSize="12" Padding="8,5" CornerRadius="6" />
-                <CheckBox IsChecked="{Binding PromptIsSystemAddition, Mode=TwoWay}"
-                          Content="Use as a system-prompt addition (prepended to a session's system prompt at open)" FontSize="12" />
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <Button Content="{Binding SaveLabel}" Command="{Binding SavePromptCommand}" Classes="seg" />
-                    <Button Content="Cancel edit" Command="{Binding CancelEditCommand}" Classes="seg" IsVisible="{Binding IsEditingExistingPrompt}" />
-                    <Button Content="New" Command="{Binding NewPromptCommand}" Classes="seg" IsVisible="{Binding !IsEditingExistingPrompt}" />
-                </StackPanel>
+                <TextBlock Classes="status" Text="{Binding SkillStatus}" IsVisible="{Binding !HasSkillRegistries}" />
             </StackPanel>
-
-            <!-- Saved prompts. The body preview is the only thing that tells two similarly-named
-                 prompts apart, so the row carries it rather than the title alone. -->
-            <ItemsControl ItemsSource="{Binding Prompts}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
-                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
-                                        <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
-                                                BorderThickness="1" VerticalAlignment="Center" IsVisible="{Binding IsSystemPromptAddition}"
-                                                ToolTip.Tip="Prepended to a session's system prompt at open, rather than inserted per message.">
-                                            <TextBlock Text="system prompt" FontSize="10" Foreground="{DynamicResource FgDim}" />
-                                        </Border>
-                                    </StackPanel>
-                                    <TextBlock Text="{Binding MarkdownBody}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                               MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
-                                <Button Grid.Column="1" Content="Edit" Classes="seg" VerticalAlignment="Center"
-                                        Command="{Binding $parent[ItemsControl].DataContext.EditPromptCommand}" CommandParameter="{Binding}" />
-                                <Button Grid.Column="2" Content="Delete" Classes="seg" VerticalAlignment="Center"
-                                        Command="{Binding $parent[ItemsControl].DataContext.DeletePromptCommand}" CommandParameter="{Binding}" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <!-- Skill bundles. Installing is the point of this section — a delete-only list of
-                 skills you have no way to acquire is a dead end — so the registry the host offers
-                 is browsable here, and an unconfigured host says so instead of showing nothing. -->
-            <TextBlock Classes="sectionTitle" Text="Skills" FontSize="14" />
-            <TextBlock Classes="scopeNote"
-                       Text="Skill bundles (a SKILL.md plus supporting files) installed from a registry the host offers, and managed as a unit." />
-            <TextBlock Text="{Binding SkillStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap"
-                       IsVisible="{Binding SkillStatus, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
-
-            <ItemsControl ItemsSource="{Binding Skills}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                    <TextBlock Text="{Binding SupportingFiles.Count, StringFormat='{}{0} supporting file(s)'}"
-                                               Foreground="{DynamicResource FgFaint}" FontSize="10" />
-                                </StackPanel>
-                                <Button Grid.Column="1" Content="Delete" Classes="seg"
-                                        Command="{Binding $parent[ItemsControl].DataContext.DeleteSkillCommand}" CommandParameter="{Binding}" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <!-- Install from a registry. One box searches every registry the host has at once:
-                 what a person wants is "a skill that does X", and which index happens to hold it
-                 is the registry's problem — so the source is shown per result instead of being
-                 a choice you make first. -->
-            <StackPanel Spacing="8" IsVisible="{Binding HasSkillRegistries}">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                    <TextBox Grid.Column="0" Text="{Binding SkillQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
-                             Watermark="Search every skill registry — e.g. pdf, terraform, code review"
-                             km:KeymapBinder.Context="SettingsSkillSearchFocus" />
-                    <Button Grid.Column="1" Content="Search" Command="{Binding BrowseRegistryCommand}" Classes="seg" />
-                    <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
-                                 IsVisible="{Binding IsSearchingSkills}"
-                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
-                </Grid>
-                <ItemsControl ItemsSource="{Binding RegistrySkills}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                    CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                                    <StackPanel Grid.Column="0" Spacing="2">
-                                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="10"
-                                                   TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
-                                        <!-- Publisher, popularity and source: a public index holds many
-                                             skills of the same name, and this is how you tell them apart. -->
-                                        <TextBlock Text="{Binding Provenance}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-                                    </StackPanel>
-                                    <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" VerticalAlignment="Center"
-                                            IsEnabled="{Binding CanInstall}"
-                                            Command="{Binding $parent[ItemsControl].DataContext.InstallSkillCommand}" CommandParameter="{Binding}" />
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-
-            <!-- Template editor -->
-            <TextBlock Classes="sectionTitle" Text="Templates" FontSize="14" />
-            <StackPanel Spacing="6">
-                <TextBlock Classes="fieldLabel" Text="Slash token" />
-                <TextBox Text="{Binding TemplateToken, Mode=TwoWay}" Watermark="/review" FontSize="12" Padding="8,5" CornerRadius="6"
-                         FontFamily="{StaticResource MonoFont}" />
-                <TextBlock Classes="fieldLabel" Text="Inserts prompt" />
-                <ComboBox ItemsSource="{Binding Prompts}" SelectedValue="{Binding TemplatePromptId, Mode=TwoWay}"
-                          SelectedValueBinding="{Binding Id}" HorizontalAlignment="Stretch" FontSize="12">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Title}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-                <CheckBox IsChecked="{Binding TemplateSendImmediately, Mode=TwoWay}" Content="Send immediately (Insert and send)" FontSize="12" />
-                <Button Content="Save template" Command="{Binding SaveTemplateCommand}" Classes="seg" HorizontalAlignment="Left" />
-            </StackPanel>
-
-            <!-- Saved templates -->
-            <ItemsControl ItemsSource="{Binding Templates}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
-                            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                                <TextBlock Grid.Column="0" Text="{Binding SlashToken, StringFormat='/{0}'}" Foreground="{DynamicResource Accent}"
-                                           FontFamily="{StaticResource MonoFont}" FontSize="12" Width="90" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="{Binding TargetLabel}" FontSize="12" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource FgDim}" IsVisible="{Binding !IsBroken}" />
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" IsVisible="{Binding IsBroken}">
-                                    <ic:SymbolIcon Symbol="Warning" IconVariant="Filled" Foreground="{DynamicResource Danger}" FontSize="13" />
-                                    <TextBlock Text="{Binding TargetLabel}" FontSize="12" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource Danger}" />
-                                </StackPanel>
-                                <TextBlock Grid.Column="2" Text="send" FontSize="10" Foreground="{DynamicResource Good}" Margin="0,0,8,0"
-                                           VerticalAlignment="Center" IsVisible="{Binding SendImmediately}" />
-                                <Button Grid.Column="3" Content="Delete" Classes="seg"
-                                        Command="{Binding $parent[ItemsControl].DataContext.DeleteTemplateCommand}" CommandParameter="{Binding}" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
-        </StackPanel>
+        </ctl:SettingsSection>
     </StackPanel>
 </UserControl>

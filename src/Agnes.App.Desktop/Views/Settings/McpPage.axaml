@@ -1,154 +1,231 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
              xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.McpPage">
-    <StackPanel Spacing="12">
-        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
-            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="MCP servers" />
-            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
-                          Description="MCP servers give agents extra tools. Install a curated preset in one click, or add your own. Each server has a scope (all hosts / this host / this workspace) that decides which sessions see it. Changes apply on the next session start, never mid-session."
-                          Security="These servers live on the host you're connected to. A host-run server is proxied into a sandbox through the audited forward; a sandbox-run server runs inside the VM." />
-            <Button Grid.Column="4" Content="Refresh" Command="{Binding LoadMcpCommand}" Classes="seg" Margin="6,0,0,0" />
-        </Grid>
-        <TextBlock Classes="scopeNote">
-            <Run Text="Configured on the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
-        </TextBlock>
-        <TextBlock Text="{Binding McpStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+    <!-- MCP SERVERS (host). The questions, in order: what does this host already have · add one of the
+         known four · find one in the registries · add my own · what would a session started now get. -->
+    <StackPanel Spacing="16">
+        <ctl:SettingsPageHeader Title="MCP servers" Scope="{Binding ActiveHostName}"
+                                Purpose="Tools an agent can call beyond the shell: a browser, a documentation index, GitHub. Servers live on this host; a change reaches the next session you open, never one already running.">
+            <ctl:SettingsPageHeader.Actions>
+                <Button Classes="icon" Command="{Binding LoadMcpCommand}" ToolTip.Tip="Refresh">
+                    <ic:SymbolIcon Symbol="ArrowSync" />
+                </Button>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-        <!-- Curated quick-install presets -->
-        <TextBlock Text="Quick install" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-        <ItemsControl ItemsSource="{Binding McpPresets}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,3">
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                            <TextBlock Text="{Binding Command}" Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}" />
-                        </StackPanel>
-                        <!-- Reads "Installed" and disables once the host has it, so the list says what
-                             you already have rather than offering the same install indefinitely. -->
-                        <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" IsEnabled="{Binding CanInstall}"
-                                Command="{Binding $parent[ItemsControl].DataContext.InstallMcpPresetCommand}" CommandParameter="{Binding}" />
-                    </Grid>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <TextBlock Classes="status" Text="{Binding McpStatus}" />
 
-        <!-- Search the registries. The curated list above is four servers; this reaches the
-             official MCP registry (and any other catalogue plugin the host has). Results say
-             what each server needs before you install it, not after it fails to start. -->
-        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
-        <TextBlock Text="Find more" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-            <TextBox Grid.Column="0" Text="{Binding McpCatalogQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
-                     Watermark="Search the MCP registries — e.g. postgres, figma, filesystem"
-                     km:KeymapBinder.Context="SettingsMcpSearchFocus" />
-            <Button Grid.Column="1" Content="Search" Command="{Binding SearchMcpCatalogCommand}" Classes="seg" />
-            <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
-                         IsVisible="{Binding IsSearchingMcpCatalog}"
-                         Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
-        </Grid>
-        <TextBlock Text="{Binding McpCatalogStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
-        <ItemsControl ItemsSource="{Binding McpCatalogResults}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                            CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                            <StackPanel Grid.Column="0" Spacing="2">
-                                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                                <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="10"
-                                           TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{Binding Provenance}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-                                <TextBlock Text="{Binding RequiredEnvironmentLabel}" Foreground="{DynamicResource FgDim}" FontSize="10"
-                                           FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap"
-                                           IsVisible="{Binding NeedsConfiguration}"
-                                           ToolTip.Tip="These environment variables are added empty on install — fill them in under Configured servers before the server will work." />
-                            </StackPanel>
-                            <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" VerticalAlignment="Center"
-                                    IsEnabled="{Binding CanInstall}"
-                                    Command="{Binding $parent[ItemsControl].DataContext.InstallMcpCatalogEntryCommand}" CommandParameter="{Binding}" />
-                        </Grid>
+        <!-- 1. What is here already. -->
+        <ctl:SettingsSection Title="On this host"
+                             Hint="Each server has a scope (every host / this host / this workspace) that decides which sessions see it, and a place it runs. Disable one to keep it configured but out of new sessions."
+                             Security="A host-run server is proxied into a sandbox through the audited forward; a sandbox-run server runs inside the VM. Neither sees the other's credentials.">
+            <StackPanel>
+                <Border Classes="rows flat" IsVisible="{Binding HasMcpServers}">
+                    <ItemsControl ItemsSource="{Binding McpServerRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="row" Padding="0,9">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                                        <ic:SymbolIcon Grid.Column="0" Symbol="PlugConnected" FontSize="18" Foreground="{DynamicResource FgDim}"
+                                                       VerticalAlignment="Center" Margin="2,0,4,0" />
+                                        <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <TextBlock Text="{Binding Name}" Classes="rowTitle" />
+                                                <Border Classes="tag done" IsVisible="{Binding Enabled}"><TextBlock Text="enabled" /></Border>
+                                                <Border Classes="tag" IsVisible="{Binding !Enabled}"><TextBlock Text="disabled" /></Border>
+                                                <Border Classes="tag"><TextBlock Text="{Binding RunAtLabel}" /></Border>
+                                                <Border Classes="tag"><TextBlock Text="{Binding Transport}" /></Border>
+                                                <Border Classes="tag"><TextBlock Text="{Binding ScopeLabel}" /></Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Launch}" Classes="meta mono" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Classes="seg" Content="{Binding ToggleLabel}" FontSize="11" Padding="9,3"
+                                                Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}" CommandParameter="{Binding Info}" />
+                                        <Button Classes="danger" Grid.Column="3" Content="Remove" FontSize="11" Padding="9,3"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                Command="{Binding $parent[ItemsControl].DataContext.RemoveMcpServerCommand}" CommandParameter="{Binding Id}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+                <ctl:EmptyState Symbol="PlugDisconnected" Title="No servers yet" IsVisible="{Binding !HasMcpServers}"
+                                Text="Install one of the four below in a click, search the registries for another, or add your own." />
+            </StackPanel>
+        </ctl:SettingsSection>
+
+        <!-- 2. The curated four, as cards: what each is for is the line that makes Install not a blind click. -->
+        <ctl:SettingsSection Title="Quick install" Description="Four servers most sessions want, one click each. Installed ones say so.">
+            <ItemsControl ItemsSource="{Binding McpQuickPresets}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="2" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                CornerRadius="{DynamicResource RadiusMd}" Padding="12,10" Margin="0,0,8,8">
+                            <Grid RowDefinitions="Auto,*,Auto" RowSpacing="4">
+                                <TextBlock Grid.Row="0" Text="{Binding Name}" Classes="rowTitle" FontWeight="SemiBold" />
+                                <TextBlock Grid.Row="1" Text="{Binding Blurb}" Classes="help" />
+                                <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,4,0,0">
+                                    <TextBlock Grid.Column="0" Text="{Binding Command}" Classes="meta mono" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" FontSize="11" Padding="10,3" IsEnabled="{Binding CanInstall}"
+                                            Command="{Binding $parent[ItemsControl].DataContext.InstallMcpPresetCommand}" CommandParameter="{Binding}" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ctl:SettingsSection>
+
+        <!-- 3. The registries. One search across every catalogue the host has; results say what a server
+             needs before it is installed, not after it fails to start. -->
+        <ctl:SettingsSection Title="Find more" Description="Search every registry this host knows — the official MCP registry and any catalogue plugin — in one go.">
+            <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBox Grid.Column="0" Text="{Binding McpCatalogQuery, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6"
+                             Watermark="postgres, figma, filesystem…" km:KeymapBinder.Context="SettingsMcpSearchFocus">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Gesture="Enter" Command="{Binding SearchMcpCatalogCommand}" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                    <Button Grid.Column="1" Content="Search" Command="{Binding SearchMcpCatalogCommand}" Classes="seg" />
+                    <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center"
+                                 IsVisible="{Binding IsSearchingMcpCatalog}"
+                                 Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                </Grid>
+                <TextBlock Classes="status" Text="{Binding McpCatalogStatus}" IsVisible="{Binding HasMcpCatalogResults}" />
+                <TextBlock Classes="status error" Text="{Binding McpCatalogFailure}" IsVisible="{Binding HasMcpCatalogFailure}" />
+
+                <!-- Before a search: what the registries lead with, one row per server (the host's list
+                     repeats servers per version and mirror). A search replaces this with its results. -->
+                <StackPanel Spacing="8" IsVisible="{Binding !HasMcpCatalogResults}">
+                    <TextBlock Classes="status" Text="{Binding McpMorePresetsNote}" IsVisible="{Binding HasMcpMorePresets}" />
+                    <Border Classes="rows flat" IsVisible="{Binding HasMcpMorePresets}">
+                        <ItemsControl ItemsSource="{Binding McpMorePresets}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Classes="row" Padding="0,7">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" Classes="rowTitle" />
+                                                <TextBlock Text="{Binding Command}" Classes="meta mono" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" VerticalAlignment="Center" FontSize="11" Padding="10,3"
+                                                    IsEnabled="{Binding CanInstall}"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.InstallMcpPresetCommand}" CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </Border>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+                </StackPanel>
 
-        <!-- Configured servers (with scope + run location) -->
-        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
-        <TextBlock Text="Configured servers" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-        <ItemsControl ItemsSource="{Binding McpServers}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,3" ColumnSpacing="8">
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" />
-                            <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
-                                <Run Text="{Binding RunAt}" /><Run Text=" · " /><Run Text="{Binding Transport}" /><Run Text=" · " /><Run Text="{Binding ApplyScope}" />
-                            </TextBlock>
+                <Border Classes="rows flat" IsVisible="{Binding HasMcpCatalogResults}">
+                    <ItemsControl ItemsSource="{Binding McpCatalogResults}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="row" Padding="0,9">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                        <StackPanel Grid.Column="0" Spacing="3">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <TextBlock Text="{Binding Name}" Classes="rowTitle" />
+                                                <Border Classes="tag attention" IsVisible="{Binding NeedsConfiguration}"
+                                                        ToolTip.Tip="{Binding RequiredEnvironmentLabel}">
+                                                    <TextBlock Text="needs configuration" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11"
+                                                       TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Provenance}" Classes="meta" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="{Binding ActionLabel}" Classes="seg" VerticalAlignment="Center" FontSize="11" Padding="10,3"
+                                                IsEnabled="{Binding CanInstall}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.InstallMcpCatalogEntryCommand}" CommandParameter="{Binding}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+            </StackPanel>
+        </ctl:SettingsSection>
+
+        <!-- 4. A server of your own. -->
+        <ctl:SettingsSection Title="Add your own" Description="A server the registries do not list: something you run locally, or a hosted endpoint you have a URL for.">
+            <StackPanel Spacing="10">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="fieldLabel" Text="Name" />
+                    <TextBox Text="{Binding NewMcpName, Mode=TwoWay}" Watermark="What the agent will see it as" FontSize="12" Padding="8,5" CornerRadius="6" />
+                </StackPanel>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock Classes="fieldLabel" Text="Runs" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="On the host" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="host" Classes.on="{Binding NewMcpRunAtHost}" Classes="seg" />
+                            <Button Content="In the sandbox" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="sandbox" Classes.on="{Binding NewMcpRunAtSandbox}" Classes="seg" />
                         </StackPanel>
-                        <!-- The row used to render the raw bool ("True"/"False") next to a button
-                             called "Toggle", which says neither what state you're in nor what the
-                             click will do. Now both are named. -->
-                        <TextBlock Grid.Column="1" Text="enabled" Foreground="{DynamicResource Good}" FontSize="10" VerticalAlignment="Center"
-                                   IsVisible="{Binding Enabled}" />
-                        <TextBlock Grid.Column="1" Text="disabled" Foreground="{DynamicResource FgFaint}" FontSize="10" VerticalAlignment="Center"
-                                   IsVisible="{Binding !Enabled}" />
-                        <Button Grid.Column="2" Content="Disable" Classes="seg" IsVisible="{Binding Enabled}"
-                                Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}" CommandParameter="{Binding}" />
-                        <Button Grid.Column="2" Content="Enable" Classes="seg" IsVisible="{Binding !Enabled}"
-                                Command="{Binding $parent[ItemsControl].DataContext.ToggleMcpServerCommand}" CommandParameter="{Binding}" />
-                        <Button Classes="danger" Grid.Column="3" Content="Remove" FontSize="11" Padding="9,3"
-                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                Command="{Binding $parent[ItemsControl].DataContext.RemoveMcpServerCommand}" CommandParameter="{Binding Id}" />
-                    </Grid>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <!-- Add a server by hand (reuses the shared MCP composer fields) -->
-        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
-        <TextBlock Text="Add a server" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-        <StackPanel Spacing="6">
-            <TextBox Text="{Binding NewMcpName, Mode=TwoWay}" Watermark="Server name" FontSize="12" Padding="8,5" CornerRadius="6" />
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <Button Content="Host" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="host" Classes.on="{Binding NewMcpRunAtHost}" Classes="seg" />
-                <Button Content="Sandbox" Command="{Binding SetNewMcpRunAtCommand}" CommandParameter="sandbox" Classes.on="{Binding NewMcpRunAtSandbox}" Classes="seg" />
-                <Button Content="stdio" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="stdio" Classes.on="{Binding NewMcpIsStdio}" Classes="seg" />
-                <Button Content="http" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="http" Classes.on="{Binding NewMcpIsHttp}" Classes="seg" />
-            </StackPanel>
-            <StackPanel Spacing="6" IsVisible="{Binding NewMcpIsStdio}">
-                <TextBox Text="{Binding NewMcpCommand, Mode=TwoWay}" Watermark="command (e.g. npx)" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-                <TextBox Text="{Binding NewMcpArgs, Mode=TwoWay}" Watermark="args (space-separated)" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-            </StackPanel>
-            <TextBox IsVisible="{Binding NewMcpIsHttp}" Text="{Binding NewMcpUrl, Mode=TwoWay}" Watermark="https://server/mcp" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
-            <Button Content="Add server" Command="{Binding AddMcpServerCommand}" HorizontalAlignment="Left" Classes="seg" />
-        </StackPanel>
-
-        <!-- Effective-config preview -->
-        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
-        <TextBlock Text="Would be active" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
-        <TextBlock Classes="scopeNote" TextWrapping="Wrap"
-                   Text="The scope-filtered answer for a plain session started right now — including servers from a CLI's own config that Agnes doesn't manage. Recomputed whenever you change something above." />
-        <TextBlock Text="{Binding McpPreviewStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
-        <ItemsControl ItemsSource="{Binding EffectiveMcp}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <StackPanel Spacing="0" Margin="2,1,0,0">
-                        <TextBlock Foreground="{DynamicResource FgDim}" FontSize="11">
-                            <Run Text="{Binding Name}" /><Run Text="  ·  " /><Run Text="{Binding RunAt}" /><Run Text="  ·  " /><Run Text="{Binding ApplyScope}" />
-                        </TextBlock>
-                        <!-- Native-config servers (Agnes didn't add them) are read-only; label their origin CLI. -->
-                        <TextBlock IsVisible="{Binding NativeConfig}" Foreground="{DynamicResource FgFaint}" FontSize="10" Margin="0,0,0,2">
-                            <Run Text="read-only · from " /><Run Text="{Binding Source}" />
-                        </TextBlock>
+                        <TextBlock Classes="help" Text="On the host it can reach your machine's tools and files; in the sandbox it sees only the VM." />
                     </StackPanel>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Classes="fieldLabel" Text="Talks over" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="stdio" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="stdio" Classes.on="{Binding NewMcpIsStdio}" Classes="seg" />
+                            <Button Content="http" Command="{Binding SetNewMcpTransportCommand}" CommandParameter="http" Classes.on="{Binding NewMcpIsHttp}" Classes="seg" />
+                        </StackPanel>
+                        <TextBlock Classes="help" Text="stdio launches a command; http connects to a server that is already running." />
+                    </StackPanel>
+                </Grid>
+                <StackPanel Spacing="4" IsVisible="{Binding NewMcpIsStdio}">
+                    <TextBlock Classes="fieldLabel" Text="Command" />
+                    <TextBox Text="{Binding NewMcpCommand, Mode=TwoWay}" Watermark="npx" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                    <TextBlock Classes="fieldLabel" Text="Arguments" Margin="0,4,0,0" />
+                    <TextBox Text="{Binding NewMcpArgs, Mode=TwoWay}" Watermark="-y @scope/package@latest" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                    <TextBlock Classes="help" Text="Separated by spaces, as you would type them in a shell." />
+                </StackPanel>
+                <StackPanel Spacing="4" IsVisible="{Binding NewMcpIsHttp}">
+                    <TextBlock Classes="fieldLabel" Text="URL" />
+                    <TextBox Text="{Binding NewMcpUrl, Mode=TwoWay}" Watermark="https://server.example/mcp" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                </StackPanel>
+                <Button Content="Add server" Command="{Binding AddMcpServerCommand}" HorizontalAlignment="Left" Classes="primary" />
+            </StackPanel>
+        </ctl:SettingsSection>
+
+        <!-- 5. The answer to "why isn't my server showing up?": the scope-filtered set a plain session
+             started now would get, including servers from a CLI's own config that Agnes does not manage. -->
+        <ctl:SettingsSection Title="What a new session gets">
+            <Expander Header="Show the effective set" Padding="0,6,0,0" HorizontalAlignment="Stretch">
+                <StackPanel Spacing="8">
+                    <TextBlock Classes="help" Text="The scope-filtered answer for a plain session started right now — including servers from a CLI's own configuration, which Agnes lists but cannot change. Recomputed whenever something above changes." />
+                    <TextBlock Classes="status" Text="{Binding McpPreviewStatus}" />
+                    <ItemsControl ItemsSource="{Binding EffectiveMcp}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="2,2,0,2">
+                                    <ic:SymbolIcon Grid.Column="0" Symbol="Checkmark" FontSize="13" Foreground="{DynamicResource StatusDone}" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" Spacing="1">
+                                        <TextBlock Foreground="{DynamicResource Fg}" FontSize="12">
+                                            <Run Text="{Binding Name}" /><Run Text="  ·  " Foreground="{DynamicResource FgFaint}" /><Run Text="{Binding RunAt}" Foreground="{DynamicResource FgDim}" /><Run Text="  ·  " Foreground="{DynamicResource FgFaint}" /><Run Text="{Binding ApplyScope}" Foreground="{DynamicResource FgDim}" />
+                                        </TextBlock>
+                                        <TextBlock IsVisible="{Binding NativeConfig}" Classes="meta">
+                                            <Run Text="read-only · from " /><Run Text="{Binding Source}" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Expander>
+        </ctl:SettingsSection>
     </StackPanel>
 </UserControl>
