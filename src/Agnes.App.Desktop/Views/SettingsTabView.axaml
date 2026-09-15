@@ -44,9 +44,10 @@
         </Style>
         <Style Selector="TextBlock.navGroup">
             <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
-            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontSize" Value="10.5" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin" Value="10,12,0,3" />
+            <Setter Property="LetterSpacing" Value="0.6" />
+            <Setter Property="Margin" Value="10,14,0,4" />
         </Style>
     </UserControl.Styles>
 
@@ -71,25 +72,33 @@
 
         <Grid Grid.Row="1" ColumnDefinitions="220,*">
 
-            <!-- LEFT NAV -->
-            <ScrollViewer Grid.Column="0" Background="{DynamicResource Panel}" Padding="10,10">
-                <ItemsControl ItemsSource="{Binding SettingsCategories}">
+            <!-- LEFT NAV: the categories grouped by where the setting lives. -->
+            <ScrollViewer Grid.Column="0" Background="{DynamicResource Panel}" Padding="10,6,10,10">
+                <ItemsControl ItemsSource="{Binding SettingsNavGroups}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Button Classes="navitem" Classes.on="{Binding IsSelected}" IsVisible="{Binding IsVisible}"
-                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                    Command="{Binding $parent[ItemsControl].DataContext.SetSettingsCategoryCommand}"
-                                    CommandParameter="{Binding Id}">
-                                <StackPanel Orientation="Horizontal" Spacing="9">
-                                    <ic:SymbolIcon Symbol="{Binding Icon}" FontSize="16" />
-                                    <TextBlock Text="{Binding Label}" FontSize="13" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
+                            <StackPanel IsVisible="{Binding IsVisible}">
+                                <TextBlock Classes="navGroup" Text="{Binding Title}" />
+                                <ItemsControl ItemsSource="{Binding Items}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Classes="navitem" Classes.on="{Binding IsSelected}" IsVisible="{Binding IsVisible}"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                    Command="{Binding $parent[ItemsControl;1].DataContext.SetSettingsCategoryCommand}"
+                                                    CommandParameter="{Binding Id}">
+                                                <StackPanel Orientation="Horizontal" Spacing="9">
+                                                    <ic:SymbolIcon Symbol="{Binding Icon}" FontSize="16" />
+                                                    <TextBlock Text="{Binding Label}" FontSize="13" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
-
             <!-- CONTENT -->
             <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
                 <StackPanel MaxWidth="1000" Margin="32,24,32,48" Spacing="14" HorizontalAlignment="Stretch">
