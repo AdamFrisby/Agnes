@@ -19,6 +19,10 @@ public sealed record KeymapCommandRow(
     /// <summary>True when no rule binds the command, so the cap can read as a gap rather than a key.</summary>
     public bool IsUnassigned => string.Equals(Gesture, "Unassigned", StringComparison.Ordinal);
 
+    /// <summary>Whether the binding applies somewhere narrower than the whole window — the only case a
+    /// context is worth a tag; "window" on every row is noise.</summary>
+    public bool HasNarrowContext => Context.Length > 0 && !string.Equals(Context, "window", StringComparison.OrdinalIgnoreCase);
+
     public static string FormatJson(KeymapRule rule)
     {
         var key = Quote(KeyGestureParser.ToKeymapString(rule.Gesture));

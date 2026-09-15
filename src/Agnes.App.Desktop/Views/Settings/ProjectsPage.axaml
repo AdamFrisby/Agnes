@@ -82,16 +82,17 @@
                                      Security="Anything you add here becomes available to this project's sandboxed agents.">
                     <StackPanel Spacing="10">
                         <CheckBox IsChecked="{Binding ProjNode, Mode=TwoWay}" Foreground="{DynamicResource Fg}" Content="Install Node.js and npm" />
-                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                        <!-- apt gets the whole row: it is the long list; npm and pip are usually a word or two. -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="fieldLabel" Text="apt packages" />
+                            <TextBox Text="{Binding ProjApt, Mode=TwoWay}" Watermark="git ripgrep cargo" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                             <StackPanel Grid.Column="0" Spacing="4">
-                                <TextBlock Classes="fieldLabel" Text="apt packages" />
-                                <TextBox Text="{Binding ProjApt, Mode=TwoWay}" Watermark="git ripgrep cargo" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="4">
                                 <TextBlock Classes="fieldLabel" Text="npm globals" />
                                 <TextBox Text="{Binding ProjNpm, Mode=TwoWay}" Watermark="typescript" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
                             </StackPanel>
-                            <StackPanel Grid.Column="2" Spacing="4">
+                            <StackPanel Grid.Column="1" Spacing="4">
                                 <TextBlock Classes="fieldLabel" Text="pip packages" />
                                 <TextBox Text="{Binding ProjPip, Mode=TwoWay}" Watermark="ruff" FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{DynamicResource MonoFont}" />
                             </StackPanel>

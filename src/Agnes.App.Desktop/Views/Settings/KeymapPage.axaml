@@ -5,30 +5,6 @@
              x:Class="Agnes.App.Desktop.Views.Settings.KeymapPage">
     <!-- KEYMAP (this device). The question is "what is the key for X?", so every row is a key cap and a
          sentence; the ids are there for the file, in the faint mono of things one copies. -->
-    <UserControl.Styles>
-        <!-- A key cap: a tag in the mono font, so a chord reads like the keys on a keyboard. -->
-        <Style Selector="Border.keycap">
-            <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource LineStrong}" />
-            <Setter Property="BorderThickness" Value="1,1,1,2" />
-            <Setter Property="CornerRadius" Value="5" />
-            <Setter Property="Padding" Value="7,2" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-        <Style Selector="Border.keycap > TextBlock">
-            <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
-        </Style>
-        <Style Selector="Border.keycap.unassigned">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
-            <Setter Property="BorderThickness" Value="1" />
-        </Style>
-        <Style Selector="Border.keycap.unassigned > TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
-        </Style>
-    </UserControl.Styles>
     <StackPanel Spacing="16">
         <ctl:SettingsPageHeader Title="Keymap" Scope="This device"
                                 Purpose="Every shortcut in the app, and the file that overrides them. Edit the file and the change applies as you save it.">
@@ -82,7 +58,7 @@
                                                     <TextBlock Text="{Binding Description}" Classes="rowTitle" TextWrapping="Wrap" />
                                                     <TextBlock Text="{Binding CommandId}" Classes="meta mono" />
                                                 </StackPanel>
-                                                <Border Grid.Column="2" Classes="tag" ToolTip.Tip="Where the shortcut applies">
+                                                <Border Grid.Column="2" Classes="tag" ToolTip.Tip="Where the shortcut applies" IsVisible="{Binding HasNarrowContext}">
                                                     <TextBlock Text="{Binding Context}" />
                                                 </Border>
                                                 <Button Grid.Column="3" Classes="icon" Padding="5" IsEnabled="{Binding CanCopyJson}" Click="OnCopyKeymapJson"
