@@ -40,7 +40,13 @@ public sealed class PluginManagementViewModel : ObservableObject
         ShowInstalledCommand = new RelayCommand(() => ShowBrowse = false);
         ShowBrowseCommand = new RelayCommand(() => ShowBrowse = true);
         SelectCommand = new RelayCommand<object>(o => Selected = o);
+        Installed.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasInstalled));
+        SearchResults.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSearchResults));
     }
+
+    public bool HasInstalled => Installed.Count > 0;
+
+    public bool HasSearchResults => SearchResults.Count > 0;
 
     /// <summary>Installed plugins on the active host.</summary>
     public ObservableCollection<InstalledPluginRow> Installed { get; } = [];
@@ -109,7 +115,7 @@ public sealed class PluginManagementViewModel : ObservableObject
             {
                 Installed.Clear();
                 foreach (var p in list) { Installed.Add(new InstalledPluginRow(p)); }
-                Status = Installed.Count == 0 ? "No plugins installed." : $"{Installed.Count} plugin(s) installed.";
+                Status = Installed.Count switch { 0 => "No plugins installed on this host.", 1 => "One plugin installed.", var n => $"{n} plugins installed." };
             });
         }
         catch (Exception ex)
@@ -131,7 +137,7 @@ public sealed class PluginManagementViewModel : ObservableObject
             {
                 SearchResults.Clear();
                 foreach (var r in results) { SearchResults.Add(new PluginSearchRow(r)); }
-                Status = SearchResults.Count == 0 ? "No matching plugins." : $"{SearchResults.Count} result(s).";
+                Status = SearchResults.Count switch { 0 => "No plugins match that.", 1 => "One plugin found.", var n => $"{n} plugins found." };
             });
         }
         catch (Exception ex)

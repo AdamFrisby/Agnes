@@ -1,144 +1,176 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
              xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.PluginsPage">
-    <!-- PLUGINS (NuGet-packaged extensions on the host) -->
-    <StackPanel>
-        <StackPanel DataContext="{Binding Plugins}" Spacing="12">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
-                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Plugins" />
-                <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
-                              Description="Extend this host with NuGet-packaged plugins — new agents, transports, notification channels, and more. Browse a source, install, then enable/disable or configure each one."
-                              Security="Plugins run third-party code on the host. Each declares the access it needs (network, credentials, session content); you approve those capabilities before it ever runs, and a plugin only gets what it declared. Signed packages only, by default." />
-                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                    <Button Content="Installed" Command="{Binding ShowInstalledCommand}" Classes="seg" />
-                    <Button Content="Browse" Command="{Binding ShowBrowseCommand}" Classes="seg" />
+    <!-- PLUGINS (packaged extensions on the host). Two views of one list: what is installed, and what could be. -->
+    <StackPanel Spacing="16">
+        <ctl:SettingsPageHeader Title="Plugins" Scope="{Binding ActiveHostName}"
+                                Purpose="Extend this host with packaged plugins — agents, transports, notification channels — installed from a source the operator trusts.">
+            <ctl:SettingsPageHeader.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <!-- Installed | Browse: one control, one state, so the page always says which list this is. -->
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="Installed" Classes="seg" Classes.on="{Binding !Plugins.ShowBrowse}" Command="{Binding Plugins.ShowInstalledCommand}" />
+                        <Button Content="Browse" Classes="seg" Classes.on="{Binding Plugins.ShowBrowse}" Command="{Binding Plugins.ShowBrowseCommand}" />
+                    </StackPanel>
+                    <Button Classes="icon" Command="{Binding Plugins.RefreshCommand}" ToolTip.Tip="Refresh">
+                        <ic:SymbolIcon Symbol="ArrowSync" />
+                    </Button>
                 </StackPanel>
-                <Button Grid.Column="4" Margin="6,0,0,0" Content="Refresh" Command="{Binding RefreshCommand}" Classes="seg" />
-            </Grid>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-            <!-- Capability-consent prompt: shown before an install/update runs any plugin code -->
-            <Border IsVisible="{Binding HasPendingConsent}" Background="{DynamicResource PanelAlt}"
-                    BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="10" Padding="14,12">
-                <StackPanel Spacing="8">
-                    <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource Fg}" FontSize="13">
-                        <Run Text="Approve access for" /><Run Text=" " /><Run Text="{Binding PendingConsent.PackageId}" />
-                    </TextBlock>
-                    <TextBlock Text="This plugin is requesting the following capabilities. It cannot run until you approve them:"
-                               Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+        <StackPanel DataContext="{Binding Plugins}" Spacing="16">
+            <TextBlock Classes="status" Text="{Binding Status}" />
+
+            <!-- Capability consent: the decision that has to be made before any plugin code runs. -->
+            <ctl:SettingsSection Classes="attention" IsVisible="{Binding HasPendingConsent}"
+                                 Title="Approve access before it runs"
+                                 Description="This plugin declares the access it needs. It cannot run until you approve it, and it gets only what is listed here.">
+                <StackPanel Spacing="10">
+                    <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource Fg}" FontSize="13" Text="{Binding PendingConsent.PackageId}" />
                     <ItemsControl ItemsSource="{Binding PendingConsent.Capabilities}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding, StringFormat='• {0}'}" Foreground="{DynamicResource Fg}"
-                                           FontSize="12" FontFamily="{StaticResource MonoFont}" Margin="4,1,0,0" />
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="2,1">
+                                    <ic:SymbolIcon Symbol="Key" FontSize="13" Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding}" Foreground="{DynamicResource Fg}" FontSize="12" FontFamily="{DynamicResource MonoFont}" VerticalAlignment="Center" />
+                                </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
-                        <Button Content="Approve &amp; install" Command="{Binding ConfirmConsentCommand}" Classes="seg" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Approve and install" Command="{Binding ConfirmConsentCommand}" Classes="primary" />
                         <Button Classes="chip" Content="Cancel" Command="{Binding CancelConsentCommand}" Padding="10,4" FontSize="12" />
                     </StackPanel>
                 </StackPanel>
-            </Border>
+            </ctl:SettingsSection>
 
-            <!-- BROWSE: search the host's configured NuGet source(s) -->
-            <StackPanel Spacing="10" IsVisible="{Binding ShowBrowse}">
-                <Grid ColumnDefinitions="*,Auto">
-                    <!-- Enter searches, so finding a plugin doesn't need a trip to the mouse. -->
-                    <TextBox Grid.Column="0" Watermark="Search plugins…" Text="{Binding SearchQuery, Mode=TwoWay}"
-                             km:KeymapBinder.Context="SettingsPluginSearchFocus" />
-                    <Button Grid.Column="1" Margin="8,0,0,0" Content="Search" Command="{Binding SearchCommand}" Classes="seg" />
-                </Grid>
-                <ItemsControl ItemsSource="{Binding SearchResults}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                    CornerRadius="10" Padding="12,10" Margin="0,0,0,8">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <StackPanel Grid.Column="0" Spacing="3">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
-                                            <StackPanel Orientation="Horizontal" Spacing="3" VerticalAlignment="Center" IsVisible="{Binding IsReviewed}">
-                                                <ic:SymbolIcon Symbol="CheckmarkCircle" Foreground="{DynamicResource Good}" FontSize="12" />
-                                                <TextBlock Text="{Binding ReviewedLabel}" FontSize="10" Foreground="{DynamicResource Good}" VerticalAlignment="Center" />
+            <!-- INSTALLED -->
+            <ctl:SettingsSection Title="Installed on this host" IsVisible="{Binding !ShowBrowse}"
+                                 Hint="Each plugin declares the access it needs — network, credentials, session content — and you approve those capabilities before it ever runs. Disable keeps a plugin installed but inert; Uninstall removes it."
+                                 Security="Plugins run third-party code on the host. A plugin only gets what it declared. Signed packages only, by default.">
+                <StackPanel>
+                    <Border Classes="rows flat" IsVisible="{Binding HasInstalled}">
+                        <ItemsControl ItemsSource="{Binding Installed}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Classes="row" Padding="0,9">
+                                        <StackPanel Spacing="6">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                <ic:SymbolIcon Grid.Column="0" Symbol="PuzzlePiece" FontSize="18" Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" Margin="2,0,4,0" />
+                                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <TextBlock Text="{Binding PluginId}" Classes="rowTitle" FontWeight="SemiBold" />
+                                                        <Border Classes="tag">
+                                                            <TextBlock Text="{Binding Version}" />
+                                                        </Border>
+                                                        <!-- Enabled is healthy (mint); disabled is a neutral fact; an update waiting is on you (amber). -->
+                                                        <Border Classes="tag done" IsVisible="{Binding Enabled}">
+                                                            <TextBlock Text="enabled" />
+                                                        </Border>
+                                                        <Border Classes="tag" IsVisible="{Binding !Enabled}">
+                                                            <TextBlock Text="disabled" />
+                                                        </Border>
+                                                        <Border Classes="tag attention" IsVisible="{Binding UpdateAvailable}">
+                                                            <TextBlock Text="update available" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <TextBlock Classes="meta">
+                                                        <Run Text="access: " /><Run Text="{Binding CapabilitiesLabel}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                    <Button Content="Update" Classes="seg" FontSize="11" Padding="9,3" IsVisible="{Binding UpdateAvailable}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.UpdateCommand}" CommandParameter="{Binding}" />
+                                                    <Button Content="Disable" Classes="seg" FontSize="11" Padding="9,3" IsVisible="{Binding Enabled}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.ToggleEnabledCommand}" CommandParameter="{Binding}" />
+                                                    <Button Content="Enable" Classes="seg" FontSize="11" Padding="9,3" IsVisible="{Binding !Enabled}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.ToggleEnabledCommand}" CommandParameter="{Binding}" />
+                                                    <Button Classes="danger" Content="Uninstall" FontSize="11" Padding="9,3"
+                                                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.UninstallCommand}" CommandParameter="{Binding}" />
+                                                </StackPanel>
+                                            </Grid>
+                                            <Expander Header="Configure" Padding="0,4,0,0" FontSize="12" Margin="30,0,0,0">
+                                                <StackPanel Spacing="8">
+                                                    <TextBlock Text="This plugin has no settings of its own." Classes="help" IsVisible="{Binding !HasSettings}" />
+                                                    <ItemsControl ItemsSource="{Binding Settings}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Grid ColumnDefinitions="160,*" Margin="0,2" ColumnSpacing="8">
+                                                                    <TextBlock Grid.Column="0" Text="{Binding Key}" Classes="fieldLabel" VerticalAlignment="Center" />
+                                                                    <TextBox Grid.Column="1" Text="{Binding Value, Mode=TwoWay}" FontSize="12" Padding="8,5" CornerRadius="6" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <Button Content="Save settings" Classes="seg" HorizontalAlignment="Left" FontSize="12" IsVisible="{Binding HasSettings}"
+                                                            Command="{Binding $parent[ItemsControl].DataContext.SaveConfigurationCommand}" CommandParameter="{Binding}" />
+                                                </StackPanel>
+                                            </Expander>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <ctl:EmptyState Symbol="PuzzlePiece" Title="No plugins installed" IsVisible="{Binding !HasInstalled}"
+                                    Text="A plugin adds something to this host — an agent, a transport, a place notifications go. Browse the sources the operator has configured to find one.">
+                        <ctl:EmptyState.Action>
+                            <Button Classes="primary" Content="Browse plugins" Command="{Binding ShowBrowseCommand}" />
+                        </ctl:EmptyState.Action>
+                    </ctl:EmptyState>
+                </StackPanel>
+            </ctl:SettingsSection>
+
+            <!-- BROWSE -->
+            <ctl:SettingsSection Title="Find a plugin" IsVisible="{Binding ShowBrowse}"
+                                 Description="Searches the sources configured on the host. Reviewed packages carry a check.">
+                <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <TextBox Grid.Column="0" Watermark="Search plugins — e.g. slack, opencode, webhook" Text="{Binding SearchQuery, Mode=TwoWay}"
+                                 FontSize="12" Padding="8,5" CornerRadius="6" km:KeymapBinder.Context="SettingsPluginSearchFocus" />
+                        <Button Grid.Column="1" Content="Search" Command="{Binding SearchCommand}" Classes="primary" FontSize="12" />
+                        <ProgressBar Grid.Column="2" IsIndeterminate="True" Width="70" Height="4" VerticalAlignment="Center" IsVisible="{Binding IsBusy}"
+                                     Foreground="{DynamicResource Accent}" Background="{DynamicResource PanelAlt}" />
+                    </Grid>
+                    <Border Classes="rows flat" IsVisible="{Binding HasSearchResults}">
+                        <ItemsControl ItemsSource="{Binding SearchResults}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Classes="row" Padding="0,9">
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                            <ic:SymbolIcon Grid.Column="0" Symbol="PuzzlePiece" FontSize="18" Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" Margin="2,0,4,0" />
+                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                                    <TextBlock Text="{Binding DisplayName}" Classes="rowTitle" FontWeight="SemiBold" />
+                                                    <Border Classes="tag done" IsVisible="{Binding IsReviewed}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="3">
+                                                            <ic:SymbolIcon Symbol="CheckmarkCircle" FontSize="11" Foreground="{DynamicResource StatusDone}" VerticalAlignment="Center" />
+                                                            <TextBlock Text="reviewed" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Classes="meta">
+                                                    <Run Text="{Binding PackageId}" FontFamily="{DynamicResource MonoFont}" /><Run Text=" · by " /><Run Text="{Binding Publisher}" />
+                                                </TextBlock>
                                             </StackPanel>
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding PackageId}" Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}" />
-                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
-                                        <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
-                                            <Run Text="by" /><Run Text=" " /><Run Text="{Binding Publisher}" />
-                                        </TextBlock>
-                                    </StackPanel>
-                                    <Button Grid.Column="1" VerticalAlignment="Center" Content="Install" Classes="seg"
-                                            Command="{Binding $parent[ItemsControl].DataContext.InstallCommand}" CommandParameter="{Binding}" />
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-
-            <!-- INSTALLED: manage plugins already on the host -->
-            <ItemsControl ItemsSource="{Binding Installed}" IsVisible="{Binding !ShowBrowse}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                CornerRadius="10" Padding="12,10" Margin="0,0,0,8">
-                            <StackPanel Spacing="6">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <StackPanel Grid.Column="0" Spacing="3">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Text="{Binding PluginId}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
-                                            <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Version, StringFormat='v{0}'}" FontSize="10" Foreground="{DynamicResource FgDim}" />
-                                            </Border>
-                                            <TextBlock Text="· enabled" FontSize="10" Foreground="{DynamicResource Good}" VerticalAlignment="Center" IsVisible="{Binding Enabled}" />
-                                            <TextBlock Text="· disabled" FontSize="10" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" IsVisible="{Binding !Enabled}" />
-                                            <TextBlock Text="· update available" FontSize="10" Foreground="{DynamicResource Accent}" VerticalAlignment="Center" IsVisible="{Binding UpdateAvailable}" />
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding CapabilitiesLabel, StringFormat='access: {0}'}" Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                        <Button Content="Update" Classes="seg" IsVisible="{Binding UpdateAvailable}"
-                                                Command="{Binding $parent[ItemsControl].DataContext.UpdateCommand}" CommandParameter="{Binding}" />
-                                        <Button Content="Disable" Classes="seg" IsVisible="{Binding Enabled}"
-                                                Command="{Binding $parent[ItemsControl].DataContext.ToggleEnabledCommand}" CommandParameter="{Binding}" />
-                                        <Button Content="Enable" Classes="seg" IsVisible="{Binding !Enabled}"
-                                                Command="{Binding $parent[ItemsControl].DataContext.ToggleEnabledCommand}" CommandParameter="{Binding}" />
-                                        <Button Classes="danger" Content="Uninstall"
-                                                BorderBrush="{DynamicResource Line}" BorderThickness="1" Padding="10,4" FontSize="12"
-                                                Command="{Binding $parent[ItemsControl].DataContext.UninstallCommand}" CommandParameter="{Binding}" />
-                                    </StackPanel>
-                                </Grid>
-                                <Expander Header="Configure" Padding="0,4,0,0">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Text="This plugin exposes no configurable settings." Foreground="{DynamicResource FgFaint}"
-                                                   FontSize="11" IsVisible="{Binding !HasSettings}" />
-                                        <ItemsControl ItemsSource="{Binding Settings}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Grid ColumnDefinitions="140,*" Margin="0,2">
-                                                        <TextBlock Grid.Column="0" Text="{Binding Key}" Classes="fieldLabel" VerticalAlignment="Center" />
-                                                        <TextBox Grid.Column="1" Text="{Binding Value, Mode=TwoWay}" />
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                        <Button Content="Save configuration" Classes="seg" HorizontalAlignment="Left" IsVisible="{Binding HasSettings}"
-                                                Command="{Binding $parent[ItemsControl].DataContext.SaveConfigurationCommand}" CommandParameter="{Binding}" />
-                                    </StackPanel>
-                                </Expander>
-                            </StackPanel>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                                            <Button Grid.Column="2" VerticalAlignment="Center" Content="Install" Classes="seg" FontSize="11" Padding="9,3"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.InstallCommand}" CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <ctl:EmptyState Symbol="Search" Title="Search the host's sources" IsVisible="{Binding !HasSearchResults}"
+                                    Text="Type part of a name and search. Results say who published each package and whether it has been reviewed." />
+                </StackPanel>
+            </ctl:SettingsSection>
         </StackPanel>
     </StackPanel>
 </UserControl>
