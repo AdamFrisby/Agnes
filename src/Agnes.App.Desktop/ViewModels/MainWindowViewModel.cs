@@ -1162,7 +1162,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
     public System.Collections.ObjectModel.ObservableCollection<string> OrphanVmNames { get; } = [];
     public bool HasOrphans => OrphanVmNames.Count > 0;
-    public string ReapOrphansLabel => $"Delete {OrphanVmNames.Count} orphaned VM(s)";
+    public string ReapOrphansLabel => OrphanVmNames.Count == 1 ? "Delete the orphaned VM" : $"Delete {OrphanVmNames.Count} orphaned VMs";
 
     [ObservableProperty] private string _sandboxesStatus = "Open a session on a host to manage its sandboxes.";
 
@@ -1178,11 +1178,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             {
                 OrphanVmNames.Clear();
                 foreach (var o in orphans) { OrphanVmNames.Add(o); }
+                OrphansScanned = true;
                 OnPropertyChanged(nameof(HasOrphans));
                 OnPropertyChanged(nameof(ReapOrphansLabel));
+                OnPropertyChanged(nameof(OrphansNote));
                 SandboxesStatus = orphans.Count == 0
-                    ? "No orphaned VMs — nothing to reap."
-                    : $"Found {orphans.Count} orphaned VM(s) no session tracks. Review, then delete if you're sure.";
+                    ? "Scanned: every VM on the host belongs to a session."
+                    : orphans.Count == 1 ? "Found one VM no session tracks. Review it below, then delete if you are sure."
+                    : $"Found {orphans.Count} VMs no session tracks. Review them below, then delete if you are sure.";
             });
         }
         catch (Exception ex)
@@ -1203,7 +1206,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             {
                 OrphanVmNames.Clear();
                 OnPropertyChanged(nameof(HasOrphans));
-                SandboxesStatus = $"Reaped {reaped} orphaned VM(s).";
+                OnPropertyChanged(nameof(OrphansNote));
+                SandboxesStatus = reaped == 1 ? "Deleted the orphaned VM." : $"Deleted {reaped} orphaned VMs.";
             });
             await LoadSandboxesAsync();
         }
@@ -1218,22 +1222,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var target = ActiveHttpHost();
         if (target is null)
         {
-            _dispatcher.Post(() => { Sandboxes.Clear(); OnPropertyChanged(nameof(HasSandboxes)); SandboxesStatus = "Open a session on a host to manage its sandboxes."; });
+            _dispatcher.Post(() => { ReplaceSandboxes([]); SandboxesStatus = "Open a session on a host to manage its sandboxes."; });
             return;
         }
 
         try
         {
             var list = await SandboxManagement.ListAsync(target.Url, target.Token, target.Http);
-            _dispatcher.Post(() =>
-            {
-                Sandboxes.Clear();
-                foreach (var s in list) { Sandboxes.Add(new SandboxRowVm(s)); }
-                OnPropertyChanged(nameof(HasSandboxes));
-                SandboxesStatus = list.Count == 0
-                    ? "No sandboxes yet — sandboxed sessions appear here (stopped ones stay until you delete them)."
-                    : $"{list.Count} sandbox(es) on {ActiveHostName}.";
-            });
+            _dispatcher.Post(() => ReplaceSandboxes(list));
         }
         catch (Exception ex)
         {
@@ -1313,9 +1309,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             var list = await SandboxManagement.DeleteAsync(target.Url, target.Token, row.SessionId, target.Http);
             _dispatcher.Post(() =>
             {
-                Sandboxes.Clear();
-                foreach (var s in list) { Sandboxes.Add(new SandboxRowVm(s)); }
-                OnPropertyChanged(nameof(HasSandboxes));
+                ReplaceSandboxes(list);
                 SandboxesStatus = $"Deleted the sandbox for '{row.Title}'.";
             });
         }

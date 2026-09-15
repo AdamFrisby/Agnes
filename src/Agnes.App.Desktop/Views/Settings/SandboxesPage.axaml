@@ -1,71 +1,98 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
-             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.SandboxesPage">
-    <!-- SANDBOXES (managed VMs on the host) -->
-    <StackPanel Spacing="12">
-        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Sandboxes" />
-            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
-                          Description="The sandbox VMs Agnes has created. Closing a session tab shuts its VM down (freeing CPU + RAM) but keeps it here so you can resume or delete it. A running VM uses host CPU/RAM; a stopped one only uses disk."
-                          Security="These are real VMs on the connected host. Delete destroys a sandbox and everything in it, permanently." />
-            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadSandboxesCommand}" Classes="seg" />
-        </Grid>
-        <ItemsControl ItemsSource="{Binding Sandboxes}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                            CornerRadius="10" Padding="12,10" Margin="0,0,0,8">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <StackPanel Grid.Column="0" Spacing="3">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Fg}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
-                                    <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}"
-                                            BorderThickness="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding State}" FontSize="10" Foreground="{DynamicResource FgDim}" />
-                                    </Border>
-                                    <TextBlock Text="· live" FontSize="10" Foreground="{DynamicResource Good}" VerticalAlignment="Center" IsVisible="{Binding Live}" />
-                                </StackPanel>
-                                <TextBlock Text="{Binding WorkingDirectory}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                           FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{Binding VmName, StringFormat='VM: {0}'}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                                           FontFamily="{StaticResource MonoFont}" TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                <Button Content="Resume" Command="{Binding $parent[ItemsControl].DataContext.ResumeSandboxRecordCommand}"
-                                        CommandParameter="{Binding}" Classes="seg" IsVisible="{Binding !Live}"
-                                        ToolTip.Tip="Cold-start the VM and reopen this session in a tab" />
-                                <!-- Two-step: this destroys a VM and its contents for good. -->
-                                <Button Classes="danger" Content="{Binding DeleteLabel}" Command="{Binding $parent[ItemsControl].DataContext.DeleteSandboxRecordCommand}"
-                                        CommandParameter="{Binding}"
-                                        BorderBrush="{DynamicResource Line}" BorderThickness="1" Padding="10,4" FontSize="12" />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-        <TextBlock Text="{Binding SandboxesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+    <!-- SANDBOXES (the VMs the host has made for sessions). The questions, in order: which are running
+         right now; which can I delete; how do I get back into the one I want. -->
+    <StackPanel Spacing="16">
+        <ctl:SettingsPageHeader Title="Sandboxes" Scope="{Binding ActiveHostName}"
+                                Purpose="The VMs this host has made for sessions. A running one costs CPU and RAM; a stopped one only disk, until you delete it.">
+            <ctl:SettingsPageHeader.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <!-- Two-step: the first click arms and says what it will destroy; the second does it. -->
+                    <Button Classes="danger" Content="{Binding DeleteStoppedLabel}" IsVisible="{Binding HasStoppedSandboxes}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1" Padding="10,4" FontSize="12"
+                            Command="{Binding DeleteStoppedSandboxesCommand}"
+                            ToolTip.Tip="Destroy every VM that is not running, and everything in it" />
+                    <Button Classes="icon" Command="{Binding LoadSandboxesCommand}" ToolTip.Tip="Refresh">
+                        <ic:SymbolIcon Symbol="ArrowSync" />
+                    </Button>
+                </StackPanel>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-        <!-- Manual orphan reaper (never automatic) -->
-        <Border Height="1" Background="{DynamicResource Line}" Margin="0,4" />
-        <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="Find orphaned VMs" Command="{Binding FindOrphansCommand}" Classes="seg"
-                    ToolTip.Tip="Scan the host for Agnes VMs no session tracks (e.g. left from a prior daemon run). Nothing is deleted until you confirm." />
-            <Button Classes="danger" Content="{Binding ReapOrphansLabel}" Command="{Binding ReapOrphansCommand}" IsVisible="{Binding HasOrphans}" BorderBrush="{DynamicResource Line}"
-                    BorderThickness="1" Padding="10,4" FontSize="12" />
-        </StackPanel>
-        <ItemsControl ItemsSource="{Binding OrphanVmNames}" IsVisible="{Binding HasOrphans}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <TextBlock Text="{Binding}" Foreground="{DynamicResource FgFaint}" FontSize="10"
-                               FontFamily="{StaticResource MonoFont}" Margin="2,1,0,0" />
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <TextBlock Classes="status" Text="{Binding SandboxesStatus}" />
+
+        <ctl:SettingsSection Title="Session sandboxes"
+                             Hint="Closing a session tab shuts its VM down, freeing CPU and RAM, but keeps it here so you can open the session again later or delete it. Running VMs are listed first."
+                             Security="These are real VMs on the connected host. Delete destroys a sandbox and everything in it, permanently.">
+            <StackPanel>
+                <Border Classes="rows flat" IsVisible="{Binding HasSandboxes}">
+                    <ItemsControl ItemsSource="{Binding Sandboxes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="row" Padding="0,9">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                                        <ic:SymbolIcon Grid.Column="0" Symbol="Box" FontSize="18" VerticalAlignment="Center" Margin="2,0,4,0"
+                                                       Foreground="{DynamicResource FgDim}" Classes.tone="{Binding IsRunning}" Classes.working="{Binding IsRunning}" />
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <TextBlock Text="{Binding Title}" Classes="rowTitle" FontWeight="SemiBold" />
+                                                <!-- Running is "in motion" (sky); stopped and paused are neutral facts. -->
+                                                <Border Classes="tag" Classes.working="{Binding IsRunning}">
+                                                    <TextBlock Text="{Binding State}" />
+                                                </Border>
+                                                <Border Classes="tag done" IsVisible="{Binding IsOpenHere}">
+                                                    <TextBlock Text="open in a tab" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Classes="meta" ToolTip.Tip="{Binding WorkingDirectory}">
+                                                <Run Text="{Binding ShortDirectory}" FontFamily="{DynamicResource MonoFont}" /><Run Text=" · " /><Run Text="{Binding Agent}" /><Run Text=" · " /><Run Text="{Binding Age}" />
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding VmName}" Classes="meta mono" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Classes="seg" Content="{Binding OpenLabel}" FontSize="11" Padding="9,3"
+                                                ToolTip.Tip="{Binding OpenTooltip}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.ResumeSandboxRecordCommand}" CommandParameter="{Binding}" />
+                                        <Button Classes="danger" Grid.Column="3" Content="{Binding DeleteLabel}" FontSize="11" Padding="9,3"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                Command="{Binding $parent[ItemsControl].DataContext.DeleteSandboxRecordCommand}" CommandParameter="{Binding}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+                <ctl:EmptyState Symbol="Box" Title="No sandboxes yet" IsVisible="{Binding !HasSandboxes}"
+                                Text="Open a session with the sandbox switched on and its VM appears here. It stays after the session closes, so the session can be opened again, until you delete it." />
+            </StackPanel>
+        </ctl:SettingsSection>
+
+        <!-- The VMs nothing tracks: a scan on request, never automatic, and nothing deleted without a confirmation. -->
+        <ctl:SettingsSection Title="Not tracked by any session" Description="{Binding OrphansNote}">
+            <ctl:SettingsSection.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="danger" Content="{Binding ReapOrphansLabel}" IsVisible="{Binding HasOrphans}"
+                            BorderBrush="{DynamicResource Line}" BorderThickness="1" Padding="10,4" FontSize="12"
+                            Command="{Binding ReapOrphansCommand}" />
+                    <Button Classes="seg" Content="Scan the host" Command="{Binding FindOrphansCommand}" FontSize="12" />
+                </StackPanel>
+            </ctl:SettingsSection.Actions>
+            <Border Classes="rows flat" IsVisible="{Binding HasOrphans}">
+                <ItemsControl ItemsSource="{Binding OrphanVmNames}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Classes="row" Padding="0,7">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <ic:SymbolIcon Symbol="Box" FontSize="15" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" Margin="2,0,4,0" />
+                                    <TextBlock Text="{Binding}" Classes="rowTitle" FontFamily="{DynamicResource MonoFont}" FontSize="11.5" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+        </ctl:SettingsSection>
     </StackPanel>
 </UserControl>

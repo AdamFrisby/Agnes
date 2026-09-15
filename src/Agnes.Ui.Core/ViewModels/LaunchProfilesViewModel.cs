@@ -83,7 +83,7 @@ public sealed class LaunchProfilesViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(HasProfiles));
-        Status = $"{Profiles.Count} launch profile(s).";
+        Status = Profiles.Count switch { 0 => "No launch profiles saved yet.", 1 => "One launch profile.", var n => $"{n} launch profiles." };
     }
 
     private static void BeginRename(LaunchProfileRowVm? row)

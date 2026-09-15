@@ -1,55 +1,66 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
              xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.LaunchProfilesPage">
-    <!-- Launch profiles -->
-    <StackPanel>
-        <StackPanel DataContext="{Binding LaunchProfiles}" Spacing="14">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Launch profiles" />
-                <Button Grid.Column="2" Content="Refresh" Command="{Binding RefreshCommand}" Classes="seg" />
-            </Grid>
-            <TextBlock Classes="scopeNote"
-                       Text="Named, reusable new-session configs — agent, permission posture, git/sandbox defaults, model. Create one from the new-session screen with &quot;Save current as profile…&quot;; applying it there prefills the launch controls. Deleting a profile never affects a session already launched from it." />
+    <!-- LAUNCH PROFILES (host). A profile is made on the new-session screen; here it is started, renamed or removed. -->
+    <StackPanel Spacing="16">
+        <ctl:SettingsPageHeader Title="Launch profiles" Scope="{Binding ActiveHostName}"
+                                Purpose="Saved ways to start a session — the agent, the permission posture, the git and sandbox defaults, the model — so a setup you like is one click away.">
+            <ctl:SettingsPageHeader.Actions>
+                <Button Classes="icon" Command="{Binding LaunchProfiles.RefreshCommand}" ToolTip.Tip="Refresh">
+                    <ic:SymbolIcon Symbol="ArrowSync" />
+                </Button>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-            <!-- Each row spells out what the profile would actually do, because "name + adapter id"
-                 can't answer that; and it can start a session, because starting one is the whole
-                 point of having saved it. -->
-            <ItemsControl ItemsSource="{Binding Profiles}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                CornerRadius="8" Padding="10,8" Margin="0,0,0,6">
-                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
-                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12"
-                                               IsVisible="{Binding !IsRenaming}" />
-                                    <TextBox Text="{Binding DraftName, Mode=TwoWay}" FontSize="12" Padding="6,3" CornerRadius="6"
-                                             MaxWidth="260" HorizontalAlignment="Left" IsVisible="{Binding IsRenaming}"
-                                             km:KeymapBinder.Context="SettingsLaunchProfileRenameFocus" />
-                                    <TextBlock Text="{Binding Where}" Foreground="{DynamicResource FgDim}" FontSize="10" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding Posture}" Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap" />
-                                </StackPanel>
-                                <Button Grid.Column="1" Content="New session" Classes="seg" VerticalAlignment="Center"
-                                        ToolTip.Tip="Open a new-session tab with this profile's options already applied."
-                                        Command="{Binding $parent[UserControl].DataContext.StartFromLaunchProfileCommand}" CommandParameter="{Binding}" />
-                                <Button Grid.Column="2" Content="Rename" Classes="seg" VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}"
-                                        Command="{Binding $parent[ItemsControl].DataContext.BeginRenameCommand}" CommandParameter="{Binding}" />
-                                <Button Grid.Column="2" Content="Save name" Classes="seg" VerticalAlignment="Center" IsVisible="{Binding IsRenaming}"
-                                        Command="{Binding $parent[ItemsControl].DataContext.CommitRenameCommand}" CommandParameter="{Binding}" />
-                                <Button Grid.Column="3" Content="Delete" Classes="seg" VerticalAlignment="Center"
-                                        Command="{Binding $parent[ItemsControl].DataContext.DeleteCommand}" CommandParameter="{Binding}" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+        <StackPanel DataContext="{Binding LaunchProfiles}" Spacing="16">
+            <TextBlock Classes="status" Text="{Binding Status}" />
 
-            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+            <ctl:SettingsSection Title="Saved profiles"
+                                 Hint="Applying a profile on the new-session screen fills in the launch controls; you can still change anything before starting. Deleting a profile never affects a session already launched from it.">
+                <StackPanel>
+                    <Border Classes="rows flat" IsVisible="{Binding HasProfiles}">
+                        <ItemsControl ItemsSource="{Binding Profiles}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Classes="row" Padding="0,9">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+                                            <ic:SymbolIcon Grid.Column="0" Symbol="Rocket" FontSize="18" Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" Margin="2,0,6,0" />
+                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" Classes="rowTitle" FontWeight="SemiBold" IsVisible="{Binding !IsRenaming}" />
+                                                <TextBox Text="{Binding DraftName, Mode=TwoWay}" FontSize="12" Padding="6,3" CornerRadius="6"
+                                                         MaxWidth="280" HorizontalAlignment="Left" IsVisible="{Binding IsRenaming}"
+                                                         km:KeymapBinder.Context="SettingsLaunchProfileRenameFocus" />
+                                                <TextBlock Text="{Binding Where}" Classes="meta" />
+                                                <TextBlock Text="{Binding Posture}" Classes="meta" />
+                                            </StackPanel>
+                                            <!-- Starting one is the whole point of having saved it, so it is the row's first action. -->
+                                            <Button Grid.Column="2" Content="New session" Classes="seg" FontSize="11" Padding="9,3" VerticalAlignment="Center"
+                                                    ToolTip.Tip="Open a new-session tab with this profile's options already applied"
+                                                    Command="{Binding $parent[UserControl].DataContext.StartFromLaunchProfileCommand}" CommandParameter="{Binding}" />
+                                            <Button Grid.Column="3" Content="Rename" Classes="chip" FontSize="11" Padding="9,3" VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.BeginRenameCommand}" CommandParameter="{Binding}" />
+                                            <Button Grid.Column="3" Content="Save name" Classes="seg" FontSize="11" Padding="9,3" VerticalAlignment="Center" IsVisible="{Binding IsRenaming}"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.CommitRenameCommand}" CommandParameter="{Binding}" />
+                                            <Button Grid.Column="4" Classes="danger" Content="Delete" FontSize="11" Padding="9,3" VerticalAlignment="Center"
+                                                    BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                    Command="{Binding $parent[ItemsControl].DataContext.DeleteCommand}" CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <ctl:EmptyState Symbol="Rocket" Title="No launch profiles yet" IsVisible="{Binding !HasProfiles}"
+                                    Text="Set up a new session the way you like it, then choose Save current as profile… on the new-session screen. It will be listed here, ready to start from.">
+                        <ctl:EmptyState.Action>
+                            <Button Classes="primary" Content="Open a new session" Command="{Binding $parent[UserControl].DataContext.NewTabCommand}" />
+                        </ctl:EmptyState.Action>
+                    </ctl:EmptyState>
+                </StackPanel>
+            </ctl:SettingsSection>
         </StackPanel>
     </StackPanel>
 </UserControl>

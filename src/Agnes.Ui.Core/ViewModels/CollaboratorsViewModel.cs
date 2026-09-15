@@ -47,6 +47,9 @@ public sealed class CollaboratorsViewModel : ObservableObject
         CheckCollaboratorEligibilityCommand = new AsyncRelayCommand<CollaboratorRowVm>(CheckCollaboratorEligibilityAsync);
         GrantCommand = new AsyncRelayCommand(GrantAsync);
         RevokeGrantCommand = new AsyncRelayCommand<AccessGrant>(RevokeGrantAsync);
+        Collaborators.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasCollaborators));
+        Grants.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasGrants));
+        GrantTargets.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasGrantTargets));
     }
 
     /// <summary>The host owner's collaborator directory.</summary>
@@ -186,7 +189,16 @@ public sealed class CollaboratorsViewModel : ObservableObject
         OnPropertyChanged(nameof(HasCollaborators));
         OnPropertyChanged(nameof(HasGrants));
         OnPropertyChanged(nameof(HasGrantTargets));
-        Status = $"{Collaborators.Count} collaborator(s), {Grants.Count} active grant(s).";
+        Status = (Collaborators.Count, Grants.Count) switch
+        {
+            (0, 0) => "Nobody has been added yet.",
+            (1, 0) => "One collaborator, no grants yet.",
+            (var c, 0) => $"{c} collaborators, no grants yet.",
+            (1, 1) => "One collaborator with one active grant.",
+            (var c, 1) => $"{c} collaborators, one active grant.",
+            (1, var g) => $"One collaborator, {g} active grants.",
+            var (c, g) => $"{c} collaborators, {g} active grants.",
+        };
     }
 
     private async Task AddCollaboratorAsync()
@@ -270,13 +282,15 @@ public sealed class CollaboratorsViewModel : ObservableObject
         try
         {
             var eligible = await host.CheckEligibilityAsync(row.GitHubLogin).ConfigureAwait(false);
-            _dispatcher.Post(() => row.EligibilityNote = eligible
-                ? "eligible for a grant"
-                : "not eligible right now");
+            _dispatcher.Post(() =>
+            {
+                row.IsEligible = eligible;
+                row.EligibilityNote = eligible ? "eligible for a grant" : "not eligible right now";
+            });
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => row.EligibilityNote = "couldn't check: " + ex.Message);
+            _dispatcher.Post(() => { row.IsEligible = null; row.EligibilityNote = "couldn't check: " + ex.Message; });
         }
     }
 
@@ -369,4 +383,24 @@ public sealed class CollaboratorRowVm : ObservableObject
     }
 
     public bool HasEligibilityNote => _eligibilityNote.Length > 0;
+
+    private bool? _isEligible;
+
+    /// <summary>The last answer as a fact the row can colour: true = eligible, false = not, null = unknown or failed.</summary>
+    public bool? IsEligible
+    {
+        get => _isEligible;
+        set
+        {
+            if (SetProperty(ref _isEligible, value))
+            {
+                OnPropertyChanged(nameof(IsKnownEligible));
+                OnPropertyChanged(nameof(IsKnownIneligible));
+            }
+        }
+    }
+
+    public bool IsKnownEligible => _isEligible == true;
+
+    public bool IsKnownIneligible => _isEligible == false;
 }
