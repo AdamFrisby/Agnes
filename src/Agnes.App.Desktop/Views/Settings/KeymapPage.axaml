@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:sys="using:System"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             xmlns:km="using:Agnes.App.Desktop.Keymaps"
+             x:Class="Agnes.App.Desktop.Views.Settings.KeymapPage">
+    <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Keymap" />
+            <Button Grid.Column="1" Content="Edit" Command="{Binding EditKeymapCommand}" Classes="seg" />
+        </Grid>
+        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Text="{Binding KeymapPath}" FontFamily="{StaticResource MonoFont}" />
+        <TextBlock Classes="scopeNote" TextWrapping="Wrap" Text="{Binding KeymapStatus}" />
+        <Border Background="{DynamicResource DangerSoft}" BorderBrush="{DynamicResource Danger}" BorderThickness="1"
+                CornerRadius="7" Padding="9,6" IsVisible="{Binding HasKeymapDiagnostic}">
+            <TextBlock Text="{Binding KeymapDiagnostic}" Foreground="{DynamicResource Danger}" TextWrapping="Wrap"
+                       FontFamily="{StaticResource MonoFont}" FontSize="11" />
+        </Border>
+
+        <TextBlock Text="Nothing matches that search." Foreground="{DynamicResource FgFaint}" FontSize="11"
+                   IsVisible="{Binding !HasKeymapMatches}" />
+
+        <ItemsControl ItemsSource="{Binding KeymapGroups}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Spacing="4" Margin="0,0,0,12">
+                        <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
+                        <ItemsControl ItemsSource="{Binding Commands}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}"
+                                            BorderThickness="1" CornerRadius="7" Padding="8,6" Margin="0,3"
+                                            ClipToBounds="True">
+                                        <Grid ColumnDefinitions="120,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10">
+                                            <TextBlock Grid.Column="0" Grid.RowSpan="3" Text="{Binding Gesture}"
+                                                       Foreground="{DynamicResource Fg}" FontSize="11"
+                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Grid.Row="0" Text="{Binding Description}"
+                                                       Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding CommandId}"
+                                                       Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" Grid.Row="2" Text="{Binding Context}"
+                                                       Foreground="{DynamicResource FgFaint}" FontSize="10"
+                                                       FontFamily="{StaticResource MonoFont}" TextWrapping="Wrap" />
+                                            <Button Grid.Column="2" Grid.RowSpan="3" Content="Copy JSON" Classes="chip"
+                                                    IsEnabled="{Binding CanCopyJson}" Click="OnCopyKeymapJson"
+                                                    VerticalAlignment="Center" Padding="8,4" FontSize="10"
+                                                    ToolTip.Tip="Copy this effective keybinding as a JSON rule" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </StackPanel>
+</UserControl>

@@ -1,0 +1,245 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ic="using:FluentIcons.Avalonia"
+        xmlns:conv="using:Avalonia.Data.Converters"
+        xmlns:ctl="using:Agnes.App.Desktop.Controls">
+    <!--
+      The settings kit: the shapes every settings page is built from, so fourteen pages read as one app.
+
+        SettingsPageHeader   title · purpose sentence · scope pill · actions (primary first, icon Refresh last)
+        SettingsSection      a card with a title, an info hint, a description and its own actions
+        EmptyState           icon · title · sentence · the first action, centred in a section
+        Border.rows          a list surface; each item is a Border.row with a hairline between rows
+        Border.tag           a small neutral label ("Owner", "stopped"); .on for the selected/current one,
+                             .working/.done/.attention/.error take the status hues (one meaning per hue)
+        TextBlock.rowTitle / .meta / .status / .status.error
+        Button.icon          an icon-only ghost button (Refresh, and nothing louder)
+
+      Roles only, never a hex — see Themes/Tokens.axaml.
+    -->
+    <Styles.Resources>
+        <ControlTheme x:Key="{x:Type ctl:SettingsPageHeader}" TargetType="ctl:SettingsPageHeader">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                        <StackPanel Grid.Column="0" Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <TextBlock Text="{TemplateBinding Title}" Classes="pageTitle" />
+                                <Border Classes="tag" VerticalAlignment="Center"
+                                        IsVisible="{TemplateBinding Scope, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}">
+                                    <TextBlock Text="{TemplateBinding Scope}" />
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Text="{TemplateBinding Purpose}" Classes="purpose"
+                                       IsVisible="{TemplateBinding Purpose, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                        </StackPanel>
+                        <ContentPresenter Grid.Column="1" Content="{TemplateBinding Actions}" VerticalAlignment="Top" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+
+        <ControlTheme x:Key="{x:Type ctl:SettingsSection}" TargetType="ctl:SettingsSection">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Classes="card" Padding="18,14,18,16">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"
+                                  IsVisible="{TemplateBinding Title, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}">
+                                <StackPanel Grid.Column="0" Spacing="3">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="{TemplateBinding Title}" Classes="sectionHead" />
+                                        <ctl:InfoHint Description="{TemplateBinding Hint}" Security="{TemplateBinding Security}"
+                                                      IsVisible="{TemplateBinding Hint, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                                    </StackPanel>
+                                    <TextBlock Text="{TemplateBinding Description}" Classes="meta" TextWrapping="Wrap"
+                                               IsVisible="{TemplateBinding Description, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                                </StackPanel>
+                                <ContentPresenter Grid.Column="1" Content="{TemplateBinding Actions}" VerticalAlignment="Top" />
+                            </Grid>
+                            <ContentPresenter Name="PART_ContentPresenter"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                        </StackPanel>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+
+        <ControlTheme x:Key="{x:Type ctl:EmptyState}" TargetType="ctl:EmptyState">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <StackPanel Spacing="8" HorizontalAlignment="Center" Margin="0,22,0,18" MaxWidth="440">
+                        <ic:SymbolIcon Symbol="{TemplateBinding Symbol}" FontSize="28" Foreground="{DynamicResource FgFaint}" HorizontalAlignment="Center" />
+                        <TextBlock Text="{TemplateBinding Title}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}"
+                                   HorizontalAlignment="Center" TextAlignment="Center" />
+                        <TextBlock Text="{TemplateBinding Text}" FontSize="12" Foreground="{DynamicResource FgDim}" TextWrapping="Wrap"
+                                   HorizontalAlignment="Center" TextAlignment="Center" LineHeight="17"
+                                   IsVisible="{TemplateBinding Text, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                        <ContentPresenter Content="{TemplateBinding Action}" HorizontalAlignment="Center" Margin="0,6,0,0" />
+                    </StackPanel>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+    </Styles.Resources>
+
+    <!-- Type -->
+    <Style Selector="TextBlock.pageTitle">
+        <Setter Property="FontSize" Value="19" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.purpose">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="LineHeight" Value="17" />
+        <Setter Property="MaxWidth" Value="720" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+    <Style Selector="TextBlock.sectionHead">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.rowTitle">
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.meta">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="TextBlock.meta.mono">
+        <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+        <Setter Property="FontSize" Value="10.5" />
+    </Style>
+    <!-- A page's one status sentence: what just happened, or why the page is empty. Errors take the error hue. -->
+    <Style Selector="TextBlock.status">
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.status.error">
+        <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+    </Style>
+    <Style Selector="TextBlock.status.done">
+        <Setter Property="Foreground" Value="{DynamicResource StatusDone}" />
+    </Style>
+
+    <!-- Lists: a surface with hairlines between rows, not a stack of bordered boxes. -->
+    <Style Selector="Border.rows">
+        <Setter Property="Background" Value="{DynamicResource Panel}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusLg}" />
+        <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.row">
+        <Setter Property="Padding" Value="14,10" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        <Setter Property="BorderThickness" Value="0,1,0,0" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- The first row has nothing above it to separate from. Item containers are ContentPresenters. -->
+    <Style Selector="ContentPresenter:nth-child(1) > Border.row">
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Border.row:pointerover">
+        <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+    </Style>
+    <!-- Rows inside a card (a section) sit flush: the card is the surface. -->
+    <Style Selector="Border.rows.flat">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="0" />
+    </Style>
+
+    <!-- Tags: a small neutral label. Status hues only for a state that means what the hue means. -->
+    <Style Selector="Border.tag">
+        <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusPill}" />
+        <Setter Property="Padding" Value="7,1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.tag > TextBlock">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.tag.on">
+        <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.tag.on > TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="Border.tag.working">
+        <Setter Property="Background" Value="{DynamicResource StatusWorkingSoft}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.tag.working > TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource StatusWorking}" />
+    </Style>
+    <Style Selector="Border.tag.done">
+        <Setter Property="Background" Value="{DynamicResource StatusDoneSoft}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.tag.done > TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource StatusDone}" />
+    </Style>
+    <Style Selector="Border.tag.attention">
+        <Setter Property="Background" Value="{DynamicResource StatusAttentionSoft}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.tag.attention > TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource StatusAttention}" />
+    </Style>
+    <Style Selector="Border.tag.error">
+        <Setter Property="Background" Value="{DynamicResource StatusErrorSoft}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.tag.error > TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource StatusError}" />
+    </Style>
+
+    <!-- An icon-only button for the quiet actions (Refresh). -->
+    <Style Selector="Button.icon">
+        <Setter Property="Padding" Value="7" />
+        <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.icon /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    </Style>
+    <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PanelAlt}" />
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Fg}" />
+    </Style>
+    <Style Selector="Button.icon ic|SymbolIcon">
+        <Setter Property="FontSize" Value="15" />
+    </Style>
+
+    <!-- Form fields: a label above, help below, both quiet. -->
+    <Style Selector="TextBlock.fieldLabel">
+        <Setter Property="Foreground" Value="{DynamicResource FgDim}" />
+        <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="TextBlock.help">
+        <Setter Property="Foreground" Value="{DynamicResource FgFaint}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+</Styles>

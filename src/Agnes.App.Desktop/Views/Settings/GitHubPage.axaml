@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ic="using:FluentIcons.Avalonia"
+             xmlns:sys="using:System"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:ctl="using:Agnes.App.Desktop.Controls"
+             xmlns:km="using:Agnes.App.Desktop.Keymaps"
+             x:Class="Agnes.App.Desktop.Views.Settings.GitHubPage">
+    <!-- GITHUB (host) -->
+    <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="GitHub accounts" />
+            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
+                          Description="Link one or more GitHub accounts so sandboxed agents can push. Each push uses the account that owns the repo, and mints a token scoped to that one repo, ~1h TTL."
+                          Security="These accounts live on the host you're connected to, not this device. App private keys never enter a sandbox; agents get only a short-lived, repo-scoped token at push time, all audited." />
+            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadCredentialStatusCommand}" Classes="seg" />
+            <Button Grid.Column="4" Content="Connect account" Command="{Binding ConnectGitHubCommand}" Classes="seg" />
+        </Grid>
+        <TextBlock Classes="scopeNote">
+            <Run Text="Linked on the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
+        </TextBlock>
+
+        <!-- The accounts themselves, which is what a page called "GitHub accounts" is for. Each
+             is unlinkable: unlinking drops the App key the host mints push tokens with, so it's
+             two-step rather than one irreversible click. -->
+        <ItemsControl ItemsSource="{Binding LinkedGitHubAccounts}" IsVisible="{Binding HasLinkedGitHubAccounts}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                        <TextBlock Grid.Column="0" Text="{Binding Account}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
+                        <Button Classes="danger" Grid.Column="1" Content="{Binding UnlinkLabel}" FontSize="11" Padding="9,3"
+                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                Command="{Binding $parent[ItemsControl].DataContext.UnlinkGitHubCommand}" CommandParameter="{Binding}" />
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="{Binding CredentialStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>
