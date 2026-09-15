@@ -85,6 +85,14 @@
         </ControlTheme>
     </Styles.Resources>
 
+    <!-- A section whose frame says "blocked on you" (a pairing request waiting) or "something failed". -->
+    <Style Selector="ctl|SettingsSection.attention /template/ Border.card">
+        <Setter Property="BorderBrush" Value="{DynamicResource StatusAttention}" />
+    </Style>
+    <Style Selector="ctl|SettingsSection.error /template/ Border.card">
+        <Setter Property="BorderBrush" Value="{DynamicResource StatusError}" />
+    </Style>
+
     <!-- Type -->
     <Style Selector="TextBlock.pageTitle">
         <Setter Property="FontSize" Value="19" />

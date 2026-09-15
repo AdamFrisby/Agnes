@@ -756,7 +756,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
 
                 IsConfirmingPrune = false;
                 OnPropertyChanged(nameof(PruneButtonLabel));
-                DevicesStatus = list.Count == 0 ? "No paired devices." : $"{list.Count} paired device(s).";
+                DevicesStatus = list.Count switch
+                {
+                    0 => "No devices are paired with this host yet.",
+                    1 => "One device paired.",
+                    var n => $"{n} devices paired.",
+                };
             });
         }
         catch (Exception ex)
@@ -1061,8 +1066,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public bool CatCollaborators => SettingsCategory == "collaborators";
 
     /// <summary>The connected host these host-scoped settings apply to (e.g. GitHub, Devices, Projects).</summary>
+    /// <summary>The connected host by the name it was saved under ("AIPC25"), falling back to the URL's
+    /// host part only when the record has no name — a scope pill that says "localhost" says nothing.</summary>
     public string ActiveHostName => ActiveHttpHost() is { } t
-        ? (_factory.DocumentDock?.ActiveDockable as SessionDocument)?.HostName ?? new Uri(t.Url).Host
+        ? (_factory.DocumentDock?.ActiveDockable as SessionDocument)?.HostName
+          ?? _hostStore.Load().FirstOrDefault(h => string.Equals(h.Url.TrimEnd('/'), t.Url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))?.Name
+          ?? new Uri(t.Url).Host
         : "no connected host";
 
     partial void OnSettingsCategoryChanged(string value)

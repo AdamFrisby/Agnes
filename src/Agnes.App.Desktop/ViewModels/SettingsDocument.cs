@@ -219,6 +219,16 @@ public sealed partial class DeviceRowVm : ObservableObject
     public string Id => Info.Id;
     public string Name => Info.Name;
 
+    /// <summary>A phone for a phone, a desktop for the rest — read off the name the device gave itself
+    /// ("TB310FU (Android)", "AIPC25 desktop"), since the host records no form factor.</summary>
+    public FluentIcons.Common.Symbol Glyph =>
+        Name.Contains("android", StringComparison.OrdinalIgnoreCase) || Name.Contains("iphone", StringComparison.OrdinalIgnoreCase)
+        || Name.Contains("pixel", StringComparison.OrdinalIgnoreCase) || Name.Contains("phone", StringComparison.OrdinalIgnoreCase)
+            ? FluentIcons.Common.Symbol.Phone
+            : Name.Contains("ipad", StringComparison.OrdinalIgnoreCase) || Name.Contains("tab", StringComparison.OrdinalIgnoreCase)
+                ? FluentIcons.Common.Symbol.Tablet
+                : FluentIcons.Common.Symbol.Desktop;
+
     /// <summary>True for the device this client is connected on — revoking it signs you out.</summary>
     public bool IsCurrentDevice => Info.IsCurrentDevice;
 

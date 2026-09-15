@@ -1,109 +1,147 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
-             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.DevicesPage">
-    <!-- DEVICES (host) -->
-    <StackPanel Spacing="12">
-        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Devices" />
-            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
-                          Description="Every client paired with this host has its own token. Revoke one to cut off a lost or unwanted device without affecting the others."
-                          Security="Tokens are stored only as hashes on the host. Anyone holding a valid token has full access to this host's sessions." />
-            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadDevicesCommand}" Classes="seg" />
-        </Grid>
-        <TextBlock Classes="scopeNote">
-            <Run Text="Paired with the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
-        </TextBlock>
+    <!-- DEVICES (host). The use cases, in the order a person meets them: pair a new phone; let in one
+         that is asking; find the stale one and revoke it; hand ownership over. -->
+    <StackPanel Spacing="16">
+        <ctl:SettingsPageHeader Title="Devices" Scope="{Binding ActiveHostName}"
+                                Purpose="Every phone, tablet and desktop paired with this host. Each holds its own token, so one can be cut off without touching the others.">
+            <ctl:SettingsPageHeader.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="primary" Content="Pair a device" Command="{Binding PairingQr.ShowCommand}"
+                            ToolTip.Tip="Show a one-time code the new device scans" />
+                    <Button Classes="icon" Command="{Binding LoadDevicesCommand}" ToolTip.Tip="Refresh">
+                        <ic:SymbolIcon Symbol="ArrowSync" />
+                    </Button>
+                </StackPanel>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-        <!-- Devices asking to join, above the paired list: this is the decision that
-             hasn't been made yet, and it's the one worth reading carefully. The digits are
-             derived from the asking device's own key, so the comparison is the security
-             check — approving without it proves nothing. -->
-        <StackPanel Spacing="8" IsVisible="{Binding HasPendingApprovals}">
-            <TextBlock Text="Asking to join" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" />
-            <ItemsControl ItemsSource="{Binding PendingApprovals}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
-                                CornerRadius="10" Padding="12,10" Margin="0,0,0,8">
-                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-                                <StackPanel Grid.Column="0" Spacing="3">
-                                    <TextBlock Text="{Binding DeviceName}" Foreground="{DynamicResource Fg}" FontSize="12" FontWeight="SemiBold" />
-                                    <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10">
-                                        <Run Text="Check it shows" /><Run Text=" " /><Run Text="{Binding VerificationCode}" FontFamily="{DynamicResource MonoFont}" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource Fg}" /><Run Text=" " /><Run Text="before approving" />
-                                    </TextBlock>
-                                </StackPanel>
-                                <Button Classes="danger" Grid.Column="1" Content="Decline" FontSize="11" Padding="9,3"
-                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                        Command="{Binding $parent[ItemsControl].DataContext.DenyDeviceCommand}" CommandParameter="{Binding RequestId}" />
-                                <!-- Two ways in, not one: a member is the ordinary answer, and handing over
-                                     the run of the host is a separate deliberate click that only an owner
-                                     is offered at all. -->
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                                    <Button Content="Let in as member" FontSize="11" Padding="9,3" Classes="seg"
-                                            ToolTip.Tip="It can open sessions and see its own"
-                                            Command="{Binding $parent[ItemsControl].DataContext.ApproveDeviceCommand}" CommandParameter="{Binding RequestId}" />
-                                    <Button Content="Let in as owner" FontSize="11" Padding="9,3" Classes="seg"
-                                            ToolTip.Tip="It sees everything on this host and can manage devices"
-                                            IsVisible="{Binding $parent[ItemsControl].DataContext.CanManageDevices}"
-                                            Command="{Binding $parent[ItemsControl].DataContext.ApproveDeviceAsOwnerCommand}" CommandParameter="{Binding RequestId}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
+        <TextBlock Classes="status" Text="{Binding DevicesStatus}" />
 
-        <!-- Last-seen is the field that answers "which of these is stale?", and the device you're
-             sitting at is marked because revoking it signs this app out. Revoke arms on the first
-             click and commits on the second. -->
-        <ItemsControl ItemsSource="{Binding Devices}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,3">
-                        <StackPanel Grid.Column="0">
-                            <StackPanel Orientation="Horizontal" Spacing="7">
-                                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
-                                <!-- The role, in neutral text. Deliberately not a status hue: those mean
-                                     working / blocked / done / failed, and a role is none of those. -->
-                                <Border Name="RoleChip" CornerRadius="8" Padding="7,1" Background="{DynamicResource PanelAlt}" VerticalAlignment="Center"
-                                        BorderBrush="{DynamicResource Line}" BorderThickness="1">
-                                    <TextBlock Text="{Binding RoleChip}" FontSize="10" Foreground="{DynamicResource FgDim}" />
+        <!-- The pairing code, on this page rather than a session tab: pairing a phone is the first thing
+             anyone does here. The code is a credential; hiding it revokes it. -->
+        <ctl:SettingsSection Title="Pair a device" IsVisible="{Binding PairingQr.IsPanelOpen}"
+                             Description="Open Agnes on the new device and scan this. It pairs the device with this host; the code works once, expires in a few minutes, and stops working when you hide it.">
+            <ctl:SettingsSection.Actions>
+                <Button Classes="chip" Content="Hide" Padding="10,4" FontSize="12" Command="{Binding PairingQr.HideCommand}" />
+            </ctl:SettingsSection.Actions>
+            <StackPanel Spacing="10">
+                <TextBlock Text="{Binding PairingQr.Error}" IsVisible="{Binding PairingQr.HasError}" Classes="status error" />
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="22" IsVisible="{Binding PairingQr.IsVisible}">
+                    <Border Grid.Column="0" Background="White" CornerRadius="8" Padding="10" VerticalAlignment="Top">
+                        <ctl:QrCodeView Matrix="{Binding PairingQr.Matrix}" Width="200" Height="200" Foreground="Black" Background="White" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Top">
+                        <TextBlock Classes="fieldLabel" Text="The device connects to" />
+                        <ComboBox ItemsSource="{Binding PairingQr.Addresses}" SelectedItem="{Binding PairingQr.Address, Mode=TwoWay}"
+                                  IsVisible="{Binding PairingQr.HasAddressChoice}" HorizontalAlignment="Stretch"
+                                  FontFamily="{DynamicResource MonoFont}" FontSize="11"
+                                  ToolTip.Tip="Addresses this host answers on. Pick the one the scanning device can reach." />
+                        <TextBox Text="{Binding PairingQr.Address, Mode=TwoWay}" FontFamily="{DynamicResource MonoFont}" FontSize="11"
+                                 Watermark="https://192.168.1.20:5081"
+                                 ToolTip.Tip="Any address the device can reach — a port-forward or a MagicDNS name the host can't see for itself." />
+                        <TextBlock Classes="help" Text="Switching the address re-encodes the same code; nothing is re-minted." />
+                        <TextBlock Classes="fieldLabel" Text="Or paste the link" Margin="0,6,0,0" />
+                        <SelectableTextBlock Text="{Binding PairingQr.DeepLink}" TextWrapping="Wrap" FontFamily="{DynamicResource MonoFont}"
+                                             FontSize="10" Foreground="{DynamicResource FgDim}" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </ctl:SettingsSection>
+
+        <!-- Devices asking to join, above the paired list: the decision not yet made is the one worth
+             reading carefully. The digits derive from the asking device's own key, so comparing them IS
+             the security check. -->
+        <ctl:SettingsSection Title="Asking to join" Classes="attention" IsVisible="{Binding HasPendingApprovals}"
+                             Description="Compare the digits with the ones the device is showing before you let it in.">
+            <Border Classes="rows flat">
+                <ItemsControl ItemsSource="{Binding PendingApprovals}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Classes="row" Padding="0,10">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                    <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding DeviceName}" Classes="rowTitle" FontWeight="SemiBold" />
+                                        <TextBlock Classes="meta">
+                                            <Run Text="Check it shows" /><Run Text=" " /><Run Text="{Binding VerificationCode}" FontFamily="{DynamicResource MonoFont}" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource Fg}" /><Run Text=" " /><Run Text="before approving" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <Button Classes="danger" Grid.Column="1" Content="Decline" FontSize="11" Padding="9,3"
+                                            BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                            Command="{Binding $parent[ItemsControl].DataContext.DenyDeviceCommand}" CommandParameter="{Binding RequestId}" />
+                                    <!-- Two ways in: a member is the ordinary answer; the run of the host is a
+                                         separate, deliberate click only an owner is offered. -->
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                                        <Button Content="Let in as member" FontSize="11" Padding="9,3" Classes="seg"
+                                                ToolTip.Tip="It can open sessions and see its own"
+                                                Command="{Binding $parent[ItemsControl].DataContext.ApproveDeviceCommand}" CommandParameter="{Binding RequestId}" />
+                                        <Button Content="Let in as owner" FontSize="11" Padding="9,3" Classes="seg"
+                                                ToolTip.Tip="It sees everything on this host and can manage devices"
+                                                IsVisible="{Binding $parent[ItemsControl].DataContext.CanManageDevices}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.ApproveDeviceAsOwnerCommand}" CommandParameter="{Binding RequestId}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+        </ctl:SettingsSection>
+
+        <!-- The paired list. Last-seen answers "which of these is stale?"; the device you're sitting at is
+             marked because revoking it signs this app out. Revoke arms on the first click, commits on the second. -->
+        <ctl:SettingsSection Title="Paired devices"
+                             Hint="Every client paired with this host has its own token. Revoke one to cut off a lost or unwanted device without affecting the others. An Owner sees every session on the host and manages devices; a Member opens sessions and sees its own."
+                             Security="Tokens are stored only as hashes on the host. Anyone holding a valid token has the access of that device's role.">
+            <ctl:SettingsSection.Actions>
+                <Button Name="PruneDevicesButton" Classes="chip" FontSize="11" Padding="10,4"
+                        IsVisible="{Binding CanManageDevices}" Content="{Binding PruneButtonLabel}"
+                        ToolTip.Tip="The host never removes this device, and never the last owner"
+                        Command="{Binding PruneDevicesCommand}" />
+            </ctl:SettingsSection.Actions>
+            <StackPanel Spacing="10">
+                <Border Classes="rows flat">
+                    <ItemsControl ItemsSource="{Binding Devices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="row" Padding="0,9">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                                        <ic:SymbolIcon Grid.Column="0" Symbol="{Binding Glyph}" FontSize="18" Foreground="{DynamicResource FgDim}"
+                                                       VerticalAlignment="Center" Margin="2,0,4,0" />
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <TextBlock Text="{Binding Name}" Classes="rowTitle" />
+                                                <!-- The role, in neutral text: a role is not a status, so no status hue. -->
+                                                <Border Name="RoleChip" Classes="tag">
+                                                    <TextBlock Text="{Binding RoleChip}" />
+                                                </Border>
+                                                <Border Classes="tag on" IsVisible="{Binding IsCurrentDevice}">
+                                                    <TextBlock Text="this device" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding DetailLine}" Classes="meta" />
+                                        </StackPanel>
+                                        <Button Name="RoleButton" Grid.Column="2" Classes="seg" Content="{Binding RoleActionLabel}" FontSize="11" Padding="9,3"
+                                                IsVisible="{Binding $parent[ItemsControl].DataContext.CanManageDevices}"
+                                                IsEnabled="{Binding CanChangeRole}" ToolTip.Tip="{Binding RoleActionTooltip}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.SetDeviceRoleCommand}" CommandParameter="{Binding}" />
+                                        <Button Classes="danger" Grid.Column="3" Content="{Binding RevokeLabel}" FontSize="11" Padding="9,3"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                Command="{Binding $parent[ItemsControl].DataContext.RevokeDeviceCommand}" CommandParameter="{Binding}" />
+                                    </Grid>
                                 </Border>
-                                <Border CornerRadius="8" Padding="7,1" Background="{DynamicResource AccentSoft}" VerticalAlignment="Center"
-                                        IsVisible="{Binding IsCurrentDevice}">
-                                    <TextBlock Text="this device" FontSize="10" Foreground="{DynamicResource Fg}" />
-                                </Border>
-                            </StackPanel>
-                            <TextBlock Text="{Binding DetailLine}" Foreground="{DynamicResource FgFaint}" FontSize="10" />
-                        </StackPanel>
-                        <Button Name="RoleButton" Grid.Column="1" Classes="seg" Content="{Binding RoleActionLabel}" FontSize="11" Padding="9,3"
-                                IsVisible="{Binding $parent[ItemsControl].DataContext.CanManageDevices}"
-                                IsEnabled="{Binding CanChangeRole}" ToolTip.Tip="{Binding RoleActionTooltip}"
-                                Command="{Binding $parent[ItemsControl].DataContext.SetDeviceRoleCommand}" CommandParameter="{Binding}" />
-                        <Button Classes="danger" Grid.Column="2" Content="{Binding RevokeLabel}" FontSize="11" Padding="9,3"
-                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                Command="{Binding $parent[ItemsControl].DataContext.RevokeDeviceCommand}" CommandParameter="{Binding}" />
-                    </Grid>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <!-- A member sees the same list, read-only, and is told why rather than left to
-             wonder where the other buttons went. -->
-        <TextBlock Name="OnlyOwnersNote" Text="{Binding OnlyOwnersNote}" IsVisible="{Binding ShowOnlyOwnersNote}"
-                   Foreground="{DynamicResource FgDim}" FontSize="11" TextWrapping="Wrap" />
-
-        <Button Name="PruneDevicesButton" Classes="seg" HorizontalAlignment="Left" FontSize="11" Padding="9,3"
-                IsVisible="{Binding CanManageDevices}" Content="{Binding PruneButtonLabel}"
-                ToolTip.Tip="The host never removes this device, and never the last owner"
-                Command="{Binding PruneDevicesCommand}" />
-
-        <TextBlock Text="{Binding DevicesStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+                <!-- A member sees the same list, read-only, and is told why rather than left to wonder where
+                     the other buttons went. -->
+                <TextBlock Name="OnlyOwnersNote" Text="{Binding OnlyOwnersNote}" IsVisible="{Binding ShowOnlyOwnersNote}" Classes="help" />
+            </StackPanel>
+        </ctl:SettingsSection>
     </StackPanel>
 </UserControl>

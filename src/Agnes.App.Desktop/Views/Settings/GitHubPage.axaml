@@ -1,41 +1,53 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ic="using:FluentIcons.Avalonia"
-             xmlns:sys="using:System"
-             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:ctl="using:Agnes.App.Desktop.Controls"
-             xmlns:km="using:Agnes.App.Desktop.Keymaps"
              x:Class="Agnes.App.Desktop.Views.Settings.GitHubPage">
-    <!-- GITHUB (host) -->
-    <StackPanel Spacing="12">
-        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
-            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="GitHub accounts" />
-            <ctl:InfoHint Grid.Column="1" Margin="6,0,0,0"
-                          Description="Link one or more GitHub accounts so sandboxed agents can push. Each push uses the account that owns the repo, and mints a token scoped to that one repo, ~1h TTL."
-                          Security="These accounts live on the host you're connected to, not this device. App private keys never enter a sandbox; agents get only a short-lived, repo-scoped token at push time, all audited." />
-            <Button Grid.Column="3" Content="Refresh" Command="{Binding LoadCredentialStatusCommand}" Classes="seg" />
-            <Button Grid.Column="4" Content="Connect account" Command="{Binding ConnectGitHubCommand}" Classes="seg" />
-        </Grid>
-        <TextBlock Classes="scopeNote">
-            <Run Text="Linked on the host:" /><Run Text=" " /><Run Text="{Binding ActiveHostName}" FontWeight="SemiBold" />
-        </TextBlock>
+    <!-- GITHUB (host). One job: link the accounts the host pushes as, and unlink one. -->
+    <StackPanel Spacing="16">
+        <ctl:SettingsPageHeader Title="GitHub accounts" Scope="{Binding ActiveHostName}"
+                                Purpose="The accounts this host pushes as. A sandboxed agent never holds the account: at push time it is handed a token scoped to that one repository, good for about an hour.">
+            <ctl:SettingsPageHeader.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="primary" Content="Connect account" Command="{Binding ConnectGitHubCommand}" />
+                    <Button Classes="icon" Command="{Binding LoadCredentialStatusCommand}" ToolTip.Tip="Refresh">
+                        <ic:SymbolIcon Symbol="ArrowSync" />
+                    </Button>
+                </StackPanel>
+            </ctl:SettingsPageHeader.Actions>
+        </ctl:SettingsPageHeader>
 
-        <!-- The accounts themselves, which is what a page called "GitHub accounts" is for. Each
-             is unlinkable: unlinking drops the App key the host mints push tokens with, so it's
-             two-step rather than one irreversible click. -->
-        <ItemsControl ItemsSource="{Binding LinkedGitHubAccounts}" IsVisible="{Binding HasLinkedGitHubAccounts}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,3">
-                        <TextBlock Grid.Column="0" Text="{Binding Account}" Foreground="{DynamicResource Fg}" FontSize="12" VerticalAlignment="Center" />
-                        <Button Classes="danger" Grid.Column="1" Content="{Binding UnlinkLabel}" FontSize="11" Padding="9,3"
-                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                                Command="{Binding $parent[ItemsControl].DataContext.UnlinkGitHubCommand}" CommandParameter="{Binding}" />
-                    </Grid>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <TextBlock Classes="status" Text="{Binding CredentialStatus}" />
 
-        <TextBlock Text="{Binding CredentialStatus}" Foreground="{DynamicResource FgFaint}" FontSize="11" TextWrapping="Wrap" />
+        <ctl:SettingsSection Title="Linked accounts"
+                             Hint="Link one or more GitHub accounts so sandboxed agents can push. Each push uses the account that owns the repository and mints a token scoped to that one repository, about an hour long."
+                             Security="These accounts live on the host you're connected to, not this device. App private keys never enter a sandbox; agents get only a short-lived, repo-scoped token at push time, all audited.">
+            <StackPanel>
+                <!-- Unlinking drops the App key the host mints push tokens with, so it is two clicks, not one. -->
+                <Border Classes="rows flat" IsVisible="{Binding HasLinkedGitHubAccounts}">
+                    <ItemsControl ItemsSource="{Binding LinkedGitHubAccounts}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Classes="row" Padding="0,9">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                        <ic:SymbolIcon Grid.Column="0" Symbol="PersonCircle" FontSize="18" Foreground="{DynamicResource FgDim}" VerticalAlignment="Center" Margin="2,0,4,0" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Account}" Classes="rowTitle" />
+                                        <Button Classes="danger" Grid.Column="2" Content="{Binding UnlinkLabel}" FontSize="11" Padding="9,3"
+                                                BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                Command="{Binding $parent[ItemsControl].DataContext.UnlinkGitHubCommand}" CommandParameter="{Binding}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+                <ctl:EmptyState Symbol="PersonAdd" Title="No account linked yet" IsVisible="{Binding !HasLinkedGitHubAccounts}"
+                                Text="Link a GitHub account and sandboxed agents can push to the repositories it can reach — without ever seeing its credentials.">
+                    <ctl:EmptyState.Action>
+                        <Button Classes="primary" Content="Connect account" Command="{Binding ConnectGitHubCommand}" />
+                    </ctl:EmptyState.Action>
+                </ctl:EmptyState>
+            </StackPanel>
+        </ctl:SettingsSection>
     </StackPanel>
 </UserControl>
