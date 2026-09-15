@@ -22,6 +22,10 @@ public sealed partial class MainWindowViewModel
 
     public IReadOnlyList<SettingsNavGroup> SettingsNavGroups => _settingsNavGroups ??= BuildNavGroups();
 
+    /// <summary>Whether the open page's settings live on a host this app is not connected to right now.
+    /// Shown once, above the page, instead of each page saying it in its own words.</summary>
+    public bool ShowNoHostNotice => ActiveHttpHost() is null && NavGroupPlan[1].Ids.Contains(SettingsCategory, StringComparer.Ordinal);
+
     private IReadOnlyList<SettingsNavGroup>? _settingsNavGroups;
 
     private IReadOnlyList<SettingsNavGroup> BuildNavGroups()

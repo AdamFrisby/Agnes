@@ -1100,6 +1100,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         OnPropertyChanged(nameof(CatProfiles));
         OnPropertyChanged(nameof(CatCollaborators));
         OnPropertyChanged(nameof(ActiveHostName));
+        OnPropertyChanged(nameof(ShowNoHostNotice));
         // Opening a page IS the request to see what's on it. Nothing here should need a Refresh click to
         // show its contents for the first time — a page that opens blank tells you nothing about your host.
         if (value == "projects" && SelectedProject is null)

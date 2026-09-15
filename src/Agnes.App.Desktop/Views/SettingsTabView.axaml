@@ -102,6 +102,15 @@
             <!-- CONTENT -->
             <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
                 <StackPanel MaxWidth="1000" Margin="32,24,32,48" Spacing="14" HorizontalAlignment="Stretch">
+                    <!-- Host pages with no host: one notice here, so no page has to open blank. -->
+                    <Border Classes="card" Padding="14,10" IsVisible="{Binding ShowNoHostNotice}"
+                            BorderBrush="{DynamicResource StatusAttention}">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <ic:SymbolIcon Symbol="PlugDisconnected" FontSize="16" Foreground="{DynamicResource StatusAttention}" VerticalAlignment="Center" />
+                            <TextBlock Text="These settings live on a host. Open a session on one and this page fills in."
+                                       FontSize="12" Foreground="{DynamicResource Fg}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
                     <settings:AppearancePage IsVisible="{Binding CatAppearance}" />
                     <settings:KeymapPage IsVisible="{Binding CatKeymap}" />
                     <settings:GitHubPage IsVisible="{Binding CatGitHub}" />
