@@ -575,6 +575,29 @@ public sealed class SessionManager : IAsyncDisposable
     }
 
     /// <summary>
+    /// The USB devices a new sandbox gets: the project's list, when the operator allows passthrough at all
+    /// (<c>Agnes:Security:AllowUsbPassthrough</c>). A project on a host that does not is told so in the log
+    /// and gets none — a project file can raise the floor, never the ceiling.
+    /// </summary>
+    private IReadOnlyList<UsbDeviceSelector> UsbDevicesFor(string sessionId, Projects.Project? project)
+    {
+        if (project is null || project.UsbDevices.Count == 0)
+        {
+            return [];
+        }
+
+        if (!_security.AllowUsbPassthrough)
+        {
+            _logger.LogWarning(
+                "Session {SessionId}: project '{Project}' asks for {Count} USB device(s) but this host does not allow USB passthrough (set Agnes:Security:AllowUsbPassthrough=true). Launching without them.",
+                sessionId, project.Name, project.UsbDevices.Count);
+            return [];
+        }
+
+        return project.UsbDevices;
+    }
+
+    /// <summary>
     /// Refuses a graphical session unless the operator has opted in (<c>Agnes:Security:AllowGraphicalSandboxes</c>).
     /// A no-op for a headless session. Loud rather than silent: a caller that asked for a screen and got a
     /// blank one would burn a whole turn discovering it.
@@ -883,6 +906,7 @@ public sealed class SessionManager : IAsyncDisposable
                         // Null = headless, which is every session that didn't ask. The display is fixed at
                         // launch because the guest's framebuffer is: it cannot be added to a running VM.
                         Display = graphical ? GraphicalDisplay.Default : null,
+                        UsbDevices = UsbDevicesFor(sessionId, project),
                     }, cancellationToken).ConfigureAwait(false);
             }
 

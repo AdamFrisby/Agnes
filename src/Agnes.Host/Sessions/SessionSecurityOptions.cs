@@ -67,6 +67,15 @@ public sealed record SessionSecurityOptions
     public bool AllowGraphicalSandboxes { get; init; }
 
     /// <summary>
+    /// Whether a project may pass host <b>USB devices</b> through to its sandboxes (a phone on adb, a board
+    /// on a serial port). Defaults to <c>false</c>: a passed-through device is the host's hardware handed
+    /// raw to a VM an agent controls — everything adb can do to that phone, the agent can do — and the host
+    /// loses the device for as long as the sandbox holds it. An operator turns this on knowingly; a project
+    /// file on a host that has not is ignored with a warning, never honoured.
+    /// </summary>
+    public bool AllowUsbPassthrough { get; init; }
+
+    /// <summary>
     /// If non-empty, an allowlist (by MCP server <em>name</em>, case-insensitive) of the only servers permitted
     /// to run with <c>RunAt=Host</c> — i.e. execute a command on the host, outside any sandbox. A host-run
     /// server whose name isn't listed is silently dropped from a session's MCP set (a notice is surfaced), on
@@ -137,6 +146,7 @@ public sealed record SessionSecurityOptions
             RequirePermissionPrompts = configuration.GetValue("Agnes:Security:RequirePermissionPrompts", false),
             AllowUnsandboxedSkipPermissions = configuration.GetValue("Agnes:Security:AllowUnsandboxedSkipPermissions", false),
             AllowGraphicalSandboxes = configuration.GetValue("Agnes:Security:AllowGraphicalSandboxes", false),
+            AllowUsbPassthrough = configuration.GetValue("Agnes:Security:AllowUsbPassthrough", false),
             AllowedHostMcpServers = configuration.GetSection("Agnes:Security:AllowedHostMcpServers").Get<string[]>() ?? [],
             HostMcpPolicy = Enum.TryParse<HostMcpPolicy>(
                 configuration["Agnes:Security:HostMcpPolicy"], ignoreCase: true, out var hostMcpPolicy)

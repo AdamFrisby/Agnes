@@ -36,6 +36,11 @@ public sealed record Project
     /// host's configured default — a project only states the caps it wants to differ.</summary>
     public SandboxResourceOverride? SandboxResources { get; init; }
 
+    /// <summary>Host USB devices this project's sandboxes get (a test phone on adb). Honoured only when the
+    /// operator has set <c>Agnes:Security:AllowUsbPassthrough</c>; applied to a session's VM when it is
+    /// created, so an edit reaches new sessions, not the ones already running.</summary>
+    public IReadOnlyList<UsbDeviceSelector> UsbDevices { get; init; } = [];
+
     /// <summary>The MCP servers available to this project's sessions.</summary>
     public IReadOnlyList<McpServerInfo> McpServers { get; init; } = [];
 

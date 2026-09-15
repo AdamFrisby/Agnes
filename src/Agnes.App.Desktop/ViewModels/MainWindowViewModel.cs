@@ -223,6 +223,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         SaveProjectCommand = new AsyncRelayCommand(SaveProjectAsync);
         AddProjectMcpCommand = new RelayCommand(AddProjectMcp);
         RemoveProjectMcpCommand = new RelayCommand<McpServerInfo>(m => { if (m is not null) { ProjectMcp.Remove(m); } });
+        AddProjectUsbCommand = new RelayCommand(AddProjectUsb);
+        RemoveProjectUsbCommand = new RelayCommand<UsbDeviceDto>(d => { if (d is not null) { ProjectUsb.Remove(d); } });
+        LoadHostUsbCommand = new AsyncRelayCommand(LoadHostUsbAsync);
         SettingsCategories =
         [
             // This device (client-global)
@@ -1554,9 +1557,31 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
     public IAsyncRelayCommand SaveProjectCommand { get; }
     public IRelayCommand AddProjectMcpCommand { get; }
     public IRelayCommand<McpServerInfo> RemoveProjectMcpCommand { get; }
+    public IRelayCommand AddProjectUsbCommand { get; }
+    public IRelayCommand<UsbDeviceDto> RemoveProjectUsbCommand { get; }
+    public IAsyncRelayCommand LoadHostUsbCommand { get; }
 
     public ObservableCollection<ProjectDto> Projects { get; } = [];
     public ObservableCollection<McpServerInfo> ProjectMcp { get; } = [];
+
+    /// <summary>The USB devices the project being edited hands to its sandboxes.</summary>
+    public ObservableCollection<UsbDeviceDto> ProjectUsb { get; } = [];
+
+    /// <summary>What the host has plugged in right now — the picker's choices. Empty until asked, and empty
+    /// on a host whose sandbox provider cannot list them (the ids can still be typed).</summary>
+    public ObservableCollection<HostUsbDeviceDto> HostUsbDevices { get; } = [];
+
+    [ObservableProperty] private HostUsbDeviceDto? _selectedHostUsb;
+
+    /// <summary>Typed fallback: "0e8d:201c" or "0e8d:201c/SERIAL", for a device that is not plugged in yet.</summary>
+    [ObservableProperty] private string _newUsbId = string.Empty;
+
+    /// <summary>One line under the picker: how many devices the host offered, or why it offered none.</summary>
+    [ObservableProperty] private string _hostUsbStatus = string.Empty;
+
+    /// <summary>False once the host has said passthrough is switched off, so the editor can say a selection
+    /// will be ignored until the operator turns it on, rather than letting a person find out from a log.</summary>
+    [ObservableProperty] private bool _hostUsbAllowed = true;
     public ObservableCollection<string> GitHubAccounts { get; } = [];
 
     [ObservableProperty]
@@ -1639,7 +1664,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
            && ProjMcpApproval == p.Defaults.McpApproval
            && ProjAccount == (p.CredentialAccount ?? string.Empty)
            && ProjRepo == (p.Repo ?? string.Empty)
-           && ProjectMcp.Select(m => m.Id).SequenceEqual(p.McpServers.Select(m => m.Id), StringComparer.Ordinal);
+           && ProjectMcp.Select(m => m.Id).SequenceEqual(p.McpServers.Select(m => m.Id), StringComparer.Ordinal)
+           && ProjectUsb.Select(UsbKey).SequenceEqual((p.UsbDevices ?? []).Select(UsbKey), StringComparer.Ordinal);
+
+    private static string UsbKey(UsbDeviceDto d) => $"{d.VendorId}:{d.ProductId}/{d.Serial}";
 
     private void SelectProject(ProjectDto? project)
     {
@@ -1681,6 +1709,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         ProjRepo = project.Repo ?? string.Empty;
         ProjectMcp.Clear();
         foreach (var m in project.McpServers) { ProjectMcp.Add(m); }
+        ProjectUsb.Clear();
+        foreach (var d in project.UsbDevices ?? []) { ProjectUsb.Add(d); }
     }
 
     /// <summary>True while a project save + sandbox-image rebuild is in flight, so the UI can disable Save
@@ -1708,6 +1738,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             SandboxCpu = PositiveOrNull(ProjCpu),
             SandboxMemoryGiB = PositiveOrNull(ProjMemoryGiB),
             SandboxDiskGiB = PositiveOrNull(ProjDiskGiB),
+            UsbDevices = ProjectUsb.ToArray(),
         };
 
         try
@@ -1731,6 +1762,98 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         finally
         {
             _dispatcher.Post(() => IsSavingProject = false);
+        }
+    }
+
+    /// <summary>Adds the picked host device, or else the typed id, to the project — once per device.</summary>
+    private void AddProjectUsb()
+    {
+        UsbDeviceDto? device = null;
+        if (SelectedHostUsb is { } picked)
+        {
+            device = new UsbDeviceDto(picked.VendorId, picked.ProductId, picked.Serial, picked.Label);
+        }
+        else if (TryParseUsbId(NewUsbId, out var vendor, out var product, out var serial))
+        {
+            device = new UsbDeviceDto(vendor, product, serial, null);
+        }
+
+        if (device is null)
+        {
+            HostUsbStatus = "Pick a device, or type its id as vendor:product (four hex digits each), e.g. 0e8d:201c.";
+            return;
+        }
+
+        if (ProjectUsb.Any(d => UsbKey(d) == UsbKey(device)))
+        {
+            HostUsbStatus = $"{device.Label ?? device.VendorId + ":" + device.ProductId} is already on this project.";
+            return;
+        }
+
+        ProjectUsb.Add(device);
+        NewUsbId = string.Empty;
+        SelectedHostUsb = null;
+        HostUsbStatus = HostUsbAllowed
+            ? "Added. Save the project; sessions opened after that get the device."
+            : "Added — but this host has USB passthrough switched off, so it will be ignored until the operator enables it.";
+    }
+
+    /// <summary>"0e8d:201c" or "0e8d:201c/HA20HAXW" → lowercase ids and an optional serial.</summary>
+    internal static bool TryParseUsbId(string text, out string vendor, out string product, out string? serial)
+    {
+        vendor = product = string.Empty;
+        serial = null;
+        var trimmed = (text ?? string.Empty).Trim();
+        var slash = trimmed.IndexOf('/', StringComparison.Ordinal);
+        if (slash >= 0)
+        {
+            serial = trimmed[(slash + 1)..].Trim();
+            trimmed = trimmed[..slash];
+            if (serial.Length == 0) { serial = null; }
+        }
+
+        var parts = trimmed.Split(':');
+        if (parts.Length != 2) { return false; }
+        static bool Hex4(string s) => s.Length == 4 && s.All(char.IsAsciiHexDigit);
+        if (!Hex4(parts[0]) || !Hex4(parts[1])) { return false; }
+        vendor = parts[0].ToLowerInvariant();
+        product = parts[1].ToLowerInvariant();
+        return true;
+    }
+
+    private async Task LoadHostUsbAsync()
+    {
+        var target = ActiveHttpHost();
+        if (target is null)
+        {
+            HostUsbStatus = "Open a session on the host first.";
+            return;
+        }
+
+        try
+        {
+            var view = await ProjectManagement.ListUsbDevicesAsync(target.Url, target.Token, target.Http);
+            _dispatcher.Post(() =>
+            {
+                HostUsbDevices.Clear();
+                if (view is null)
+                {
+                    HostUsbAllowed = true;
+                    HostUsbStatus = "This host's sandbox provider can't list USB devices; type an id instead.";
+                    return;
+                }
+
+                HostUsbAllowed = view.Allowed;
+                foreach (var d in view.Devices) { HostUsbDevices.Add(d); }
+                var count = view.Devices.Count == 1 ? "1 device" : $"{view.Devices.Count} devices";
+                HostUsbStatus = view.Allowed
+                    ? $"{count} on {ActiveHostName}."
+                    : $"{count} on {ActiveHostName} — passthrough is switched off there (Agnes:Security:AllowUsbPassthrough), so a selection is saved but not applied.";
+            });
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Post(() => HostUsbStatus = "Couldn't list the host's USB devices: " + Explain(ex));
         }
     }
 

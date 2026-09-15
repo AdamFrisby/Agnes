@@ -22,6 +22,7 @@ historical behaviour, so upgrading changes nothing until you turn it on.
 | `RequirePermissionPrompts` | bool | `false` | The host **forbids autonomous / `--dangerously-skip-permissions` sessions** entirely — every tool call must be prompted. The strongest autonomy control. |
 | `AllowUnsandboxedSkipPermissions` | bool | `false` | Whether autonomous mode may run **outside** a sandbox. Default `false`: dangerous autonomous mode is confined to a sandbox unless you explicitly opt in. |
 | `AllowGraphicalSandboxes` | bool | `false` | Whether a session may ask for a **graphical** sandbox — a VM with a real display the agent can see and drive over `computer_*`, and a person can watch over the display channel. Default `false`, and deliberately so: a screen is a second, much wider interface into the guest than a shell; capture means the host is continuously holding pixels of whatever the guest is showing (a logged-in browser session, a password manager); and an agent that can move a mouse can click through confirmations no permission prompt ever sees. Implies a sandbox — the display exists at the VM boundary, so "a screen but on the host" is refused rather than silently downgraded. See [display-channel.md](display-channel.md) for the channel's own auth, the control arbiter and the input budget. |
+| `AllowUsbPassthrough` | bool | `false` | Whether a **project** may pass host USB devices through to its sandbox VMs (a test phone on adb, a board on a serial port). Default `false`: a passed-through device is the host's hardware handed raw to a VM an agent controls — everything adb can do to that phone, the agent can do — and the host loses the device for as long as the sandbox holds it. A project on a host that has not opted in launches without its devices and says so in the log. See [USB passthrough](#usb-passthrough-agnessecurityallowusbpassthrough). |
 | `AllowedHostMcpServers` | string[] | `[]` (unrestricted) | Allowlist (by MCP server **name**, case-insensitive) of the only servers permitted to run with `RunAt=Host` — i.e. execute a command **on the host, outside the sandbox**. A non-allowlisted host server is dropped from the session's MCP set (with a visible notice) on both the direct and the sandbox-forward paths. Sandbox-run servers are unaffected. |
 | `SessionIsolation` | `Shared` \| `PerUser` \| `PerGroup` | `Shared` | How sessions are scoped to callers. `Shared` = today's behaviour (host owner sees all; others need an explicit share). `PerUser` also lets a caller reach the sessions **they own** (matched across their devices). `PerGroup` also lets **group members** reach a session (read/drive, not manage) via an `IGroupProvider`. The host owner stays an admin super-user in every mode; these are additive grants on top of shares. |
 | `RestrictConfigToOwner` | bool | `false` | Restricts host-wide config mutations — sandbox image manifest, project config, MCP registry, sandbox delete/reap — to the **host owner** rather than any paired device. |
@@ -315,6 +316,34 @@ The approval flow is reachable from both ends in both clients:
 Both approver surfaces show the digits *next to the buttons*, because approving without comparing them
 is the one way to use this mechanism and get nothing from it. Declining is the same size and distance
 as approving: "I wasn't expecting this" should be the cheap answer.
+
+## USB passthrough (`Agnes:Security:AllowUsbPassthrough`)
+
+A project can list host USB devices its sandboxes get (Settings › Projects › *USB devices*, or
+`UsbDevices` on the project record). Each becomes an Incus `usb` device on the session's VM before it
+starts — for a VM, a QEMU usb-host on the instance's xHCI controller — and follows the physical device
+across a replug. What that means for the operator:
+
+- **The device is the guest's, raw.** Passthrough is the whole device, not a filtered protocol: an
+  agent with a phone on adb can install, sideload, wipe app data and read whatever the phone's debugging
+  authorisation allows. Attach only devices you would hand the agent in person. The switch is off by
+  default so a project file synced from somewhere else cannot claim hardware on its own.
+- **The host loses it while a session holds it.** QEMU claims the device, so the host's own `adb` or
+  serial tools do not see it until the sandbox is stopped or deleted. A host `adb` server that already
+  has the device open must be stopped first (`adb kill-server`), or the attach fails with a busy device.
+- **One device, one VM.** A fork of a session (a copy-on-write clone of its VM) never inherits a USB
+  device: the provider strips every inherited `agnes-usb-*` device from the clone before it starts, the
+  same way it re-points the clone's display bus.
+- **Owner-gated, like the rest of the project.** Editing a project's device list is a config change
+  (`RestrictConfigToOwner` applies), and the picker's host inventory (`GET /sandbox/usb-devices`, read
+  from Incus's `/1.0/resources`) is behind the same gate. Members see the list; only an Owner changes it.
+- **Applied at create, not on resume.** A device added to a project reaches sessions opened after the
+  save. A running or paused session keeps the devices its VM was created with; Incus persists them on
+  the instance.
+
+The selector is a vendor and product id (`0e8d:201c`, as `lsusb` prints them) plus an optional serial
+for telling identical units apart. Both ids are validated to four lowercase hex digits before they
+touch argv; the label a person saw in the picker is stored for display and never sent to Incus.
 
 ## The fleet proxy (`/fleet`)
 

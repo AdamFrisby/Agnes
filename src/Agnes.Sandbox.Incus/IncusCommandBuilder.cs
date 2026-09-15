@@ -87,6 +87,54 @@ internal static class IncusCommandBuilder
         return r;
     }
 
+    /// <summary>The device-name prefix every passed-through USB device gets, so a clone can find and shed them.</summary>
+    internal const string UsbDevicePrefix = "agnes-usb-";
+
+    /// <summary>
+    /// <c>config device add &lt;instance&gt; agnes-usb-N usb vendorid=… productid=… [serial=…]</c>: Incus's
+    /// own USB device type, which for a VM is a QEMU usb-host on the instance's xHCI controller and follows
+    /// the device across a replug (Incus watches udev). Works on a stopped or a running instance.
+    /// </summary>
+    internal static IReadOnlyList<string> BuildUsbAdd(IncusOptions o, string instance, int index, UsbDeviceSelector device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        IncusInputValidation.ValidateInstanceName(instance);
+        IncusInputValidation.ValidateUsbId(device.VendorId, nameof(device.VendorId));
+        IncusInputValidation.ValidateUsbId(device.ProductId, nameof(device.ProductId));
+        var r = Prefix(o, "config", "device", "add", instance, UsbDevicePrefix + index.ToString(CultureInfo.InvariantCulture), "usb");
+        r.Add($"vendorid={device.VendorId}");
+        r.Add($"productid={device.ProductId}");
+        if (device.Serial is { Length: > 0 } serial)
+        {
+            IncusInputValidation.ValidateUsbSerial(serial);
+            r.Add($"serial={serial}");
+        }
+
+        return r;
+    }
+
+    /// <summary><c>config device list &lt;instance&gt;</c>: one device name per line.</summary>
+    internal static IReadOnlyList<string> BuildDeviceList(IncusOptions o, string instance)
+    {
+        IncusInputValidation.ValidateInstanceName(instance);
+        return Prefix(o, "config", "device", "list", instance);
+    }
+
+    /// <summary><c>query &lt;path&gt;</c>: a raw GET against the Incus API, for the endpoints the CLI has no
+    /// verb for (host resources). The path is fixed by the caller, never assembled from input. Deliberately
+    /// not through <see cref="Prefix"/>: <c>query</c> is the one verb that refuses <c>--project</c> ("--project
+    /// cannot be used with the query command"), and the resources it reads are server-wide anyway.</summary>
+    internal static IReadOnlyList<string> BuildQuery(IncusOptions o, string apiPath)
+    {
+        IncusInputValidation.ValidateOptions(o);
+        if (apiPath is null || !apiPath.StartsWith("/1.0/", StringComparison.Ordinal) || apiPath.Any(char.IsControl))
+        {
+            throw new ArgumentException("An Incus API path starts with /1.0/.", nameof(apiPath));
+        }
+
+        return [o.BinaryPath, "query", apiPath];
+    }
+
     internal static IReadOnlyList<string> BuildDeviceRemove(IncusOptions o, string instance, string device)
     {
         IncusInputValidation.ValidateInstanceName(instance);

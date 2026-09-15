@@ -140,6 +140,34 @@ Committed under `recordings/`, usable as `RecordedHost` fixtures:
    CLI starts its interactive TUI and emits nothing on a pipe. Added.
 
 
+## USB passthrough: a phone in the guest
+
+A project's *USB devices* list becomes Incus `usb` devices on the session's VM. Checking it live needs
+the switch on, a host `adb` that has let go of the device, and a look inside the guest:
+
+```bash
+adb kill-server                                  # the host's adb holds the device open; QEMU cannot take it while it does
+Agnes__Security__AllowUsbPassthrough=true Agnes__Sandbox__Incus__InstancePrefix=agnes-usb- … dotnet run --project src/Agnes.Host
+# Settings › Projects › USB devices › refresh → pick the phone → Add device → Save project; open a sandboxed session.
+sg incus-admin -c "incus --project default config device show agnes-usb-<id>"   # agnes-usb-0: type usb, vendorid, productid
+sg incus-admin -c "incus --project default exec agnes-usb-<id> -- sh -c 'cat /sys/bus/usb/devices/*/idVendor'"  # the phone's vendor id
+sg incus-admin -c "incus --project default exec agnes-usb-<id> -- lsusb"        # if usbutils is in the image
+```
+
+Inside the guest the phone is an ordinary USB device: `apt-get install adb` (or `android-tools-adb` on
+the project's apt list, so the baked image has it) and `adb devices` shows it, with the usual first-use
+authorisation prompt on the phone. Unplugging and replugging mid-session brings it back to the guest
+on its own — Incus watches udev for the selector. When the session's VM is stopped or deleted the host
+sees the device again; restart the host's `adb` server then.
+
+Verified on the Lenovo tablet (2026-09-15): the provider's VM enumerated it as `1-4 0e8d:201c Lenovo
+Tab M9` on the guest's xHCI controller 47 s after `init`, and an `adb` installed in the guest reached
+the tablet's `adbd` (it answered *unauthorized* — the guest's fresh key, awaiting the on-screen prompt,
+which is the handshake working). Two things only the live run showed: `incus query` refuses `--project`
+("--project cannot be used with the query command"), so the resources read is the one argv built
+without the prefix; and saving a project through the REST route starts that project's image bake, so
+a probe daemon that only wants the device list should stop at `GET /sandbox/usb-devices`.
+
 ## The graphical probe: all four layers at once
 
 `tests/Agnes.Integration.Tests/LiveGraphicalDisplayProbe.cs` is the end-to-end test for the

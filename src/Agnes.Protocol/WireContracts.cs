@@ -617,7 +617,29 @@ public sealed record ProjectDto(
     // Per-project sandbox resource overrides in friendly units; null inherits the host's configured default.
     int? SandboxCpu = null,
     int? SandboxMemoryGiB = null,
-    int? SandboxDiskGiB = null);
+    int? SandboxDiskGiB = null,
+    // Host USB devices passed through to this project's sandboxes; null from an older client means "unchanged".
+    IReadOnlyList<UsbDeviceDto>? UsbDevices = null);
+
+/// <summary>A USB device a project hands to its sandboxes: vendor/product id (four lowercase hex digits
+/// each), the serial when two identical units must be told apart, and the label the picker showed.</summary>
+public sealed record UsbDeviceDto(string VendorId, string ProductId, string? Serial = null, string? Label = null);
+
+/// <summary>A USB device present on the host right now (<c>GET /sandbox/usb-devices</c>), for the picker.
+/// <paramref name="Classes"/> are the interface classes ("Mass Storage", "Human Interface Device") so a person
+/// can recognise their own keyboard and leave it alone.</summary>
+public sealed record HostUsbDeviceDto(
+    string VendorId,
+    string ProductId,
+    string Label,
+    string? Serial,
+    int Bus,
+    int Address,
+    IReadOnlyList<string> Classes)
+{
+    /// <summary>"0e8d:201c" — the ids as lsusb prints them.</summary>
+    public string Id => $"{VendorId}:{ProductId}";
+}
 
 /// <summary>
 /// One host's on-disk checkout of a workspace as the client sees it (multi-machine workspace model,
@@ -815,6 +837,10 @@ public sealed record SandboxRecordDto(
 
 /// <summary>The manifest plus its current bake status.</summary>
 public sealed record SandboxImageView(SandboxImageDto Manifest, SandboxImageStatusDto Status);
+
+/// <summary>What <c>GET /sandbox/usb-devices</c> answers: whether this host allows passthrough at all
+/// (<c>Agnes:Security:AllowUsbPassthrough</c>), and the devices it has right now.</summary>
+public sealed record HostUsbDevicesView(bool Allowed, IReadOnlyList<HostUsbDeviceDto> Devices);
 
 /// <summary>A point-in-time replay: all events up to <see cref="HeadSequence"/>.</summary>
 public sealed record SessionSnapshot(

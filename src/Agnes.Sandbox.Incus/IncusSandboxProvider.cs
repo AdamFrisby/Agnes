@@ -11,7 +11,7 @@ namespace Agnes.Sandbox.Incus;
 /// wait for the guest ready marker. VMs are managed via <c>user.agnes.*</c> config keys and persist
 /// until explicitly deleted.
 /// </summary>
-public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilder, ISandboxCloner
+public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilder, ISandboxCloner, ISandboxUsbCatalog
 {
     public const string ProviderId = "incus";
 
@@ -65,6 +65,8 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
             await ConfigureDisplayAsync(name, cancellationToken).ConfigureAwait(false);
         }
 
+        await AttachUsbAsync(name, spec.UsbDevices, cancellationToken).ConfigureAwait(false);
+
         // Optional bind mount of the host working directory.
         if (spec.HostWorkingDirectory is { Length: > 0 } hostDir && Directory.Exists(hostDir))
         {
@@ -93,6 +95,55 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         await _cli.RunCheckedAsync("display raw.apparmor",
             IncusCommandBuilder.BuildConfigSet(_options, name, "raw.apparmor", _displayBus.RawAppArmor()),
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Hands each selected host USB device to the instance as its own Incus <c>usb</c> device, before the
+    /// VM starts so the guest enumerates it at boot like any other. Incus keeps watching udev afterwards, so
+    /// a device unplugged and plugged back in mid-session comes back to the guest on its own.
+    /// </summary>
+    private async Task AttachUsbAsync(string name, IReadOnlyList<UsbDeviceSelector> devices, CancellationToken cancellationToken)
+    {
+        for (var i = 0; i < devices.Count; i++)
+        {
+            _logger.LogInformation("Passing USB device {Device} through to Incus sandbox {Name}", devices[i].Id, name);
+            await _cli.RunCheckedAsync("usb add", IncusCommandBuilder.BuildUsbAdd(_options, name, i, devices[i]), cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Removes every passed-through USB device a copy inherited from its source. A physical device can be
+    /// held by one VM at a time; a clone that kept the source's would either fail to start or take the
+    /// device away from the session that was using it.
+    /// </summary>
+    private async Task DetachInheritedUsbAsync(string name, CancellationToken cancellationToken)
+    {
+        var (code, stdout, _) = await _cli.RunAsync(IncusCommandBuilder.BuildDeviceList(_options, name), cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (code != 0)
+        {
+            return;
+        }
+
+        foreach (var device in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (device.StartsWith(IncusCommandBuilder.UsbDevicePrefix, StringComparison.Ordinal))
+            {
+                await _cli.RunAsync(IncusCommandBuilder.BuildDeviceRemove(_options, name, device), cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<HostUsbDevice>> ListUsbDevicesAsync(CancellationToken cancellationToken = default)
+    {
+        var (code, stdout, stderr) = await _cli.RunAsync(IncusCommandBuilder.BuildQuery(_options, "/1.0/resources"), cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (code != 0)
+        {
+            _logger.LogWarning("Could not list the host's USB devices through Incus (exit {Code}): {Stderr}", code, stderr.Trim());
+            return [];
+        }
+
+        return IncusUsbCatalog.Parse(stdout);
     }
 
     private ISandbox CreateHandle(string name, GraphicalDisplay? display)
@@ -134,6 +185,10 @@ public sealed class IncusSandboxProvider : ISandboxProvider, ISandboxImageBuilde
         {
             await ConfigureDisplayAsync(name, cancellationToken).ConfigureAwait(false);
         }
+
+        // Likewise any USB device: the source is still holding it. The clone gets only what its own spec asks for.
+        await DetachInheritedUsbAsync(name, cancellationToken).ConfigureAwait(false);
+        await AttachUsbAsync(name, spec.UsbDevices, cancellationToken).ConfigureAwait(false);
 
         await _cli.RunCheckedAsync("start", IncusCommandBuilder.BuildStart(_options, name), cancellationToken: cancellationToken).ConfigureAwait(false);
 

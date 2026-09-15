@@ -863,4 +863,40 @@ public class SandboxWiringTests
             try { File.Delete(regPath); } catch { /* best effort */ }
         }
     }
+
+    /// <summary>
+    /// A project's USB devices reach the sandbox spec only on a host whose operator allows passthrough;
+    /// elsewhere the project file is ignored (with a warning), the way a project's graphical default is.
+    /// </summary>
+    [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 0)]
+    public async Task Project_usb_devices_reach_the_spec_only_when_the_host_allows_passthrough(bool allowed, int expected)
+    {
+        var projectsFile = Path.Combine(Path.GetTempPath(), $"agnes-proj-{Guid.NewGuid():n}.json");
+        try
+        {
+            var projects = new Agnes.Host.Projects.ProjectStore(projectsFile);
+            projects.Save(projects.Default() with { UsbDevices = [new UsbDeviceSelector("0e8d", "201c", Label: "tablet")] });
+
+            var sandboxes = new FakeSandboxProvider();
+            await using var manager = new SessionManager(
+                TestPluginRegistries.Agents(new ScriptedAgentAdapter()), new InMemoryEventStore(), new NullBroadcaster(), NullLoggerFactory.Instance,
+                TestPluginRegistries.Sandboxes(sandboxes), [new FakeCredentialProvider()], projects: projects,
+                security: new SessionSecurityOptions { AllowUsbPassthrough = allowed });
+
+            await manager.OpenSessionAsync("scripted", "/tmp/project");
+
+            var spec = Assert.Single(sandboxes.Specs);
+            Assert.Equal(expected, spec.UsbDevices.Count);
+            if (allowed)
+            {
+                Assert.Equal("0e8d:201c", spec.UsbDevices[0].Id);
+            }
+        }
+        finally
+        {
+            if (File.Exists(projectsFile)) File.Delete(projectsFile);
+        }
+    }
 }

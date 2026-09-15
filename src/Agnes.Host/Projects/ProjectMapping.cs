@@ -22,7 +22,8 @@ public static class ProjectMapping
         project.Repo,
         project.SandboxResources?.CpuCount,
         ToGiB(project.SandboxResources?.MemoryBytes),
-        ToGiB(project.SandboxResources?.DiskBytes));
+        ToGiB(project.SandboxResources?.DiskBytes),
+        project.UsbDevices.Select(d => new UsbDeviceDto(d.VendorId, d.ProductId, d.Serial, d.Label)).ToArray());
 
     /// <param name="existing">The stored project this DTO is replacing, when there is one. Fields a future
     /// wire DTO cannot yet express are carried across from it, so editing a project from a client that
@@ -42,7 +43,28 @@ public static class ProjectMapping
             dto.Defaults.McpApproval,
             dto.Defaults.Graphical),
         SandboxResources = ToOverride(dto),
+        // A client that predates the field sends null; keep what the host has rather than emptying it.
+        UsbDevices = dto.UsbDevices is null
+            ? existing?.UsbDevices ?? []
+            : dto.UsbDevices.Select(ToSelector).Where(d => d is not null).Select(d => d!).ToArray(),
     };
+
+    /// <summary>A wire device to a selector, normalised (ids lowercased and trimmed) — or null when the ids
+    /// are not four hex digits, which is dropped here rather than rejected downstream by argv validation.</summary>
+    private static UsbDeviceSelector? ToSelector(UsbDeviceDto d)
+    {
+        var vendor = d.VendorId?.Trim().ToLowerInvariant() ?? string.Empty;
+        var product = d.ProductId?.Trim().ToLowerInvariant() ?? string.Empty;
+        static bool Hex4(string s) => s.Length == 4 && s.All(char.IsAsciiHexDigitLower);
+        if (!Hex4(vendor) || !Hex4(product))
+        {
+            return null;
+        }
+
+        var serial = string.IsNullOrWhiteSpace(d.Serial) ? null : d.Serial.Trim();
+        var label = string.IsNullOrWhiteSpace(d.Label) ? null : d.Label.Trim();
+        return new UsbDeviceSelector(vendor, product, serial, label is { Length: > 120 } l ? l[..120] : label);
+    }
 
     private static SandboxResourceOverride? ToOverride(ProjectDto dto)
     {

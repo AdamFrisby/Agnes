@@ -2277,6 +2277,20 @@ app.MapPost("/sandbox/image/rebuild", (HttpContext ctx) =>
     return Results.Ok(SandboxImageMapping.Status(images.Status));
 });
 
+// The host's USB devices, for a project's passthrough picker. Only a provider that can enumerate them
+// (Incus reads /1.0/resources) answers; otherwise 404 and the client offers no picker. Gated like the
+// project edit it serves. Reported empty, with a hint, when passthrough is switched off on this host.
+app.MapGet("/sandbox/usb-devices", async (HttpContext ctx, CancellationToken ct) =>
+{
+    if (!AuthorizedForConfig(ctx, tokens)) return Results.Unauthorized();
+    if (app.Services.GetService<Agnes.Sandbox.ISandboxProvider>() is not Agnes.Sandbox.ISandboxUsbCatalog catalog) return Results.NotFound();
+    var devices = await catalog.ListUsbDevicesAsync(ct);
+    var allowed = app.Services.GetRequiredService<Agnes.Host.Sessions.SessionSecurityOptions>().AllowUsbPassthrough;
+    return Results.Ok(new HostUsbDevicesView(
+        allowed,
+        devices.Select(d => new HostUsbDeviceDto(d.VendorId, d.ProductId, d.Label, d.Serial, d.Bus, d.Address, d.Classes)).ToArray()));
+});
+
 // ---- managed sandboxes: list / delete / resume / reap (Settings › Sandboxes) ----
 var sessionMgr = app.Services.GetService<Agnes.Host.Sessions.SessionManager>();
 

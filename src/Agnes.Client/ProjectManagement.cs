@@ -28,6 +28,32 @@ public static class ProjectManagement
         }
     }
 
+    /// <summary>
+    /// The host's USB devices, for the passthrough picker — or null when this host has no provider that can
+    /// list them (the editor then offers no picker; ids can still be typed). <see cref="HostUsbDevicesView.Allowed"/>
+    /// says whether the host would honour a selection at all.
+    /// </summary>
+    public static async Task<HostUsbDevicesView?> ListUsbDevicesAsync(
+        string hostUrl, string token, HttpClient? httpClient = null, CancellationToken cancellationToken = default)
+    {
+        var (client, owned) = Client(httpClient, token);
+        try
+        {
+            using var response = await client.GetAsync(hostUrl.TrimEnd('/') + "/sandbox/usb-devices", cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return null;
+            }
+
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<HostUsbDevicesView>(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (owned) client.Dispose();
+        }
+    }
+
     /// <summary>The project a working directory would use (non-creating preview).</summary>
     public static async Task<ProjectDto?> ResolveAsync(
         string hostUrl, string token, string workingDirectory, HttpClient? httpClient = null, CancellationToken cancellationToken = default)

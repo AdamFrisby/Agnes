@@ -68,6 +68,27 @@ internal static class IncusInputValidation
         }
     }
 
+    /// <summary>A USB vendor or product id: exactly four lowercase hex digits, the form Incus matches on.</summary>
+    internal static void ValidateUsbId(string value, string parameterName)
+    {
+        if (value is null || value.Length != 4 || value.Any(c => !char.IsAsciiHexDigitLower(c)))
+        {
+            throw new ArgumentException("A USB vendor/product id is exactly four lowercase hex digits.", parameterName);
+        }
+    }
+
+    /// <summary>A USB serial as a device reports it: printable ASCII, no whitespace, at most 128 characters.
+    /// Rides in a <c>key=value</c> argv element, so a leading dash is harmless, but an <c>=</c> would split the
+    /// pair and is refused along with anything a descriptor should never contain.</summary>
+    internal static void ValidateUsbSerial(string value)
+    {
+        if (value is null || value.Length is < 1 or > 128
+            || value.Any(c => c is <= ' ' or > '~' or '=' or ',' or '"' or '\\'))
+        {
+            throw new ArgumentException("A USB serial is 1–128 printable ASCII characters with no spaces, '=', ',' or quotes.", nameof(value));
+        }
+    }
+
     internal static void ValidateAbsoluteHostPath(string value)
     {
         if (value is null || value.Length is < 1 or > 4096

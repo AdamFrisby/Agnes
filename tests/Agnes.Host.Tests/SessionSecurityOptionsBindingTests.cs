@@ -38,6 +38,7 @@ public class SessionSecurityOptionsBindingTests
                 ("Agnes:Security:HostMcpPolicy", "AllowList"),
                 ("Agnes:Security:SessionIsolation", "PerUser"),
                 ("Agnes:Security:RestrictConfigToOwner", "true"),
+                ("Agnes:Security:AllowUsbPassthrough", "true"),
                 ("Agnes:Security:MaxConcurrentSandboxes", "4"),
                 ("Agnes:Security:TranscriptRetentionDays", "30")),
             isDevelopment: false);
@@ -49,12 +50,23 @@ public class SessionSecurityOptionsBindingTests
         Assert.True(options.RequirePermissionPrompts);
         Assert.True(options.AllowUnsandboxedSkipPermissions);
         Assert.True(options.AllowGraphicalSandboxes);
+        Assert.True(options.AllowUsbPassthrough);
         Assert.Equal(["github"], options.AllowedHostMcpServers);
         Assert.Equal(HostMcpPolicy.AllowList, options.HostMcpPolicy);
         Assert.Equal(SessionIsolation.PerUser, options.SessionIsolation);
         Assert.True(options.RestrictConfigToOwner);
         Assert.Equal(4, options.MaxConcurrentSandboxes);
         Assert.Equal(30, options.TranscriptRetentionDays);
+    }
+
+    /// <summary>USB passthrough is the same shape: off until the operator says otherwise.</summary>
+    [Fact]
+    public void Usb_passthrough_is_off_until_the_operator_turns_it_on()
+    {
+        Assert.False(SessionSecurityOptions.FromConfiguration(Config(), isDevelopment: false).AllowUsbPassthrough);
+        Assert.True(SessionSecurityOptions
+            .FromConfiguration(Config(("Agnes:Security:AllowUsbPassthrough", "true")), isDevelopment: false)
+            .AllowUsbPassthrough);
     }
 
     /// <summary>The switch that was missing, on its own: on when set, and off by default.</summary>

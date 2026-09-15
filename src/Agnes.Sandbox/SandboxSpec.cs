@@ -26,6 +26,12 @@ public sealed record SandboxSpec
 
     /// <summary>The display to launch with, or null for a headless sandbox (the default). See <c>Display.cs</c>.</summary>
     public GraphicalDisplay? Display { get; init; }
+
+    /// <summary>Host USB devices to pass through to the guest — a phone on adb, a board on its serial
+    /// port. Each is attached as its own device at create time and follows a replug; the guest gets the
+    /// raw device and the host loses it for as long as the sandbox holds it. Empty by default, and a
+    /// fork's spec leaves it empty on purpose: two VMs cannot share one device.</summary>
+    public IReadOnlyList<UsbDeviceSelector> UsbDevices { get; init; } = [];
 }
 
 /// <summary>Resource caps for a sandbox VM. Defaults match CodeyBox (2 CPU / 12 GiB / 16 GiB).</summary>

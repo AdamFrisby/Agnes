@@ -736,6 +736,59 @@
                                     </StackPanel>
                                 </Grid>
 
+                                <!-- USB passthrough: host devices handed raw to this project's VMs -->
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Classes="fieldLabel" Text="USB devices" VerticalAlignment="Center" />
+                                    <ctl:InfoHint Description="Host USB devices passed through to this project's sandbox VMs — a phone on adb, a board on a serial port. The guest sees the real device; the host loses it while a session holds it. Applies to sessions opened after saving."
+                                                  Security="The agent gets everything the device allows: adb can install, wipe app data and sideload. Only devices you would hand to the agent. The host operator must also allow passthrough (Agnes:Security:AllowUsbPassthrough); a fork of a session never inherits a device." />
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding ProjectUsb}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
+                                                <ic:SymbolIcon Grid.Column="0" Symbol="UsbPlug" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource FgDim}" />
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Label, TargetNullValue=USB device}" Foreground="{DynamicResource Fg}" FontSize="12" />
+                                                    <TextBlock Foreground="{DynamicResource FgFaint}" FontSize="10" FontFamily="{StaticResource MonoFont}">
+                                                        <Run Text="{Binding VendorId}" /><Run Text=":" /><Run Text="{Binding ProductId}" /><Run Text="{Binding Serial, StringFormat=' · {0}', TargetNullValue=''}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <Button Classes="danger" Grid.Column="2" Content="Remove" FontSize="11" Padding="9,3"
+                                                        BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                                                        Command="{Binding $parent[ItemsControl].DataContext.RemoveProjectUsbCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Border Background="{DynamicResource PanelAlt}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="9">
+                                    <StackPanel Spacing="6">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <ComboBox Grid.Column="0" ItemsSource="{Binding HostUsbDevices}" SelectedItem="{Binding SelectedHostUsb, Mode=TwoWay}"
+                                                      PlaceholderText="Devices plugged into the host…" HorizontalAlignment="Stretch" FontSize="12">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding Label}" FontSize="12" />
+                                                            <TextBlock Text="{Binding Id}" FontSize="11" Foreground="{DynamicResource FgFaint}" FontFamily="{StaticResource MonoFont}" VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding Classes[0]}" FontSize="10" Foreground="{DynamicResource FgFaint}" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <Button Grid.Column="1" Classes="chip" Padding="8,4" Command="{Binding LoadHostUsbCommand}" ToolTip.Tip="List the devices plugged into the host">
+                                                <ic:SymbolIcon Symbol="ArrowSync" FontSize="14" />
+                                            </Button>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <TextBox Grid.Column="0" Text="{Binding NewUsbId, Mode=TwoWay}" Watermark="or type vendor:product, e.g. 0e8d:201c (add /serial to pin one unit)"
+                                                     FontSize="12" Padding="8,5" CornerRadius="6" FontFamily="{StaticResource MonoFont}" />
+                                            <Button Grid.Column="1" Content="Add device" Command="{Binding AddProjectUsbCommand}" Classes="seg" FontSize="12" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding HostUsbStatus}" Foreground="{DynamicResource FgFaint}" FontSize="10" TextWrapping="Wrap"
+                                                   IsVisible="{Binding HostUsbStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    </StackPanel>
+                                </Border>
+
                                 <Border Height="1" Background="{DynamicResource Line}" />
                                 <TextBlock Text="MCP servers" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Fg}" />
                                 <ItemsControl ItemsSource="{Binding ProjectMcp}">
