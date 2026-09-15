@@ -59,7 +59,12 @@ public class PromptLibraryViewModelTests
         await vm.RefreshAsync();
 
         Assert.Single(vm.RegistrySkills);
-        Assert.Contains("rate limited", vm.SkillStatus, StringComparison.OrdinalIgnoreCase);
+        // The count and the failure are two lines: the skills that loaded are still counted, and the registry
+        // that did not answer is named — by its name and status, not the client library's whole complaint.
+        Assert.Equal("One skill on offer.", vm.SkillStatus);
+        Assert.True(vm.HasSkillFailure);
+        Assert.Contains("couldn't be reached", vm.SkillFailure, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("429", vm.SkillFailure, StringComparison.Ordinal);
     }
 
     [Fact]

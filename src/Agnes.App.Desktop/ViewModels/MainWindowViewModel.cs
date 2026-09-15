@@ -2119,14 +2119,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             _dispatcher.Post(() =>
             {
                 McpCatalogResults.Clear();
-                foreach (var hit in results.Hits)
+                foreach (var hit in McpCatalogShaping.Distinct(results.Hits))
                 {
                     var installed = McpServers.Any(s => string.Equals(s.Name, hit.Entry.Name, StringComparison.OrdinalIgnoreCase));
                     McpCatalogResults.Add(new McpCatalogRowVm(hit, installed));
                 }
 
                 OnPropertyChanged(nameof(HasMcpCatalogResults));
-                McpCatalogStatus = DescribeCatalog(results, McpCatalogQuery ?? string.Empty);
+                McpCatalogStatus = DescribeCatalog(McpCatalogResults.Count, McpCatalogQuery ?? string.Empty);
+                McpCatalogFailure = Agnes.Ui.Core.ViewModels.CatalogFailureText.Sentence(results.Failures);
             });
         }
         catch (Exception ex)
@@ -2139,18 +2140,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         }
     }
 
-    private static string DescribeCatalog(Agnes.Abstractions.CatalogResults<Agnes.Abstractions.McpCatalogEntry> results, string query)
+    private static string DescribeCatalog(int shown, string query) => shown switch
     {
-        var found = results.Hits.Count switch
-        {
-            0 when query.Length > 0 => $"Nothing matched '{query}'.",
-            0 => "The registries are offering nothing right now.",
-            var n when query.Length > 0 => $"{n} match(es) for '{query}'.",
-            var n => $"{n} server(s) offered.",
-        };
-
-        return results.Failures.Count == 0 ? found : $"{found} Couldn't reach: {string.Join("; ", results.Failures)}";
-    }
+        0 when query.Length > 0 => $"Nothing matched '{query}'.",
+        0 => "The registries are offering nothing right now.",
+        1 when query.Length > 0 => $"One match for '{query}'.",
+        var n when query.Length > 0 => $"{n} matches for '{query}'.",
+        1 => "One server on offer.",
+        var n => $"{n} servers on offer.",
+    };
 
     /// <summary>
     /// Installs a catalogued server. The host resolves the entry against its registry again and maps it into a
@@ -2182,7 +2180,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var target = ActiveHttpHost();
         if (target is null)
         {
-            _dispatcher.Post(() => McpPresets.Clear());
+            _dispatcher.Post(() => { McpPresets.Clear(); RebuildPresetGroups(); });
             return;
         }
 
@@ -2199,6 +2197,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
                     var installed = McpServers.Any(s => string.Equals(s.Name, p.Name, StringComparison.OrdinalIgnoreCase));
                     McpPresets.Add(new McpPresetRowVm(p, installed));
                 }
+
+                RebuildPresetGroups();
             });
         }
         catch (Exception ex)
@@ -2447,7 +2447,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
         var target = ActiveHttpHost();
         if (target is null)
         {
-            _dispatcher.Post(() => { McpServers.Clear(); McpStatus = "Open a session on a host to manage its MCP servers."; });
+            _dispatcher.Post(() => { McpServers.Clear(); RebuildMcpServerRows(); McpStatus = "Open a session on a host to manage its MCP servers."; });
             return;
         }
 
@@ -2459,7 +2459,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, ITabControll
             {
                 McpServers.Clear();
                 foreach (var s in list) { McpServers.Add(s); }
-                McpStatus = list.Count == 0 ? "No MCP servers configured." : $"{list.Count} MCP server(s).";
+                RebuildMcpServerRows();
+                McpStatus = DescribeMcpServers(list);
             });
         }
         catch (Exception ex)

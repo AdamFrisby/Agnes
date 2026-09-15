@@ -44,6 +44,15 @@ public sealed class PromptLibraryViewModel : ObservableObject
     /// <summary>The host's saved prompts.</summary>
     public ObservableCollection<LibraryPrompt> Prompts { get; } = [];
 
+    /// <summary>The saved prompts as the page lists them: each with the slash tokens bound to it, so the
+    /// row answers "how do I invoke this?" without a trip to the templates section.</summary>
+    public ObservableCollection<PromptRow> PromptRows { get; } = [];
+
+    public bool HasPrompts => Prompts.Count > 0;
+    public bool HasTemplates => Templates.Count > 0;
+    public bool HasSkills => Skills.Count > 0;
+    public bool HasRegistrySkills => RegistrySkills.Count > 0;
+
     /// <summary>The host's templates, each flagged if its referenced prompt is missing.</summary>
     public ObservableCollection<PromptTemplateRow> Templates { get; } = [];
 
@@ -77,6 +86,14 @@ public sealed class PromptLibraryViewModel : ObservableObject
     /// <summary>What the skills area has to say for itself — including <em>why</em> it's empty, which may be
     /// "no registry is configured", "nothing matched", or "one of them is rate-limited right now".</summary>
     public string SkillStatus { get => _skillStatus; set => SetProperty(ref _skillStatus, value); }
+
+    private string _skillFailure = string.Empty;
+
+    /// <summary>Registries that could not answer, one short sentence each — shown apart from the count, in
+    /// the error hue, so a rate-limited index is visible without hiding the skills that did load.</summary>
+    public string SkillFailure { get => _skillFailure; set { if (SetProperty(ref _skillFailure, value)) { OnPropertyChanged(nameof(HasSkillFailure)); } } }
+
+    public bool HasSkillFailure => SkillFailure.Length > 0;
 
     public bool HasSkillRegistries => SkillRegistries.Count > 0;
 
@@ -218,12 +235,18 @@ public sealed class PromptLibraryViewModel : ObservableObject
                     RegistrySkills.Add(new RegistrySkillRow(hit.CatalogId, hit.CatalogName, hit.Entry, IsInstalled(hit.Entry.Title)));
                 }
 
+                OnPropertyChanged(nameof(HasRegistrySkills));
                 SkillStatus = Describe(results, query);
+                SkillFailure = CatalogFailureText.Sentence(results.Failures);
             });
         }
         catch (Exception ex)
         {
-            _dispatcher.Post(() => SkillStatus = "Couldn't reach the skill registries: " + ex.Message);
+            _dispatcher.Post(() =>
+            {
+                SkillStatus = string.Empty;
+                SkillFailure = "The skill registries couldn't be reached: " + ex.Message;
+            });
         }
         finally
         {
@@ -232,17 +255,15 @@ public sealed class PromptLibraryViewModel : ObservableObject
     }
 
     private static string Describe(CatalogResults<RegistrySkillEntry> results, string query)
-    {
-        var found = results.Hits.Count switch
+        => results.Hits.Count switch
         {
             0 when query.Length > 0 => $"Nothing matched '{query}'.",
             0 => "The registries are offering nothing right now.",
-            var n when query.Length > 0 => $"{n} match(es) for '{query}'.",
-            var n => $"{n} skill(s) offered.",
+            1 when query.Length > 0 => $"One match for '{query}'.",
+            var n when query.Length > 0 => $"{n} matches for '{query}'.",
+            1 => "One skill on offer.",
+            var n => $"{n} skills on offer.",
         };
-
-        return results.Failures.Count == 0 ? found : $"{found} Couldn't reach: {string.Join("; ", results.Failures)}";
-    }
 
     /// <summary>Fetches a registry skill into the host's library, then refreshes so it appears as installed.</summary>
     private async Task InstallSkillAsync(RegistrySkillRow? row)
@@ -291,6 +312,8 @@ public sealed class PromptLibraryViewModel : ObservableObject
             Skills.Add(s);
         }
 
+        OnPropertyChanged(nameof(HasSkills));
+
         SkillRegistries.Clear();
         foreach (var r in registries)
         {
@@ -304,10 +327,13 @@ public sealed class PromptLibraryViewModel : ObservableObject
         if (registries.Count == 0)
         {
             RegistrySkills.Clear();
+            OnPropertyChanged(nameof(HasRegistrySkills));
             SkillStatus = "No skill registry is available on this host, so nothing can be installed from here — they may all be turned off (Agnes:Registries:…:Enabled).";
+            SkillFailure = string.Empty;
         }
 
-        Status = $"{Prompts.Count} prompt(s), {Templates.Count} template(s), {Skills.Count} skill(s).";
+        var summary = $"{CatalogFailureText.Count(Prompts.Count, "saved prompt")}, {CatalogFailureText.Count(Templates.Count, "slash template")} and {CatalogFailureText.Count(Skills.Count, "skill")}.";
+        Status = char.ToUpperInvariant(summary[0]) + summary[1..];
     }
 
     private void RebuildTemplates(IReadOnlyList<PromptTemplate> templates)
@@ -318,6 +344,17 @@ public sealed class PromptLibraryViewModel : ObservableObject
             var prompt = Prompts.FirstOrDefault(p => p.Id == t.PromptId);
             Templates.Add(new PromptTemplateRow(t, prompt?.Title));
         }
+
+        // The prompt rows carry their tokens, so they are rebuilt whenever the templates are.
+        PromptRows.Clear();
+        foreach (var p in Prompts)
+        {
+            var tokens = templates.Where(t => t.PromptId == p.Id).Select(t => "/" + t.SlashToken.TrimStart('/')).ToArray();
+            PromptRows.Add(new PromptRow(p, tokens));
+        }
+
+        OnPropertyChanged(nameof(HasTemplates));
+        OnPropertyChanged(nameof(HasPrompts));
     }
 
     private void BeginNewPrompt()
@@ -486,7 +523,11 @@ public sealed class RegistrySkillRow
 
     public string Title => Entry.Title;
 
-    public string Description => Entry.Description ?? "No description.";
+    /// <summary>The registry's description — or "No description." when it is blank or a stray YAML block
+    /// marker (">" or "|-"), which some SKILL.md front matter leaks when the description spans lines.</summary>
+    public string Description => Entry.Description?.Trim() is { Length: > 0 } d && d is not (">" or ">-" or "|" or "|-")
+        ? d
+        : "No description.";
 
     public string Source => Entry.Source;
 
@@ -542,6 +583,9 @@ public sealed class PromptTemplateRow
     public string? PromptTitle { get; }
 
     public string SlashToken => Template.SlashToken;
+
+    /// <summary>"/review" — the token as it is typed, whether or not it was saved with the slash.</summary>
+    public string SlashLabel => "/" + Template.SlashToken.TrimStart('/');
 
     public bool SendImmediately => Template.Behavior == TemplateBehavior.InsertAndSend;
 
