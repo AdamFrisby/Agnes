@@ -16,7 +16,7 @@
          own load context, so shipping copies here would at best waste space and at worst be ignored.
          Keeping them out of the output is also what makes the drop folder a handful of files. -->
     <ProjectReference Include="..\Agnes.Ui.Core\Agnes.Ui.Core.csproj" Private="false" ExcludeAssets="runtime" />
-    <PackageReference Include="Avalonia" Version="12.1.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Avalonia" Version="12.1.2" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" PrivateAssets="all" ExcludeAssets="runtime" />
   </ItemGroup>
 
@@ -24,12 +24,12 @@
     <!-- CodeyBox's realtime channel. This one DOES ship with the plugin: nothing of it crosses the
          plugin boundary, so the load context can isolate it and a version skew with the host cannot
          break either side. -->
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.12" />
     <!-- Icons. Same rule as every head: a named glyph from fluentui-system-icons, never a character
          standing in for one. It ships with the plugin for the same reason SignalR does — nothing of it
          crosses the plugin boundary (it derives from the Avalonia types the loader forces into the host's
          own context), so the load context can isolate it without a version skew breaking either side. -->
-    <PackageReference Include="FluentIcons.Avalonia" Version="2.1.333" />
+    <PackageReference Include="FluentIcons.Avalonia" Version="2.1.341" />
   </ItemGroup>
 
 
