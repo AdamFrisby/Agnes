@@ -52,7 +52,7 @@ jobs:
         shell: pwsh
         run: Get-FileHash agnes-desktop-*.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } | Set-Content SHA256SUMS-${{ matrix.rid }}
 
-      - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-path: agnes-desktop-*.zip
 
@@ -87,7 +87,7 @@ jobs:
           dotnet tool install --tool-path .tools CycloneDX --version 6.2.0
           .tools/dotnet-CycloneDX src/Agnes.Host/Agnes.Host.csproj --output . --filename sbom-host-linux-x64.json
       - run: sha256sum agnes-host-*.tar.gz > SHA256SUMS-host-linux-x64
-      - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-path: agnes-host-*.tar.gz
       - uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
@@ -124,7 +124,7 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/agnes:${{ steps.v.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/agnes:latest
-      - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/agnes
           subject-digest: ${{ steps.build.outputs.digest }}
