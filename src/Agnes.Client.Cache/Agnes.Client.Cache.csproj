@@ -8,8 +8,8 @@
        Kept out of Agnes.Client itself so heads that cannot carry a native SQLite (or do not want one) are
        untouched; a head opts in by referencing this project and handing the cache to its AgnesClient. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 
   <ItemGroup>
