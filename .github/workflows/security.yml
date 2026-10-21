@@ -47,7 +47,7 @@ jobs:
           languages: csharp
           queries: security-extended
       - run: dotnet build Agnes.Core.slnf --configuration Release
-      - uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
 
   security-scans:
     name: secrets, workflow, and filesystem security
