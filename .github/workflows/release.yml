@@ -56,7 +56,7 @@ jobs:
         with:
           subject-path: agnes-desktop-*.zip
 
-      - uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
+      - uses: softprops/action-gh-release@6680cc089e59314c4460b839412c25fb6a71ce3b # v3
         with:
           files: |
             agnes-desktop-*.zip
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
           subject-path: agnes-host-*.tar.gz
-      - uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
+      - uses: softprops/action-gh-release@6680cc089e59314c4460b839412c25fb6a71ce3b # v3
         with:
           files: |
             agnes-host-*.tar.gz
