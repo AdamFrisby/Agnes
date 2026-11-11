@@ -12,7 +12,7 @@
 # HTTP on 5081. Agents run *inside* this container, so install the ones you use (this image
 # ships Node + git for the Claude Code ACP bridge; derive your own image for others).
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 COPY . .
 RUN dotnet publish src/Agnes.Host/Agnes.Host.csproj -c Release -o /app
