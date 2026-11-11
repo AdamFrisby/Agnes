@@ -42,7 +42,7 @@ RUN dotnet workload install wasm-tools \
          sed -i '/<link rel="manifest"/d; s|/uno-bootstrap.js"|/uno-bootstrap.js?access-build='"$AGNES_UI_ASSET_REVISION"'"|' /web/wwwroot/index.html; \
        fi
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime-base
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime-base
 # Install the version-pinned ACP bridge at image build time. The running host never resolves
 # or downloads executable packages from the network.
 # ACP 0.16.2 pins minimatch 10.2.1; retain the ACP pin but replace that direct dependency
